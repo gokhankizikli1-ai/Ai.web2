@@ -30,6 +30,8 @@ class CheckoutVariant:
     provider: str = "lemon_squeezy"
     product_id: str = ""
     price_id: str = ""
+    interval: str = ""      # "monthly" | "yearly" (optional; billing interval)
+    active: bool = True     # inactive variants are never purchasable
 
     def to_public_dict(self) -> Dict[str, Any]:
         # Deliberately UNCHANGED from PR 7 — no additional provider ids are

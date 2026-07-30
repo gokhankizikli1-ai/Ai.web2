@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import logging
 
-from backend.services.billing.types import WebhookEvent
+from backend.services.billing.types import WebhookEvent, PROVIDER_POLAR
 from backend.services.billing.processor.registry import register
 from backend.services.billing.subscriptions import config as sub_config
 from backend.services.billing.subscriptions import store as sub_store
@@ -49,21 +49,34 @@ def project_subscription_event(event: WebhookEvent, payload: dict) -> None:
     data = data if isinstance(data, dict) else {}
     meta = meta if isinstance(meta, dict) else {}
 
-    sub = sub_types.from_lemon_event(
-        provider=event.provider,
-        event_name=event.event_name,
-        event_id=event.id,
-        event_at=event.received_at,
-        data=data,
-        meta=meta,
-    )
+    # Provider-specific mapping → the SAME normalized Subscription + store. Identity
+    # comes only from SIGNED provider data; a Polar identity conflict yields
+    # app_user_id=None so NOTHING is granted (state is still recorded for audit).
+    if event.provider == PROVIDER_POLAR:
+        from backend.services.billing.polar import config as polar_config
+        sub = sub_types.from_polar_event(
+            event_name=event.event_name,
+            event_id=event.id,
+            event_at=event.received_at,
+            data=data,
+            test_mode=(not polar_config.is_production()),
+        )
+    else:
+        sub = sub_types.from_lemon_event(
+            provider=event.provider,
+            event_name=event.event_name,
+            event_id=event.id,
+            event_at=event.received_at,
+            data=data,
+            meta=meta,
+        )
 
     if sub is None:
-        # A subscription lifecycle event that isn't a subscriptions object (or
-        # is missing its id) is malformed → fail + retry so it's visible.
+        # A subscription lifecycle event missing a valid subscription id is
+        # malformed → fail + retry so it's visible. No state is mutated.
         raise ValueError(
             f"subscription event {event.event_name!r} missing a valid "
-            f"subscriptions object (id={event.id})"
+            f"subscription id (id={event.id})"
         )
 
     applied, current = sub_store.upsert(sub)
@@ -83,12 +96,15 @@ def project_subscription_event(event: WebhookEvent, payload: dict) -> None:
 
 
 def register_handlers() -> int:
-    """Register the projection handler for every subscription lifecycle event,
-    replacing the PR-2 acknowledgement default. Idempotent (replace=True).
-    Returns the number of event names wired."""
-    for name in sub_types.SUBSCRIPTION_LIFECYCLE_EVENTS:
+    """Register the projection handler for every Lemon AND Polar subscription
+    lifecycle event, replacing the PR-2 acknowledgement default. Idempotent
+    (replace=True). One handler + one table for both providers — no second
+    projection engine. Returns the number of event names wired."""
+    names = (*sub_types.SUBSCRIPTION_LIFECYCLE_EVENTS,
+             *sub_types.POLAR_SUBSCRIPTION_LIFECYCLE_EVENTS)
+    for name in names:
         register(name, project_subscription_event, replace=True)
-    return len(sub_types.SUBSCRIPTION_LIFECYCLE_EVENTS)
+    return len(names)
 
 
 __all__ = ["project_subscription_event", "register_handlers"]

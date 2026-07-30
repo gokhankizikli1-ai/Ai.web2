@@ -55,6 +55,22 @@ _LEMON_STATUS_MAP = {
     "expired": STATUS_EXPIRED,
 }
 
+# Polar subscription.status → our normalized status (PR #524). Polar distinguishes
+# a scheduled cancellation (status stays `active` + cancel_at_period_end=true →
+# still entitling until period end, preserving the existing grace rule) from
+# `revoked` (access actually ended → not entitling). `incomplete*` are non-entitling.
+_POLAR_STATUS_MAP = {
+    "trialing": STATUS_TRIALING,
+    "active": STATUS_ACTIVE,
+    "past_due": STATUS_PAST_DUE,
+    "unpaid": STATUS_UNPAID,
+    "canceled": STATUS_CANCELLED,
+    "cancelled": STATUS_CANCELLED,
+    "revoked": STATUS_EXPIRED,
+    "incomplete": STATUS_UNKNOWN,
+    "incomplete_expired": STATUS_EXPIRED,
+}
+
 # Lemon subscription lifecycle events this projection consumes. All carry a
 # full `subscriptions` object in data.attributes (unlike the payment events,
 # which carry subscription-invoices and are intentionally NOT projected here).
@@ -72,6 +88,19 @@ SUBSCRIPTION_LIFECYCLE_EVENTS = (
 # The resource `data.type` a subscription lifecycle payload carries.
 SUBSCRIPTION_RESOURCE_TYPE = "subscriptions"
 
+# Polar subscription lifecycle event names this projection consumes (PR #524).
+# `subscription.canceled` = scheduled cancellation (grace until period end);
+# `subscription.revoked` = access ended (immediate). `order.*`/`checkout.*` are
+# intentionally NOT projected here — subscription truth comes from these events.
+POLAR_SUBSCRIPTION_LIFECYCLE_EVENTS = (
+    "subscription.created",
+    "subscription.updated",
+    "subscription.active",
+    "subscription.canceled",
+    "subscription.uncanceled",
+    "subscription.revoked",
+)
+
 
 def normalize_status(raw: Optional[str]) -> Optional[str]:
     """Map a Lemon status string to our vocabulary. Returns None for an empty
@@ -81,6 +110,15 @@ def normalize_status(raw: Optional[str]) -> Optional[str]:
     if not s:
         return None
     return _LEMON_STATUS_MAP.get(s, STATUS_UNKNOWN)
+
+
+def normalize_polar_status(raw: Optional[str]) -> Optional[str]:
+    """Map a Polar status string to our vocabulary. None for empty input,
+    STATUS_UNKNOWN for an unrecognised non-empty value."""
+    s = (str(raw).strip().lower() if raw is not None else "")
+    if not s:
+        return None
+    return _POLAR_STATUS_MAP.get(s, STATUS_UNKNOWN)
 
 
 # Column order shared by both store backends so their SQL can never drift.
@@ -349,10 +387,127 @@ def from_lemon_event(
     )
 
 
+# ── Polar identity reconciliation (PR #524) ──────────────────────────────────
+def resolve_polar_identity(external_id: Optional[str], metadata_user_id: Optional[str]) -> Optional[str]:
+    """Resolve the authoritative Korvix user id from SIGNED Polar webhook data.
+
+    Preference: `customer.external_id` (set to the Korvix user id at checkout via
+    external_customer_id), then signed checkout/subscription `metadata.user_id`.
+    If BOTH are present and DISAGREE, returns None (no confident identity) — the
+    caller must then grant NOTHING. Email is never used to reconcile identity.
+    """
+    ext = _s(external_id)
+    meta_uid = _s(metadata_user_id)
+    if ext and meta_uid:
+        return ext if ext == meta_uid else None      # conflict → unresolved
+    return ext or meta_uid or None
+
+
+def _first_price_id(attrs: Dict[str, Any]) -> Optional[str]:
+    """Polar price id across the shapes the API has used: `price_id`, `price.id`,
+    or the first entry of `prices[]`."""
+    pid = _s(attrs.get("price_id"))
+    if pid:
+        return pid
+    price = attrs.get("price")
+    if isinstance(price, dict) and _s(price.get("id")):
+        return _s(price.get("id"))
+    prices = attrs.get("prices")
+    if isinstance(prices, list):
+        for p in prices:
+            if isinstance(p, dict) and _s(p.get("id")):
+                return _s(p.get("id"))
+    return None
+
+
+def from_polar_event(
+    *,
+    event_name: Optional[str],
+    event_id: Optional[str],
+    event_at: Optional[str],
+    data: Dict[str, Any],
+    test_mode: bool = False,
+) -> Optional[Subscription]:
+    """Map a Polar subscription webhook payload's `data` object to a normalized
+    Subscription (provider="polar"). Returns None when the subscription id is
+    missing (malformed → the caller fails/ignores without mutating state).
+
+    Reuses the SAME Subscription model + columns as Lemon. The Lemon-named
+    timestamp columns are treated as GENERIC provider timestamps:
+    `lemon_created_at`=Polar created_at, `lemon_updated_at`=Polar modified_at
+    (the monotonic ordering guard keys on it). Identity comes only from SIGNED
+    data (external_id / metadata.user_id); a conflict yields app_user_id=None so
+    NOTHING is granted. Never raises.
+    """
+    from backend.services.billing.types import PROVIDER_POLAR
+
+    data = data if isinstance(data, dict) else {}
+    sub_id = _s(data.get("id"))
+    if not sub_id:
+        return None
+
+    customer = data.get("customer")
+    customer = customer if isinstance(customer, dict) else {}
+    product = data.get("product")
+    product = product if isinstance(product, dict) else {}
+    metadata = data.get("metadata")
+    metadata = metadata if isinstance(metadata, dict) else {}
+
+    raw_status = data.get("status")
+    status = normalize_polar_status(raw_status)
+    cancel_at_period_end = bool(data.get("cancel_at_period_end"))
+    # Scheduled cancellation OR an actually-ended subscription both set `cancelled`.
+    ended = status in (STATUS_CANCELLED, STATUS_EXPIRED)
+    cancelled = cancel_at_period_end or ended
+
+    external_id = _s(customer.get("external_id")) or _s(data.get("customer_external_id"))
+    meta_uid = _s(metadata.get("user_id"))
+    app_user_id = resolve_polar_identity(external_id, meta_uid)
+
+    # Period end drives the existing grace logic (renews_at ≈ current period end;
+    # ends_at is the effective access-end used by the entitlement resolver).
+    current_period_end = _s(data.get("current_period_end"))
+    ended_at = _s(data.get("ended_at")) or _s(data.get("ends_at"))
+    ends_at = ended_at or (current_period_end if cancelled else None)
+
+    # Bounded diagnostic on an identity conflict (no PII); never grants anything.
+    custom_data: Dict[str, Any] = dict(metadata) if metadata else {}
+    if external_id and meta_uid and external_id != meta_uid:
+        custom_data["_identity_conflict"] = True
+
+    return Subscription(
+        provider=PROVIDER_POLAR,
+        subscription_id=sub_id,
+        status=status,
+        status_raw=_s(raw_status),
+        customer_id=_s(data.get("customer_id")) or _s(customer.get("id")),
+        product_id=_s(data.get("product_id")) or _s(product.get("id")),
+        variant_id=None,                       # Polar has no variant concept
+        price_id=_first_price_id(data),
+        product_name=_s(product.get("name")) or _s(data.get("product_name")),
+        customer_email=_s(customer.get("email")),
+        customer_name=_s(customer.get("name")),
+        app_user_id=app_user_id,
+        custom_data=custom_data,
+        cancelled=cancelled,
+        test_mode=bool(test_mode),
+        trial_ends_at=_s(data.get("trial_ends_at")) or _s(data.get("trial_end")),
+        renews_at=current_period_end or None,
+        ends_at=ends_at,
+        # Generic provider timestamps (the ordering guard keys on lemon_updated_at).
+        lemon_created_at=_s(data.get("created_at")),
+        lemon_updated_at=_s(data.get("modified_at")) or _s(data.get("updated_at")),
+        last_event_name=_s(event_name),
+        last_event_id=_s(event_id),
+        last_event_at=_s(event_at),
+    )
+
+
 __all__ = [
     "STATUS_TRIALING", "STATUS_ACTIVE", "STATUS_PAUSED", "STATUS_PAST_DUE",
     "STATUS_UNPAID", "STATUS_CANCELLED", "STATUS_EXPIRED", "STATUS_UNKNOWN",
     "VALID_SUBSCRIPTION_STATUSES", "SUBSCRIPTION_LIFECYCLE_EVENTS",
-    "SUBSCRIPTION_RESOURCE_TYPE", "DATA_COLUMNS",
-    "normalize_status", "Subscription", "from_lemon_event",
+    "POLAR_SUBSCRIPTION_LIFECYCLE_EVENTS", "SUBSCRIPTION_RESOURCE_TYPE", "DATA_COLUMNS",
+    "normalize_status", "normalize_polar_status", "resolve_polar_identity",
+    "Subscription", "from_lemon_event", "from_polar_event",
 ]

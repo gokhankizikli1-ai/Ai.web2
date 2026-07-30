@@ -45,10 +45,16 @@ def _parse(raw: str) -> Dict[str, CheckoutVariant]:
             continue
         variant_id = str(entry.get("variant_id") or "").strip()
         plan = str(entry.get("plan") or "").strip()
-        # PR #522 — provider-neutral fields (optional, default lemon_squeezy).
+        # PR #522/#524 — provider-neutral fields (optional, default lemon_squeezy).
         provider = str(entry.get("provider") or "lemon_squeezy").strip().lower() or "lemon_squeezy"
         product_id = str(entry.get("product_id") or "").strip()
         price_id = str(entry.get("price_id") or "").strip()
+        interval = str(entry.get("interval") or "").strip().lower()
+        active = entry.get("active", True) is not False   # only an explicit false deactivates
+        # An INACTIVE variant is never purchasable (skipped entirely).
+        if not active:
+            logger.info("checkout: variant %r is inactive — skipped", selector)
+            continue
         # `plan` is always required. Lemon entries must carry `variant_id` (EXACT
         # PR-7 behavior); a Polar entry instead needs a product/price id. An entry
         # with no usable provider identifier is skipped (never grants a default).
@@ -62,6 +68,7 @@ def _parse(raw: str) -> Dict[str, CheckoutVariant]:
             selector=sel, variant_id=variant_id, plan=plan,
             label=str(entry.get("label") or "").strip(),
             provider=provider, product_id=product_id, price_id=price_id,
+            interval=interval, active=True,
         )
     return out
 

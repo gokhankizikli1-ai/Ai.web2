@@ -34,17 +34,52 @@ from backend.services.billing.types import (
 )
 
 
-def resolve_provider() -> str:
-    """The active billing provider for checkout/webhook selection.
+class UnknownProviderError(ValueError):
+    """`BILLING_PROVIDER` is set to a non-empty value that is not a known provider.
+    Used to FAIL a billing mutation closed rather than silently charging through
+    the default provider."""
 
-    Backend-only (`BILLING_PROVIDER`), never a VITE/public var. Default and
-    fail-safe is `lemon_squeezy` — an empty or UNKNOWN value resolves to Lemon
-    so production is never silently pointed at an unimplemented provider.
+
+def _raw_provider() -> str:
+    return (os.getenv("BILLING_PROVIDER", "") or "").strip().lower()
+
+
+def resolve_provider() -> str:
+    """Fail-SAFE selector for non-mutating reads / observability.
+
+    Backend-only (`BILLING_PROVIDER`), never a VITE/public var. An empty/unset
+    value → `lemon_squeezy` (backward-compatible default). An explicitly UNKNOWN
+    non-empty value also resolves to `lemon_squeezy` HERE so a display/read path
+    never crashes — but mutating paths must use `resolve_provider_strict()`, which
+    rejects it (PR #524 hardening).
     """
-    raw = (os.getenv("BILLING_PROVIDER", "") or "").strip().lower()
+    raw = _raw_provider()
+    return raw if raw in KNOWN_PROVIDERS else DEFAULT_PROVIDER
+
+
+def resolve_provider_strict() -> str:
+    """Fail-CLOSED selector for BILLING MUTATIONS (checkout).
+
+    * empty / unset       → `lemon_squeezy` (backward compatible)
+    * a known provider    → that provider
+    * an UNKNOWN non-empty → raises `UnknownProviderError` (never silently charges
+                             through another provider).
+    """
+    raw = _raw_provider()
+    if not raw:
+        return DEFAULT_PROVIDER
     if raw in KNOWN_PROVIDERS:
         return raw
-    return DEFAULT_PROVIDER
+    raise UnknownProviderError(f"unknown billing provider: {raw!r}")
+
+
+def provider_selection_error() -> Optional[str]:
+    """Bounded, non-secret config-validation message when `BILLING_PROVIDER` is an
+    explicitly-unknown value, else None. Never includes secrets."""
+    raw = _raw_provider()
+    if raw and raw not in KNOWN_PROVIDERS:
+        return f"BILLING_PROVIDER is set to an unknown value {raw!r} (allowed: lemon_squeezy, polar)"
+    return None
 
 
 def is_known_provider(provider: Optional[str]) -> bool:
@@ -101,7 +136,8 @@ def lemon_event_to_normalized(event_name: Optional[str]) -> Optional[str]:
 
 
 __all__ = [
-    "resolve_provider", "is_known_provider",
+    "resolve_provider", "resolve_provider_strict", "provider_selection_error",
+    "is_known_provider", "UnknownProviderError",
     "PROVIDER_LEMON_SQUEEZY", "PROVIDER_POLAR",
     "EVENT_CHECKOUT_COMPLETED", "EVENT_SUBSCRIPTION_CREATED",
     "EVENT_SUBSCRIPTION_UPDATED", "EVENT_SUBSCRIPTION_CANCELED",

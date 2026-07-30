@@ -1,10 +1,29 @@
 # Billing Migration — Lemon Squeezy → Polar
 
-Status: **Foundation only (PR #522).** Production provider is **Lemon Squeezy**. Polar is declared,
-dormant, and **never selected by default**. No production cutover happens in this PR. No new
-production environment variable is required to deploy it.
+Status: **Checkout + verified webhook implemented (PR #524)** on top of the PR #523 foundation.
+Production provider is still **Lemon Squeezy** (`BILLING_PROVIDER` default/unset = `lemon_squeezy`).
+Polar is technically functional in **sandbox** but is **never selected by default** and requires an
+explicit `BILLING_PROVIDER=polar` switch. No production cutover happens in this PR. **No new
+production environment variable is required to deploy it** (Polar credentials are dormant until set).
 
 This document is the authoritative plan for the migration. It contains **no secret values**.
+
+### PR #524 — what became real
+- **Checkout:** `billing/polar/checkout.py` creates a real Polar hosted checkout (`POST /v1/checkouts`)
+  with `external_customer_id` + bounded `metadata` = the authoritative Korvix user id; success_url from
+  the backend allowlist; typed errors; URL validation; fail-closed; no secret/full-response logging.
+- **Webhook:** `POST /v2/billing/webhooks/polar` (`routes/v2_billing_polar.py`) verifies **Standard
+  Webhooks** (`billing/polar/signature.py`, base64 HMAC-SHA256 + timestamp tolerance) BEFORE parse, then
+  reuses the SAME inbox → processor → projection with `provider="polar"`.
+- **Normalization:** `subscriptions/types.from_polar_event` + `_POLAR_STATUS_MAP` map Polar events into
+  the existing normalized `Subscription` (no new table, no `polar_*` columns).
+- **Provider strictness:** `resolve_provider_strict()` — empty/unset → lemon; an explicitly UNKNOWN value
+  fails closed (checkout 503) instead of silently charging through Lemon.
+- **No schema change was required** — Polar data fits the existing generic columns (`renews_at` = current
+  period end, `ends_at` = access-end for grace, `cancelled`, `status`/`status_raw`; the `lemon_created_at`/
+  `lemon_updated_at` columns are treated as GENERIC provider timestamps, and the ordering guard keys on
+  `lemon_updated_at`). A future optional rename to `provider_created_at`/`provider_updated_at` is documented
+  below but intentionally NOT executed.
 
 ---
 
@@ -94,20 +113,22 @@ POST /v2/billing/webhooks/polar (NEW route, PR #524; disabled + fails closed unt
   projection → existing entitlement/credit rules. No second entitlement engine. No grant from checkout creation,
   redirect success, unverified webhooks, unknown products, or malformed events.
 
-### Schema change required LATER (do NOT implement in this PR)
-The subscription model reuses Lemon's `renews_at`/`ends_at`/`cancelled` instead of explicit period/cancel columns.
-For a fully provider-neutral projection, PR #524 should add (additive, nullable, backward-compatible):
+### Schema change — NOT required by PR #524 (optional future cleanup only)
+PR #524 needed **no schema change**: Polar data maps onto the existing generic columns
+(`renews_at`=current period end, `ends_at`=access-end for grace, `cancelled`, `status`/`status_raw`,
+`trial_ends_at`, `customer_id`/`subscription_id`/`product_id`/`price_id`, `test_mode`; the
+`lemon_created_at`/`lemon_updated_at` columns hold the generic provider timestamps and the ordering guard
+keys on `lemon_updated_at`). Fields Korvix does not consume for entitlement (`current_period_start`,
+`canceled_at`) are intentionally not persisted (or ride `custom_data`).
 
+An **optional, additive, backward-compatible** cleanup may later rename the Lemon-prefixed timestamp
+columns to generic ones — do NOT execute it as part of the migration unless needed:
 ```
-ALTER TABLE billing_subscriptions ADD COLUMN current_period_start TEXT;   -- generic period start
-ALTER TABLE billing_subscriptions ADD COLUMN current_period_end   TEXT;   -- generic period end (Lemon: renews_at)
-ALTER TABLE billing_subscriptions ADD COLUMN cancel_at_period_end INTEGER DEFAULT 0;
-ALTER TABLE billing_subscriptions ADD COLUMN canceled_at          TEXT;
--- Optional: rename lemon_created_at/lemon_updated_at → provider_created_at/provider_updated_at
---           (and re-key the ordering guard on provider_updated_at).
+-- OPTIONAL future migration (not required for Polar to work):
+ALTER TABLE billing_subscriptions ADD COLUMN provider_created_at TEXT;   -- = lemon_created_at
+ALTER TABLE billing_subscriptions ADD COLUMN provider_updated_at TEXT;   -- = lemon_updated_at (re-key the guard)
+-- backfill provider_* from lemon_*, then retire lemon_* after all readers move.
 ```
-Until then, Polar's mapper writes the existing columns (`renews_at`=period end, `ends_at`=cancel effective, `cancelled`),
-so no schema change blocks PR #524’s first iteration.
 
 ---
 
@@ -185,3 +206,9 @@ Lemon code/vars may be removed only when ALL hold:
 | _all other_ `BILLING_*` / `ENABLE_BILLING*` | **unchanged** (provider-neutral) | keep |
 
 New selector: **`BILLING_PROVIDER`** (default `lemon_squeezy`). Not required to deploy this PR.
+
+> **Correction to the PR #523 audit:** `LEMON_SQUEEZY_WEBHOOK_MAX_BYTES` is **not** an optional *final Polar*
+> variable. It exists **only while the Lemon webhook route/config consumer exists** and is **removed after the
+> Lemon webhook route is removed** (post-cutover), alongside the other `LEMON_SQUEEZY_*` vars. The Polar webhook
+> route reuses the SAME `billing_config.max_body_bytes()` cap (currently backed by that same env), so a future
+> generic rename (`BILLING_WEBHOOK_MAX_BYTES`) is the clean end-state; until then the cap stays Lemon-named.

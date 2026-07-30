@@ -143,19 +143,16 @@ def test_signature_fails_closed():
     assert signature.verify(b"body", "not-a-valid-sig", "secret") is False
 
 
-# ── 10. Polar adapter is disabled → typed, fail-closed error (no URL) ─────────
-def test_polar_checkout_fails_closed(monkeypatch):
+# ── 10. Polar adapter fails closed with a typed error when UNCONFIGURED (no URL)
+#    (PR #524: the real client raises CheckoutConfigError; happy-path checkout is
+#    covered in test_billing_polar_checkout.py with a mocked HTTP seam.) ─────────
+def test_polar_checkout_fails_closed_when_unconfigured(monkeypatch):
+    from backend.services.billing.checkout.errors import CheckoutConfigError
     monkeypatch.delenv("POLAR_ACCESS_TOKEN", raising=False)
     monkeypatch.delenv("POLAR_ORGANIZATION_ID", raising=False)
     v = CheckoutVariant(selector="pro_monthly", variant_id="", plan="pro",
                         provider=PROVIDER_POLAR, product_id="prod_1", price_id="price_1")
-    with pytest.raises(CheckoutProviderUnavailable) as ei:
-        asyncio.run(polar_checkout.create_checkout(variant=v, custom={"user_id": "u"}, redirect_url=None))
-    assert ei.value.provider == PROVIDER_POLAR
-    # Even fully "configured", it still fails closed (no verified checkout yet).
-    monkeypatch.setenv("POLAR_ACCESS_TOKEN", "tok")
-    monkeypatch.setenv("POLAR_ORGANIZATION_ID", "org")
-    with pytest.raises(CheckoutProviderUnavailable):
+    with pytest.raises(CheckoutConfigError):
         asyncio.run(polar_checkout.create_checkout(variant=v, custom={"user_id": "u"}, redirect_url=None))
 
 
