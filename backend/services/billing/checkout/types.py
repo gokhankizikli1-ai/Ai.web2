@@ -11,15 +11,29 @@ from typing import Any, Dict, Optional
 @dataclass(frozen=True)
 class CheckoutVariant:
     """A purchasable variant from the centralized checkout config. Maps a public
-    `selector` (e.g. "pro_monthly") to a concrete Lemon Squeezy `variant_id` and
-    our internal `plan` key. NO price or credit quantity lives here (out of
-    scope) — this only identifies WHAT is being purchased, not its terms."""
+    `selector` (e.g. "pro_monthly") to a concrete provider product/variant and our
+    internal `plan` key. NO price or credit quantity lives here (out of scope) —
+    this only identifies WHAT is being purchased, not its terms.
+
+    PR #522 — provider-neutral fields (all optional, backward compatible):
+      * `provider` defaults to "lemon_squeezy", so every existing
+        BILLING_CHECKOUT_VARIANTS_JSON entry keeps its exact meaning.
+      * `variant_id` is Lemon's identifier (kept for full backward compatibility).
+      * `product_id` / `price_id` are the Polar identifiers a variant maps to; they
+        are backend-only and are NOT surfaced in `to_public_dict`.
+    Lemon reads `variant_id`; Polar (PR #524) will read `product_id`/`price_id`.
+    """
     selector: str
     variant_id: str
     plan: str
     label: str = ""
+    provider: str = "lemon_squeezy"
+    product_id: str = ""
+    price_id: str = ""
 
     def to_public_dict(self) -> Dict[str, Any]:
+        # Deliberately UNCHANGED from PR 7 — no additional provider ids are
+        # exposed to the frontend (keeps the public catalog provider-neutral).
         return {
             "selector": self.selector,
             "variant_id": self.variant_id,
