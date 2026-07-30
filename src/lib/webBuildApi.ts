@@ -1960,8 +1960,10 @@ export function buildFrontendBuilderRequest(spec: FrontendBuildSpecification): s
   // PR #519 — the HARD generation contract (binding). Flag-gated inside buildGenerationContract;
   // undefined when the flag is off. The user's original request is threaded in (bounded) ONLY so
   // an explicitly-requested pattern is not blanket-forbidden; it is never stored in the contract.
+  // PR #522 — pass the spec so the nested Brand Design System can read the ALREADY-chosen palette /
+  // typography / accessibility design fields (spec.designSystem) without any new derivation.
   const contract = spec.experienceArchitecture
-    ? buildGenerationContract(spec.experienceArchitecture, spec.prompt)
+    ? buildGenerationContract(spec.experienceArchitecture, spec.prompt, spec)
     : undefined;
   const contractBlock = renderGenerationContractBlock(contract).split('\n').filter(Boolean);
   const contractLines = contractBlock.length ? [...contractBlock, ''] : [];

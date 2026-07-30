@@ -15,10 +15,16 @@
  *     VITE_ENABLE_HARD_GENERATION_CONTRACT=false
  */
 import type {
-  ExperienceArchitecturePlan, FrontendGenerationContract,
+  ExperienceArchitecturePlan, FrontendGenerationContract, FrontendBuildSpecification,
   FrontendGeneratedFile, FrontendBuilderReviewIssue, FrontendBuilderReviewCategory,
   FrontendBuilderReviewSeverity, ExperienceVisualMedium,
 } from '@/lib/webBuildAgents';
+// PR #522 — the Brand Design System NESTS inside this contract (one BINDING sub-section) and its
+// conservative checks extend THIS validator. It is only active when this contract is active.
+import {
+  isBrandDesignSystemEnabled, compileBrandDesignSystem, renderBrandDesignSystemBlock,
+  evaluateBrandDesignCompliance, readExplicitDesign,
+} from '@/lib/webBuildBrandDesignSystem';
 
 export function isHardGenerationContractEnabled(): boolean {
   try {
@@ -127,6 +133,7 @@ function mediumLabel(m: ExperienceVisualMedium): string {
 export function buildGenerationContract(
   plan: ExperienceArchitecturePlan | undefined,
   explicitRequest?: string,
+  spec?: FrontendBuildSpecification,
 ): FrontendGenerationContract | undefined {
   try {
     if (!isHardGenerationContractEnabled()) return undefined;
@@ -206,6 +213,12 @@ export function buildGenerationContract(
       'palette refinement within the chosen visual direction',
     ], 6);
 
+    // PR #522 — compile the Brand Design System and NEST it inside the contract (one BINDING
+    // sub-section). Only active when its own flag is on; undefined ⇒ the contract is unchanged.
+    const brandDesignSystem = isBrandDesignSystemEnabled()
+      ? compileBrandDesignSystem(plan, { spec, explicitRequest })
+      : undefined;
+
     return {
       version: 'generation-contract-v1',
       entryRequirement: cap(entryRequirement),
@@ -217,6 +230,7 @@ export function buildGenerationContract(
       requiredSections: cleanList(plan.sectionSequence, MAX_LIST),
       forbiddenPatterns,
       creativeFreedom,
+      ...(brandDesignSystem ? { brandDesignSystem } : {}),
     };
   } catch {
     return undefined;
@@ -242,6 +256,10 @@ export function renderGenerationContractBlock(contract: FrontendGenerationContra
   lines.push(`- FORBIDDEN (do NOT use unless the user request explicitly asks for it): ${contract.forbiddenPatterns.join('; ')}.`);
   lines.push(`- Creative freedom: ${contract.creativeFreedom.join('; ')}.`);
   lines.push('- Use motion only to explain state/transitions, never as decorative filler.');
+  // PR #522 — the Brand Design System rides as ONE nested sub-section of THIS contract (never a
+  // second competing block). Empty string when absent ⇒ the block is byte-for-byte unchanged.
+  const brandBlock = renderBrandDesignSystemBlock(contract.brandDesignSystem);
+  if (brandBlock) { lines.push(''); lines.push(brandBlock); }
   return lines.join('\n');
 }
 
@@ -414,6 +432,17 @@ export function evaluateContractCompliance(
       });
     }
 
+    // 9. PR #522 — Brand Design System conservative checks (central token source, hardcoded-colour
+    //    inconsistency, excessive cards vs card policy, radius vs shape policy). Only active when the
+    //    brand flag is on; STRONG evidence only; extends THIS validator (never a second one).
+    if (isBrandDesignSystemEnabled()) {
+      const system = compileBrandDesignSystem(plan, { explicitRequest });
+      if (system) {
+        const ex = readExplicitDesign(requested);
+        out.push(...evaluateBrandDesignCompliance(files, system, ex));
+      }
+    }
+
     return out;
   } catch {
     return [];
@@ -422,6 +451,13 @@ export function evaluateContractCompliance(
 
 /* Map a contract finding → an EXISTING review category so it rides the existing repair. */
 function categoryFor(code: string): FrontendBuilderReviewCategory {
+  // PR #522 — brand design-system findings map to existing categories (distinct where possible so
+  // a card/radius finding is not shadowed by a palette one).
+  if (code.startsWith('brand-')) {
+    if (code.includes('card')) return 'component-composition';
+    if (code.includes('radius')) return 'layout-rhythm';
+    return 'palette-and-surfaces';   // central-tokens / hardcoded-colours
+  }
   if (code.includes('headline-first') || code.includes('hero') || code.includes('landing')) return 'concept-drift';
   if (code.includes('feature-cards') || code.includes('auto-')) return 'generic-template';
   if (code.includes('medium') || code.includes('proof')) return 'contract-fidelity';
@@ -429,14 +465,19 @@ function categoryFor(code: string): FrontendBuilderReviewCategory {
   return 'contract-fidelity';
 }
 
+const SEVERITY_RANK: Record<FrontendBuilderReviewSeverity, number> = { blocker: 0, major: 1, minor: 2 };
+
 /**
  * Convert contract findings → review issues for the EXISTING bounded repair. Dedups by
  * category (mergeDeterministicIssues also dedups), so this never duplicates the model reviewer.
+ * Findings are ordered by severity first, so a MAJOR finding is never shadowed by a same-category
+ * MINOR (e.g. a brand central-token major vs a purple-neon minor).
  */
 export function contractFindingsToReviewIssues(findings: ContractFinding[]): FrontendBuilderReviewIssue[] {
   const out: FrontendBuilderReviewIssue[] = [];
   const seen = new Set<FrontendBuilderReviewCategory>();
-  for (const f of findings) {
+  const ordered = [...findings].sort((a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity]);
+  for (const f of ordered) {
     const category = categoryFor(f.code);
     if (seen.has(category)) continue;
     seen.add(category);

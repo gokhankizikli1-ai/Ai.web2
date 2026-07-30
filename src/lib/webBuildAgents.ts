@@ -1668,6 +1668,98 @@ export interface FrontendGenerationContract {
   forbiddenPatterns: string[];
   /** Where the model is explicitly free to be creative. */
   creativeFreedom: string[];
+  /** PR #522 — the compiled Brand Design System, NESTED inside the contract (rendered as one
+   *  BINDING sub-section, never a second competing block). Present only when the brand-design
+   *  flag is on AND a usable plan exists; absent ⇒ the contract is byte-for-byte the pre-#522 one. */
+  brandDesignSystem?: BrandDesignSystem;
+}
+
+/* ── Brand Design System (PR #522) ────────────────────────────────────────────
+ * A DETERMINISTIC translation of the EXISTING design intelligence (Design Personality, Visual
+ * Strategy, Experience Architecture + Layout/Signature/Asset strategies, business category and
+ * explicit user requests) into ONE concrete-but-flexible, typed design-system contract the
+ * frontend coding model must implement coherently. It is NOT a new design agent, NOT a planner,
+ * and adds NO model call — it re-states existing decisions as bounded, model-facing implementation
+ * rules (no scores, confidence, reasoning or raw enums). It NESTS inside the Hard Generation
+ * Contract. Optional + additive + backward compatible. */
+export type BrandColorMode = 'light' | 'dark' | 'mixed';
+export type BrandTypographyPersonality =
+  | 'editorial' | 'geometric' | 'humanist' | 'technical' | 'heritage' | 'playful' | 'utilitarian';
+export type BrandDensity = 'compact' | 'balanced' | 'spacious';
+export type BrandRadiusStyle = 'sharp' | 'subtle' | 'rounded' | 'pill-accented';
+/** How liberally real card containers may be used. `exceptional` = cards are a rare, deliberate
+ *  device; `minimal` = prefer open composition; `functional` = real UI surfaces as the app needs;
+ *  `standard` = ordinary, still-coherent card use. */
+export type BrandCardPolicy = 'exceptional' | 'minimal' | 'functional' | 'standard';
+
+export interface BrandColorSystem {
+  mode: BrandColorMode;
+  /** Model-facing guidance strings (a direction + the semantic token to define), never a lone hex. */
+  background: string;
+  surface: string;
+  elevatedSurface: string;
+  textPrimary: string;
+  textSecondary: string;
+  accent: string;
+  accentContrast: string;
+  border: string;
+  muted: string;
+  success?: string;
+  warning?: string;
+  destructive?: string;
+  usageRules: string[];
+}
+export interface BrandTypographySystem {
+  personality: BrandTypographyPersonality;
+  headingStyle: string;
+  bodyStyle: string;
+  displayScale: string;
+  bodyScale: string;
+  lineHeight: string;
+  tracking: string;
+  measure: string;
+  fontPairingGuidance: string;
+}
+export interface BrandSpacingSystem {
+  density: BrandDensity;
+  baseUnit: string;
+  sectionSpacing: string;
+  componentSpacing: string;
+  contentWidth: string;
+  rhythmRules: string[];
+}
+export interface BrandShapeSystem {
+  radiusStyle: BrandRadiusStyle;
+  radiusScale: string;
+  borderStyle: string;
+  shadowStyle: string;
+}
+export interface BrandComponentLanguage {
+  buttonStyle: string;
+  cardPolicy: BrandCardPolicy;
+  navigationStyle: string;
+  inputStyle: string;
+  iconStyle: string;
+  imageTreatment: string;
+}
+export interface BrandVisualHierarchy {
+  heroDominance: string;
+  headingContrast: string;
+  contentDensity: BrandDensity;
+  emphasisRules: string[];
+}
+export interface BrandDesignSystem {
+  version: 'brand-design-system-v1';
+  colorSystem: BrandColorSystem;
+  typographySystem: BrandTypographySystem;
+  spacingSystem: BrandSpacingSystem;
+  shapeSystem: BrandShapeSystem;
+  componentLanguage: BrandComponentLanguage;
+  visualHierarchy: BrandVisualHierarchy;
+  /** Strict visual defaults to avoid (unless the user explicitly asked for them). */
+  forbiddenVisualDefaults: string[];
+  /** Where the model stays free within the system. */
+  creativeFreedom: string[];
 }
 
 /* ── Rendered Vision Review (PR #519, Part B contract) ────────────────────────
