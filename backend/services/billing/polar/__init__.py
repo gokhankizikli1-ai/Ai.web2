@@ -1,21 +1,26 @@
 # coding: utf-8
 """
-Billing — Polar provider (PR #522 migration FOUNDATION only).
+Billing — Polar provider (PR #524: Polar Checkout + Verified Webhook).
 
-This subpackage is DORMANT. It exists so the Lemon Squeezy → Polar migration has
-typed config accessors + a checkout adapter SEAM to fill in the implementation PR
-(#524). It performs NO network calls and is NEVER selected by default:
+Implements a real Polar integration that reuses the provider-neutral billing
+foundation (#523). It is NEVER the active provider by default:
 
   * `resolve_provider()` (billing/provider.py) returns `lemon_squeezy` unless the
-    operator explicitly sets `BILLING_PROVIDER=polar`.
-  * The checkout adapter here FAILS CLOSED — it raises a typed
-    `CheckoutProviderUnavailable` (→ 503) and NEVER returns a checkout URL. There
-    is no silent fallback from Polar to Lemon.
-  * All Polar config accessors default empty, so `is_configured()` is False until
-    the operator provisions Polar secrets — which are backend-only, never VITE.
+    operator explicitly sets `BILLING_PROVIDER=polar`; an unknown value fails
+    closed in mutating paths (`resolve_provider_strict`).
+  * `checkout.py` creates a real Polar hosted checkout (`POST /v1/checkouts`),
+    setting external_customer_id + bounded metadata to the authoritative Korvix
+    user id. It FAILS CLOSED (typed error) when Polar is unconfigured and NEVER
+    falls back to Lemon.
+  * `signature.py` verifies Polar **Standard Webhooks** (base64 HMAC-SHA256 +
+    bounded timestamp tolerance) — kept separate from Lemon's hex verifier.
+  * `config.py` accessors default empty / `POLAR_SERVER=sandbox`, so the whole
+    integration stays dormant until the operator provisions Polar secrets
+    (backend-only, never VITE) and switches `BILLING_PROVIDER`.
 
-Do not add live Polar API calls, webhook state mutation, or a checkout that
-returns a URL in this PR. That is PR #524 (Polar Checkout + Verified Webhook).
+Verified Polar subscription webhooks project into the SAME inbox → processor →
+`billing_subscriptions` table → entitlement resolver as Lemon. No second table,
+ledger or engine. Checkout creation grants NO entitlement.
 """
 from __future__ import annotations
 

@@ -305,6 +305,7 @@ def _build_full_app():
         "backend.routes.v2_startup",         # Startup Market Intelligence — /v2/startup/market-complaints (gated by ENABLE_STARTUP_MARKET_INTEL)
         "backend.routes.v2_web_build_images",  # Phase 10D — /v2/web-build/images/* real image generation (gated by ENABLE_WEB_BUILD_IMAGE_GEN)
         "backend.routes.v2_vision_review",     # PR #521 — /v2/web-build/vision-review conditional screenshot vision review (auth; gated by ENABLE_RENDERED_VISION_REVIEW; 503 when off)
+        "backend.routes.v2_billing_polar",     # PR #524 — /v2/billing/webhooks/polar Standard-Webhooks-verified Polar callback (gated by ENABLE_BILLING + POLAR_WEBHOOK_SECRET; 503 when off)
         "backend.routes.v2_ai_guard",          # Phase 14L.1 — /v2/ai/* founder-beta AI usage/spend protection (finalize, usage, owner controls)
         "backend.routes.v2_billing",           # Billing PR 1 — /v2/billing/webhooks/lemon-squeezy (gated by ENABLE_BILLING; 503 when off)
         "backend.routes.v2_billing_checkout",  # Billing PR 7 — /v2/billing/checkout (authenticated; gated by ENABLE_BILLING_CHECKOUT; 503 when off)

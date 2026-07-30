@@ -19,10 +19,12 @@ from backend.services.billing.checkout import catalog as checkout_catalog
 from backend.services.billing.checkout import client as checkout_client
 from backend.services.billing.checkout import store as checkout_store
 from backend.services.billing.checkout.errors import (
-    CheckoutDisabled, CheckoutValidationError,
+    CheckoutConfigError, CheckoutDisabled, CheckoutValidationError,
 )
 from backend.services.billing.checkout.types import CheckoutRecord, CheckoutResult
-from backend.services.billing.provider import resolve_provider
+from backend.services.billing.provider import (
+    resolve_provider, resolve_provider_strict, UnknownProviderError,
+)
 from backend.services.billing.polar import checkout as polar_checkout
 from backend.services.billing.types import PROVIDER_POLAR
 
@@ -61,14 +63,19 @@ async def create_checkout(
     requested_variant: str,
     return_url: Optional[str] = None,
     idempotency_key: Optional[str] = None,
+    customer_email: Optional[str] = None,
+    customer_ip: Optional[str] = None,
 ) -> CheckoutResult:
     """Create (or idempotently return) a checkout for `user_id`.
 
     Raises: CheckoutDisabled (surface off), CheckoutValidationError (bad
-    variant / return_url), CheckoutConfigError (server misconfig),
-    CheckoutUpstreamError (provider failure). `user_id` MUST already be the
-    authoritative, backend-derived id — this layer never reads identity from a
-    request payload.
+    variant / return_url / provider mismatch), CheckoutConfigError (server
+    misconfig / unknown provider), CheckoutUpstreamError (provider failure),
+    CheckoutProviderUnavailable (selected provider has no live checkout).
+    `user_id` MUST already be the authoritative, backend-derived id — this layer
+    never reads identity from a request payload. `customer_email` MUST come only
+    from the authenticated account (Polar only); `customer_ip` from a trusted
+    proxy header.
     """
     if not is_enabled():
         raise CheckoutDisabled("checkout is disabled")
@@ -79,9 +86,20 @@ async def create_checkout(
         # an empty/anonymous identity.
         raise CheckoutValidationError("an authenticated user is required")
 
+    # PR #524 — FAIL CLOSED on an explicitly-unknown BILLING_PROVIDER (never
+    # silently charge through the default). Empty/unset stays lemon_squeezy.
+    try:
+        provider = resolve_provider_strict()
+    except UnknownProviderError as exc:
+        raise CheckoutConfigError(str(exc)) from exc
+
     variant = checkout_catalog.resolve(requested_variant)
     if variant is None:
         raise CheckoutValidationError("unknown or unavailable variant")
+    # A variant configured for a DIFFERENT provider is not purchasable under the
+    # active provider (never map across providers).
+    if (variant.provider or "lemon_squeezy") != provider:
+        raise CheckoutValidationError("variant is not available for the active billing provider")
 
     redirect_url = _validate_return_url(return_url)
     if redirect_url is None:
@@ -101,17 +119,17 @@ async def create_checkout(
                 plan=prior.plan, checkout_id=prior.checkout_id, idempotent=True,
             )
 
-    # PR #522 — provider selection seam. Backend-only (`BILLING_PROVIDER`), default
-    # and fail-safe is lemon_squeezy, so this branch is byte-for-byte the PR-7 Lemon
-    # path in production. When Polar is explicitly selected it FAILS CLOSED (503) —
-    # there is NEVER a silent fallback from Polar to Lemon. The user-id linkage is
-    # attached to provider custom/metadata and echoed back on webhooks.
-    provider = resolve_provider()
+    # PR #522/#524 — provider dispatch (provider was resolved strictly above).
+    # Default lemon = byte-for-byte the PR-7 Lemon path. Polar creates a real
+    # checkout (external_customer_id + bounded metadata carry the Korvix identity).
+    # NEVER a silent fallback from Polar to Lemon.
     if provider == PROVIDER_POLAR:
         created = await polar_checkout.create_checkout(
             variant=variant,
             custom={"user_id": uid},
             redirect_url=redirect_url,
+            customer_email=customer_email,
+            customer_ip=customer_ip,
         )
     else:
         created = await checkout_client.create_checkout(

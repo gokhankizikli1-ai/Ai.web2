@@ -501,28 +501,40 @@ class Config:
                 "from the Lemon Squeezy dashboard.",
             ))
 
-        # 3c. Billing checkout — if enabled it MUST have the Lemon API key +
-        #     store id, else every checkout request fails closed (503).
-        #     Only meaningful while Lemon is the active provider.
-        if (self.ENABLE_BILLING_CHECKOUT and self.BILLING_PROVIDER == "lemon_squeezy"
-                and not (self.LEMON_SQUEEZY_API_KEY and self.LEMON_SQUEEZY_STORE_ID)):
+        # 3c. Billing checkout — if enabled it MUST have the active provider's
+        #     credentials, else every checkout request fails closed (503).
+        if self.ENABLE_BILLING_CHECKOUT and self.BILLING_PROVIDER == "lemon_squeezy" \
+                and not (self.LEMON_SQUEEZY_API_KEY and self.LEMON_SQUEEZY_STORE_ID):
             issues.append((
                 "critical",
                 "ENABLE_BILLING_CHECKOUT is on but LEMON_SQUEEZY_API_KEY and/or "
                 "LEMON_SQUEEZY_STORE_ID is empty — checkout creation will fail "
                 "closed (503). Set both to enable checkout.",
             ))
-
-        # 3d. PR #522 — Polar is declared but NOT implemented. If it is selected
-        #     as the active provider, checkout fails closed (503) by design. Surface
-        #     it so an operator never mistakes the 503 for a misconfiguration.
-        if self.BILLING_PROVIDER == "polar":
+        if self.ENABLE_BILLING_CHECKOUT and self.BILLING_PROVIDER == "polar" \
+                and not (self.POLAR_ACCESS_TOKEN and self.POLAR_ORGANIZATION_ID):
             issues.append((
                 "critical",
-                "BILLING_PROVIDER=polar is selected but Polar checkout/webhook are "
-                "not implemented yet (PR #522 is foundation-only) — checkout fails "
-                "closed (503). Set BILLING_PROVIDER=lemon_squeezy for production "
-                "until the Polar implementation PR (#524).",
+                "BILLING_PROVIDER=polar with ENABLE_BILLING_CHECKOUT on, but "
+                "POLAR_ACCESS_TOKEN and/or POLAR_ORGANIZATION_ID is empty — Polar "
+                "checkout fails closed (503). Set both (POLAR_SERVER=sandbox first).",
+            ))
+
+        # 3d. PR #524 — an EXPLICITLY-UNKNOWN BILLING_PROVIDER must not silently
+        #     charge through Lemon: checkout fails closed. (empty/unset stays lemon.)
+        _bp = self.BILLING_PROVIDER
+        if _bp and _bp not in ("lemon_squeezy", "polar"):
+            issues.append((
+                "critical",
+                f"BILLING_PROVIDER is set to an unknown value {_bp!r} (allowed: "
+                "lemon_squeezy, polar) — billing mutations fail closed. Fix or unset it.",
+            ))
+        # Informational: Polar selected + configured is valid (sandbox by default).
+        if _bp == "polar" and self.POLAR_SERVER == "production":
+            issues.append((
+                "warning",
+                "BILLING_PROVIDER=polar with POLAR_SERVER=production — Polar is the "
+                "LIVE billing provider. Confirm sandbox validation completed first.",
             ))
 
         # 4. Orchestration write surface needs verified identity. If the

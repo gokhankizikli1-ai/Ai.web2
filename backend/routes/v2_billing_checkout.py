@@ -65,18 +65,40 @@ class CheckoutBody(BaseModel):
     idempotency_key: Optional[str] = Field(default=None, max_length=_MAX_IDEMPOTENCY_KEY)
 
 
-def _authenticated_uid(request: Request) -> Optional[str]:
-    """Authoritative Korvix user id from backend auth, or None for guests."""
+def _authenticated_identity(request: Request):
+    """Authoritative Korvix (user_id, email) from backend auth, or (None, None)
+    for guests. Email comes ONLY from the authenticated account."""
     try:
         from backend.core.principal import resolve_principal
         principal = resolve_principal(request)
     except Exception as exc:  # pragma: no cover — identity must not 500
         logger.warning("checkout: identity resolution failed: %s", exc)
-        return None
+        return None, None
     if not principal.is_authenticated:
-        return None
+        return None, None
     uid = (principal.user_id or "").strip()
-    return uid or None
+    email = (getattr(principal, "email", None) or "").strip() or None
+    return (uid or None), email
+
+
+def _authenticated_uid(request: Request) -> Optional[str]:
+    """Authoritative Korvix user id from backend auth, or None for guests."""
+    uid, _ = _authenticated_identity(request)
+    return uid
+
+
+def _client_ip(request: Request) -> Optional[str]:
+    """Best-effort client IP from a trusted proxy header, else the socket peer.
+    Bounded; never trusted for identity — only forwarded to the provider."""
+    try:
+        fwd = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+        if fwd:
+            return fwd[:64]
+        client = getattr(request, "client", None)
+        host = getattr(client, "host", None)
+        return (str(host)[:64] if host else None)
+    except Exception:
+        return None
 
 
 @router.get("/variants")
@@ -93,7 +115,7 @@ async def create_checkout(body: CheckoutBody, request: Request) -> JSONResponse:
     if not checkout_service.is_enabled():
         return _resp(503, envelope_err("checkout disabled", code="CHECKOUT_DISABLED"))
 
-    uid = _authenticated_uid(request)
+    uid, email = _authenticated_identity(request)
     if not uid:
         return _resp(401, envelope_err("authentication required", code="UNAUTHORIZED"))
 
@@ -106,6 +128,8 @@ async def create_checkout(body: CheckoutBody, request: Request) -> JSONResponse:
             requested_variant=body.variant,
             return_url=body.return_url,
             idempotency_key=idem,
+            customer_email=email,          # only from the authenticated account
+            customer_ip=_client_ip(request),
         )
     except CheckoutDisabled:
         return _resp(503, envelope_err("checkout disabled", code="CHECKOUT_DISABLED"))
