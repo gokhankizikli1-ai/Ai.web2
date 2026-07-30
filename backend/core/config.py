@@ -529,13 +529,83 @@ class Config:
                 f"BILLING_PROVIDER is set to an unknown value {_bp!r} (allowed: "
                 "lemon_squeezy, polar) — billing mutations fail closed. Fix or unset it.",
             ))
-        # Informational: Polar selected + configured is valid (sandbox by default).
-        if _bp == "polar" and self.POLAR_SERVER == "production":
-            issues.append((
-                "warning",
-                "BILLING_PROVIDER=polar with POLAR_SERVER=production — Polar is the "
-                "LIVE billing provider. Confirm sandbox validation completed first.",
-            ))
+        # 3e. PR #525 — when Polar is the SELECTED provider, strengthen validation
+        #     without touching the Lemon path (BILLING_PROVIDER unset/lemon skips all
+        #     of this, so Polar vars stay optional there). Polar is a live billing
+        #     mutation surface, so a partial config must fail LOUDLY, not silently.
+        if _bp == "polar":
+            # The webhook secret is what makes an activation trustworthy — without it
+            # every Polar delivery is rejected (503) and no subscription is ever
+            # projected, so checkout would strand the customer post-payment.
+            if self.ENABLE_BILLING and not self.POLAR_WEBHOOK_SECRET:
+                issues.append((
+                    "critical",
+                    "BILLING_PROVIDER=polar with ENABLE_BILLING on, but "
+                    "POLAR_WEBHOOK_SECRET is empty — the Polar webhook cannot verify "
+                    "signatures and rejects every delivery (503), so payments never "
+                    "activate. Set the sandbox webhook secret (distinct from prod).",
+                ))
+            # Polar cannot function as the provider unless both master gates are on;
+            # otherwise the selection is inert and the intent is ambiguous.
+            if not self.ENABLE_BILLING:
+                issues.append((
+                    "critical",
+                    "BILLING_PROVIDER=polar but ENABLE_BILLING is off — the Polar "
+                    "webhook surface is disabled, so no subscription can ever be "
+                    "projected. Enable ENABLE_BILLING or unset BILLING_PROVIDER.",
+                ))
+            if not self.ENABLE_BILLING_CHECKOUT:
+                issues.append((
+                    "critical",
+                    "BILLING_PROVIDER=polar but ENABLE_BILLING_CHECKOUT is off — "
+                    "checkout creation is disabled (503), so customers cannot start "
+                    "a Polar subscription. Enable ENABLE_BILLING_CHECKOUT or unset "
+                    "BILLING_PROVIDER.",
+                ))
+            # Deep config (active Polar variants, product-id plan mapping, valid
+            # return URL) is evaluated by the READ-ONLY readiness evaluator — reused
+            # here so the two never diverge. It makes NO external call. Wrapped so a
+            # transient import/parse issue never turns config validation into a 500.
+            try:
+                from backend.services.billing import readiness as _billing_readiness
+                _snap = _billing_readiness.polar_readiness()
+                _polar = _snap.get("polar", {}) if isinstance(_snap, dict) else {}
+                _missing = [str(m) for m in (_polar.get("missing") or [])]
+                # Only surface the config-shape items here (the ENABLE_*/secret items
+                # are already reported above with more specific guidance).
+                _shape = [
+                    m for m in _missing
+                    if m in ("checkoutVariantsConfigured", "planMapConfigured", "successUrlConfigured")
+                ]
+                if _shape:
+                    issues.append((
+                        "critical",
+                        "BILLING_PROVIDER=polar but the Polar plan/product mapping is "
+                        "incomplete (missing: " + ", ".join(sorted(_shape)) + ") — checkout "
+                        "cannot resolve a product id and fails closed. Populate "
+                        "BILLING_CHECKOUT_VARIANTS_JSON / BILLING_PLAN_MAP_JSON and a "
+                        "return URL before activating Polar.",
+                    ))
+                # Production is a one-way, LIVE-money cutover: if the full readiness
+                # gate is not green, fail CLOSED with a critical (never a soft warning).
+                if self.POLAR_SERVER == "production" and not _polar.get("readyForProductionCutover"):
+                    issues.append((
+                        "critical",
+                        "BILLING_PROVIDER=polar with POLAR_SERVER=production but the "
+                        "configuration readiness gate is NOT green (missing: "
+                        + (", ".join(sorted(_missing)) if _missing else "unknown")
+                        + ") — refusing to treat a partially-configured Polar as the "
+                        "LIVE provider. Complete sandbox validation, then cut over.",
+                    ))
+                elif self.POLAR_SERVER == "production":
+                    issues.append((
+                        "warning",
+                        "BILLING_PROVIDER=polar with POLAR_SERVER=production — Polar is "
+                        "the LIVE billing provider. Confirm sandbox validation completed "
+                        "first and that the webhook secret is the production secret.",
+                    ))
+            except Exception:  # pragma: no cover — validation must never hard-fail
+                pass
 
         # 4. Orchestration write surface needs verified identity. If the
         #    orchestrator is enabled but auth verification is off, identity

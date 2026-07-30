@@ -11,6 +11,8 @@ import {
 import { Button } from '@/components/ui/button';
 import Navigation from '@/components/Navigation';
 import PremiumSlider from '@/components/PremiumSlider';
+import { useCheckout } from '@/hooks/useCheckout';
+import { isPurchasablePlan } from '@/lib/billingApi';
 
 /* ═══════════════════════════════════════════
    CREDIT COSTS — realistic AI usage economy
@@ -228,6 +230,11 @@ function PlanCard({
   const displayPrice = isYearly ? plan.priceYearly : plan.priceMonthly;
   const period = isYearly ? '/yr' : plan.priceMonthly === 0 ? ' forever' : '/mo';
   const yearlySavings = plan.priceMonthly * 12 - plan.priceYearly;
+  // PR #525 — flag-gated (VITE_ENABLE_CHECKOUT, OFF by default). The current plan
+  // and non-purchasable plans keep their existing inert/disabled behaviour.
+  const checkout = useCheckout();
+  const canCheckout = checkout.enabled && !plan.current && isPurchasablePlan(plan.id);
+  const isPending = !!checkout.pendingSelector?.startsWith(plan.id);
 
   return (
     <motion.div
@@ -307,10 +314,20 @@ function PlanCard({
                 ? 'bg-[#FACC15]/[0.08] text-[#FACC15] border border-[#FACC15]/15 hover:bg-[#FACC15]/[0.12]'
                 : 'bg-white/[0.03] text-[#CBD5E1] border border-white/[0.04] hover:bg-white/[0.05]'
         }`}
-        disabled={plan.current}
+        disabled={plan.current || (checkout.enabled && checkout.pendingSelector !== null)}
+        onClick={() => {
+          // Flag ON + purchasable, non-current plan → provider-neutral checkout.
+          // Otherwise unchanged (current plan stays disabled; others inert as before).
+          if (canCheckout) {
+            void checkout.start(plan.id as 'basic' | 'pro' | 'ultra', isYearly ? 'yearly' : 'monthly', { returnPath: '/credits' });
+          }
+        }}
       >
-        {plan.current ? 'Current Plan' : plan.cta}
+        {plan.current ? 'Current Plan' : isPending ? 'Redirecting…' : plan.cta}
       </Button>
+      {checkout.enabled && checkout.error && canCheckout && (
+        <p className="mt-2 text-[10px] text-[#C98A8A] text-center">{checkout.error}</p>
+      )}
     </motion.div>
   );
 }

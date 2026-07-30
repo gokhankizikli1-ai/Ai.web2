@@ -8,6 +8,8 @@ import {
   Lock, Sparkles, X,
 } from 'lucide-react';
 import { useNavigate } from 'react-router';
+import { useCheckout } from '@/hooks/useCheckout';
+import { isPurchasablePlan } from '@/lib/billingApi';
 
 const PLANS = [
   {
@@ -111,6 +113,10 @@ const FEATURES_COMPARE = [
 export default function PricingPage() {
   const navigate = useNavigate();
   const [yearly, setYearly] = useState(false);
+  // PR #525 — provider-neutral checkout. Flag-gated (VITE_ENABLE_CHECKOUT) and
+  // OFF by default, so with the flag unset every CTA below keeps its exact prior
+  // navigation. When on, purchasable plans start a real checkout instead.
+  const checkout = useCheckout();
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white">
@@ -204,24 +210,38 @@ export default function PricingPage() {
 
               <Button
                 variant={plan.popular ? 'default' : 'outline'}
+                disabled={checkout.enabled && checkout.pendingSelector !== null}
                 className={`w-full h-10 text-[13px] font-medium rounded-xl ${
                   plan.popular
                     ? 'bg-white/[0.08] hover:bg-white/[0.12] text-white border border-white/[0.08]'
                     : 'border-white/[0.06] text-slate-400 hover:text-white hover:bg-white/[0.03]'
                 }`}
                 onClick={() => {
-                  if (plan.id === 'free') {
-                    navigate('/chat');
+                  // Flag ON + a real purchasable plan (pro/ultra) → provider-neutral
+                  // checkout. Everything else (flag off, free, enterprise) keeps the
+                  // exact prior navigation, so this is non-breaking by default.
+                  if (checkout.enabled && isPurchasablePlan(plan.id)) {
+                    void checkout.start(plan.id, yearly ? 'yearly' : 'monthly', { returnPath: '/pricing' });
                   } else {
                     navigate('/chat');
                   }
                 }}
               >
-                {plan.cta}
+                {checkout.enabled && isPurchasablePlan(plan.id) && checkout.pendingSelector?.startsWith(plan.id)
+                  ? 'Redirecting…'
+                  : plan.cta}
               </Button>
             </motion.div>
           ))}
         </div>
+
+        {/* Checkout error (PR #525) — bounded, provider-neutral. Only ever shown
+            when the flag is on and a checkout attempt failed; never grants access. */}
+        {checkout.enabled && checkout.error && (
+          <div className="mb-8 -mt-8 mx-auto max-w-md p-3 rounded-xl border border-[#B45B5B]/20 bg-[#B45B5B]/[0.04] text-center">
+            <p className="text-[12px] text-[#C98A8A]">{checkout.error}</p>
+          </div>
+        )}
 
         {/* Feature Comparison */}
         <motion.div

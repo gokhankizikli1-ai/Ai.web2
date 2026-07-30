@@ -142,4 +142,48 @@ async def create_checkout(
     return {"url": str(checkout_url), "checkout_id": str(checkout_id) if checkout_id else None}
 
 
-__all__ = ["create_checkout"]
+async def create_customer_session(*, external_customer_id: str) -> str:
+    """Create an authenticated Polar customer session and return ONLY the
+    validated HTTPS customer-portal URL. Identity is the AUTHORITATIVE Korvix
+    user id (external_customer_id) — never an arbitrary id from the frontend.
+
+    FAILS CLOSED: CheckoutConfigError when Polar is unconfigured; CheckoutUpstreamError
+    on any API/parse/URL problem (e.g. 404 = no such customer). NEVER logs the token.
+    """
+    token = polar_config.access_token()
+    if not token or not polar_config.organization_id():
+        raise CheckoutConfigError("polar is not configured")
+    uid = (external_customer_id or "").strip()
+    if not uid:
+        raise CheckoutConfigError("missing authenticated user id for customer session")
+
+    url = f"{polar_config.api_base()}/v1/customer-sessions"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    try:
+        resp = await _post(url, headers=headers, body={"external_customer_id": uid},
+                           timeout=checkout_config.timeout_seconds())
+    except httpx.HTTPError as exc:
+        logger.warning("portal: Polar customer-session request failed: %s", type(exc).__name__)
+        raise CheckoutUpstreamError("portal provider unreachable") from exc
+    if resp.status_code >= 400:
+        # 404 here typically means the user has no Polar customer yet.
+        logger.warning("portal: Polar customer-session returned status %d", resp.status_code)
+        raise CheckoutUpstreamError("portal provider error", status=resp.status_code)
+    try:
+        data = resp.json()
+        portal_url = (data.get("customer_portal_url") if isinstance(data, dict) else None)
+    except Exception as exc:  # pragma: no cover
+        logger.warning("portal: could not parse Polar customer-session: %s", type(exc).__name__)
+        raise CheckoutUpstreamError("portal provider returned an unexpected response") from exc
+    if not portal_url or not _valid_checkout_url(str(portal_url)):
+        logger.warning("portal: Polar customer-session missing/invalid portal url")
+        raise CheckoutUpstreamError("portal provider returned no valid url")
+    # Never log the URL (it authenticates a session).
+    return str(portal_url)
+
+
+__all__ = ["create_checkout", "create_customer_session"]

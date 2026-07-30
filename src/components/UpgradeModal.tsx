@@ -4,6 +4,8 @@ import {
   ArrowRight, Star, Shield,
 } from 'lucide-react';
 import { useState } from 'react';
+import { useCheckout } from '@/hooks/useCheckout';
+import { isPurchasablePlan } from '@/lib/billingApi';
 
 interface UpgradeModalProps {
   open: boolean;
@@ -75,6 +77,9 @@ const PLANS = [
 
 export default function UpgradeModal({ open, onClose }: UpgradeModalProps) {
   const [yearly, setYearly] = useState(false);
+  // PR #525 — flag-gated (VITE_ENABLE_CHECKOUT, OFF by default). When off the
+  // buttons stay inert exactly as before; when on, pro/ultra start a real checkout.
+  const checkout = useCheckout();
 
   return (
     <AnimatePresence>
@@ -194,13 +199,23 @@ export default function UpgradeModal({ open, onClose }: UpgradeModalProps) {
                   <motion.button
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
+                    disabled={checkout.enabled && checkout.pendingSelector !== null}
+                    onClick={() => {
+                      // Flag ON + purchasable plan → provider-neutral checkout.
+                      // Otherwise inert (unchanged from prior behaviour).
+                      if (checkout.enabled && isPurchasablePlan(plan.id)) {
+                        void checkout.start(plan.id, yearly ? 'yearly' : 'monthly', { returnPath: '/pricing' });
+                      }
+                    }}
                     className={`w-full h-9 rounded-lg text-[12px] font-medium transition-all flex items-center justify-center gap-1.5 ${
                       plan.popular
                         ? 'bg-white/[0.08] text-white hover:bg-white/[0.12] border border-white/[0.08]'
                         : 'bg-white/[0.02] text-slate-300 hover:bg-white/[0.04] border border-white/[0.05] hover:border-white/[0.08]'
                     }`}
                   >
-                    {plan.price.monthly === 0 ? (
+                    {checkout.enabled && isPurchasablePlan(plan.id) && checkout.pendingSelector?.startsWith(plan.id) ? (
+                      <>Redirecting…</>
+                    ) : plan.price.monthly === 0 ? (
                       <>Contact Sales <Shield className="h-3 w-3" /></>
                     ) : (
                       <>Upgrade <ArrowRight className="h-3 w-3" /></>
@@ -209,6 +224,13 @@ export default function UpgradeModal({ open, onClose }: UpgradeModalProps) {
                 </motion.div>
               ))}
             </div>
+
+            {/* Checkout error (PR #525) — bounded, provider-neutral. */}
+            {checkout.enabled && checkout.error && (
+              <div className="px-8 pb-2">
+                <p className="text-[11px] text-[#C98A8A]">{checkout.error}</p>
+              </div>
+            )}
 
             {/* Footer */}
             <div className="px-8 py-4 border-t border-white/[0.03] flex items-center justify-between">
