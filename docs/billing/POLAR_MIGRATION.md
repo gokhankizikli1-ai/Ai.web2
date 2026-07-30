@@ -212,3 +212,81 @@ New selector: **`BILLING_PROVIDER`** (default `lemon_squeezy`). Not required to 
 > Lemon webhook route is removed** (post-cutover), alongside the other `LEMON_SQUEEZY_*` vars. The Polar webhook
 > route reuses the SAME `billing_config.max_body_bytes()` cap (currently backed by that same env), so a future
 > generic rename (`BILLING_WEBHOOK_MAX_BYTES`) is the clean end-state; until then the cap stays Lemon-named.
+
+---
+
+## 11. PR #525 — Sandbox activation, checkout UI wiring & cutover readiness
+
+Status: **Frontend wired to the provider-neutral checkout path; Polar sandbox made operationally
+verifiable; customer-portal seam + cutover-readiness workflow added.** Lemon Squeezy is **still the
+default provider and is NOT removed**. Polar stays **dormant** until `BILLING_PROVIDER=polar`. **No new
+production environment variable is required to deploy this PR.** One FRONTEND-only boolean flag
+(`VITE_ENABLE_CHECKOUT`, default OFF) gates the new CTA behaviour, so the deploy is byte-for-byte
+non-breaking until it is flipped on.
+
+### What became real in PR #525
+- **Frontend checkout wiring** (`src/lib/billingApi.ts`, `src/hooks/useCheckout.ts`): the pricing/upgrade
+  CTAs (`PricingPage`, `UpgradeModal`, `CreditsPage`) now call `POST /v2/billing/checkout` sending **only**
+  the Korvix plan selector (`pro_monthly`, `ultra_yearly`, …). The browser never sends a provider name,
+  product/price/variant id, amount, currency, org id, customer id, quantity, or an arbitrary return URL.
+  No Polar SDK; no billing secret or product id in any VITE var (the single VITE flag is a boolean).
+- **Checkout return experience** (`src/pages/BillingReturn.tsx`, route `/billing/return`): provider-neutral
+  return states (checking / activated / pending / canceled / failed / not-synced). It grants **nothing**
+  from query params or the redirect — it refreshes the authoritative `GET /v2/billing/me` and only shows an
+  active plan when the **backend** confirms it. Otherwise it shows a bounded "Payment received. Your
+  subscription is being confirmed." and polls a small, bounded number of times.
+- **Authoritative account snapshot** (`GET /v2/billing/me`, `routes/v2_billing_account.py`): reuses the
+  EXISTING entitlement resolver (no new engine) to return a bounded `{plan, status, provider, active,
+  source}`. `active` is true only when the backend granted an entitling (non-default) plan.
+- **Customer-portal seam** (`POST /v2/billing/customer-portal`, `billing/portal.py`): smallest
+  provider-neutral seam. Polar → an **authenticated** Polar customer session
+  (`billing/polar/checkout.create_customer_session` → `POST /v1/customer-sessions`) keyed on the
+  authoritative Korvix user id (`external_customer_id`), returning **only** a validated HTTPS
+  `customer_portal_url` — never Polar's generic public URL, never an arbitrary customer id. Lemon → typed
+  `PortalNotAvailable` (no portal implemented — honest, **not** a silent cross-provider fallback). Fails
+  closed when unconfigured / the user has no provider customer mapping. No access token is ever exposed.
+- **Polar configuration-readiness check** (`GET /v2/admin/billing/readiness`, owner-only,
+  `billing/readiness.py`): a **read-only** evaluator that makes **no external call** — it reports
+  *configuration readiness*, not provider health. Booleans + counts + the (non-secret) server name only;
+  never tokens, secrets, product ids or full JSON. Distinguishes code-installed / config-present /
+  sandbox-ready (`readyForSandboxCheckout`) / production-ready (`readyForProductionCutover`) and the
+  currently-selected provider.
+- **Config validation strengthened** (`backend/core/config.py`, §7): with `BILLING_PROVIDER` unset/`lemon`,
+  Polar vars stay optional (Lemon path untouched). With `BILLING_PROVIDER=polar` it now also requires
+  `POLAR_WEBHOOK_SECRET`, `ENABLE_BILLING`, `ENABLE_BILLING_CHECKOUT`, an active Polar variant + product-id
+  plan mapping + a return URL; an explicitly-unknown provider still fails validation (no silent Lemon); and
+  Polar **production** with a non-green readiness gate **fails closed** (critical, never a soft warning).
+
+### Polar webhook URL & events (configure in the Polar dashboard)
+- **Endpoint:** `POST https://<backend-host>/v2/billing/webhooks/polar`
+- **Signature:** Standard Webhooks (base64 HMAC-SHA256), secret `POLAR_WEBHOOK_SECRET`. The **sandbox**
+  secret is **distinct** from the production secret. Verification is constant-time over the **raw body**,
+  before JSON parse; a missing/invalid signature fails closed (no state change).
+- **Events to enable:** `subscription.created`, `subscription.updated`, `subscription.active`,
+  `subscription.canceled`, `subscription.uncanceled`, `subscription.revoked` (order/payment events are
+  accepted and deduped but entitlement is driven by subscription state).
+- The webhook may be configured **while Lemon is still the live provider** — validation ≠ grant, and a
+  duplicate delivery is idempotent (`UNIQUE(provider, dedup_key)`, `dedup_key = sha256(raw body)`).
+
+### 12. Manual Polar sandbox test plan (NOT executed here — run by an operator)
+> This PR authors this checklist; per its execution constraint nothing below was run, no real Polar/Lemon
+> API was called, no migration was executed, and no live deployment variable was changed.
+
+1. In Polar **sandbox**, create the products/prices for the Starter/Pro/Ultra plans; note the product ids.
+2. Backend env (sandbox/staging only): `BILLING_PROVIDER=polar`, `POLAR_SERVER=sandbox`,
+   `POLAR_ACCESS_TOKEN`/`POLAR_ORGANIZATION_ID`/`POLAR_WEBHOOK_SECRET` (sandbox), `ENABLE_BILLING=true`,
+   `ENABLE_BILLING_CHECKOUT=true`; add the Polar product ids to `BILLING_CHECKOUT_VARIANTS_JSON`
+   (with `provider: polar`) and `BILLING_PLAN_MAP_JSON` (`product:<id>` → plan); set the return URL.
+3. Frontend (sandbox build): `VITE_ENABLE_CHECKOUT=true`.
+4. Owner-check `GET /v2/admin/billing/readiness` → confirm `readyForSandboxCheckout: true`, `missing: []`.
+5. Configure the Polar sandbox webhook to the endpoint + events above (sandbox secret).
+6. As a signed-in test user, click **Upgrade to Pro** → confirm the request body is `{ "variant":
+   "pro_monthly" }` only, and the browser is redirected to the Polar hosted checkout.
+7. Complete a sandbox payment → land on `/billing/return`. Confirm it shows "Payment received … being
+   confirmed" first, then flips to the active plan **only after** the webhook is processed and
+   `GET /v2/billing/me` reports `active: true`.
+8. Verify idempotency (re-deliver the webhook → no duplicate grant), cancellation-at-period-end + grace,
+   and that an unknown product grants nothing.
+9. `POST /v2/billing/customer-portal` for that user → returns a validated HTTPS portal URL; a user with no
+   Polar customer returns 404 (fail-safe).
+10. Roll back by setting `BILLING_PROVIDER=lemon_squeezy` (instant; no restart, no data migration).

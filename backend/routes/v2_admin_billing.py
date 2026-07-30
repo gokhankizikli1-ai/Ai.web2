@@ -92,6 +92,7 @@ from backend.services.billing.entitlements import gating as entitlement_gating
 from backend.services.billing.usage import service as usage_service
 from backend.services.billing.checkout import service as checkout_service
 from backend.services.billing.credits import service as credits_service
+from backend.services.billing import readiness as billing_readiness
 from backend.services.billing.types import VALID_STATUSES
 from backend.services.billing.subscriptions.types import VALID_SUBSCRIPTION_STATUSES
 
@@ -360,6 +361,19 @@ async def billing_plans(
     operator verify the entitlement configuration without a deploy."""
     _audit(user, "admin.billing.plans.view", request)
     return JSONResponse(content=envelope_ok(entitlement_service.list_plans()), headers=_NO_STORE)
+
+
+@router.get("/readiness")
+async def billing_readiness_view(
+    request: Request,
+    user: User = Depends(owner_gate),
+) -> JSONResponse:
+    """PR #525 — Polar CONFIGURATION readiness (owner-only). Booleans + counts +
+    the non-secret server name ONLY — never tokens, webhook secrets, product ids
+    or mappings. Makes NO external call, so it is configuration readiness, NOT
+    provider health/connectivity."""
+    _audit(user, "admin.billing.readiness.view", request)
+    return JSONResponse(content=envelope_ok(billing_readiness.polar_readiness()), headers=_NO_STORE)
 
 
 @router.get("/entitlements/{user_id}")

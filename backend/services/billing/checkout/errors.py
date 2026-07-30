@@ -44,6 +44,16 @@ class CheckoutProviderUnavailable(CheckoutError):
         self.provider = provider
 
 
+class PortalNotAvailable(CheckoutError):
+    """The customer portal is not available for the active provider (e.g. no
+    Lemon portal is implemented). → 404. Never a silent cross-provider fallback."""
+
+
+class PortalNoCustomer(CheckoutError):
+    """The authenticated user has no provider customer mapping yet (never checked
+    out). → 404. Fails SAFE — no portal is minted for an unmapped user."""
+
+
 __all__ = [
     "CheckoutError", "CheckoutDisabled", "CheckoutConfigError",
     "CheckoutValidationError", "CheckoutUpstreamError",

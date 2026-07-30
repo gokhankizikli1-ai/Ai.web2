@@ -60,6 +60,7 @@ const ProjectResults = lazy(() => import('./pages/ProjectResults'));
 const AgentsPage = lazy(() => import('./pages/AgentsPage'));
 const AgentChatPage = lazy(() => import('./pages/AgentChatPage'));
 const CreditsPage = lazy(() => import('./pages/CreditsPage'));
+const BillingReturn = lazy(() => import('./pages/BillingReturn'));
 const OwnerCosts = lazy(() => import('./pages/OwnerCosts'));
 
 import BottomNav from './components/BottomNav';
@@ -367,6 +368,10 @@ export default function App() {
         <Route path="/login" element={<AnimatedRoute><AuthPage /></AnimatedRoute>} />
         <Route path="/signup" element={<AnimatedRoute><AuthPage mode="signup" /></AnimatedRoute>} />
         <Route path="/credits" element={<ProtectedRoute guestAllowed={false} redirectTo="/signup"><AnimatedRoute><CreditsPage /></AnimatedRoute></ProtectedRoute>} />
+        {/* PR #525 — provider-neutral checkout return. Requires an account (identity is
+             backend-derived); the page grants NOTHING from the URL and refreshes the
+             authoritative /v2/billing/me snapshot before showing any active-plan state. */}
+        <Route path="/billing/return" element={<ProtectedRoute guestAllowed={false} redirectTo="/signup"><AnimatedRoute><BillingReturn /></AnimatedRoute></ProtectedRoute>} />
 
         {/* ═══ Explore — requires account ═══ */}
         <Route path="/explore" element={<ProtectedRoute guestAllowed={false} redirectTo="/signup"><AnimatedRoute><ExplorePage /></AnimatedRoute></ProtectedRoute>} />
