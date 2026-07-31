@@ -138,7 +138,7 @@ const PLANS: PlanData[] = [
       'Dedicated support',
     ],
     limits: [],
-    cta: 'Upgrade to Ultra',
+    cta: 'Upgrade to Max',
   },
 ];
 
@@ -980,7 +980,7 @@ export default function CreditsPage() {
                 <div>
                   <p className="text-[12px] font-medium text-white mb-1">Credit Rollover</p>
                   <p className="text-[11px] text-[#94A3B8]">
-                    Unused credits roll over to next month (up to 50% of plan). Pro plan: up to 200 credits rollover. Ultra plan: up to 500 credits rollover. Free plan: no rollover.
+                    Unused credits roll over to next month (up to 50% of plan). Pro plan: up to 200 credits rollover. Max plan: up to 500 credits rollover. Free plan: no rollover.
                   </p>
                 </div>
               </div>
