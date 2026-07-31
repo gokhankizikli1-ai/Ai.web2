@@ -6,10 +6,14 @@
  *  - This is the DISPLAY catalog. It is SEPARATE from the provider product
  *    mappings (BILLING_PLAN_MAP_JSON) and from the backend entitlement catalog
  *    that actually GRANTS access. Nothing here grants a feature.
- *  - Prices are the current configured marketing prices, kept in ONE place so the
- *    pricing page, upgrade modal and account UI can't disagree. They are NOT the
- *    Polar sandbox prices — sandbox prices must never overwrite marketing prices.
- *    Replace these when authoritative production prices are supplied.
+ *  - PRICES ARE NOT LOCKED. Final prices and credit allocations are not decided,
+ *    so NO concrete/final price is shown here — cards render a neutral
+ *    "Pricing at launch" state (Enterprise is "Custom"). Do NOT hardcode or
+ *    invent a production price. The Polar sandbox prices are never surfaced here.
+ *  - FEATURES: only backend-verified/universally-available capabilities appear on
+ *    a card. Everything not yet implemented + backend-enforced lives in
+ *    PLANNED_CAPABILITIES (a "coming later" list OUTSIDE the purchasable features),
+ *    never as a per-plan claim.
  *  - Internal keys are STABLE (free/basic/pro/ultra/enterprise) so stored
  *    subscriptions/mappings are never broken; only the label differs
  *    (basic → Starter, ultra → Max).
@@ -21,15 +25,13 @@ export interface PricingPlan {
   key: Extract<PlanKey, 'basic' | 'pro' | 'ultra' | 'enterprise'>;
   /** User-facing label (final plan structure). */
   label: string;
-  /** Current configured monthly price in USD, or null for custom (Enterprise). */
-  priceMonthly: number | null;
   /** Ordering for upgrade/downgrade comparisons (matches backend plan ranks). */
   rank: number;
   popular?: boolean;
   /** Short marketing description. */
   description: string;
-  /** Feature copy. Display-only; see the truth table in the PR — the backend does
-   *  not yet gate these per plan, so they are indicative, not entitlements. */
+  /** ONLY verified/available capabilities. Unimplemented capabilities are NOT
+   *  listed here — they belong in PLANNED_CAPABILITIES. */
   features: string[];
 }
 
@@ -49,64 +51,55 @@ export function planRank(key: PlanKey | null | undefined): number {
  * The four purchasable/contact cards. Free is the default account tier and is
  * shown as a current-plan banner rather than a purchasable card.
  *
- * Prices preserved from the existing configured marketing values (Pro $20, Max
- * $49; Starter uses the previously-configured Basic price of $9; Enterprise is
- * custom). Do NOT invent production prices here.
+ * NO concrete prices — final prices/credits are not locked (see the header).
+ * Card `features` list ONLY the verified capability available today: core AI
+ * chat (available on every tier). Everything else that is planned but not yet
+ * implemented + enforced is in PLANNED_CAPABILITIES below, clearly outside the
+ * purchasable feature list.
  */
+const VERIFIED_INCLUDED = 'Core AI chat';
+
 export const PRICING_PLANS: PricingPlan[] = [
   {
-    key: 'basic', label: 'Starter', priceMonthly: 9, rank: 10,
-    description: 'For getting started with real work',
-    features: [
-      'Core AI chat',
-      'Starter monthly credits',
-      'Limited Web Build access',
-      'Project saving',
-      'Standard response speed',
-      'Basic file analysis',
-    ],
+    key: 'basic', label: 'Starter', rank: 10,
+    description: 'For getting started',
+    features: [VERIFIED_INCLUDED],
   },
   {
-    key: 'pro', label: 'Pro', priceMonthly: 20, rank: 20, popular: true,
-    description: 'For professionals who need more power',
-    features: [
-      'Everything in Starter',
-      'Higher monthly credits',
-      'Full Web Build access',
-      'Deep Research access',
-      'Advanced file analysis',
-      'Custom instructions',
-      'Priority processing',
-    ],
+    key: 'pro', label: 'Pro', rank: 20, popular: true,
+    description: 'For professionals who need more',
+    features: [VERIFIED_INCLUDED],
   },
   {
-    key: 'ultra', label: 'Max', priceMonthly: 49, rank: 30,
+    key: 'ultra', label: 'Max', rank: 30,
     description: 'For power users and teams',
-    features: [
-      'Everything in Pro',
-      'Highest monthly credits',
-      'All available agents',
-      'Advanced Web and App Build',
-      'Larger working context',
-      'Priority model access',
-      'Advanced analytics',
-      'Priority support',
-    ],
+    features: [VERIFIED_INCLUDED],
   },
   {
-    key: 'enterprise', label: 'Enterprise', priceMonthly: null, rank: 40,
+    key: 'enterprise', label: 'Enterprise', rank: 40,
     description: 'For organizations at scale',
-    features: [
-      'Everything in Max',
-      'SSO and SAML',
-      'Team administration',
-      'Audit and compliance controls',
-      'API access',
-      'Custom AI configuration',
-      'Dedicated infrastructure options',
-      'SLA and enterprise support',
-    ],
+    features: [VERIFIED_INCLUDED],
   },
+];
+
+/**
+ * Planned capabilities — NOT yet implemented and backend-enforced, so they are
+ * NOT shown as per-plan purchasable features. Rendered in a clearly-labeled
+ * "coming later" section so we never imply a paid entitlement that isn't live.
+ * Which tier each lands in is decided when prices/entitlements are finalized.
+ */
+export const PLANNED_CAPABILITIES: string[] = [
+  'Higher monthly credit allocations',
+  'Full Web Build access',
+  'Deep Research',
+  'Advanced file analysis',
+  'Custom instructions',
+  'AI agents',
+  'Larger working context',
+  'Priority processing & model access',
+  'Advanced analytics',
+  'SSO / SAML, team administration & audit controls (Enterprise)',
+  'API access & dedicated infrastructure (Enterprise)',
 ];
 
 /**

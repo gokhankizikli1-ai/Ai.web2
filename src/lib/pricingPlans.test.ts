@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  PRICING_PLANS, ctaFor, planRank, hasYearlyVariants, YEARLY_VARIANTS_AVAILABLE,
+  PRICING_PLANS, PLANNED_CAPABILITIES, ctaFor, planRank, hasYearlyVariants, YEARLY_VARIANTS_AVAILABLE,
 } from '@/lib/pricingPlans';
 
 /**
@@ -25,10 +25,33 @@ describe('pricing catalog structure', () => {
     expect(new Set(ranks).size).toBe(ranks.length);
   });
 
-  it('Enterprise price is custom (null); others are concrete', () => {
-    const ent = PRICING_PLANS.find((p) => p.key === 'enterprise')!;
-    expect(ent.priceMonthly).toBeNull();
-    expect(PRICING_PLANS.find((p) => p.key === 'pro')!.priceMonthly).toBeGreaterThan(0);
+  it('exposes NO concrete/final price (prices are not locked)', () => {
+    for (const p of PRICING_PLANS) {
+      // The field is removed from the model; nothing numeric leaks as a price.
+      expect((p as unknown as Record<string, unknown>).priceMonthly).toBeUndefined();
+    }
+  });
+});
+
+describe('feature honesty — cards list only verified capabilities', () => {
+  it('every card feature is the verified/available item only', () => {
+    for (const p of PRICING_PLANS) {
+      expect(p.features).toEqual(['Core AI chat']);
+    }
+  });
+
+  it('unimplemented capabilities live OUTSIDE the cards, in PLANNED_CAPABILITIES', () => {
+    expect(PLANNED_CAPABILITIES.length).toBeGreaterThan(0);
+    const cardFeatures = new Set(PRICING_PLANS.flatMap((p) => p.features));
+    // The planned list and the card features are disjoint (no double-claiming).
+    for (const planned of PLANNED_CAPABILITIES) {
+      expect(cardFeatures.has(planned)).toBe(false);
+    }
+    // Guard against re-introducing unverified paid claims on the cards.
+    const banned = ['Deep Research', 'Web Build', 'agents', 'SSO', 'API access', 'credits'];
+    for (const feat of cardFeatures) {
+      for (const b of banned) expect(feat.toLowerCase()).not.toContain(b.toLowerCase());
+    }
   });
 });
 

@@ -7,7 +7,7 @@ import { useNavigate } from 'react-router';
 import { useCheckout } from '@/hooks/useCheckout';
 import { isPurchasablePlan } from '@/lib/billingApi';
 import { useBillingPlan } from '@/hooks/useBillingPlan';
-import { PRICING_PLANS, ctaFor, YEARLY_VARIANTS_AVAILABLE, type PricingPlan } from '@/lib/pricingPlans';
+import { PRICING_PLANS, PLANNED_CAPABILITIES, ctaFor, YEARLY_VARIANTS_AVAILABLE, type PricingPlan } from '@/lib/pricingPlans';
 import { planLabel } from '@/lib/plan';
 
 /**
@@ -135,14 +135,13 @@ export default function PricingPage() {
                     <Icon className="h-5 w-5 text-[#7890A3]/70" />
                     <h3 className="text-[18px] font-semibold">{card.label}</h3>
                   </div>
-                  <div className="flex items-baseline gap-1 mb-1">
-                    {card.priceMonthly === null ? (
+                  <div className="mb-1">
+                    {/* Final prices/credits are not locked yet — never show an
+                        invented price. Enterprise is Custom; the rest are TBD. */}
+                    {card.key === 'enterprise' ? (
                       <span className="text-3xl font-bold">Custom</span>
                     ) : (
-                      <>
-                        <span className="text-3xl font-bold">${card.priceMonthly}</span>
-                        <span className="text-[13px] text-slate-600">/mo</span>
-                      </>
+                      <span className="text-[15px] font-medium text-slate-300">Pricing at launch</span>
                     )}
                   </div>
                   <p className="text-[12px] text-slate-600">{card.description}</p>
@@ -183,6 +182,28 @@ export default function PricingPage() {
           </div>
         )}
 
+        {/* Coming later — capabilities that are planned but NOT yet implemented +
+            backend-enforced. Kept OUTSIDE the purchasable cards so no plan claims
+            a feature it doesn't grant. Tier placement is decided when prices and
+            entitlements are finalized. */}
+        <div className="mb-8 rounded-2xl border border-white/[0.04] bg-white/[0.005] p-6">
+          <div className="flex items-center gap-2 mb-3">
+            <Sparkles className="h-4 w-4 text-[#7890A3]/70" />
+            <h2 className="text-[15px] font-semibold">Coming to paid plans</h2>
+          </div>
+          <p className="text-[12px] text-slate-600 mb-4">
+            These capabilities are on the way. They aren’t part of any plan’s included features yet — we’ll announce which tier each lands in when pricing is finalized.
+          </p>
+          <ul className="grid sm:grid-cols-2 gap-2">
+            {PLANNED_CAPABILITIES.map((c) => (
+              <li key={c} className="flex items-start gap-2 text-[12px] text-slate-400">
+                <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-[#7890A3]/40" />
+                {c}
+              </li>
+            ))}
+          </ul>
+        </div>
+
         {/* Payments note */}
         <motion.div
           initial={{ opacity: 0 }}
@@ -191,7 +212,7 @@ export default function PricingPage() {
           className="mt-2 p-4 rounded-xl border border-[#A68A5B]/10 bg-[#A68A5B]/[0.02] text-center"
         >
           <p className="text-[12px] text-slate-500">
-            Free tier is available during early access. Prices shown are indicative and may change before general availability.
+            Free tier is available during early access. Final prices and credit allocations aren’t locked yet — they’ll be confirmed before general availability.
           </p>
         </motion.div>
 
