@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router';
 import { Coins, Crown, ArrowRight, Zap } from 'lucide-react';
 import { useBillingPlan } from '@/hooks/useBillingPlan';
+import { useCredits } from '@/hooks/useCredits';
 
 export default function CreditDisplay() {
   const [open, setOpen] = useState(false);
@@ -12,9 +13,11 @@ export default function CreditDisplay() {
   // (useBillingPlan → /v2/billing/me). null while loading → neutral (no label).
   const { label: planLabel } = useBillingPlan();
 
-  const creditsRemaining = 153;
-  const creditsTotal = 300;
-  const usagePercent = Math.round((creditsTotal - creditsRemaining) / creditsTotal * 100);
+  // Server-authoritative balance (Phase 1). `balance` is null while loading /
+  // unknown / on failure → render a neutral placeholder, NEVER a fabricated
+  // number. No monthly limit is invented, so there is no "/ total".
+  const { balance } = useCredits();
+  const balanceLabel = balance === null ? '—' : balance.toLocaleString();
 
   useEffect(() => {
     const handle = (e: MouseEvent) => {
@@ -34,8 +37,7 @@ export default function CreditDisplay() {
         className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[#FACC15]/[0.04] border border-[#FACC15]/6 hover:bg-[#FACC15]/[0.07] transition-colors"
       >
         <Coins className="w-3 h-3 text-[#FACC15]/60" />
-        <span className="text-[10px] font-medium text-[#FACC15]/70 tabular-nums">{creditsRemaining}</span>
-        <span className="text-[9px] text-[#FACC15]/30">/{creditsTotal}</span>
+        <span className="text-[10px] font-medium text-[#FACC15]/70 tabular-nums">{balanceLabel}</span>
       </motion.button>
 
       <AnimatePresence>
@@ -60,15 +62,14 @@ export default function CreditDisplay() {
               </div>
 
               <div className="flex items-baseline gap-1.5">
-                <span className="text-lg font-bold text-white tabular-nums">{creditsRemaining}</span>
-                <span className="text-[10px] text-[#94A3B8]">/ {creditsTotal}</span>
+                <span className="text-lg font-bold text-white tabular-nums">{balanceLabel}</span>
+                <span className="text-[10px] text-[#94A3B8]">credits</span>
               </div>
-
-              {/* Progress */}
-              <div className="w-full h-1 bg-white/[0.03] rounded-full mt-2 overflow-hidden">
-                <div className="h-full rounded-full bg-[#3B82F6]/40" style={{ width: `${usagePercent}%` }} />
-              </div>
-              <p className="text-[9px] text-[#94A3B8] mt-1">{usagePercent}% used · Resets in 12d</p>
+              {/* No monthly limit is invented in Phase 1 — the balance is the
+                  authoritative figure; plan-specific allowances come later. */}
+              {balance === null && (
+                <p className="text-[9px] text-[#94A3B8] mt-1">Balance unavailable right now</p>
+              )}
             </div>
 
             {/* Free chat badge */}
