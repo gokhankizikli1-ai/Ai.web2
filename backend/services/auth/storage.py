@@ -192,11 +192,21 @@ def get_or_create_user(
             if row:
                 return _row_to_user(row)
             raise   # genuinely unexpected
-        return User(
+        new_user = User(
             id=uid, kind=kind, external_id=external_id,
             display_name=display_name, created_at=now, last_seen_at=now,
             metadata={},
         )
+        # Credits Phase 1 — one-time starter grant for a newly created REAL
+        # account (guests are skipped inside the gateway). Keyed on this user's
+        # id (== the principal `sub` for this account), idempotent via the
+        # ledger's UNIQUE(reference) index, and best-effort (never breaks auth).
+        try:
+            from backend.services.credits_gateway import ensure_starter_grant
+            ensure_starter_grant(uid, kind=kind)
+        except Exception:  # pragma: no cover — auth must never fail on credits
+            pass
+        return new_user
 
 
 def get_user_by_id(user_id: str) -> Optional[User]:

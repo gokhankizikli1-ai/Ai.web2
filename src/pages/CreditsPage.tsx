@@ -13,6 +13,7 @@ import Navigation from '@/components/Navigation';
 import PremiumSlider from '@/components/PremiumSlider';
 import { useCheckout } from '@/hooks/useCheckout';
 import { isPurchasablePlan } from '@/lib/billingApi';
+import { useCredits } from '@/hooks/useCredits';
 
 /* ═══════════════════════════════════════════
    CREDIT COSTS — realistic AI usage economy
@@ -535,14 +536,15 @@ function CustomPlanBuilder({ isYearly }: { isYearly: boolean }) {
    ═══════════════════════════════════════════ */
 
 export default function CreditsPage() {
-  const [creditsRemaining] = useState(153);
-  const creditsTotal = 300;
   const [selectedPack, setSelectedPack] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'plans' | 'packs' | 'usage' | 'custom'>('plans');
   const [isYearly, setIsYearly] = useState(false);
   const [customCredits, setCustomCredits] = useState(500);
 
-  const usagePercent = Math.round((creditsTotal - creditsRemaining) / creditsTotal * 100);
+  // Server-authoritative balance (Phase 1). null → neutral (loading/unknown/error);
+  // never a fabricated number, and no invented monthly limit.
+  const { balance } = useCredits();
+  const balanceLabel = balance === null ? '—' : balance.toLocaleString();
 
   const tabs = [
     { id: 'plans' as const, label: 'Plans', icon: Crown },
@@ -578,28 +580,22 @@ export default function CreditsPage() {
                   <CreditCard className="w-6 h-6 text-[#FACC15]" />
                 </div>
                 <div>
-                  <p className="text-[11px] text-[#94A3B8] uppercase tracking-wider">Remaining Credits</p>
+                  <p className="text-[11px] text-[#94A3B8] uppercase tracking-wider">Credit Balance</p>
                   <div className="flex items-baseline gap-2">
-                    <p className="text-3xl font-bold text-white tabular-nums">{creditsRemaining}</p>
-                    <p className="text-[13px] text-[#94A3B8]">/ {creditsTotal}</p>
+                    <p className="text-3xl font-bold text-white tabular-nums">{balanceLabel}</p>
+                    <p className="text-[13px] text-[#94A3B8]">credits</p>
                   </div>
                 </div>
               </div>
 
-              {/* Progress bar */}
+              {/* Phase 1: authoritative balance only — no monthly limit / reset is
+                  invented here; plan-specific allowances arrive in a later phase. */}
               <div className="flex-1 max-w-xs">
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-[10px] text-[#94A3B8]">{usagePercent}% used this period</span>
-                  <span className="text-[10px] text-[#94A3B8]">Resets in 12 days</span>
-                </div>
-                <div className="w-full h-2 bg-white/[0.03] rounded-full overflow-hidden">
-                  <motion.div
-                    className="h-full rounded-full bg-[#60A5FA]/50"
-                    initial={{ width: 0 }}
-                    animate={{ width: `${usagePercent}%` }}
-                    transition={{ duration: 1, ease: 'easeOut' }}
-                  />
-                </div>
+                <p className="text-[11px] text-[#94A3B8]">
+                  {balance === null
+                    ? 'Balance unavailable right now.'
+                    : 'Your current credit balance. Casual chat stays free.'}
+                </p>
               </div>
 
               <div className="flex items-center gap-2 shrink-0">

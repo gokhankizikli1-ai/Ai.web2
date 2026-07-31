@@ -305,7 +305,16 @@ def create_user(email: str, password: str, display_name: str = "") -> dict:
         except sqlite3.IntegrityError:
             raise EmailExistsError("An account with this email already exists.")
         cur = c.execute("SELECT * FROM auth_password_users WHERE id = ?", (uid,))
-        return _row_to_public(cur.fetchone())
+        public = _row_to_public(cur.fetchone())
+    # Credits Phase 1 — one-time starter grant for the newly created account.
+    # `uid` is this account's principal `sub`, so the balance shows for the same
+    # identity used by /v2/billing/credits/me. Idempotent + best-effort.
+    try:
+        from backend.services.credits_gateway import ensure_starter_grant
+        ensure_starter_grant(uid)
+    except Exception:  # pragma: no cover — signup must never fail on credits
+        pass
+    return public
 
 
 def _update_password_hash(user_id: str, new_hash: str) -> None:

@@ -310,6 +310,7 @@ def _build_full_app():
         "backend.routes.v2_billing",           # Billing PR 1 — /v2/billing/webhooks/lemon-squeezy (gated by ENABLE_BILLING; 503 when off)
         "backend.routes.v2_billing_checkout",  # Billing PR 7 — /v2/billing/checkout (authenticated; gated by ENABLE_BILLING_CHECKOUT; 503 when off)
         "backend.routes.v2_billing_account",   # PR #525 — /v2/billing/me (authoritative account snapshot) + /v2/billing/customer-portal (authenticated; gated by ENABLE_BILLING; 503 when off)
+        "backend.routes.v2_billing_credits",   # Credits Phase 1 — GET /v2/billing/credits/me (authenticated; authoritative balance; dormant when ENABLE_BILLING_CREDITS off)
         "backend.routes.design_debug",         # PR 507 — /debug/design-trace/{build_id} developer-only trace (owner-only; gated by ENABLE_DESIGN_DEBUG; 404 when off)
     ]:
         try:
