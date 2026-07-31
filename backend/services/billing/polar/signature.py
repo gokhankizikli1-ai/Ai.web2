@@ -9,10 +9,21 @@ specific — this module NEVER touches the Lemon verifier and vice-versa.
 Standard Webhooks contract:
   * headers `webhook-id`, `webhook-timestamp`, `webhook-signature`
   * signed content = `{id}.{timestamp}.{raw_body}`
-  * signature = base64( HMAC-SHA256(secret, signed_content) )
+  * signature = base64( HMAC-SHA256(key, signed_content) )
   * the `webhook-signature` header may carry multiple space-separated
     `v1,<base64sig>` entries; any valid one authenticates.
-  * the secret is typically `whsec_<base64>`; the base64 part is the raw key.
+
+HMAC key — Polar's specific behavior (verified against the official SDKs):
+  Polar's `validate_event` base64-ENCODES the raw dashboard secret and hands that
+  to the Standard-Webhooks verifier, which base64-DECODES it again — so the net
+  HMAC key is the **raw secret string's UTF-8 bytes, exactly as configured in the
+  dashboard** (e.g. `polar_whs_…`, prefix included). Polar does NOT base64-decode
+  the dashboard secret. We therefore use the raw trimmed secret bytes as the key
+  and NEVER base64-decode it (decoding a `polar_whs_…`/raw secret silently
+  produced the wrong key → every delivery 401'd).
+    * polarsource/polar-js validateEvent: Buffer.from(secret,"utf-8").toString("base64")
+    * standard-webhooks Webhook.__init__: strips optional `whsec_`, then b64decode
+    * compose: b64decode(b64encode(secret.utf8)) == secret.utf8  → key = raw bytes
 
 Security: constant-time comparison; a bounded timestamp tolerance rejects
 replays; the raw body bytes are signed as-received (verified BEFORE JSON parse).
@@ -36,17 +47,19 @@ _WEBHOOK_SIGNATURE = "webhook-signature"
 
 
 def _secret_bytes(secret: str) -> Optional[bytes]:
-    """Standard-Webhooks secret → raw HMAC key. Strips the `whsec_` prefix and
-    base64-decodes; falls back to the UTF-8 bytes if it is not valid base64."""
+    """Polar webhook secret → HMAC key: the RAW trimmed dashboard secret's UTF-8
+    bytes, used exactly as configured (prefix and all). This matches Polar's
+    official SDK (which base64-encodes the raw secret and lets the Standard-
+    Webhooks verifier base64-decode it back — net identity → raw bytes).
+
+    We deliberately do NOT strip any prefix and NEVER base64-decode: decoding a
+    modern `polar_whs_…` (or any raw) secret silently dropped its non-base64
+    characters and produced the WRONG key, rejecting every valid delivery as 401.
+    Returns None only for an empty secret (fail closed)."""
     s = (secret or "").strip()
     if not s:
         return None
-    if s.startswith("whsec_"):
-        s = s[len("whsec_"):]
-    try:
-        return base64.b64decode(s)
-    except Exception:
-        return s.encode("utf-8")
+    return s.encode("utf-8")
 
 
 def _lower_headers(headers: Mapping[str, str]) -> dict:
