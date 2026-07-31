@@ -248,7 +248,7 @@ async def register(body: RegisterRequest, request: Request):
       400 validation_error  — bad email shape or password length
       503 auth_not_configured — JWT_SECRET_KEY missing in production
     """
-    from backend.services.auth import passwords
+    from backend.services.auth import passwords, verification
     try:
         user = passwords.create_user(body.email, body.password, body.display_name)
     except passwords.EmailExistsError as exc:
@@ -256,8 +256,33 @@ async def register(body: RegisterRequest, request: Request):
     except passwords.InvalidInputError as exc:
         return _envelope_error_response(400, "validation_error", str(exc), "/v2/auth/register")
 
+    # A password account starts UNVERIFIED — the starter grant is gated behind
+    # email confirmation (see services/auth/verification). Mirrors /auth/signup.
+    uid = user["id"]
+    email = user.get("email", "")
+    enforced = bool(getattr(settings, "ENABLE_EMAIL_VERIFICATION", False))
+    try:
+        verification.record_pending(uid, email)
+        if enforced:
+            from backend.services.auth.verification_email import send_verification_email
+            await send_verification_email(
+                uid, email,
+                request_ip=str(request.client.host) if request.client else None,
+            )
+        else:
+            verification.mark_verified(uid, email, source="enforcement_disabled")
+    except Exception as exc:
+        logger.warning("auth.v2_register: verification wiring failed (non-fatal): %s", exc)
+
+    try:
+        user = dict(user)
+        user["email_verified"] = True if not enforced else verification.is_verified(uid)
+        user["verification_required"] = enforced and not verification.is_verified(uid)
+    except Exception:
+        pass
+
     access_token = _access_token_for_password_user(user)
-    logger.info("auth.v2_register ok | user=%s", user["id"])
+    logger.info("auth.v2_register ok | user=%s", uid)
     return envelope_ok(
         data={
             "user":         user,

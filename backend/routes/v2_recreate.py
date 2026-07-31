@@ -9,7 +9,7 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException, Path
 from pydantic import BaseModel, Field
 
-from backend.core.deps import current_user
+from backend.core.deps import current_user, require_verified_identity
 from backend.core.responses import ok as envelope_ok
 from backend.services.auth.identity import User
 from backend.services.billing.entitlements import gating
@@ -42,6 +42,7 @@ class AnalyzeBody(BaseModel):
 @router.post(
     "/analyze",
     dependencies=[
+        Depends(require_verified_identity),
         Depends(gating.require_feature(gating.FEATURE_WEBSITE_RECREATION)),
         Depends(require_quota(usage.METRIC_WEBSITE_RECREATIONS)),
     ],

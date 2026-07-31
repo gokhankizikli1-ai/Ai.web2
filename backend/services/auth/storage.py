@@ -197,15 +197,12 @@ def get_or_create_user(
             display_name=display_name, created_at=now, last_seen_at=now,
             metadata={},
         )
-        # Credits Phase 1 — one-time starter grant for a newly created REAL
-        # account (guests are skipped inside the gateway). Keyed on this user's
-        # id (== the principal `sub` for this account), idempotent via the
-        # ledger's UNIQUE(reference) index, and best-effort (never breaks auth).
-        try:
-            from backend.services.credits_gateway import ensure_starter_grant
-            ensure_starter_grant(uid, kind=kind)
-        except Exception:  # pragma: no cover — auth must never fail on credits
-            pass
+        # NOTE: the starter grant is NO LONGER issued at identity creation. It is
+        # gated behind a verified email and fires from
+        # services/auth/verification.mark_verified(). For provider-verified OAuth
+        # (Google asserts email_verified server-side) the OAuth login route calls
+        # mark_verified after get_or_create_user, which issues the grant exactly
+        # once. Guests are never verified and never granted.
         return new_user
 
 

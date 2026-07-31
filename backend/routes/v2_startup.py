@@ -20,7 +20,7 @@ import os
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from backend.core.deps import current_user
+from backend.core.deps import current_user, require_verified_identity
 from backend.services.auth.identity import User
 
 router = APIRouter(prefix="/v2/startup", tags=["startup"])
@@ -87,7 +87,7 @@ def market_complaints_health() -> dict:
     }
 
 
-@router.post("/market-complaints")
+@router.post("/market-complaints", dependencies=[Depends(require_verified_identity)])
 async def market_complaints(
     body: MarketComplaintsBody,
     user: User = Depends(current_user),

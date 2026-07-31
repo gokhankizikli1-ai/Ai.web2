@@ -28,6 +28,7 @@ from typing import Optional
 
 from fastapi import Request
 
+from backend.core.errors import ApiError
 from backend.services.auth.errors import MissingTokenError
 from backend.services.auth.identity import User
 
@@ -155,6 +156,58 @@ def require_auth(request: Request) -> User:
             "This route requires authentication. Pass an Authorization: Bearer header."
         )
     return user
+
+
+class VerificationRequiredError(ApiError):
+    """Raised at a paid execution boundary when the caller is authenticated but
+    has not verified their email. 403 so the frontend can distinguish it from a
+    401 (sign-in) and show the 'verify your email' state."""
+    status_code = 403
+    code = "VERIFICATION_REQUIRED"
+
+
+def require_verified_identity(request: Request):
+    """Gate paid / credit-consuming execution behind a VERIFIED identity.
+
+    Enforced ONLY when settings.ENABLE_EMAIL_VERIFICATION is true; otherwise a
+    pass-through, so merging the guard changes nothing until an operator opts in
+    (flip it on together with ENABLE_BILLING_CREDITS). When enforced:
+      - owners bypass (never lock the operator out of their own app),
+      - guests            → 401 (sign in),
+      - unverified users  → 403 VERIFICATION_REQUIRED,
+      - verified users    → allowed.
+
+    Fails SECURE: if verification state can't be read while enforcement is on,
+    the spend is denied rather than allowed. Returns the resolved Principal so a
+    handler may also take it as a dependency value."""
+    from backend.core.principal import resolve_principal
+    principal = resolve_principal(request)
+
+    try:
+        from backend.core.config import settings
+        enforced = bool(settings.ENABLE_EMAIL_VERIFICATION)
+    except Exception:
+        enforced = False
+    if not enforced:
+        return principal
+
+    if principal.is_owner:
+        return principal
+
+    if not principal.is_authenticated:
+        raise MissingTokenError(
+            "This feature requires a verified account. Please sign in and verify your email."
+        )
+
+    try:
+        from backend.services.auth import verification
+        verified = verification.is_verified(principal.user_id)
+    except Exception:  # pragma: no cover — fail secure at a paid boundary
+        verified = False
+
+    if not verified:
+        raise VerificationRequiredError("Please verify your email to use this feature.")
+    return principal
 
 
 _OWNER_TOKEN_HEADER = "X-Korvix-Owner-Token"

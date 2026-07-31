@@ -51,6 +51,15 @@ export function useCredits(): CreditsState {
     return () => { cancelled = true; };
   }, [uid, isAuthenticated, nonce]);
 
+  // Global refresh signal — fired after an event that changes the balance
+  // (e.g. email verification issues the starter grant) so the persistent
+  // header CreditDisplay updates without a full navigation/remount.
+  useEffect(() => {
+    const onRefresh = () => setNonce((n) => n + 1);
+    window.addEventListener('korvix:credits-refresh', onRefresh);
+    return () => window.removeEventListener('korvix:credits-refresh', onRefresh);
+  }, []);
+
   // Neutral until we have an authoritative, enabled snapshot. A disabled ledger
   // (enabled:false) also shows neutral rather than a hard 0.
   const balance = summary && summary.enabled ? summary.balance : null;

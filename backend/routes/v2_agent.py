@@ -53,10 +53,10 @@ import logging
 import os
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from backend.core.deps import current_user
+from backend.core.deps import current_user, require_verified_identity
 from backend.core.responses import ok as envelope_ok
 from backend.services.agent import (
     AgentRequest,
@@ -96,7 +96,7 @@ class AgentExecuteRequest(BaseModel):
 
 # ── Route ─────────────────────────────────────────────────────────────────
 
-@router.post("/execute")
+@router.post("/execute", dependencies=[Depends(require_verified_identity)])
 async def execute(body: AgentExecuteRequest, request: Request) -> dict:
     """Run one end-to-end agent invocation.
 

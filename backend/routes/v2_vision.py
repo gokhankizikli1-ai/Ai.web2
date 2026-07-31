@@ -8,7 +8,7 @@ from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, Path
 
-from backend.core.deps import current_user
+from backend.core.deps import current_user, require_verified_identity
 from backend.core.responses import ok as envelope_ok
 from backend.services.assets import client as assets_client
 from backend.services.auth.identity import User
@@ -41,6 +41,7 @@ def _assets_enabled() -> bool:
 @router.post(
     "/{asset_id}/analyze",
     dependencies=[
+        Depends(require_verified_identity),
         Depends(gating.require_feature(gating.FEATURE_VISION_ANALYSIS)),
         Depends(require_quota(usage.METRIC_VISION_ANALYSES)),
     ],

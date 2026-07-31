@@ -17,6 +17,13 @@ export interface AuthUser {
   is_owner?: boolean;
   /** Backend identity kind: email | google | apple | github | guest */
   kind?: string;
+  /** Backend email-verification state (from _annotate_verification). True when
+   *  the account is verified OR verification enforcement is off (informational).
+   *  Defaults to true so pre-verification builds treat every account as usable. */
+  email_verified?: boolean;
+  /** True only when enforcement is ON and this account has not yet verified —
+   *  the frontend uses it to show the "verify your email" gate. */
+  verification_required?: boolean;
 }
 
 interface AuthState {
@@ -57,6 +64,9 @@ interface AuthState {
   loginWithGoogle: (idToken: string) => Promise<boolean>;
   logout: () => Promise<void>;
   checkAuth: () => Promise<void>;
+  /** Re-fetch /auth/me and update the user in place (e.g. after email
+   *  verification flips email_verified). No-op for guests / on failure. */
+  refreshUser: () => Promise<void>;
   clearError: () => void;
 }
 
@@ -224,6 +234,10 @@ function mapBackendUser(raw: unknown): AuthUser | null {
     plan: 'free',
     is_owner: r.is_owner === true,
     kind: typeof r.kind === 'string' ? r.kind : undefined,
+    // Absent field ⇒ backend has verification disabled / older build ⇒ treat as
+    // verified (usable) so we never gate on a missing flag.
+    email_verified: r.email_verified === undefined ? true : r.email_verified === true,
+    verification_required: r.verification_required === true,
   };
 }
 
@@ -494,6 +508,16 @@ export const useAuthStore = create<AuthState>()(
           notifyAuthChanged(user, 'login');
         } else {
           set({ isLoading: false, isHydrating: false, sessionChecked: true });
+        }
+      },
+
+      refreshUser: async () => {
+        // Only meaningful for an authenticated session with a bearer token.
+        if (!readToken()) return;
+        const fresh = await apiMe();
+        if (fresh) {
+          set({ user: fresh, isAuthenticated: true });
+          notifyAuthChanged(fresh, 'refresh');
         }
       },
 

@@ -306,14 +306,11 @@ def create_user(email: str, password: str, display_name: str = "") -> dict:
             raise EmailExistsError("An account with this email already exists.")
         cur = c.execute("SELECT * FROM auth_password_users WHERE id = ?", (uid,))
         public = _row_to_public(cur.fetchone())
-    # Credits Phase 1 — one-time starter grant for the newly created account.
-    # `uid` is this account's principal `sub`, so the balance shows for the same
-    # identity used by /v2/billing/credits/me. Idempotent + best-effort.
-    try:
-        from backend.services.credits_gateway import ensure_starter_grant
-        ensure_starter_grant(uid)
-    except Exception:  # pragma: no cover — signup must never fail on credits
-        pass
+    # NOTE: the starter credit grant is NO LONGER issued at account creation.
+    # A password account is created UNVERIFIED; the grant is gated behind email
+    # verification and fires from services/auth/verification.mark_verified()
+    # (on the email-confirm transition). The signup route records the pending
+    # verification row and dispatches the verification email.
     return public
 
 

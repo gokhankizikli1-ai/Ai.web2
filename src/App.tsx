@@ -61,6 +61,7 @@ const AgentsPage = lazy(() => import('./pages/AgentsPage'));
 const AgentChatPage = lazy(() => import('./pages/AgentChatPage'));
 const CreditsPage = lazy(() => import('./pages/CreditsPage'));
 const BillingReturn = lazy(() => import('./pages/BillingReturn'));
+const VerifyEmail = lazy(() => import('./pages/VerifyEmail'));
 const OwnerCosts = lazy(() => import('./pages/OwnerCosts'));
 
 import BottomNav from './components/BottomNav';
@@ -68,6 +69,7 @@ import FloatingParticles from './components/FloatingParticles';
 import PageTransition from './components/PageTransition';
 import ProtectedRoute from './components/ProtectedRoute';
 import BillingReturnBoundary from './components/BillingReturnBoundary';
+import VerifyEmailBanner from './components/VerifyEmailBanner';
 import OwnerRoute from './components/OwnerRoute';
 import BuildInfoOverlay from './components/BuildInfoOverlay';
 import OwnerWelcomeToast from './components/OwnerWelcomeToast';
@@ -288,6 +290,10 @@ function AppLayout({ children }: { children: React.ReactNode }) {
     <div
       className={`min-h-[100dvh] w-full max-w-full overflow-x-hidden bg-background ${showBottomNav ? 'pb-16 sm:pb-0' : ''}`}
     >
+      {/* Email-verification prompt. Renders nothing unless the backend flags this
+          account as requiring verification (feature off / verified ⇒ inert).
+          Hidden on public/auth routes and the verification screen itself. */}
+      {!isPublicRoute && location.pathname !== '/verify-email' && <VerifyEmailBanner />}
       {children}
       {showBottomNav && <BottomNav />}
       {showParticles && <FloatingParticles />}
@@ -384,6 +390,11 @@ export default function App() {
              main.tsx pre-render bridge rewrites the path-based provider redirect
              onto this hash route so HashRouter can match it. */}
         <Route path="/billing/return" element={<BillingReturnBoundary><AnimatedRoute><BillingReturn /></AnimatedRoute></BillingReturnBoundary>} />
+        {/* Email verification. PUBLIC + session-aware: reached from a link in the
+             verification email, possibly on a tokenless origin/browser, so it
+             must render for everyone. It grants NOTHING from the URL — the token
+             is POSTed to the backend, which is the sole source of truth. */}
+        <Route path="/verify-email" element={<AnimatedRoute><VerifyEmail /></AnimatedRoute>} />
 
         {/* ═══ Explore — requires account ═══ */}
         <Route path="/explore" element={<ProtectedRoute guestAllowed={false} redirectTo="/signup"><AnimatedRoute><ExplorePage /></AnimatedRoute></ProtectedRoute>} />
