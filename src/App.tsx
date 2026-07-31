@@ -67,6 +67,7 @@ import BottomNav from './components/BottomNav';
 import FloatingParticles from './components/FloatingParticles';
 import PageTransition from './components/PageTransition';
 import ProtectedRoute from './components/ProtectedRoute';
+import BillingReturnBoundary from './components/BillingReturnBoundary';
 import OwnerRoute from './components/OwnerRoute';
 import BuildInfoOverlay from './components/BuildInfoOverlay';
 import OwnerWelcomeToast from './components/OwnerWelcomeToast';
@@ -247,6 +248,12 @@ function AppLayout({ children }: { children: React.ReactNode }) {
     '/cookies',
     '/kvkk',
     '/acceptable-use',
+    // Checkout return is reached via an EXTERNAL redirect (a cold boot, possibly
+    // on a different origin with no session). It renders for everyone and reads
+    // the token-authenticated /v2/billing/me for truth — so it must NOT carry
+    // the authenticated app shell (BottomNav / particles / owner toast) or be
+    // gated by ProtectedRoute (which would bounce a tokenless return to /signup).
+    '/billing/return',
   ];
   const isPublicRoute = (
     location.pathname === '/' ||
@@ -368,10 +375,15 @@ export default function App() {
         <Route path="/login" element={<AnimatedRoute><AuthPage /></AnimatedRoute>} />
         <Route path="/signup" element={<AnimatedRoute><AuthPage mode="signup" /></AnimatedRoute>} />
         <Route path="/credits" element={<ProtectedRoute guestAllowed={false} redirectTo="/signup"><AnimatedRoute><CreditsPage /></AnimatedRoute></ProtectedRoute>} />
-        {/* PR #525 — provider-neutral checkout return. Requires an account (identity is
-             backend-derived); the page grants NOTHING from the URL and refreshes the
-             authoritative /v2/billing/me snapshot before showing any active-plan state. */}
-        <Route path="/billing/return" element={<ProtectedRoute guestAllowed={false} redirectTo="/signup"><AnimatedRoute><BillingReturn /></AnimatedRoute></ProtectedRoute>} />
+        {/* Provider-neutral checkout return. PUBLIC + session-aware: it is reached
+             via an external redirect (a cold boot, possibly on a tokenless origin),
+             so it must render for everyone and never redirect away. It grants NOTHING
+             from the URL — truth comes only from the token-authenticated
+             /v2/billing/me. Wrapped in an error boundary so a lazy-chunk or runtime
+             failure shows a safe fallback instead of a blank white page. The
+             main.tsx pre-render bridge rewrites the path-based provider redirect
+             onto this hash route so HashRouter can match it. */}
+        <Route path="/billing/return" element={<BillingReturnBoundary><AnimatedRoute><BillingReturn /></AnimatedRoute></BillingReturnBoundary>} />
 
         {/* ═══ Explore — requires account ═══ */}
         <Route path="/explore" element={<ProtectedRoute guestAllowed={false} redirectTo="/signup"><AnimatedRoute><ExplorePage /></AnimatedRoute></ProtectedRoute>} />
