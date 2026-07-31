@@ -15,13 +15,17 @@ import time
 from backend.services.billing.polar import signature as polar_sig
 
 
-_RAW_KEY = b"polar-standard-webhooks-test-key"
-_SECRET = "whsec_" + base64.b64encode(_RAW_KEY).decode()
+# Real modern Polar dashboard secret format. Polar's official behavior: the HMAC
+# key is the RAW secret string bytes, used exactly as configured (prefix and all)
+# — Polar base64-encodes it and the Standard-Webhooks lib decodes it back, net
+# identity → raw bytes. We NEVER base64-decode the dashboard secret.
+_SECRET = "polar_whs_38c1c2f4a9b74e0e9f2d6c7b8a1e5d3c"
+_RAW_KEY = _SECRET.encode("utf-8")
 
 
-def _sign(wid: str, wts: str, body: bytes) -> str:
+def _sign(wid: str, wts: str, body: bytes, *, key: bytes = _RAW_KEY) -> str:
     to_sign = f"{wid}.{wts}.".encode("utf-8") + body
-    digest = hmac.new(_RAW_KEY, to_sign, hashlib.sha256).digest()
+    digest = hmac.new(key, to_sign, hashlib.sha256).digest()
     return "v1," + base64.b64encode(digest).decode("ascii")
 
 
@@ -62,6 +66,48 @@ def test_stale_timestamp_rejected():
     fresh = now - 10
     sig2 = _sign("msg_1", str(fresh), body)
     assert polar_sig.verify(raw_body=body, headers=_headers("msg_1", str(fresh), sig2),
+                            secret=_SECRET, now=now) is True
+
+
+# ── Polar secret is used as RAW UTF-8 bytes (the 401 root-cause fix) ───────────
+def test_polar_whs_secret_used_as_raw_bytes():
+    """A `polar_whs_…` secret's RAW bytes are the HMAC key — a signature computed
+    with the raw dashboard secret verifies."""
+    body = b'{"type":"subscription.active","data":{"id":"s"}}'
+    now = int(time.time())
+    sig = _sign("m", str(now), body, key=_SECRET.encode("utf-8"))
+    assert polar_sig.verify(raw_body=body, headers=_headers("m", str(now), sig),
+                            secret=_SECRET, now=now) is True
+
+
+def test_secret_is_never_base64_decoded():
+    """Even a `whsec_<base64>`-shaped secret is used RAW now — a signature made
+    with the OLD base64-decoded key must be REJECTED (proves no silent decode)."""
+    secret = "whsec_YWJjZGVm"                         # decodes to b"abcdef"
+    body = b'{"x":1}'
+    now = int(time.time())
+    # New/correct: key = the whole raw string bytes.
+    ok = _sign("m", str(now), body, key=secret.encode("utf-8"))
+    assert polar_sig.verify(raw_body=body, headers=_headers("m", str(now), ok),
+                            secret=secret, now=now) is True
+    # Old/wrong: key = base64decode("YWJjZGVm") = b"abcdef" → must NOT verify.
+    old = _sign("m", str(now), body, key=base64.b64decode("YWJjZGVm"))
+    assert polar_sig.verify(raw_body=body, headers=_headers("m", str(now), old),
+                            secret=secret, now=now) is False
+
+
+# ── Raw-body mutation rejected (raw-body verification preserved) ───────────────
+def test_raw_body_mutation_rejected():
+    body = b'{"type":"subscription.active","data":{"id":"s","status":"active"}}'
+    now = int(time.time())
+    sig = _sign("m", str(now), body)
+    # Same headers/signature, but a single-byte-different body must be rejected.
+    tampered = body.replace(b'"active"', b'"canceled"', 1)
+    assert tampered != body
+    assert polar_sig.verify(raw_body=tampered, headers=_headers("m", str(now), sig),
+                            secret=_SECRET, now=now) is False
+    # The exact original bytes still verify.
+    assert polar_sig.verify(raw_body=body, headers=_headers("m", str(now), sig),
                             secret=_SECRET, now=now) is True
 
 
