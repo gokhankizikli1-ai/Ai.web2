@@ -7,7 +7,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { useOwnerMode } from '@/hooks/useOwnerMode';
 import { useLanguageStore, LANGUAGES } from '@/stores/languageStore';
 import type { Language } from '@/stores/languageStore';
-import { resolvePlanKey } from '@/lib/plan';
+import { useBillingPlan } from '@/hooks/useBillingPlan';
 import {
   User, Crown, Zap, Shield, Coins,
   CreditCard, Settings, Globe,
@@ -73,9 +73,12 @@ export default function UserAccountDropdown({ onOpenSettings, onOpenUpgrade }: U
   const [showLangMenu, setShowLangMenu] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Single source of truth (src/lib/plan.ts) — same resolution the top-right
-  // PremiumBadge uses, so the account card and the badge can never disagree.
-  const planKey = resolvePlanKey(user?.plan, settings.plan) ?? 'free';
+  // Single authoritative, account-scoped source (useBillingPlan → /v2/billing/me)
+  // — the SAME source the top-right PremiumBadge and CreditDisplay use, so they
+  // can never disagree and never show a previous account's plan. Falls back to
+  // 'free' while loading (the card always renders a plan row).
+  const { planKey: resolvedPlanKey } = useBillingPlan();
+  const planKey = resolvedPlanKey ?? 'free';
   const plan = PLAN_CONFIG[planKey] || PLAN_CONFIG.free;
   const PlanIcon = plan.icon;
 
