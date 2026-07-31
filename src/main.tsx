@@ -5,6 +5,7 @@ import { AppProvider } from '@/contexts/AppContext'
 import { ThemeProvider } from '@/contexts/ThemeContext'
 import './index.css'
 import App from './App.tsx'
+import { billingReturnHashRewrite } from '@/lib/billingReturnRoute'
 
 /* ── OAuth redirect-back receiver — must run BEFORE HashRouter mounts ──
  *
@@ -61,6 +62,30 @@ import App from './App.tsx'
       raw.length, 'chars',
     );
     /* eslint-enable no-console */
+  } catch { /* ignore — never block app boot */ }
+})();
+
+/* ── External checkout-return bridge — must run BEFORE HashRouter mounts ──
+ *
+ * This app uses <HashRouter>, so its routes only exist after the `#`
+ * (e.g. `/#/billing/return`). Polar redirects the customer to the PATH-based
+ * URL `https://host/billing/return` (no hash), which HashRouter reads as the
+ * root route `/`, leaving the user on the near-white root background — the
+ * blank white page reported after a successful sandbox checkout.
+ *
+ * Fix: synchronously, before React renders, detect the `/billing/return` path
+ * and rewrite it onto the hash route (preserving any provider query string) so
+ * HashRouter mounts the return page. Same pattern as the OAuth bridge above.
+ * No token / PII / query values are logged.
+ */
+(function bridgeBillingReturn(): void {
+  try {
+    const rewrite = billingReturnHashRewrite(
+      window.location.pathname, window.location.search, window.location.hash,
+    );
+    if (rewrite) {
+      window.history.replaceState(null, '', rewrite);
+    }
   } catch { /* ignore — never block app boot */ }
 })();
 
