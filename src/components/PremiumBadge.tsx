@@ -1,18 +1,16 @@
 import { Crown } from 'lucide-react';
-import { useApp } from '@/contexts/AppContext';
-import { useAuthStore } from '@/stores/authStore';
-import { resolvePlanKey } from '@/lib/plan';
+import { useBillingPlan } from '@/hooks/useBillingPlan';
 
 /**
- * Top-right plan badge. Reads the SAME plan source as the sidebar account
- * card (src/lib/plan.ts) so the two can never disagree. Renders nothing while
- * the plan is unknown (never a misleading "Free"). Owner-session status is
- * shown separately by OwnerModeChip — it does not affect this badge.
+ * Top-right plan badge. Reads the ONE authoritative, account-scoped plan source
+ * (useBillingPlan → GET /v2/billing/me) — the SAME source the sidebar account
+ * card and credit display use, so they can never disagree and never show a
+ * previous account's plan. Renders nothing while the plan is unknown/loading
+ * (never a misleading Free/Pro). Owner-session status is shown separately by
+ * OwnerModeChip — it does not affect this badge.
  */
 export default function PremiumBadge() {
-  const { settings } = useApp();
-  const user = useAuthStore((s) => s.user);
-  const plan = resolvePlanKey(user?.plan, settings.plan);
+  const { planKey: plan } = useBillingPlan();
 
   if (!plan) return null;                 // unknown/loading → neutral (nothing)
 

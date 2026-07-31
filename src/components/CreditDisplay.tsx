@@ -2,18 +2,15 @@ import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router';
 import { Coins, Crown, ArrowRight, Zap } from 'lucide-react';
-import { useApp } from '@/contexts/AppContext';
-import { useAuthStore } from '@/stores/authStore';
-import { getUserPlanLabel } from '@/lib/plan';
+import { useBillingPlan } from '@/hooks/useBillingPlan';
 
 export default function CreditDisplay() {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
-  const { settings } = useApp();
-  const user = useAuthStore((s) => s.user);
-  // Same source of truth as the plan badge / account card.
-  const planLabel = getUserPlanLabel(user?.plan, settings.plan);
+  // Same authoritative, account-scoped source as the plan badge / account card
+  // (useBillingPlan → /v2/billing/me). null while loading → neutral (no label).
+  const { label: planLabel } = useBillingPlan();
 
   const creditsRemaining = 153;
   const creditsTotal = 300;

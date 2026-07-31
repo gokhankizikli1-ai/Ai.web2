@@ -76,10 +76,14 @@ const DEFAULTS: AppSettings = {
   responseLength: 'Balanced',
   emojiUsage: 'Low',
   aiLanguageBehavior: 'Auto-detect',
-  // Credits defaults (match Pro plan: 300/mo)
+  // Credits defaults (display placeholders only — real balances are backend-owned).
   creditsRemaining: 153,
   creditsTotal: 300,
-  plan: 'pro',
+  // Plan is NOT a client-owned setting: the displayed plan comes from the
+  // authoritative backend snapshot (GET /v2/billing/me via useBillingPlan). This
+  // default must stay 'free' so a browser-global setting can never imply a paid
+  // plan for an unsubscribed or freshly-switched account.
+  plan: 'free',
 };
 
 function load(): AppSettings {
