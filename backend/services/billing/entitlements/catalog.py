@@ -9,10 +9,18 @@ from config (JSON string or file), builds typed `Plan` objects, and resolves a
 Design:
   * DATA, not code. Plans and the id-mapping are supplied via env so a new plan
     or price never needs a deploy.
-  * FAIL-CLOSED. A built-in `free` plan (rank 0, no features, no limits) always
-    exists; if no catalog is configured, that is the ONLY plan and no user can
-    be granted paid access. Malformed config is logged and ignored (defaults
-    stand) rather than crashing or silently over-granting.
+  * FAIL-CLOSED. Built-in plans provide only a stable KEY, user-facing NAME and
+    RANK — no features and no limits — so a subscription that is EXPLICITLY
+    MAPPED (via BILLING_PLAN_MAP_JSON) to a known key resolves to a named,
+    ranked plan, while an UNMAPPED subscription still grants nothing. No paid
+    access is ever granted without an operator-configured id-mapping. Malformed
+    config is logged and ignored (built-ins stand) rather than crashing or
+    silently over-granting.
+  * Stable internal keys, user-facing labels (final plan structure):
+      free → Free · basic → Starter · pro → Pro · ultra → Max · enterprise → Enterprise
+    The internal keys are unchanged (renaming would risk breaking stored
+    subscriptions / mappings); only the display name differs. A config entry for
+    any key OVERRIDES the built-in (e.g. to attach features/limits or relabel).
   * Cheap + live. The parsed catalog is cached keyed by the exact raw config
     strings, so repeated queries don't re-parse, but a Railway env change is
     picked up on the next call.
@@ -32,9 +40,23 @@ from backend.services.billing.subscriptions.types import Subscription
 logger = logging.getLogger(__name__)
 
 
-# Built-in baseline. Always present; overridable by a "free" entry in the
-# configured catalog (e.g. to give the free tier some features/limits).
-_BUILTIN_FREE = Plan(key="free", name="Free", rank=0, features=frozenset(), limits={})
+# Built-in baseline. Always present; each entry is overridable by a same-key
+# entry in the configured catalog (e.g. to attach features/limits or relabel).
+#
+# These carry ONLY key + user-facing name + rank — deliberately NO features and
+# NO limits, so a built-in plan can be RESOLVED and LABELED but grants no
+# specific capability the operator hasn't configured. Internal keys are stable
+# (basic/pro/ultra/enterprise); the display names are the final plan structure
+# (Starter/Pro/Max/Enterprise). A subscription only reaches one of these when the
+# operator has mapped its provider product/price to that key in
+# BILLING_PLAN_MAP_JSON — an unmapped subscription still resolves to nothing.
+_BUILTIN_PLANS: Dict[str, Plan] = {
+    "free":       Plan(key="free", name="Free", rank=0, features=frozenset(), limits={}),
+    "basic":      Plan(key="basic", name="Starter", rank=10, features=frozenset(), limits={}),
+    "pro":        Plan(key="pro", name="Pro", rank=20, features=frozenset(), limits={}),
+    "ultra":      Plan(key="ultra", name="Max", rank=30, features=frozenset(), limits={}),
+    "enterprise": Plan(key="enterprise", name="Enterprise", rank=40, features=frozenset(), limits={}),
+}
 
 
 class PlanCatalog:
@@ -160,11 +182,13 @@ def _load_plan_map() -> Dict[str, str]:
 
 
 def _build_catalog() -> PlanCatalog:
-    plans: Dict[str, Plan] = {_BUILTIN_FREE.key: _BUILTIN_FREE}
+    # Seed the built-in plans (key + label + rank only), then let the operator's
+    # config OVERRIDE any of them (e.g. attach features/limits or relabel).
+    plans: Dict[str, Plan] = dict(_BUILTIN_PLANS)
     for key, raw in _load_catalog_source().items():
         plan = _parse_plan_entry(str(key), raw)
         if plan is not None:
-            plans[plan.key] = plan   # config overrides the builtin free if it redefines it
+            plans[plan.key] = plan   # config wins over the built-in for the same key
     return PlanCatalog(plans=plans, plan_map=_load_plan_map(), default_key=ent_config.default_plan_key())
 
 
