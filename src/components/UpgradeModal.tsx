@@ -35,7 +35,7 @@ const PLANS = [
   },
   {
     id: 'ultra',
-    name: 'Ultra',
+    name: 'Max',
     price: { monthly: 49, yearly: 39 },
     description: 'For power users and teams',
     icon: Crown,
@@ -63,7 +63,7 @@ const PLANS = [
     gradient: 'from-[#3B82F6]/10 to-[#60A5FA]/5',
     border: 'border-[#3B82F6]/20',
     features: [
-      'Everything in Ultra',
+      'Everything in Max',
       'SSO & SAML',
       'Audit logs & compliance',
       'Custom AI training',
