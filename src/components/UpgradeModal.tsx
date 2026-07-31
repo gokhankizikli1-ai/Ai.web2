@@ -35,7 +35,7 @@ const PLANS = [
   },
   {
     id: 'ultra',
-    name: 'Ultra',
+    name: 'Max',
     price: { monthly: 49, yearly: 39 },
     description: 'For power users and teams',
     icon: Crown,

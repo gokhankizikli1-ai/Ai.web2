@@ -1,122 +1,57 @@
-import { useState } from 'react';
 import { motion } from 'framer-motion';
 import Navbar from '@/sections/Navbar';
 import Footer from '@/sections/Footer';
 import { Button } from '@/components/ui/button';
-import {
-  Zap, Crown, Building2, Check, Star, Shield,
-  Lock, Sparkles, X,
-} from 'lucide-react';
+import { Crown, Check, Star, Lock, Sparkles, Building2 } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { useCheckout } from '@/hooks/useCheckout';
 import { isPurchasablePlan } from '@/lib/billingApi';
+import { useBillingPlan } from '@/hooks/useBillingPlan';
+import { PRICING_PLANS, ctaFor, YEARLY_VARIANTS_AVAILABLE, type PricingPlan } from '@/lib/pricingPlans';
+import { planLabel } from '@/lib/plan';
 
-const PLANS = [
-  {
-    id: 'free',
-    name: 'Free',
-    price: { monthly: 0, yearly: 0 },
-    description: 'Get started with KorvixAI',
-    icon: Zap,
-    color: 'slate',
-    features: [
-      '50 messages/month',
-      'Fast AI mode',
-      'Basic chat history',
-      'Community support',
-    ],
-    unavailable: [
-      'Deep Research',
-      'Trading Signals',
-      'AI Agents',
-      'File Uploads',
-      'Custom Instructions',
-    ],
-    cta: 'Get Started Free',
-    popular: false,
-  },
-  {
-    id: 'pro',
-    name: 'Pro',
-    price: { monthly: 20, yearly: 16 },
-    description: 'For professionals who need more',
-    icon: Crown,
-    color: 'cyan',
-    features: [
-      'Unlimited messages',
-      '2x faster responses',
-      'Deep Research access',
-      'Advanced Trading signals',
-      'File uploads & analysis',
-      'Custom instructions',
-      'Priority support',
-    ],
-    unavailable: [],
-    cta: 'Upgrade to Pro',
-    popular: true,
-  },
-  {
-    id: 'ultra',
-    name: 'Ultra',
-    price: { monthly: 49, yearly: 39 },
-    description: 'For power users and teams',
-    icon: Star,
-    color: 'amber',
-    features: [
-      'Everything in Pro',
-      'All AI agents unlocked',
-      'Real-time trading data',
-      'Startup Scanner Pro',
-      'Team collaboration',
-      'Advanced analytics',
-      'Dedicated support',
-    ],
-    unavailable: [],
-    cta: 'Upgrade to Ultra',
-    popular: false,
-  },
-  {
-    id: 'enterprise',
-    name: 'Enterprise',
-    price: { monthly: 0, yearly: 0 },
-    description: 'For organizations at scale',
-    icon: Building2,
-    color: 'violet',
-    features: [
-      'Everything in Ultra',
-      'SSO & SAML',
-      'Audit logs & compliance',
-      'Custom AI training',
-      'API access',
-      'Dedicated infrastructure',
-      'SLA guarantee',
-    ],
-    unavailable: [],
-    cta: 'Contact Sales',
-    popular: false,
-  },
-];
-
-const FEATURES_COMPARE = [
-  { name: 'Messages per month',     free: '50',         pro: 'Unlimited', ultra: 'Unlimited',  enterprise: 'Unlimited' },
-  { name: 'AI Models',               free: 'Fast only', pro: 'All modes', ultra: 'All modes',  enterprise: 'All + Custom' },
-  { name: 'Deep Research',           free: false,       pro: true,        ultra: true,         enterprise: true },
-  { name: 'Trading Signals',         free: 'Basic',     pro: 'Advanced',  ultra: 'Real-time',  enterprise: 'Real-time' },
-  { name: 'AI Agents',               free: false,       pro: '3 agents',  ultra: 'All 8',      enterprise: 'Unlimited' },
-  { name: 'File Uploads',            free: false,       pro: '50 MB',     ultra: '500 MB',     enterprise: 'Unlimited' },
-  { name: 'Custom Instructions',     free: false,       pro: true,        ultra: true,         enterprise: true },
-  { name: 'Team Members',            free: '1',         pro: '1',         ultra: '5',          enterprise: 'Unlimited' },
-  { name: 'API Access',              free: false,       pro: false,       ultra: false,        enterprise: true },
-  { name: 'Support',                 free: 'Community', pro: 'Priority',  ultra: 'Dedicated',  enterprise: 'SLA' },
-];
-
+/**
+ * Pricing page — final plan structure: Starter / Pro / Max / Enterprise (Free is
+ * the default account tier, shown as a banner). All display data comes from the
+ * single pricing catalog (src/lib/pricingPlans.ts) and the current plan from the
+ * authoritative backend snapshot (useBillingPlan → /v2/billing/me), so the cards
+ * and the account badges can never disagree. The current plan is never
+ * re-purchasable; only higher tiers say "Upgrade".
+ */
 export default function PricingPage() {
   const navigate = useNavigate();
-  const [yearly, setYearly] = useState(false);
-  // PR #525 — provider-neutral checkout. Flag-gated (VITE_ENABLE_CHECKOUT) and
-  // OFF by default, so with the flag unset every CTA below keeps its exact prior
-  // navigation. When on, purchasable plans start a real checkout instead.
   const checkout = useCheckout();
+  // Authoritative current plan (Free while loading is treated as neutral: no card
+  // is marked "current", so a paid user is never offered a duplicate checkout —
+  // and purchase buttons are disabled until the plan is known).
+  const { planKey, loading: planLoading } = useBillingPlan();
+
+  const purchaseDisabled = checkout.enabled && (checkout.pendingSelector !== null || planLoading);
+
+  const onCta = (card: PricingPlan, cta: ReturnType<typeof ctaFor>) => {
+    if (cta === 'current' || cta === 'included') return;      // not actionable
+    if (cta === 'contact') { navigate('/chat'); return; }     // Enterprise → sales
+    // 'upgrade'
+    if (checkout.enabled && isPurchasablePlan(card.key)) {
+      void checkout.start(card.key, 'monthly', { returnPath: '/pricing' });
+    } else {
+      navigate('/chat');                                      // flag off → prior behavior
+    }
+  };
+
+  const ctaLabel = (card: PricingPlan, cta: ReturnType<typeof ctaFor>): string => {
+    if (checkout.enabled && cta === 'upgrade' && checkout.pendingSelector?.startsWith(card.key)) {
+      return 'Redirecting…';
+    }
+    switch (cta) {
+      case 'current': return 'Current plan';
+      case 'included': return 'Included';
+      case 'contact': return 'Contact Sales';
+      default: return `Upgrade to ${card.label}`;
+    }
+  };
+
+  const onFree = !planLoading && (planKey === 'free' || planKey === null);
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white">
@@ -128,7 +63,7 @@ export default function PricingPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
-          className="text-center mb-14"
+          className="text-center mb-10"
         >
           <div className="flex items-center justify-center gap-2 mb-3">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#52677A]/10 border border-[#52677A]/15">
@@ -137,162 +72,131 @@ export default function PricingPage() {
             <span className="text-[11px] font-semibold text-[#7890A3]/70 uppercase tracking-wider">Pricing</span>
           </div>
           <h1 className="text-4xl font-semibold mb-3 tracking-tight">Choose your plan</h1>
-          <p className="text-[14px] text-slate-500 max-w-md mx-auto mb-6">
+          <p className="text-[14px] text-slate-500 max-w-md mx-auto">
             Start free, upgrade when you need more power. No credit card required.
           </p>
-          <div className="flex items-center justify-center gap-3">
-            <div className="flex items-center rounded-lg bg-white/[0.02] border border-white/[0.04] p-0.5">
-              <button onClick={() => setYearly(false)}
-                className={`px-4 py-2 rounded-md text-[13px] font-medium transition-all ${!yearly ? 'bg-white/[0.06] text-white' : 'text-slate-600 hover:text-slate-400'}`}
-              >Monthly</button>
-              <button onClick={() => setYearly(true)}
-                className={`px-4 py-2 rounded-md text-[13px] font-medium transition-all ${yearly ? 'bg-white/[0.06] text-white' : 'text-slate-600 hover:text-slate-400'}`}
-              >Yearly</button>
+
+          {/* Current-plan indicator (authoritative). Never claims a paid plan while
+              loading — only shows once the backend snapshot resolves. */}
+          {!planLoading && planKey && (
+            <div className="mt-5 inline-flex items-center gap-2 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-1.5">
+              <Check className="h-3.5 w-3.5 text-[#6F8F7A]" />
+              <span className="text-[12px] text-slate-300">
+                Your current plan: <span className="font-medium text-white">{planLabel(planKey)}</span>
+              </span>
             </div>
-            {yearly && (
-              <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-[13px] text-[#6F8F7A]/70 font-medium">
-                Save 20%
-              </motion.span>
-            )}
-          </div>
+          )}
+
+          {/* Yearly selector is hidden until purchasable yearly variants exist. */}
+          {YEARLY_VARIANTS_AVAILABLE && (
+            <div className="mt-6 flex items-center justify-center gap-3" aria-hidden="true" />
+          )}
         </motion.div>
 
-        {/* Plans Grid */}
+        {onFree && (
+          <p className="text-center text-[12px] text-slate-600 mb-6">
+            You’re on the <span className="text-slate-400 font-medium">Free</span> plan — upgrade any time below.
+          </p>
+        )}
+
+        {/* Plans Grid — Starter / Pro / Max / Enterprise */}
         <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4 mb-16">
-          {PLANS.map((plan, i) => (
-            <motion.div
-              key={plan.id}
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.1, duration: 0.4 }}
-              className={`relative rounded-2xl border ${plan.popular ? 'border-[#52677A]/15 bg-[#52677A]/[0.02]' : 'border-white/[0.04] bg-white/[0.005]'} p-6 flex flex-col hover:border-white/[0.06] transition-all`}
-            >
-              {plan.popular && (
-                <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                  <div className="flex items-center gap-1 rounded-full bg-[#52677A]/15 border border-[#52677A]/20 px-3 py-0.5 text-[10px] font-semibold text-[#7890A3]">
-                    <Star className="h-2.5 w-2.5" /> Most Popular
-                  </div>
-                </div>
-              )}
-
-              <div className="mb-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <plan.icon className={`h-5 w-5 ${plan.id === 'free' ? 'text-slate-600' : 'text-[#7890A3]/70'}`} />
-                  <h3 className="text-[18px] font-semibold">{plan.name}</h3>
-                </div>
-                <div className="flex items-baseline gap-1 mb-1">
-                  {plan.price.monthly === 0 ? (
-                    <span className="text-3xl font-bold">Free</span>
-                  ) : (
-                    <>
-                      <span className="text-3xl font-bold">${yearly ? plan.price.yearly : plan.price.monthly}</span>
-                      <span className="text-[13px] text-slate-600">/mo</span>
-                    </>
-                  )}
-                </div>
-                <p className="text-[12px] text-slate-600">{plan.description}</p>
-              </div>
-
-              <ul className="space-y-2.5 mb-6 flex-1">
-                {plan.features.map((f) => (
-                  <li key={f} className="flex items-start gap-2 text-[12px] text-slate-400">
-                    <Check className="h-3.5 w-3.5 shrink-0 text-[#6F8F7A]/60 mt-0.5" />
-                    {f}
-                  </li>
-                ))}
-                {plan.unavailable.map((f) => (
-                  <li key={f} className="flex items-start gap-2 text-[12px] text-[#64748B]">
-                    <X className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-                    {f}
-                  </li>
-                ))}
-              </ul>
-
-              <Button
-                variant={plan.popular ? 'default' : 'outline'}
-                disabled={checkout.enabled && checkout.pendingSelector !== null}
-                className={`w-full h-10 text-[13px] font-medium rounded-xl ${
-                  plan.popular
-                    ? 'bg-white/[0.08] hover:bg-white/[0.12] text-white border border-white/[0.08]'
-                    : 'border-white/[0.06] text-slate-400 hover:text-white hover:bg-white/[0.03]'
-                }`}
-                onClick={() => {
-                  // Flag ON + a real purchasable plan (pro/ultra) → provider-neutral
-                  // checkout. Everything else (flag off, free, enterprise) keeps the
-                  // exact prior navigation, so this is non-breaking by default.
-                  if (checkout.enabled && isPurchasablePlan(plan.id)) {
-                    void checkout.start(plan.id, yearly ? 'yearly' : 'monthly', { returnPath: '/pricing' });
-                  } else {
-                    navigate('/chat');
-                  }
-                }}
+          {PRICING_PLANS.map((card, i) => {
+            const cta = ctaFor(planKey, card);
+            const isCurrent = cta === 'current';
+            const Icon = card.key === 'enterprise' ? Building2 : Crown;
+            return (
+              <motion.div
+                key={card.key}
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.08, duration: 0.4 }}
+                className={`relative rounded-2xl border ${
+                  card.popular ? 'border-[#52677A]/15 bg-[#52677A]/[0.02]' : 'border-white/[0.04] bg-white/[0.005]'
+                } ${isCurrent ? 'ring-1 ring-[#6F8F7A]/20' : ''} p-6 flex flex-col hover:border-white/[0.06] transition-all`}
               >
-                {checkout.enabled && isPurchasablePlan(plan.id) && checkout.pendingSelector?.startsWith(plan.id)
-                  ? 'Redirecting…'
-                  : plan.cta}
-              </Button>
-            </motion.div>
-          ))}
+                {card.popular && !isCurrent && (
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                    <div className="flex items-center gap-1 rounded-full bg-[#52677A]/15 border border-[#52677A]/20 px-3 py-0.5 text-[10px] font-semibold text-[#7890A3]">
+                      <Star className="h-2.5 w-2.5" /> Most Popular
+                    </div>
+                  </div>
+                )}
+                {isCurrent && (
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                    <div className="flex items-center gap-1 rounded-full bg-[#6F8F7A]/15 border border-[#6F8F7A]/25 px-3 py-0.5 text-[10px] font-semibold text-[#8FB39C]">
+                      <Check className="h-2.5 w-2.5" /> Current plan
+                    </div>
+                  </div>
+                )}
+
+                <div className="mb-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Icon className="h-5 w-5 text-[#7890A3]/70" />
+                    <h3 className="text-[18px] font-semibold">{card.label}</h3>
+                  </div>
+                  <div className="flex items-baseline gap-1 mb-1">
+                    {card.priceMonthly === null ? (
+                      <span className="text-3xl font-bold">Custom</span>
+                    ) : (
+                      <>
+                        <span className="text-3xl font-bold">${card.priceMonthly}</span>
+                        <span className="text-[13px] text-slate-600">/mo</span>
+                      </>
+                    )}
+                  </div>
+                  <p className="text-[12px] text-slate-600">{card.description}</p>
+                </div>
+
+                <ul className="space-y-2.5 mb-6 flex-1">
+                  {card.features.map((f) => (
+                    <li key={f} className="flex items-start gap-2 text-[12px] text-slate-400">
+                      <Check className="h-3.5 w-3.5 shrink-0 text-[#6F8F7A]/60 mt-0.5" />
+                      {f}
+                    </li>
+                  ))}
+                </ul>
+
+                <Button
+                  variant={card.popular ? 'default' : 'outline'}
+                  disabled={isCurrent || cta === 'included' || (cta === 'upgrade' && purchaseDisabled)}
+                  className={`w-full h-10 text-[13px] font-medium rounded-xl ${
+                    isCurrent
+                      ? 'bg-[#6F8F7A]/[0.08] text-[#8FB39C] border border-[#6F8F7A]/20 cursor-default'
+                      : card.popular
+                        ? 'bg-white/[0.08] hover:bg-white/[0.12] text-white border border-white/[0.08]'
+                        : 'border-white/[0.06] text-slate-400 hover:text-white hover:bg-white/[0.03]'
+                  }`}
+                  onClick={() => onCta(card, cta)}
+                >
+                  {ctaLabel(card, cta)}
+                </Button>
+              </motion.div>
+            );
+          })}
         </div>
 
-        {/* Checkout error (PR #525) — bounded, provider-neutral. Only ever shown
-            when the flag is on and a checkout attempt failed; never grants access. */}
+        {/* Checkout error — bounded, provider-neutral; never grants access. */}
         {checkout.enabled && checkout.error && (
           <div className="mb-8 -mt-8 mx-auto max-w-md p-3 rounded-xl border border-[#B45B5B]/20 bg-[#B45B5B]/[0.04] text-center">
             <p className="text-[12px] text-[#C98A8A]">{checkout.error}</p>
           </div>
         )}
 
-        {/* Feature Comparison */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.4 }}
-          className="rounded-2xl border border-white/[0.04] bg-white/[0.005] overflow-hidden"
-        >
-          <div className="px-6 py-4 border-b border-white/[0.03]">
-            <h2 className="text-[18px] font-semibold">Feature Comparison</h2>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-[12px]">
-              <thead>
-                <tr className="border-b border-white/[0.03]">
-                  <th className="text-left px-6 py-3 text-slate-500 font-medium">Feature</th>
-                  {PLANS.map((p) => (
-                    <th key={p.id} className="text-center px-4 py-3 font-medium text-slate-400">{p.name}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {FEATURES_COMPARE.map((row) => (
-                  <tr key={row.name} className="border-b border-white/[0.02] hover:bg-white/[0.01] transition-colors">
-                    <td className="px-6 py-3 text-slate-400">{row.name}</td>
-                    <td className="text-center px-4 py-3 text-slate-600">{typeof row.free === 'boolean' ? (row.free ? <Check className="h-3.5 w-3.5 text-[#6F8F7A]/60 mx-auto" /> : <X className="h-3.5 w-3.5 text-[#94A3B8] mx-auto" />) : row.free}</td>
-                    <td className="text-center px-4 py-3 text-slate-400">{typeof row.pro === 'boolean' ? (row.pro ? <Check className="h-3.5 w-3.5 text-[#6F8F7A]/60 mx-auto" /> : <X className="h-3.5 w-3.5 text-[#94A3B8] mx-auto" />) : row.pro}</td>
-                    <td className="text-center px-4 py-3 text-slate-400">{typeof row.ultra === 'boolean' ? (row.ultra ? <Check className="h-3.5 w-3.5 text-[#6F8F7A]/60 mx-auto" /> : <X className="h-3.5 w-3.5 text-[#94A3B8] mx-auto" />) : row.ultra}</td>
-                    <td className="text-center px-4 py-3 text-slate-400">{typeof row.enterprise === 'boolean' ? (row.enterprise ? <Check className="h-3.5 w-3.5 text-[#6F8F7A]/60 mx-auto" /> : <X className="h-3.5 w-3.5 text-[#94A3B8] mx-auto" />) : row.enterprise}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </motion.div>
-
         {/* Payments note */}
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          transition={{ delay: 0.5 }}
-          className="mt-8 p-4 rounded-xl border border-[#A68A5B]/10 bg-[#A68A5B]/[0.02] text-center"
+          transition={{ delay: 0.4 }}
+          className="mt-2 p-4 rounded-xl border border-[#A68A5B]/10 bg-[#A68A5B]/[0.02] text-center"
         >
           <p className="text-[12px] text-slate-500">
-            Payments processing coming soon. All features currently available in Free tier during early access.
+            Free tier is available during early access. Prices shown are indicative and may change before general availability.
           </p>
         </motion.div>
 
         {/* Trust */}
         <div className="mt-10 flex flex-wrap items-center justify-center gap-6 text-[11px] text-[#64748B]">
-          <span className="flex items-center gap-1.5"><Shield className="h-3.5 w-3.5" /> 30-day money-back</span>
           <span className="flex items-center gap-1.5"><Lock className="h-3.5 w-3.5" /> Cancel anytime</span>
           <span className="flex items-center gap-1.5"><Sparkles className="h-3.5 w-3.5" /> No credit card required for free</span>
         </div>

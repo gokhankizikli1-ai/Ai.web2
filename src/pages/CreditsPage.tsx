@@ -75,7 +75,7 @@ const PLANS: PlanData[] = [
   },
   {
     id: 'basic',
-    name: 'Basic',
+    name: 'Starter',
     priceMonthly: 9,
     priceYearly: 86, // 9 * 12 * 0.8 = 86.4
     credits: 100,
@@ -120,7 +120,7 @@ const PLANS: PlanData[] = [
   },
   {
     id: 'ultra',
-    name: 'Ultra',
+    name: 'Max',
     priceMonthly: 49,
     priceYearly: 470, // 49 * 12 * 0.8 = 470.4
     credits: 1000,

@@ -19,8 +19,11 @@ export type PlanKey = 'free' | 'basic' | 'pro' | 'ultra' | 'enterprise';
 const PLAN_KEYS: PlanKey[] = ['free', 'basic', 'pro', 'ultra', 'enterprise'];
 const PAID = new Set<PlanKey>(['basic', 'pro', 'ultra', 'enterprise']);
 
+// User-facing labels for the final plan structure. Internal keys are STABLE
+// (renaming would break stored subscriptions / entitlement mappings); only the
+// display label differs: basic → Starter, ultra → Max.
 const PLAN_LABELS: Record<PlanKey, string> = {
-  free: 'Free', basic: 'Basic', pro: 'Pro', ultra: 'Ultra', enterprise: 'Enterprise',
+  free: 'Free', basic: 'Starter', pro: 'Pro', ultra: 'Max', enterprise: 'Enterprise',
 };
 
 function normalize(p?: string | null): PlanKey | null {

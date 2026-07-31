@@ -65,10 +65,12 @@ describe('resolveDisplayPlan — authoritative, fail-safe, account-scoped', () =
 });
 
 describe('plan label / paid helpers', () => {
-  it('labels map correctly', () => {
+  it('labels map to the final plan structure (basic→Starter, ultra→Max)', () => {
     expect(planLabel('pro')).toBe('Pro');
     expect(planLabel('free')).toBe('Free');
-    expect(planLabel('ultra')).toBe('Ultra');
+    expect(planLabel('basic')).toBe('Starter');
+    expect(planLabel('ultra')).toBe('Max');
+    expect(planLabel('enterprise')).toBe('Enterprise');
   });
   it('paid detection', () => {
     expect(isPaidPlan('free')).toBe(false);

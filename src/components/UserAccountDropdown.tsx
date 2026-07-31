@@ -23,9 +23,9 @@ interface UserAccountDropdownProps {
 
 const PLAN_CONFIG = {
   free:       { label: 'Free',       color: 'text-[#CBD5E1]',       bg: 'bg-slate-500/[0.06]',       border: 'border-slate-500/10',       icon: Sparkles },
-  basic:      { label: 'Basic',      color: 'text-[#3B82F6]',        bg: 'bg-[#3B82F6]/[0.06]',        border: 'border-[#3B82F6]/10',        icon: Zap },
+  basic:      { label: 'Starter',    color: 'text-[#3B82F6]',        bg: 'bg-[#3B82F6]/[0.06]',        border: 'border-[#3B82F6]/10',        icon: Zap },
   pro:        { label: 'Pro',        color: 'text-[#3B82F6]',       bg: 'bg-[#3B82F6]/[0.06]',       border: 'border-[#3B82F6]/10',       icon: Crown },
-  ultra:      { label: 'Ultra',      color: 'text-[#3B82F6]',      bg: 'bg-[#3B82F6]/[0.06]',      border: 'border-[#3B82F6]/10',      icon: Shield },
+  ultra:      { label: 'Max',        color: 'text-[#3B82F6]',      bg: 'bg-[#3B82F6]/[0.06]',      border: 'border-[#3B82F6]/10',      icon: Shield },
   enterprise: { label: 'Enterprise', color: 'text-[#3B82F6]',        bg: 'bg-[#3B82F6]/[0.06]',        border: 'border-[#3B82F6]/10',        icon: Landmark },
 };
 
