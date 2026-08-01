@@ -132,20 +132,28 @@ def _verification_enforced() -> bool:
 
 
 def _annotate_verification(user: Dict[str, Any]) -> Dict[str, Any]:
-    """Additive: stamp `email_verified` on the user dict so the frontend can
-    render the verification gate. Never raises. Owners and provider-verified
-    OAuth users read as verified; unverified password users read as False."""
-    try:
-        from backend.services.auth import verification
-        uid = str(user.get("id", ""))
-        verified = verification.is_verified(uid)
-        # When enforcement is off, do not surface a scary "unverified" state —
-        # verification isn't required, so the field is informational only.
-        user["email_verified"] = bool(verified) if _verification_enforced() else True
-        user["verification_required"] = _verification_enforced() and not verified
-    except Exception:
+    """Additive: stamp `email_verified` + `verification_required` on the user dict
+    so the frontend can render the verification gate. Never raises.
+
+    Fails CLOSED: when enforcement is on and the verification record can't be read,
+    the account is reported as unverified (verification_required=True) — an error
+    must never render an unverified account as usable. The CONFIGURED owner (never
+    a client flag) bypasses. When enforcement is off the field is informational."""
+    enforced = _verification_enforced()
+    # Owner bypass — trust only the backend-computed is_owner (set by
+    # _annotate_owner from OWNER_EMAIL), never a client-supplied value.
+    is_owner = bool(user.get("is_owner"))
+    if not enforced or is_owner:
         user["email_verified"] = True
         user["verification_required"] = False
+        return user
+    try:
+        from backend.services.auth import verification
+        verified = bool(verification.is_verified(str(user.get("id", ""))))
+    except Exception:
+        verified = False   # fail CLOSED — unknown status ⇒ treat as unverified
+    user["email_verified"] = verified
+    user["verification_required"] = not verified
     return user
 
 

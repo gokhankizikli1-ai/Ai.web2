@@ -32,9 +32,10 @@ export interface AppSettings {
   responseLength: 'Short' | 'Balanced' | 'Detailed';
   emojiUsage: 'Off' | 'Low' | 'Normal';
   aiLanguageBehavior: 'Auto-detect' | 'Turkish' | 'English';
-  // Credits (new)
-  creditsRemaining: number;
-  creditsTotal: number;
+  // NOTE: credit balances are NOT client settings. They are backend-owned and
+  // read ONLY from GET /v2/billing/credits/me via useCredits(). Any hardcoded
+  // creditsRemaining/creditsTotal here was a fabricated placeholder (153/300)
+  // and has been removed — never render a client literal as a real balance.
   plan: 'free' | 'basic' | 'pro' | 'ultra' | 'enterprise';
 }
 
@@ -76,9 +77,6 @@ const DEFAULTS: AppSettings = {
   responseLength: 'Balanced',
   emojiUsage: 'Low',
   aiLanguageBehavior: 'Auto-detect',
-  // Credits defaults (display placeholders only — real balances are backend-owned).
-  creditsRemaining: 153,
-  creditsTotal: 300,
   // Plan is NOT a client-owned setting: the displayed plan comes from the
   // authoritative backend snapshot (GET /v2/billing/me via useBillingPlan). This
   // default must stay 'free' so a browser-global setting can never imply a paid

@@ -161,25 +161,33 @@ def require_auth(request: Request) -> User:
 class VerificationRequiredError(ApiError):
     """Raised at a paid execution boundary when the caller is authenticated but
     has not verified their email. 403 so the frontend can distinguish it from a
-    401 (sign-in) and show the 'verify your email' state."""
+    401 (sign-in) and show the 'verify your email' state. The stable code is
+    EMAIL_VERIFICATION_REQUIRED (the contract the frontend branches on)."""
     status_code = 403
-    code = "VERIFICATION_REQUIRED"
+    code = "EMAIL_VERIFICATION_REQUIRED"
 
 
-def require_verified_identity(request: Request):
-    """Gate paid / credit-consuming execution behind a VERIFIED identity.
+# Decision constants for the non-raising checker.
+VERIFY_ALLOWED = "allowed"
+VERIFY_UNAUTHENTICATED = "unauthenticated"
+VERIFY_UNVERIFIED = "unverified"
 
-    Enforced ONLY when settings.ENABLE_EMAIL_VERIFICATION is true; otherwise a
-    pass-through, so merging the guard changes nothing until an operator opts in
-    (flip it on together with ENABLE_BILLING_CREDITS). When enforced:
-      - owners bypass (never lock the operator out of their own app),
-      - guests            → 401 (sign in),
-      - unverified users  → 403 VERIFICATION_REQUIRED,
-      - verified users    → allowed.
 
-    Fails SECURE: if verification state can't be read while enforcement is on,
-    the spend is denied rather than allowed. Returns the resolved Principal so a
-    handler may also take it as a dependency value."""
+def verified_identity_status(request: Request) -> str:
+    """Authoritative, NON-raising verification decision for a request.
+
+    Returns one of VERIFY_ALLOWED / VERIFY_UNAUTHENTICATED / VERIFY_UNVERIFIED.
+    Policy (only enforced when settings.ENABLE_EMAIL_VERIFICATION is true;
+    otherwise always allowed → pass-through):
+      - owners bypass (configured owner identity only, via resolve_principal),
+      - guests            → unauthenticated,
+      - authenticated + verified → allowed,
+      - authenticated + unverified (or unreadable) → unverified.
+
+    Fails SECURE: when enforcement is on and the verification record cannot be
+    read, the request is treated as UNVERIFIED (deny), never allowed. Identity
+    is taken ONLY from resolve_principal (verified JWT / owner) — never from a
+    client-supplied field, cached setting, or user boolean."""
     from backend.core.principal import resolve_principal
     principal = resolve_principal(request)
 
@@ -189,25 +197,44 @@ def require_verified_identity(request: Request):
     except Exception:
         enforced = False
     if not enforced:
-        return principal
-
+        return VERIFY_ALLOWED
     if principal.is_owner:
-        return principal
-
+        return VERIFY_ALLOWED
     if not principal.is_authenticated:
+        return VERIFY_UNAUTHENTICATED
+    try:
+        from backend.services.auth import verification
+        verified = bool(verification.is_verified(principal.user_id))
+    except Exception:  # pragma: no cover — fail secure at a paid boundary
+        verified = False
+    return VERIFY_ALLOWED if verified else VERIFY_UNVERIFIED
+
+
+def is_request_verified(request: Request) -> bool:
+    """True when the request may run paid work under the current policy. A thin,
+    BULLETPROOF bool wrapper over `verified_identity_status` for in-handler gating
+    (e.g. the protected-op path inside POST /chat, which sits in a fail-OPEN
+    try/except — so this must never raise). Any error → False (fail secure).
+    Both guest and unverified → False."""
+    try:
+        return verified_identity_status(request) == VERIFY_ALLOWED
+    except Exception:  # pragma: no cover — fail secure; never let an error open the gate
+        return False
+
+
+def require_verified_identity(request: Request):
+    """FastAPI dependency form of the gate. Owners bypass; guests → 401; verified
+    → allowed; unverified (or unreadable while enforced) → 403
+    EMAIL_VERIFICATION_REQUIRED. Returns the resolved Principal on success."""
+    from backend.core.principal import resolve_principal
+    status = verified_identity_status(request)
+    if status == VERIFY_ALLOWED:
+        return resolve_principal(request)
+    if status == VERIFY_UNAUTHENTICATED:
         raise MissingTokenError(
             "This feature requires a verified account. Please sign in and verify your email."
         )
-
-    try:
-        from backend.services.auth import verification
-        verified = verification.is_verified(principal.user_id)
-    except Exception:  # pragma: no cover — fail secure at a paid boundary
-        verified = False
-
-    if not verified:
-        raise VerificationRequiredError("Please verify your email to use this feature.")
-    return principal
+    raise VerificationRequiredError("Please verify your email to use this feature.")
 
 
 _OWNER_TOKEN_HEADER = "X-Korvix-Owner-Token"

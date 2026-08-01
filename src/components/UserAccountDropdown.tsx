@@ -1,13 +1,13 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useApp } from '@/contexts/AppContext';
 import { useToast } from '@/hooks/useToast';
 import { useAuthStore } from '@/stores/authStore';
 import { useOwnerMode } from '@/hooks/useOwnerMode';
 import { useLanguageStore, LANGUAGES } from '@/stores/languageStore';
 import type { Language } from '@/stores/languageStore';
 import { useBillingPlan } from '@/hooks/useBillingPlan';
+import { useCredits } from '@/hooks/useCredits';
 import {
   User, Crown, Zap, Shield, Coins,
   CreditCard, Settings, Globe,
@@ -30,7 +30,6 @@ const PLAN_CONFIG = {
 };
 
 export default function UserAccountDropdown({ onOpenSettings, onOpenUpgrade }: UserAccountDropdownProps) {
-  const { settings } = useApp();
   const { addToast } = useToast();
   const navigate = useNavigate();
   const { user, isAuthenticated, logout } = useAuthStore();
@@ -82,10 +81,12 @@ export default function UserAccountDropdown({ onOpenSettings, onOpenUpgrade }: U
   const plan = PLAN_CONFIG[planKey] || PLAN_CONFIG.free;
   const PlanIcon = plan.icon;
 
-  // Credit info
-  const totalCredits = settings.creditsTotal;
-  const remainingCredits = settings.creditsRemaining;
-  const usagePercent = Math.round((totalCredits - remainingCredits) / totalCredits * 100);
+  // Credit info — AUTHORITATIVE only. `balance` is null while loading, on error,
+  // when the caller is a guest, or when ENABLE_BILLING_CREDITS is off. In every
+  // one of those cases we show a neutral "unavailable" state and NO number.
+  // There is no invented total, no plan default, no localStorage literal.
+  const { balance: creditBalance } = useCredits();
+  const balanceLabel = creditBalance === null ? '—' : creditBalance.toLocaleString();
 
   // Click outside to close
   useEffect(() => {
@@ -181,7 +182,7 @@ export default function UserAccountDropdown({ onOpenSettings, onOpenUpgrade }: U
             </span>
           </div>
         </div>
-        <span className="text-[10px] text-[#FACC15]/60 tabular-nums shrink-0">{remainingCredits}</span>
+        <span className="text-[10px] text-[#FACC15]/60 tabular-nums shrink-0">{balanceLabel}</span>
       </button>
 
       {/* ═── Dropdown Menu ─══ */}
@@ -320,19 +321,17 @@ export default function UserAccountDropdown({ onOpenSettings, onOpenUpgrade }: U
                         <span className="text-[11px] text-[#CBD5E1]">{t('credits')}</span>
                       </div>
                       <span className="text-[11px] font-medium text-white tabular-nums">
-                        {remainingCredits} <span className="text-[#94A3B8]">/ {totalCredits}</span>
+                        {creditBalance === null
+                          ? <span className="text-[#94A3B8]">Unavailable</span>
+                          : balanceLabel}
                       </span>
                     </div>
 
-                    {/* Progress bar */}
-                    <div className="w-full h-1 bg-white/[0.03] rounded-full overflow-hidden mb-2">
-                      <motion.div
-                        className="h-full rounded-full bg-[#3B82F6]/40"
-                        initial={{ width: 0 }}
-                        animate={{ width: `${usagePercent}%` }}
-                        transition={{ duration: 0.6, ease: 'easeOut' }}
-                      />
-                    </div>
+                    {/* No fabricated total / usage bar: Phase-1 credits expose a
+                        balance only. A neutral note replaces the invented "/300". */}
+                    {creditBalance === null && (
+                      <p className="text-[9px] text-[#94A3B8] mb-2">Balance unavailable right now</p>
+                    )}
 
                     {/* Free chat badge */}
                     <div className="flex items-center gap-1.5 mb-2">
