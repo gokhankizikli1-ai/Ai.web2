@@ -35,7 +35,20 @@ logger = logging.getLogger(__name__)
 class EmailSendError(Exception):
     """Raised when a configured provider genuinely fails to accept the message.
     Callers treat email delivery as best-effort and must not fail the primary
-    flow (signup) on this — they log and continue."""
+    flow (signup) on this — they log and continue.
+
+    Carries a STRUCTURED, non-secret `code` and optional upstream `status` so
+    delivery failures are observable without ever logging a token, full email,
+    API key, or link:
+      not_configured — provider selected but key/from missing (fell back)
+      transport      — network/transport error reaching the provider
+      rejected       — provider returned an HTTP >= 400 (see `status`)
+    """
+
+    def __init__(self, message: str, *, code: str = "delivery_error", status: int | None = None) -> None:
+        super().__init__(message)
+        self.code = code
+        self.status = status
 
 
 @dataclass(frozen=True)
@@ -107,11 +120,11 @@ async def _send_resend(to: str, subject: str, *, html: str, text: Optional[str])
         )
     except Exception as exc:  # httpx transport error — status/type only
         logger.warning("email.resend transport error: %s", type(exc).__name__)
-        raise EmailSendError("email provider transport error") from None
+        raise EmailSendError("email provider transport error", code="transport") from None
     if resp.status_code >= 400:
         # Status code only — never the response body (may echo recipient).
         logger.warning("email.resend rejected | status=%d | to=%s", resp.status_code, _mask_email(to))
-        raise EmailSendError(f"email provider returned {resp.status_code}")
+        raise EmailSendError(f"email provider returned {resp.status_code}", code="rejected", status=resp.status_code)
     logger.info("email.resend accepted | to=%s", _mask_email(to))
     return EmailResult(provider="resend", delivered=True, detail="accepted")
 
