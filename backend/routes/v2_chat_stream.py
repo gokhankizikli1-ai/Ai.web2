@@ -76,7 +76,9 @@ import os
 import time
 from typing import AsyncIterator, List, Optional
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
+
+from backend.core.deps import require_verified_identity
 from pydantic import BaseModel, Field
 
 from backend.services.providers import (
@@ -230,7 +232,7 @@ def _shortcut_save_stream(ack: str, provider_name: str) -> AsyncIterator[str]:
 
 # ── Route ─────────────────────────────────────────────────────────────────
 
-@router.post("/stream")
+@router.post("/stream", dependencies=[Depends(require_verified_identity)])
 async def stream_chat(body: StreamChatRequest, request: Request):
     """Stream a chat-completion as Server-Sent Events.
 

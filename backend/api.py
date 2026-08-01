@@ -278,6 +278,7 @@ def _build_full_app():
         "backend.routes.v2",           # Phase 1 — /v2/* envelope reference impl
         "backend.routes.v2_auth",      # Phase 3a — /v2/auth/* (guest, refresh, me, logout)
         "backend.routes.v2_email_verification",  # Email verification — /v2/auth/email-verification/* (send, confirm, status)
+        "backend.routes.v2_admin_email",  # Owner-only — GET /v2/admin/email-verification/readiness (redacted diagnostics)
         "backend.routes.v2_chat_stream",  # Phase 4a — /v2/chat/stream (SSE)
         "backend.routes.v2_sessions",  # Phase 5 — /v2/sessions/* (auth-bound, parallel to legacy)
         "backend.routes.v2_agent",     # Phase 6d — /v2/agent/execute (gated by ENABLE_AGENT)

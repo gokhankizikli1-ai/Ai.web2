@@ -265,7 +265,7 @@ async def signup(body: SignupRequest, request: Request):
 
 @router.post("/login")
 async def login(body: LoginRequest):
-    from backend.services.auth import passwords
+    from backend.services.auth import passwords, verification
     user = passwords.verify_credentials(body.email, body.password)
     if user is None:
         # Generic — never reveal whether the email exists.
@@ -280,6 +280,18 @@ async def login(body: LoginRequest):
             user = fresh
     except Exception as exc:  # best-effort; never fail login on this
         logger.warning("auth.login touch failed (non-fatal): %s", exc)
+    # Existing-account transition: a password account that pre-dates the
+    # verification system (or was created while enforcement was off) has no
+    # verification row. When enforcement is ON and the account is not yet
+    # verified, ensure a PENDING row exists on login so the account is never
+    # stranded — the /email-verification/send + /status flow then works and the
+    # user can recover. This NEVER auto-verifies and NEVER grants credits.
+    if _verification_enforced():
+        try:
+            if not verification.is_verified(user["id"]):
+                verification.record_pending(user["id"], user.get("email", ""))
+        except Exception as exc:
+            logger.warning("auth.login: ensure pending verification failed (non-fatal): %s", exc)
     logger.info("auth.login ok | user=%s", user["id"])
     resp = _issue_access(user)
     _annotate_verification(resp["user"])

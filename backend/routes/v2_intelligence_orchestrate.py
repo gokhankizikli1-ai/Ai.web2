@@ -17,10 +17,11 @@ import logging
 import os
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from backend.core.config import settings
+from backend.core.deps import require_verified_identity
 
 router = APIRouter(prefix="/v2/intelligence", tags=["intelligence"])
 logger = logging.getLogger(__name__)
@@ -98,7 +99,7 @@ def orchestrate_health() -> dict:
     }
 
 
-@router.post("/orchestrate")
+@router.post("/orchestrate", dependencies=[Depends(require_verified_identity)])
 async def orchestrate(body: OrchestrateBody, request: Request) -> dict:
     _ensure_enabled()
 
