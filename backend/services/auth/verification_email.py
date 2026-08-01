@@ -63,9 +63,16 @@ def _ip_allowed(ip: Optional[str]) -> bool:
     return True
 
 
+def _link_base() -> str:
+    # Spec name EMAIL_VERIFICATION_BASE_URL wins; fall back to PUBLIC_APP_URL.
+    base = (getattr(settings, "EMAIL_VERIFICATION_BASE_URL", "") or "").rstrip("/")
+    if base:
+        return base
+    return (settings.PUBLIC_APP_URL or "https://korvixai.com").rstrip("/")
+
+
 def build_verification_link(raw_token: str) -> str:
-    base = (settings.PUBLIC_APP_URL or "https://korvixai.com").rstrip("/")
-    return f"{base}/#/verify-email?token={quote(raw_token, safe='')}"
+    return f"{_link_base()}/#/verify-email?token={quote(raw_token, safe='')}"
 
 
 def _render(link: str, ttl_min: int) -> Dict[str, str]:
@@ -127,7 +134,8 @@ async def send_verification_email(
         logger.warning("verification.send: token mint failed")
         return SendOutcome(sent=False, reason="skipped")
 
-    ttl_min = max(1, int(getattr(settings, "EMAIL_VERIFICATION_TOKEN_TTL_MIN", 30) or 30))
+    # Display TTL in minutes, derived from the authoritative seconds-based TTL.
+    ttl_min = max(1, round(verification._ttl_seconds() / 60))
     link = build_verification_link(raw)
     msg = _render(link, ttl_min)
     try:

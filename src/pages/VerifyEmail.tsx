@@ -92,14 +92,20 @@ export default function VerifyEmail() {
               : { label: 'Go to sign in', onClick: () => navigate('/login') }}
           />
         )}
-        {(phase === 'already_used' || phase === 'invalid' || phase === 'error') && (
+        {(phase === 'already_used' || phase === 'superseded' || phase === 'invalid' || phase === 'error') && (
           <Panel
             icon={<XCircle className="w-7 h-7 text-[#F87171]" />}
-            title={phase === 'already_used' ? 'Link already used' : 'This link isn’t valid'}
+            title={
+              phase === 'already_used' ? 'Link already used'
+                : phase === 'superseded' ? 'A newer link was sent'
+                : 'This link isn’t valid'
+            }
             body={
               phase === 'already_used'
                 ? 'This verification link has already been used. If your email still isn’t verified, request a new link.'
-                : 'We couldn’t verify this link. Request a new one and try again.'
+                : phase === 'superseded'
+                  ? 'This link was replaced by a newer verification email. Please use the most recent one, or request a fresh link below.'
+                  : 'We couldn’t verify this link. Request a new one and try again.'
             }
             cta={isAuthenticated
               ? { label: sending ? 'Sending…' : cooldown > 0 ? `Resend in ${cooldown}s` : 'Send a new link', onClick: resend, disabled: sending || cooldown > 0 }

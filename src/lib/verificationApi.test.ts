@@ -11,8 +11,13 @@ import {
  * outcome, and surface the resend cooldown.
  */
 
-function jsonResponse(status: number, body: unknown): Response {
-  return { ok: status >= 200 && status < 300, status, json: async () => body } as unknown as Response;
+function jsonResponse(status: number, body: unknown, headers: Record<string, string> = {}): Response {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    json: async () => body,
+    headers: { get: (k: string) => headers[k] ?? headers[k.toLowerCase()] ?? null },
+  } as unknown as Response;
 }
 
 beforeEach(() => {
@@ -58,7 +63,7 @@ describe('resendVerification', () => {
       success: true, data: { sent: true, cooldown_remaining: 60 },
     })));
     const r = await resendVerification();
-    expect(r).toEqual({ sent: true, cooldownRemaining: 60, alreadyVerified: false });
+    expect(r).toEqual({ sent: true, cooldownRemaining: 60, alreadyVerified: false, rateLimited: false });
   });
 
   it('surfaces already_verified', async () => {
@@ -67,6 +72,16 @@ describe('resendVerification', () => {
     })));
     const r = await resendVerification();
     expect(r.alreadyVerified).toBe(true);
+    expect(r.sent).toBe(false);
+  });
+
+  it('maps a 429 cooldown to rateLimited + cooldown from metadata', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(429, {
+      success: false, error: 'wait', metadata: { code: 'verification_cooldown', cooldown_remaining: 45 },
+    })));
+    const r = await resendVerification();
+    expect(r.rateLimited).toBe(true);
+    expect(r.cooldownRemaining).toBe(45);
     expect(r.sent).toBe(false);
   });
 
@@ -85,8 +100,8 @@ describe('confirmVerification', () => {
     expect(await confirmVerification('tok')).toBe('verified');
   });
 
-  it('maps expired / already_used / invalid outcomes', async () => {
-    for (const status of ['expired', 'already_used', 'invalid'] as const) {
+  it('maps expired / already_used / superseded / invalid outcomes', async () => {
+    for (const status of ['expired', 'already_used', 'superseded', 'invalid'] as const) {
       vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, {
         success: true, data: { status, verified: false },
       })));

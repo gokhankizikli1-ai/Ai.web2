@@ -248,7 +248,19 @@ async def register(body: RegisterRequest, request: Request):
       400 validation_error  — bad email shape or password length
       503 auth_not_configured — JWT_SECRET_KEY missing in production
     """
-    from backend.services.auth import passwords, verification
+    from backend.services.auth import passwords, verification, abuse
+    # Registration abuse brake (per-IP hourly cap). Generic — no enumeration.
+    _ip = str(request.client.host) if request.client else None
+    _decision = abuse.evaluate_registration(email=body.email, ip=_ip)
+    if not _decision.allowed:
+        return JSONResponse(
+            status_code=429,
+            content=envelope_err(
+                "Too many sign-up attempts. Please try again later.",
+                code="rate_limited", endpoint="/v2/auth/register",
+            ),
+            headers={"Retry-After": str(_decision.retry_after)},
+        )
     try:
         user = passwords.create_user(body.email, body.password, body.display_name)
     except passwords.EmailExistsError as exc:

@@ -76,6 +76,7 @@ CREATE TABLE IF NOT EXISTS auth_email_verification_tokens (
     created_at      TEXT NOT NULL,
     expires_at      TEXT NOT NULL,
     consumed_at     TEXT,
+    superseded_at   TEXT,
     request_ip_hash TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_evt_user       ON auth_email_verification_tokens(user_id);
@@ -99,6 +100,15 @@ def _conn() -> Iterator[sqlite3.Connection]:
         c.close()
 
 
+def _migrate(c: sqlite3.Connection) -> None:
+    """Idempotent, non-destructive column adds for tables that pre-date a field.
+    SQLite has no `ADD COLUMN IF NOT EXISTS`, so we introspect first."""
+    cols = {row["name"] for row in c.execute("PRAGMA table_info(auth_email_verification_tokens)")}
+    if "superseded_at" not in cols:
+        # Marks a token invalidated by a newer resend (see supersede-on-issue).
+        c.execute("ALTER TABLE auth_email_verification_tokens ADD COLUMN superseded_at TEXT")
+
+
 def init() -> None:
     global _INITIALIZED
     if _INITIALIZED:
@@ -108,6 +118,7 @@ def init() -> None:
             return
         with _conn() as c:
             c.executescript(_DDL)
+            _migrate(c)
         _INITIALIZED = True
         logger.info("auth.verification initialized | db=%s", _db_path())
 
@@ -248,7 +259,8 @@ def get_status(user_id: str) -> dict:
 
 @dataclass(frozen=True)
 class ConsumeResult:
-    status: str            # "verified" | "already_verified" | "already_used" | "expired" | "invalid"
+    # "verified" | "already_verified" | "already_used" | "superseded" | "expired" | "invalid"
+    status: str
     user_id: str = ""
     email: str = ""
 
@@ -257,29 +269,46 @@ class ConsumeResult:
         return self.status in ("verified", "already_verified")
 
 
-def _ttl_minutes() -> int:
-    return max(1, int(getattr(settings, "EMAIL_VERIFICATION_TOKEN_TTL_MIN", 30) or 30))
+def _ttl_seconds() -> int:
+    """Token lifetime in seconds. Honours EMAIL_VERIFICATION_TTL_SECONDS (spec
+    name) first, then the legacy EMAIL_VERIFICATION_TOKEN_TTL_MIN. Default 30m."""
+    secs = int(getattr(settings, "EMAIL_VERIFICATION_TTL_SECONDS", 0) or 0)
+    if secs > 0:
+        return max(60, secs)
+    return max(60, int(getattr(settings, "EMAIL_VERIFICATION_TOKEN_TTL_MIN", 30) or 30) * 60)
 
 
 def issue_token(user_id: str, email: str, *, request_ip: Optional[str] = None) -> str:
     """Create a single-use verification token and return the RAW value (the only
     time it exists in plaintext — the caller embeds it in the email link and
-    discards it). Only the hash is persisted."""
+    discards it). Only the hash is persisted.
+
+    Resend supersedes: every prior still-active token for this user is marked
+    `superseded_at` in the SAME transaction, so an old link can no longer verify
+    once a new one is issued (defends against link forwarding / stale links)."""
     uid = (user_id or "").strip()
     if not uid:
         raise ValueError("user_id required")
     init()
     raw = secrets.token_urlsafe(32)  # 256 bits of entropy
     now = _now()
-    expires = now + timedelta(minutes=_ttl_minutes())
+    now_iso = now.isoformat()
+    expires = now + timedelta(seconds=_ttl_seconds())
     with _conn() as c:
+        # Invalidate any currently-active token for this user before minting the
+        # new one — atomic with the insert (single writer on SQLite).
+        c.execute(
+            "UPDATE auth_email_verification_tokens SET superseded_at = ? "
+            "WHERE user_id = ? AND consumed_at IS NULL AND superseded_at IS NULL",
+            (now_iso, uid),
+        )
         c.execute(
             "INSERT INTO auth_email_verification_tokens "
-            "(id, user_id, token_hash, email, created_at, expires_at, consumed_at, request_ip_hash) "
-            "VALUES (?, ?, ?, ?, ?, ?, NULL, ?)",
+            "(id, user_id, token_hash, email, created_at, expires_at, consumed_at, superseded_at, request_ip_hash) "
+            "VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?)",
             (
                 uuid.uuid4().hex, uid, _hash_token(raw), (email or "").strip().lower(),
-                now.isoformat(), expires.isoformat(), _hash_ip(request_ip),
+                now_iso, expires.isoformat(), _hash_ip(request_ip),
             ),
         )
     return raw
@@ -300,26 +329,29 @@ def consume_token(raw_token: str) -> ConsumeResult:
     with _conn() as c:
         cur = c.execute(
             "UPDATE auth_email_verification_tokens SET consumed_at = ? "
-            "WHERE token_hash = ? AND consumed_at IS NULL AND expires_at > ?",
+            "WHERE token_hash = ? AND consumed_at IS NULL AND superseded_at IS NULL "
+            "AND expires_at > ?",
             (now_iso, token_hash, now_iso),
         )
         claimed = cur.rowcount == 1
         row = c.execute(
-            "SELECT user_id, email, consumed_at, expires_at FROM auth_email_verification_tokens "
-            "WHERE token_hash = ?",
+            "SELECT user_id, email, consumed_at, superseded_at, expires_at "
+            "FROM auth_email_verification_tokens WHERE token_hash = ?",
             (token_hash,),
         ).fetchone()
 
     if not claimed:
         if row is None:
             return ConsumeResult(status="invalid")
-        # Row exists but we didn't claim it: either already consumed by us just
-        # now (row shows a consumed_at we didn't set this call) or expired.
+        uid_, em_ = row["user_id"], row["email"]
+        # Row exists but we didn't claim it — report the specific safe reason.
         if row["consumed_at"] is not None and row["consumed_at"] != now_iso:
-            return ConsumeResult(status="already_used", user_id=row["user_id"], email=row["email"])
+            return ConsumeResult(status="already_used", user_id=uid_, email=em_)
+        if row["superseded_at"] is not None:
+            return ConsumeResult(status="superseded", user_id=uid_, email=em_)
         if row["expires_at"] <= now_iso:
-            return ConsumeResult(status="expired", user_id=row["user_id"], email=row["email"])
-        return ConsumeResult(status="already_used", user_id=row["user_id"], email=row["email"])
+            return ConsumeResult(status="expired", user_id=uid_, email=em_)
+        return ConsumeResult(status="already_used", user_id=uid_, email=em_)
 
     user_id = row["user_id"]
     email = row["email"]
@@ -333,6 +365,11 @@ def consume_token(raw_token: str) -> ConsumeResult:
 # ── Resend cooldown / rate limiting ───────────────────────────────────────────
 
 def _cooldown_sec() -> int:
+    # Honour EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS (spec name) first, then
+    # the legacy EMAIL_VERIFICATION_RESEND_COOLDOWN_SEC.
+    secs = int(getattr(settings, "EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS", 0) or 0)
+    if secs > 0:
+        return secs
     return max(0, int(getattr(settings, "EMAIL_VERIFICATION_RESEND_COOLDOWN_SEC", 60) or 0))
 
 
