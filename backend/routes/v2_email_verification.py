@@ -88,9 +88,12 @@ async def status(request: Request) -> JSONResponse:
     uid = (principal.user_id or "").strip()
     snap = verification.get_status(uid)
     # Idempotent self-heal: if verified but a transient failure skipped the
-    # grant, re-attempt it (ledger dedupes). Best-effort.
+    # grant, re-attempt it (ledger dedupes) — with the abuse context so a
+    # reconcile can't bypass the gate. Best-effort.
     try:
-        verification.reconcile_grant(uid)
+        from backend.routes.starter_ctx import build_context
+        _ctx, _ = build_context(request, provider="password", is_owner=bool(principal.is_owner))
+        verification.reconcile_grant(uid, context=_ctx)
     except Exception:
         pass
     try:
@@ -159,12 +162,29 @@ async def confirm(body: ConfirmRequest, request: Request) -> JSONResponse:
     Always returns 200 with a `status` the frontend switches on:
       verified | already_verified | expired | already_used | invalid
     The token is never logged."""
-    result = verification.consume_token(body.token)
+    # Build the starter-credit abuse context (trusted-proxy IP + signed install
+    # cookie) so the grant issued on confirmation runs through the abuse gate.
+    grant_ctx = None
+    install_raw = None
+    try:
+        from backend.routes.starter_ctx import build_context
+        grant_ctx, install_raw = build_context(request, provider="password", is_owner=False)
+    except Exception:
+        grant_ctx, install_raw = None, None
+
+    result = verification.consume_token(body.token, context=grant_ctx)
     logger.info("email-verification.confirm | status=%s", result.status)
-    return _resp(200, envelope_ok({
+    resp = _resp(200, envelope_ok({
         "status": result.status,
         "verified": result.ok,
     }))
+    if install_raw:
+        try:
+            from backend.routes.starter_ctx import set_install_cookie
+            set_install_cookie(resp, install_raw)
+        except Exception:
+            pass
+    return resp
 
 
 __all__ = ["router"]

@@ -16,7 +16,7 @@ export default function CreditDisplay() {
   // Server-authoritative balance (Phase 1). `balance` is null while loading /
   // unknown / on failure → render a neutral placeholder, NEVER a fabricated
   // number. No monthly limit is invented, so there is no "/ total".
-  const { balance } = useCredits();
+  const { balance, starterDenied } = useCredits();
   const balanceLabel = balance === null ? '—' : balance.toLocaleString();
 
   useEffect(() => {
@@ -67,7 +67,9 @@ export default function CreditDisplay() {
               </div>
               {/* No monthly limit is invented in Phase 1 — the balance is the
                   authoritative figure; plan-specific allowances come later. */}
-              {balance === null && (
+              {starterDenied ? (
+                <p className="text-[9px] text-[#94A3B8] mt-1">Starter credits are unavailable for this account.</p>
+              ) : balance === null && (
                 <p className="text-[9px] text-[#94A3B8] mt-1">Balance unavailable right now</p>
               )}
             </div>

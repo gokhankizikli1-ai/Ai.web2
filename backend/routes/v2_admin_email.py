@@ -68,4 +68,22 @@ async def email_verification_readiness(request: Request) -> JSONResponse:
     return _resp(200, envelope_ok(report))
 
 
+@router.get("/starter-abuse")
+async def starter_abuse_readiness(request: Request) -> JSONResponse:
+    """Owner-only redacted diagnostics for the starter-credit abuse layer:
+    mode, thresholds, trusted-proxy assumption, and allow/defer/deny counters by
+    reason category. No IP, email, id, token, or secret is ever returned."""
+    _user, err = _owner_or_error(request)
+    if err is not None:
+        return err
+    try:
+        from backend.services.auth import starter_abuse
+        report = starter_abuse.readiness()
+    except Exception as exc:  # pragma: no cover — report must not 500
+        logger.warning("admin.starter-abuse readiness error: %s", type(exc).__name__)
+        return _resp(200, envelope_ok({"status": "unavailable"}))
+    logger.info("admin.starter-abuse viewed | mode=%s", report.get("mode"))
+    return _resp(200, envelope_ok(report))
+
+
 __all__ = ["router"]

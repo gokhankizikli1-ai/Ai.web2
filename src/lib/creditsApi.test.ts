@@ -32,7 +32,17 @@ describe('getMyCredits — real balance', () => {
       data: { enabled: true, balance: 20, lifetime_granted: 20, lifetime_consumed: 0 },
     })));
     const s = await getMyCredits();
-    expect(s).toEqual({ enabled: true, balance: 20, lifetimeGranted: 20, lifetimeConsumed: 0 });
+    expect(s).toEqual({ enabled: true, balance: 20, lifetimeGranted: 20, lifetimeConsumed: 0, starterDenied: false });
+  });
+
+  it('surfaces starter_denied for the neutral abuse message', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, {
+      success: true,
+      data: { enabled: true, balance: 0, lifetime_granted: 0, lifetime_consumed: 0, starter_denied: true },
+    })));
+    const s = await getMyCredits();
+    expect(s?.starterDenied).toBe(true);
+    expect(s?.balance).toBe(0);
   });
 
   it('returns null on API failure — never a fabricated balance', async () => {

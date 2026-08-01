@@ -19,6 +19,9 @@ export interface CreditsState {
   balance: number | null;
   /** Full snapshot when available (lifetime totals), else null. */
   summary: CreditSummary | null;
+  /** True when the starter grant was withheld by abuse protection — the UI shows
+   *  a neutral "unavailable" message and NO number. */
+  starterDenied: boolean;
   /** True while the authoritative fetch for the current user is in flight. */
   loading: boolean;
   /** Re-fetch (e.g. after a spend or a grant). */
@@ -61,12 +64,15 @@ export function useCredits(): CreditsState {
   }, []);
 
   // Neutral until we have an authoritative, enabled snapshot. A disabled ledger
-  // (enabled:false) also shows neutral rather than a hard 0.
-  const balance = summary && summary.enabled ? summary.balance : null;
+  // (enabled:false) also shows neutral rather than a hard 0. When the starter
+  // grant was withheld by abuse protection we also show NO number (neutral msg).
+  const starterDenied = !!(summary && summary.enabled && summary.starterDenied);
+  const balance = summary && summary.enabled && !summary.starterDenied ? summary.balance : null;
 
   return {
     balance,
     summary,
+    starterDenied,
     loading,
     refetch: () => setNonce((n) => n + 1),
   };
