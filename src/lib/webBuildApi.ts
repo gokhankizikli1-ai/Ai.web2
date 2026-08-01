@@ -672,6 +672,38 @@ export class WebBuildError extends Error {
   }
 }
 
+/** Raised when the backend rejects a build because the account's email is not
+ *  verified (HTTP 403, code EMAIL_VERIFICATION_REQUIRED). The run is cancelled
+ *  and the user is sent to /verify-email. */
+export class VerificationRequiredError extends WebBuildError {
+  constructor() {
+    super('cancelled', 'Please verify your email to start a build.');
+    this.name = 'VerificationRequiredError';
+  }
+}
+
+/** If a /chat response is a verification-required rejection, redirect the user to
+ *  the verification screen and throw (cancelling the run). Reads a CLONE so the
+ *  body stays available to the normal path when this is not a 403. Never throws
+ *  for non-403 responses. Guards EVERY build entrypoint that calls it. */
+export async function guardVerificationRequired(response: Response): Promise<void> {
+  if (response.status !== 403) return;
+  let code = '';
+  try {
+    const b = await response.clone().json();
+    code = (b?.code as string) || ((b?.metadata as Record<string, unknown> | undefined)?.code as string) || '';
+  } catch { /* body unreadable — fall through */ }
+  if (code === 'EMAIL_VERIFICATION_REQUIRED') {
+    try { window.dispatchEvent(new CustomEvent('korvix:verification-required')); } catch { /* noop */ }
+    try {
+      if (!String(window.location.hash || '').includes('/verify-email')) {
+        window.location.hash = '#/verify-email';
+      }
+    } catch { /* noop */ }
+    throw new VerificationRequiredError();
+  }
+}
+
 /** Phase 14L.1 — the founder-beta block code carried on a `beta_limit` error. */
 export interface BetaLimitReason { betaCode: string; operationType?: string; retryAfterSeconds?: number; resetAt?: string; }
 
@@ -1517,6 +1549,9 @@ export async function generateWebBuild(
         }
         throw new WebBuildError('network', 'Could not reach the Korvix backend.', err);
       }
+      // SECURITY: an unverified account is rejected with 403 EMAIL_VERIFICATION_REQUIRED
+      // BEFORE any build work runs — cancel the run and redirect to verification.
+      await guardVerificationRequired(response);
       // Phase 14L.1 — a founder-beta rate-limit block arrives as HTTP 429 with a
       // structured aiOperation body. Classify it as a beta_limit BEFORE the generic
       // HTTP guard so the UI shows a restrained "please wait" rather than a hard error.
@@ -2443,6 +2478,8 @@ export async function generateFrontendBuilderRaw(
       return frontendBuilderArtifact('failed', 'Could not reach the Korvix backend for the dedicated Frontend Builder.');
     }
 
+    // SECURITY: reject unverified accounts before source generation runs.
+    await guardVerificationRequired(response);
     if (!response.ok) {
       return frontendBuilderArtifact('failed', `The backend returned HTTP ${response.status} for the dedicated Frontend Builder.`);
     }

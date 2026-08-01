@@ -350,8 +350,16 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
     }
 
     if (success) {
-      const from = (location.state as any)?.from || '/chat';
-      navigate(from, { replace: true });
+      // A password account that still needs email verification must go STRAIGHT
+      // to /verify-email — never flash the dashboard. Read the authoritative
+      // user the store just set (verification_required comes from the backend).
+      const u = useAuthStore.getState().user;
+      if (u?.verification_required === true) {
+        navigate('/verify-email', { replace: true });
+      } else {
+        const from = (location.state as any)?.from || '/chat';
+        navigate(from, { replace: true });
+      }
     }
   };
 

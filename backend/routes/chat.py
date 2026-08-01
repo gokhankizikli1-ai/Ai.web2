@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 
+from backend.core.responses import chat_error
 from backend.utils.timing import StageTimer
 
 router = APIRouter(tags=["chat"])
@@ -476,6 +477,29 @@ async def chat(req: ChatRequest, request: Request):
             declared_intent=request.headers.get("x-korvix-ai-operation"),
         )
         if _ai_guard.is_protected(_op_type):
+            # ── SECURITY GATE (verified-identity) ─────────────────────────────
+            # A protected op is real, paid work (Web Build planning + source
+            # generation, coordinator, redesign, image ops). When email
+            # verification is enforced, an UNVERIFIED or guest caller must be
+            # rejected HERE — before ai_guard.preflight, before process_chat, and
+            # before any job/provider spend. Identity is authoritative
+            # (resolve_principal / configured owner); never a client field.
+            from backend.core.deps import is_request_verified
+            if not is_request_verified(request):
+                timer.mark("email_verification_required")
+                timer.flush()
+                logger.info(
+                    "CHAT | rid=%s | uid=%s | BLOCKED email_verification_required | op=%s",
+                    request_id, user_id, _op_type,
+                )
+                return JSONResponse(
+                    status_code=403,
+                    content=chat_error(
+                        "Please verify your email to start a build.",
+                        code="EMAIL_VERIFICATION_REQUIRED",
+                        request_id=request_id,
+                    ),
+                )
             _idem = (request.headers.get("x-korvix-operation-id") or "").strip()[:80] or None
             _beta_idem = _idem
             # Backend-verified owner → unlimited personal quota (global safety
@@ -1208,6 +1232,15 @@ def _bg_exec_response(reply: str, ai_execution: dict, *, status_code: int = 200)
 @router.get("/v2/ai/background/{job_id}")
 async def background_poll(job_id: str, request: Request):
     """Retrieve the status/output of an opaque background frontend job for its owner."""
+    # Defense-in-depth: an unverified/guest caller cannot drive a background
+    # frontend generation to completion (the job can only exist if it was created
+    # by a verified session, which /chat now enforces). Never raises.
+    from backend.core.deps import is_request_verified
+    if not is_request_verified(request):
+        return _bg_exec_response("", {"status": "failed", "endpoint": "responses",
+                                      "background_mode": True, "background_job_id": job_id,
+                                      "error_kind": "email_verification_required",
+                                      "code": "EMAIL_VERIFICATION_REQUIRED"}, status_code=403)
     uid = str(_uid(_resolve_authoritative_uid(request, "")))
     try:
         from backend.services.ai_background_responses import load_job, owns_job, delete_job
