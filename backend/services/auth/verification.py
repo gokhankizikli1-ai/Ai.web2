@@ -176,12 +176,14 @@ def record_pending(user_id: str, email: str) -> None:
         )
 
 
-def mark_verified(user_id: str, email: str = "", *, source: str = "confirm") -> bool:
+def mark_verified(user_id: str, email: str = "", *, source: str = "confirm", context=None) -> bool:
     """Mark the account verified (idempotent). Returns True only on the
     unverified→verified TRANSITION (so callers can react exactly once).
 
     On the transition the one-time starter grant is fired (best-effort,
-    idempotent). `source` is a short non-secret tag for the log line only."""
+    idempotent). `context` (an opaque credits_gateway.GrantContext) carries the
+    non-secret request signals for the starter-credit abuse decision; None ⇒ no
+    abuse gate (legacy/no-request path). `source` is a short non-secret log tag."""
     uid = (user_id or "").strip()
     if not uid:
         return False
@@ -213,25 +215,25 @@ def mark_verified(user_id: str, email: str = "", *, source: str = "confirm") -> 
         # else: already verified → no transition.
     if transitioned:
         logger.info("auth.verification verified | user=%s | source=%s", uid, source)
-    _grant_starter(uid)
+    _grant_starter(uid, context=context)
     return transitioned
 
 
-def _grant_starter(user_id: str) -> None:
+def _grant_starter(user_id: str, *, context=None) -> None:
     """Best-effort, idempotent starter grant. Never raises into the caller."""
     try:
         from backend.services.credits_gateway import ensure_starter_grant
-        ensure_starter_grant(user_id)
+        ensure_starter_grant(user_id, context=context)
     except Exception:  # pragma: no cover — verification must not fail on credits
         logger.warning("auth.verification: starter grant deferred (non-fatal)")
 
 
-def reconcile_grant(user_id: str) -> None:
+def reconcile_grant(user_id: str, *, context=None) -> None:
     """Idempotent retry path: if the account is verified, (re)attempt the starter
     grant. Safe to call repeatedly — the ledger dedupes on the stable reference.
     Used by the status endpoint so a transient grant failure self-heals."""
     if is_verified(user_id):
-        _grant_starter(user_id)
+        _grant_starter(user_id, context=context)
 
 
 def get_status(user_id: str) -> dict:
@@ -314,12 +316,13 @@ def issue_token(user_id: str, email: str, *, request_ip: Optional[str] = None) -
     return raw
 
 
-def consume_token(raw_token: str) -> ConsumeResult:
+def consume_token(raw_token: str, *, context=None) -> ConsumeResult:
     """Atomically spend a verification token and mark the account verified.
 
     Single-use + expiry are enforced in one UPDATE so concurrent confirmations
     resolve to exactly one winner. On success the account is marked verified and
-    the starter grant fires (idempotent)."""
+    the starter grant fires (idempotent), passing `context` (opaque
+    credits_gateway.GrantContext) to the starter-credit abuse gate."""
     raw = (raw_token or "").strip()
     if not raw:
         return ConsumeResult(status="invalid")
@@ -355,7 +358,7 @@ def consume_token(raw_token: str) -> ConsumeResult:
 
     user_id = row["user_id"]
     email = row["email"]
-    transitioned = mark_verified(user_id, email, source="confirm")
+    transitioned = mark_verified(user_id, email, source="confirm", context=context)
     return ConsumeResult(
         status="verified" if transitioned else "already_verified",
         user_id=user_id, email=email,

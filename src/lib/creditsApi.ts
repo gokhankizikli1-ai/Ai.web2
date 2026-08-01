@@ -20,6 +20,9 @@ export interface CreditSummary {
   lifetimeGranted: number;
   /** Lifetime credits consumed. */
   lifetimeConsumed: number;
+  /** True when the starter grant was withheld by abuse protection (enforcing).
+   *  Drives a NEUTRAL "unavailable" message — never a fabricated balance. */
+  starterDenied: boolean;
 }
 
 function apiBase(): string {
@@ -79,7 +82,7 @@ export async function getMyCredits(opts?: { signal?: AbortSignal }): Promise<Cre
   try { data = await resp.json(); } catch { return null; }
   const d = envelopeData<{
     enabled?: boolean; balance?: number;
-    lifetime_granted?: number; lifetime_consumed?: number;
+    lifetime_granted?: number; lifetime_consumed?: number; starter_denied?: boolean;
   }>(data);
   if (!d) return null;
   return {
@@ -87,6 +90,7 @@ export async function getMyCredits(opts?: { signal?: AbortSignal }): Promise<Cre
     balance: typeof d.balance === 'number' ? d.balance : 0,
     lifetimeGranted: typeof d.lifetime_granted === 'number' ? d.lifetime_granted : 0,
     lifetimeConsumed: typeof d.lifetime_consumed === 'number' ? d.lifetime_consumed : 0,
+    starterDenied: d.starter_denied === true,
   };
 }
 

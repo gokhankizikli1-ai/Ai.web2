@@ -25,7 +25,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -225,8 +225,9 @@ async def auth_status():
 
 
 @router.post("/signup", status_code=status.HTTP_201_CREATED)
-async def signup(body: SignupRequest, request: Request):
+async def signup(body: SignupRequest, request: Request, response: Response):
     from backend.services.auth import passwords, verification, abuse
+    from backend.routes.starter_ctx import build_context, set_install_cookie
     # Registration abuse brake (per-IP hourly cap; extension seam for a future
     # abuse-risk engine). Generic message — never reveals whether the email exists.
     decision = abuse.evaluate_registration(email=body.email, ip=_client_ip(request))
@@ -245,6 +246,10 @@ async def signup(body: SignupRequest, request: Request):
         raise _err(400, "validation_error", str(e))
     uid = user["id"]
     email = user.get("email", "")
+    # Starter-credit abuse context (trusted-proxy IP + signed install cookie).
+    _owner = bool(_owner_email()) and str(email).strip().lower() == _owner_email()
+    grant_ctx, _install = build_context(request, provider="password", is_owner=_owner)
+    set_install_cookie(response, _install)
     # A password account starts UNVERIFIED — record the pending row.
     try:
         verification.record_pending(uid, email)
@@ -260,9 +265,10 @@ async def signup(body: SignupRequest, request: Request):
             logger.warning("auth.signup: verification email dispatch failed (non-fatal): %s", exc)
     else:
         # Feature dormant → verification not required. Preserve the pre-gate
-        # behaviour: treat the account as verified and issue the starter grant.
+        # behaviour: treat the account as verified and issue the starter grant
+        # (subject to the abuse gate via grant_ctx).
         try:
-            verification.mark_verified(uid, email, source="enforcement_disabled")
+            verification.mark_verified(uid, email, source="enforcement_disabled", context=grant_ctx)
         except Exception as exc:
             logger.warning("auth.signup: mark_verified failed (non-fatal): %s", exc)
     logger.info("auth.signup ok | user=%s", uid)
@@ -376,7 +382,7 @@ def _verify_google_id_token(id_token: str) -> Dict[str, Any]:
 
 
 @router.post("/google")
-def auth_google(body: OAuthRequest):
+def auth_google(body: OAuthRequest, request: Request, response: Response):
     """Verify a Google ID token server-side and issue our own access
     token. Creates/looks up the user in the identity store by email.
     NEVER trusts frontend-only email claims — the email comes from the
@@ -400,10 +406,16 @@ def auth_google(body: OAuthRequest):
         raise _err(500, "auth_storage_error", "Could not persist Google user.")
     # Google asserted email_verified server-side (checked in _verify_google_id_token),
     # so this identity is verified. Mark it verified (idempotent) → issues the
-    # one-time starter grant exactly once for a provider-verified account.
+    # one-time starter grant exactly once for a provider-verified account. The
+    # SAME starter-credit abuse gate runs (a Google account does not auto-qualify
+    # for free credits); provider-verification is NOT re-challenged.
     try:
         from backend.services.auth import verification
-        verification.mark_verified(iuser.id, claims["email"], source="oauth_google")
+        from backend.routes.starter_ctx import build_context, set_install_cookie
+        _owner = bool(_owner_email()) and str(claims["email"]).strip().lower() == _owner_email()
+        grant_ctx, _install = build_context(request, provider="google", is_owner=_owner)
+        set_install_cookie(response, _install)
+        verification.mark_verified(iuser.id, claims["email"], source="oauth_google", context=grant_ctx)
     except Exception as exc:
         logger.warning("auth.google: mark_verified failed (non-fatal): %s", exc)
     user = _annotate_owner(_identity_user_dict(iuser))

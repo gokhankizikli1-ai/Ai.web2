@@ -412,6 +412,35 @@ class Config:
     # Outbound email HTTP timeout (seconds).
     EMAIL_TIMEOUT_SEC: float = float(os.getenv("EMAIL_TIMEOUT_SEC", "15") or 15)
 
+    # ── Starter-credit abuse protection ──────────────────────────────────
+    # Layered, privacy-conscious controls that limit repeated FREE starter-credit
+    # grants (promotional only — purchased/subscription credits are never gated).
+    # Master switch (default OFF ⇒ feature dormant, behaviour unchanged) plus a
+    # mode: "off" | "shadow" | "enforce". Shadow computes + logs a redacted
+    # decision but NEVER denies; enforce actually withholds the starter grant on a
+    # deny/defer. The mode only takes effect when the master switch is on.
+    ENABLE_STARTER_CREDIT_ABUSE_PROTECTION: bool = os.getenv("ENABLE_STARTER_CREDIT_ABUSE_PROTECTION", "false").strip().lower() == "true"
+    STARTER_CREDIT_ABUSE_MODE: str = os.getenv("STARTER_CREDIT_ABUSE_MODE", "shadow").strip().lower() or "shadow"
+    # Thresholds (safe defaults; tuned for households/offices/schools). A grant is
+    # denied/deferred only when signals stack — never on shared IP alone.
+    STARTER_ABUSE_MAX_GRANTS_PER_INSTALL: int = int(os.getenv("STARTER_ABUSE_MAX_GRANTS_PER_INSTALL", "1") or 1)
+    STARTER_ABUSE_MAX_GRANTS_PER_NETWORK_DAY: int = int(os.getenv("STARTER_ABUSE_MAX_GRANTS_PER_NETWORK_DAY", "8") or 8)
+    STARTER_ABUSE_NETWORK_WINDOW_HOURS: int = int(os.getenv("STARTER_ABUSE_NETWORK_WINDOW_HOURS", "24") or 24)
+    # IPv4 prefix length used to derive the (hashed) network identifier — /24
+    # groups a household/office without over-collapsing a carrier. IPv6 uses /64.
+    STARTER_ABUSE_IPV4_PREFIX: int = int(os.getenv("STARTER_ABUSE_IPV4_PREFIX", "24") or 24)
+
+    # ── Trusted proxy (client-IP extraction) ─────────────────────────────
+    # X-Forwarded-For is NOT trusted by default (TRUSTED_PROXY_COUNT=0 ⇒ use the
+    # socket peer only). When the app sits behind N known proxies (e.g. Railway
+    # edge = 1), set the count so the Nth-from-the-right XFF hop is taken as the
+    # real client; a spoofed XFF from the client is then ignored. Never blindly
+    # trusts the whole header.
+    TRUSTED_PROXY_COUNT: int = int(os.getenv("TRUSTED_PROXY_COUNT", "0") or 0)
+    # Secret salt for keyed hashing of IPs / install ids (defence in depth so a
+    # leaked DB can't be reversed to raw IPs). Falls back to JWT_SECRET_KEY.
+    ABUSE_HASH_SALT: str = os.getenv("ABUSE_HASH_SALT", "").strip()
+
     # ── CORS ─────────────────────────────────────────────────────────────
     ALLOWED_ORIGINS: list = [
         "https://korvixai.com",
