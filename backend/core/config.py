@@ -394,13 +394,21 @@ class Config:
     EMAIL_FROM: str = os.getenv("EMAIL_FROM", "").strip()
     # Public base URL the verification link points at (the SPA origin). The link
     # uses a HashRouter fragment so the raw token never reaches the server logs.
+    # EMAIL_VERIFICATION_BASE_URL (spec name) overrides PUBLIC_APP_URL when set.
     PUBLIC_APP_URL: str = os.getenv("PUBLIC_APP_URL", "https://korvixai.com").strip().rstrip("/")
-    # Single-use token lifetime (minutes) and resend abuse controls.
+    EMAIL_VERIFICATION_BASE_URL: str = os.getenv("EMAIL_VERIFICATION_BASE_URL", "").strip().rstrip("/")
+    # Single-use token lifetime + resend abuse controls. The *_SECONDS names are
+    # the spec-preferred ones; the legacy minute/second names are kept as
+    # fallbacks (0 ⇒ unset ⇒ use the legacy value / default).
     EMAIL_VERIFICATION_TOKEN_TTL_MIN: int = int(os.getenv("EMAIL_VERIFICATION_TOKEN_TTL_MIN", "30") or 30)
+    EMAIL_VERIFICATION_TTL_SECONDS: int = int(os.getenv("EMAIL_VERIFICATION_TTL_SECONDS", "0") or 0)
     EMAIL_VERIFICATION_RESEND_COOLDOWN_SEC: int = int(os.getenv("EMAIL_VERIFICATION_RESEND_COOLDOWN_SEC", "60") or 60)
+    EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS: int = int(os.getenv("EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS", "0") or 0)
     EMAIL_VERIFICATION_MAX_SENDS_PER_HOUR: int = int(os.getenv("EMAIL_VERIFICATION_MAX_SENDS_PER_HOUR", "5") or 5)
     # Per-IP hourly cap on verification-send requests (best-effort, in-process).
     EMAIL_VERIFICATION_MAX_SENDS_PER_IP_HOUR: int = int(os.getenv("EMAIL_VERIFICATION_MAX_SENDS_PER_IP_HOUR", "20") or 20)
+    # Registration (signup) per-IP hourly cap — brake on scripted account farming.
+    AUTH_REGISTER_MAX_PER_IP_HOUR: int = int(os.getenv("AUTH_REGISTER_MAX_PER_IP_HOUR", "10") or 10)
     # Outbound email HTTP timeout (seconds).
     EMAIL_TIMEOUT_SEC: float = float(os.getenv("EMAIL_TIMEOUT_SEC", "15") or 15)
 

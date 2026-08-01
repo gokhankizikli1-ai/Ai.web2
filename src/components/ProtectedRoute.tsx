@@ -21,8 +21,15 @@ interface ProtectedRouteProps {
  * guestAllowed: if false, route requires login. Redirects to `redirectTo`.
  *   (app surfaces → /signup; /settings → /login)
  */
+// Paths a verification-required (unverified) user may still reach: manage their
+// account, see/settle billing, and complete verification. Everything else in the
+// full dashboard is blocked until the email is confirmed. Logout is an action,
+// not a route, so it stays available everywhere.
+const UNVERIFIED_ALLOW_PREFIXES = ['/settings', '/credits', '/billing', '/verify-email'];
+
 export default function ProtectedRoute({ children, guestAllowed = true, redirectTo = '/login' }: ProtectedRouteProps) {
   const { isAuthenticated, isLoading, checkAuth } = useAuthStore();
+  const user = useAuthStore((s) => s.user);
   const location = useLocation();
   const [checked, setChecked] = useState(false);
 
@@ -51,6 +58,20 @@ export default function ProtectedRoute({ children, guestAllowed = true, redirect
   // settings → /login). Never render an app surface for a logged-out user.
   if (!isAuthenticated) {
     return <Navigate to={redirectTo} state={{ from: location.pathname }} replace />;
+  }
+
+  // Verification gate: an authenticated but UNVERIFIED account (backend flag,
+  // only true when enforcement is on) may not enter the full dashboard. Send it
+  // to /verify-email, but keep account/billing/verification paths reachable.
+  // Backend require_verified_identity is the real control; this mirrors it in
+  // the UI so an unverified user never sees the app as fully usable.
+  if (user?.verification_required === true) {
+    const reachable = UNVERIFIED_ALLOW_PREFIXES.some(
+      (p) => location.pathname === p || location.pathname.startsWith(p + '/'),
+    );
+    if (!reachable) {
+      return <Navigate to="/verify-email" replace />;
+    }
   }
 
   // Auth required and authenticated — render

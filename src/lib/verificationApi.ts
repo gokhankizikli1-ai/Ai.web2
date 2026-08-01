@@ -43,6 +43,8 @@ export interface SendResult {
   sent: boolean;
   cooldownRemaining: number;
   alreadyVerified: boolean;
+  /** True when the backend returned 429 (cooldown or per-IP/account rate limit). */
+  rateLimited: boolean;
 }
 
 /** Outcome of consuming a verification token from the email link. */
@@ -51,6 +53,7 @@ export type ConfirmStatus =
   | 'already_verified'
   | 'expired'
   | 'already_used'
+  | 'superseded'
   | 'invalid'
   | 'error';
 
@@ -89,9 +92,18 @@ export async function getVerificationStatus(
   };
 }
 
+function metaNumber(body: unknown, key: string): number | undefined {
+  if (body && typeof body === 'object') {
+    const meta = (body as { metadata?: Record<string, unknown> }).metadata;
+    const v = meta?.[key];
+    if (typeof v === 'number') return v;
+  }
+  return undefined;
+}
+
 /** Resend the verification link for the current account. */
 export async function resendVerification(): Promise<SendResult> {
-  const fallback: SendResult = { sent: false, cooldownRemaining: 0, alreadyVerified: false };
+  const fallback: SendResult = { sent: false, cooldownRemaining: 0, alreadyVerified: false, rateLimited: false };
   let resp: Response;
   try {
     resp = await fetch(`${apiBase()}/v2/auth/email-verification/send`, {
@@ -101,9 +113,19 @@ export async function resendVerification(): Promise<SendResult> {
   } catch {
     return fallback;
   }
-  if (!resp.ok) return fallback;
   let body: unknown = null;
-  try { body = await resp.json(); } catch { return fallback; }
+  try { body = await resp.json(); } catch { /* keep null */ }
+
+  // 429 → typed cooldown / rate-limit. Read the retry window from metadata or
+  // the Retry-After header so the UI can show an accurate countdown.
+  if (resp.status === 429) {
+    const headerRetry = Number(resp.headers.get('Retry-After') || '');
+    const cooldown = metaNumber(body, 'cooldown_remaining')
+      ?? (Number.isFinite(headerRetry) ? headerRetry : 60);
+    return { sent: false, cooldownRemaining: cooldown, alreadyVerified: false, rateLimited: true };
+  }
+  if (!resp.ok) return fallback;
+
   const d = envelopeData<{
     sent?: boolean; cooldown_remaining?: number; already_verified?: boolean;
   }>(body);
@@ -112,6 +134,7 @@ export async function resendVerification(): Promise<SendResult> {
     sent: !!d.sent,
     cooldownRemaining: typeof d.cooldown_remaining === 'number' ? d.cooldown_remaining : 0,
     alreadyVerified: !!d.already_verified,
+    rateLimited: false,
   };
 }
 
@@ -137,7 +160,7 @@ export async function confirmVerification(token: string): Promise<ConfirmStatus>
   const s = d?.status;
   if (
     s === 'verified' || s === 'already_verified' || s === 'expired' ||
-    s === 'already_used' || s === 'invalid'
+    s === 'already_used' || s === 'superseded' || s === 'invalid'
   ) {
     return s;
   }

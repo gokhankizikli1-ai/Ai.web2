@@ -47,6 +47,10 @@ def _resp(status: int, body: dict) -> JSONResponse:
     return JSONResponse(status_code=status, content=body, headers=_NO_STORE)
 
 
+def _resp_headers(status: int, body: dict, extra: dict) -> JSONResponse:
+    return JSONResponse(status_code=status, content=body, headers={**_NO_STORE, **extra})
+
+
 def _principal(request: Request):
     from backend.core.principal import resolve_principal
     try:
@@ -129,6 +133,19 @@ async def send(request: Request) -> JSONResponse:
 
     from backend.services.auth.verification_email import send_verification_email
     outcome = await send_verification_email(uid, email, request_ip=_client_ip(request))
+    # Typed, stable errors for the cooldown / rate-limited cases (429 + Retry-After)
+    # so the frontend can show a precise "resend available in Ns" state.
+    if not outcome.sent and outcome.reason == "cooldown":
+        retry = max(1, int(outcome.cooldown_remaining))
+        return _resp_headers(429, envelope_err(
+            "Please wait before requesting another email.",
+            code="verification_cooldown", cooldown_remaining=retry,
+        ), {"Retry-After": str(retry)})
+    if not outcome.sent and outcome.reason == "ip_rate_limited":
+        return _resp_headers(429, envelope_err(
+            "Too many requests. Please try again later.",
+            code="rate_limited",
+        ), {"Retry-After": "3600"})
     return _resp(200, envelope_ok({
         "sent": bool(outcome.sent),
         "cooldown_remaining": int(outcome.cooldown_remaining),

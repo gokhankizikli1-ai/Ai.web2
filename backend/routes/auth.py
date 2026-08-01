@@ -218,7 +218,17 @@ async def auth_status():
 
 @router.post("/signup", status_code=status.HTTP_201_CREATED)
 async def signup(body: SignupRequest, request: Request):
-    from backend.services.auth import passwords, verification
+    from backend.services.auth import passwords, verification, abuse
+    # Registration abuse brake (per-IP hourly cap; extension seam for a future
+    # abuse-risk engine). Generic message — never reveals whether the email exists.
+    decision = abuse.evaluate_registration(email=body.email, ip=_client_ip(request))
+    if not decision.allowed:
+        raise HTTPException(
+            status_code=429,
+            detail={"error": "rate_limited", "code": "rate_limited",
+                    "message": "Too many sign-up attempts. Please try again later."},
+            headers={"Retry-After": str(decision.retry_after)},
+        )
     try:
         user = passwords.create_user(body.email, body.password, body.display_name)
     except passwords.EmailExistsError as e:
