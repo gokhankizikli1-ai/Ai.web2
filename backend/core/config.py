@@ -373,6 +373,37 @@ class Config:
     # Token issuer claim — set to your domain in production.
     JWT_ISSUER: str = os.getenv("JWT_ISSUER", "korvixai")
 
+    # ── Auth — email verification (identity gate for starter credits) ─────
+    # NON-billing auth config. Gates whether a password account must confirm
+    # ownership of its email before the app grants starter credits or lets it
+    # run paid AI/build operations. Default OFF: the require_verified_identity
+    # guard is a pass-through and password signup is treated as verified, so
+    # merging this is behaviourally inert until an operator enables it (flip
+    # this ON together with ENABLE_BILLING_CREDITS). Google OAuth accounts are
+    # provider-verified regardless of this flag (Google asserts email_verified).
+    ENABLE_EMAIL_VERIFICATION: bool = os.getenv("ENABLE_EMAIL_VERIFICATION", "false").strip().lower() == "true"
+    # Transactional email delivery. "console" (default) is the dev-safe backend:
+    # it NEVER prints the token/URL in production, only a redacted line. "resend"
+    # uses the Resend HTTP API (Bearer RESEND_API_KEY). Unknown ⇒ console.
+    EMAIL_PROVIDER: str = os.getenv("EMAIL_PROVIDER", "console").strip().lower() or "console"
+    # SECRET — never logged. Empty ⇒ the resend provider fails closed (falls back
+    # to console so a misconfig can't crash signup).
+    RESEND_API_KEY: str = os.getenv("RESEND_API_KEY", "").strip()
+    # RFC-5322 From header, e.g. "KorvixAI <noreply@korvixai.com>". Empty ⇒ email
+    # send is skipped (console line only) so an unconfigured env never 500s.
+    EMAIL_FROM: str = os.getenv("EMAIL_FROM", "").strip()
+    # Public base URL the verification link points at (the SPA origin). The link
+    # uses a HashRouter fragment so the raw token never reaches the server logs.
+    PUBLIC_APP_URL: str = os.getenv("PUBLIC_APP_URL", "https://korvixai.com").strip().rstrip("/")
+    # Single-use token lifetime (minutes) and resend abuse controls.
+    EMAIL_VERIFICATION_TOKEN_TTL_MIN: int = int(os.getenv("EMAIL_VERIFICATION_TOKEN_TTL_MIN", "30") or 30)
+    EMAIL_VERIFICATION_RESEND_COOLDOWN_SEC: int = int(os.getenv("EMAIL_VERIFICATION_RESEND_COOLDOWN_SEC", "60") or 60)
+    EMAIL_VERIFICATION_MAX_SENDS_PER_HOUR: int = int(os.getenv("EMAIL_VERIFICATION_MAX_SENDS_PER_HOUR", "5") or 5)
+    # Per-IP hourly cap on verification-send requests (best-effort, in-process).
+    EMAIL_VERIFICATION_MAX_SENDS_PER_IP_HOUR: int = int(os.getenv("EMAIL_VERIFICATION_MAX_SENDS_PER_IP_HOUR", "20") or 20)
+    # Outbound email HTTP timeout (seconds).
+    EMAIL_TIMEOUT_SEC: float = float(os.getenv("EMAIL_TIMEOUT_SEC", "15") or 15)
+
     # ── CORS ─────────────────────────────────────────────────────────────
     ALLOWED_ORIGINS: list = [
         "https://korvixai.com",

@@ -29,7 +29,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 
-from backend.core.deps import current_user
+from backend.core.deps import current_user, require_verified_identity
 from backend.services.auth.identity import User
 from backend.services.billing.entitlements import gating
 from backend.services.billing.usage import service as usage
@@ -99,6 +99,7 @@ def image_gen_health() -> Dict[str, Any]:
 @router.post(
     "/generate",
     dependencies=[
+        Depends(require_verified_identity),
         Depends(gating.require_feature(gating.FEATURE_WEB_BUILD_IMAGE_GENERATION)),
         Depends(require_quota(usage.METRIC_WEB_BUILD_GENERATIONS)),
     ],

@@ -35,7 +35,9 @@ import logging
 import os
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
+
+from backend.core.deps import require_verified_identity
 from pydantic import BaseModel, Field
 
 # Module-level imports so tests can monkeypatch `run_agent` on this
@@ -143,7 +145,7 @@ def _routing_summary_safe() -> dict:
 
 # ── Main route ─────────────────────────────────────────────────────────
 
-@router.post("")
+@router.post("", dependencies=[Depends(require_verified_identity)])
 async def orchestrate(body: OrchestrateBody, request: Request) -> dict:
     _ensure_enabled()
 

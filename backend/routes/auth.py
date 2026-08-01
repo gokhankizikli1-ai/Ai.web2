@@ -25,7 +25,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -120,6 +120,42 @@ def _annotate_owner(user: Dict[str, Any]) -> Dict[str, Any]:
     return user
 
 
+def _verification_enforced() -> bool:
+    """Whether email verification is an enforced gate. When False the whole
+    feature is dormant (guard passes through; password signup auto-verifies so
+    behaviour matches the pre-verification product)."""
+    try:
+        from backend.core.config import settings
+        return bool(settings.ENABLE_EMAIL_VERIFICATION)
+    except Exception:
+        return False
+
+
+def _annotate_verification(user: Dict[str, Any]) -> Dict[str, Any]:
+    """Additive: stamp `email_verified` on the user dict so the frontend can
+    render the verification gate. Never raises. Owners and provider-verified
+    OAuth users read as verified; unverified password users read as False."""
+    try:
+        from backend.services.auth import verification
+        uid = str(user.get("id", ""))
+        verified = verification.is_verified(uid)
+        # When enforcement is off, do not surface a scary "unverified" state —
+        # verification isn't required, so the field is informational only.
+        user["email_verified"] = bool(verified) if _verification_enforced() else True
+        user["verification_required"] = _verification_enforced() and not verified
+    except Exception:
+        user["email_verified"] = True
+        user["verification_required"] = False
+    return user
+
+
+def _client_ip(request: Optional[Request]) -> Optional[str]:
+    try:
+        return request.client.host if request and request.client else None
+    except Exception:
+        return None
+
+
 def _identity_user_dict(iuser) -> Dict[str, Any]:
     """Map an auth_users (identity-store) row to the public user dict
     shape used by /auth/me. For OAuth users we use external_id as the
@@ -181,16 +217,40 @@ async def auth_status():
 
 
 @router.post("/signup", status_code=status.HTTP_201_CREATED)
-async def signup(body: SignupRequest):
-    from backend.services.auth import passwords
+async def signup(body: SignupRequest, request: Request):
+    from backend.services.auth import passwords, verification
     try:
         user = passwords.create_user(body.email, body.password, body.display_name)
     except passwords.EmailExistsError as e:
         raise _err(409, "email_exists", str(e))
     except passwords.InvalidInputError as e:
         raise _err(400, "validation_error", str(e))
-    logger.info("auth.signup ok | user=%s", user["id"])
-    return _issue_access(user)
+    uid = user["id"]
+    email = user.get("email", "")
+    # A password account starts UNVERIFIED — record the pending row.
+    try:
+        verification.record_pending(uid, email)
+    except Exception as exc:
+        logger.warning("auth.signup: record_pending failed (non-fatal): %s", exc)
+    if _verification_enforced():
+        # Dispatch the single-use verification link. NO starter grant is issued
+        # until the email is confirmed (see verification.mark_verified).
+        try:
+            from backend.services.auth.verification_email import send_verification_email
+            await send_verification_email(uid, email, request_ip=_client_ip(request))
+        except Exception as exc:
+            logger.warning("auth.signup: verification email dispatch failed (non-fatal): %s", exc)
+    else:
+        # Feature dormant → verification not required. Preserve the pre-gate
+        # behaviour: treat the account as verified and issue the starter grant.
+        try:
+            verification.mark_verified(uid, email, source="enforcement_disabled")
+        except Exception as exc:
+            logger.warning("auth.signup: mark_verified failed (non-fatal): %s", exc)
+    logger.info("auth.signup ok | user=%s", uid)
+    resp = _issue_access(user)
+    _annotate_verification(resp["user"])
+    return resp
 
 
 @router.post("/login")
@@ -211,12 +271,14 @@ async def login(body: LoginRequest):
     except Exception as exc:  # best-effort; never fail login on this
         logger.warning("auth.login touch failed (non-fatal): %s", exc)
     logger.info("auth.login ok | user=%s", user["id"])
-    return _issue_access(user)
+    resp = _issue_access(user)
+    _annotate_verification(resp["user"])
+    return resp
 
 
 @router.get("/me")
 async def me(user: Dict[str, Any] = Depends(get_current_user)):
-    return {"user": user}
+    return {"user": _annotate_verification(user)}
 
 
 @router.post("/logout")
@@ -306,9 +368,19 @@ def auth_google(body: OAuthRequest):
     except Exception as exc:
         logger.error("auth.google: identity store error: %s", exc)
         raise _err(500, "auth_storage_error", "Could not persist Google user.")
+    # Google asserted email_verified server-side (checked in _verify_google_id_token),
+    # so this identity is verified. Mark it verified (idempotent) → issues the
+    # one-time starter grant exactly once for a provider-verified account.
+    try:
+        from backend.services.auth import verification
+        verification.mark_verified(iuser.id, claims["email"], source="oauth_google")
+    except Exception as exc:
+        logger.warning("auth.google: mark_verified failed (non-fatal): %s", exc)
     user = _annotate_owner(_identity_user_dict(iuser))
     logger.info("auth.google ok | user=%s | email=%s", iuser.id, claims["email"])
-    return _issue_access(user)
+    resp = _issue_access(user)
+    _annotate_verification(resp["user"])
+    return resp
 
 
 @router.post("/apple")

@@ -30,7 +30,7 @@ from fastapi import APIRouter, Depends, Path, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from backend.core.deps import current_user
+from backend.core.deps import current_user, require_verified_identity
 from backend.core.responses import err as envelope_err
 from backend.core.responses import ok as envelope_ok
 from backend.services.auth.identity import User
@@ -127,7 +127,7 @@ def _project_owned_by(project_id: str, user_id: str) -> bool:
         return False
 
 
-@router.post("/run")
+@router.post("/run", dependencies=[Depends(require_verified_identity)])
 async def start_run_route(
     body: RunBody, request: Request, user: User = Depends(current_user),
 ) -> Any:

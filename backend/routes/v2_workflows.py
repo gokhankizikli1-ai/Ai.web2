@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from backend.core.deps import current_user
+from backend.core.deps import current_user, require_verified_identity
 from backend.core.responses import err as envelope_err
 from backend.core.responses import ok as envelope_ok
 from backend.services.auth.identity import User
@@ -139,6 +139,7 @@ def _envelope_error_response(
 @router.post(
     "/workflows/{workflow_id}/run",
     dependencies=[
+        Depends(require_verified_identity),
         Depends(gating.require_feature(gating.FEATURE_WORKFLOWS)),
         Depends(require_quota(usage.METRIC_WORKFLOW_RUNS)),
     ],
