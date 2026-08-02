@@ -22,15 +22,28 @@ def is_enabled() -> bool:
 
 
 def allow_negative_default() -> bool:
-    """Default overdraft policy for consume(). When false (default) a consume
-    that would drive the balance below zero is rejected. Individual calls may
-    still override this."""
+    """LEGACY / IGNORED for normal consumption.
+
+    Historically this env flag (BILLING_CREDITS_ALLOW_NEGATIVE) let a normal
+    consume overdraw the balance. Normal `service.consume()` is now
+    UNCONDITIONALLY non-negative and no longer consults this value, so the flag
+    can never weaken normal spending. It is retained ONLY so deployments that
+    still set it do not break, and it is surfaced in owner diagnostics labelled
+    as legacy. Overdraft remains an explicit owner-only capability on
+    `adjust` / `revoke`. The env var is intentionally NOT removed here because
+    deployment compatibility is unknown."""
     return os.getenv("BILLING_CREDITS_ALLOW_NEGATIVE", "false").strip().lower() == "true"
 
 
 def strict_postgres() -> bool:
-    """Mirror the billing policy: on a Postgres error fall back to SQLite unless
-    strict mode is on."""
+    """LEGACY for the credit ledger.
+
+    Mirrors the shared billing policy flag (BILLING_POSTGRES_REQUIRED). It NO
+    LONGER governs credit-store fallback: when Postgres is the selected
+    authoritative backend, credit operations ALWAYS fail closed on a Postgres
+    failure and NEVER fall back to SQLite, independent of this flag. Retained
+    for the other billing subsystems and surfaced in credit diagnostics for
+    visibility only."""
     return os.getenv("BILLING_POSTGRES_REQUIRED", "false").strip().lower() == "true"
 
 

@@ -32,9 +32,11 @@ from datetime import datetime, timezone
 from typing import Iterator, List, Optional
 
 from backend.services.billing.credits import config as credits_config
+from backend.services.billing.credits import errors as credit_errors
+from backend.services.billing.credits.errors import CreditStoreError, CreditStoreUnavailable
 from backend.services.billing.credits.types import (
     CreditAccount, CreditTransaction, TxnResult,
-    REASON_APPLIED, REASON_IDEMPOTENT, REASON_INSUFFICIENT,
+    REASON_APPLIED, REASON_IDEMPOTENT, REASON_INSUFFICIENT, REASON_CONFLICT,
 )
 
 
@@ -42,7 +44,7 @@ logger = logging.getLogger(__name__)
 
 _LOCK = threading.Lock()
 _COUNTS: dict[str, object] = {
-    "appends": 0, "idempotent_hits": 0, "insufficient": 0,
+    "appends": 0, "idempotent_hits": 0, "insufficient": 0, "conflicts": 0,
     "reads": 0, "errors": 0, "last_error": "",
 }
 
@@ -166,9 +168,13 @@ def _row_to_txn(row: sqlite3.Row) -> CreditTransaction:
 # ── Reads ────────────────────────────────────────────────────────────────────
 
 def get_account(user_id: str) -> CreditAccount:
-    _ensure_init()
+    """Fetch the account row. A MISSING row is a legitimate zero-balance account
+    (balance 0). An OPERATIONAL failure fails closed as `CreditStoreUnavailable`
+    — it must never be flattened into a fake zero balance that a caller could
+    mistake for a real empty account."""
     uid = str(user_id)
     try:
+        _ensure_init()
         with _conn() as c:
             row = c.execute(
                 "SELECT * FROM billing_credit_accounts WHERE user_id=?", (uid,)
@@ -180,10 +186,12 @@ def get_account(user_id: str) -> CreditAccount:
             user_id=row["user_id"], balance=int(row["balance"]),
             created_at=row["created_at"], updated_at=row["updated_at"],
         )
+    except CreditStoreError:
+        raise
     except Exception as e:
-        logger.warning("billing.credits.store_sqlite.get_account error: %s", e)
-        _bump("reads", str(e))
-        return CreditAccount(user_id=uid, balance=0)
+        logger.warning("billing.credits.store_sqlite.get_account error: %s", type(e).__name__)
+        _bump("reads", type(e).__name__)
+        raise CreditStoreUnavailable("credit account read failed") from e
 
 
 def get_balance(user_id: str) -> int:
@@ -191,24 +199,30 @@ def get_balance(user_id: str) -> int:
 
 
 def get_by_reference(user_id: str, reference: str) -> Optional[CreditTransaction]:
-    _ensure_init()
+    """Look up a transaction by `(user_id, reference)`. A missing reference is a
+    legitimate `None`; an OPERATIONAL failure fails closed as
+    `CreditStoreUnavailable` (never a silent `None` that hides a store outage)."""
     if not reference:
         return None
     try:
+        _ensure_init()
         with _conn() as c:
             row = c.execute(
                 "SELECT * FROM billing_credit_transactions WHERE user_id=? AND reference=?",
                 (str(user_id), str(reference)),
             ).fetchone()
         return _row_to_txn(row) if row else None
+    except CreditStoreError:
+        raise
     except Exception as e:
-        logger.warning("billing.credits.store_sqlite.get_by_reference error: %s", e)
-        return None
+        logger.warning("billing.credits.store_sqlite.get_by_reference error: %s", type(e).__name__)
+        _bump("reads", type(e).__name__)
+        raise CreditStoreUnavailable("credit reference read failed") from e
 
 
 def list_transactions(user_id: str, *, limit: int = 50, offset: int = 0) -> List[CreditTransaction]:
-    _ensure_init()
     try:
+        _ensure_init()
         with _conn() as c:
             rows = c.execute(
                 "SELECT * FROM billing_credit_transactions WHERE user_id=? "
@@ -217,26 +231,31 @@ def list_transactions(user_id: str, *, limit: int = 50, offset: int = 0) -> List
             ).fetchall()
         _bump("reads")
         return [_row_to_txn(r) for r in rows]
+    except CreditStoreError:
+        raise
     except Exception as e:
-        logger.warning("billing.credits.store_sqlite.list_transactions error: %s", e)
-        _bump("reads", str(e))
-        return []
+        logger.warning("billing.credits.store_sqlite.list_transactions error: %s", type(e).__name__)
+        _bump("reads", type(e).__name__)
+        raise CreditStoreUnavailable("credit transactions read failed") from e
 
 
 def sum_ledger(user_id: str) -> int:
     """Independent recomputation of the balance from the immutable ledger — the
     audit cross-check against the cached account balance."""
-    _ensure_init()
     try:
+        _ensure_init()
         with _conn() as c:
             row = c.execute(
                 "SELECT COALESCE(SUM(amount), 0) AS s FROM billing_credit_transactions WHERE user_id=?",
                 (str(user_id),),
             ).fetchone()
         return int(row["s"] or 0) if row else 0
+    except CreditStoreError:
+        raise
     except Exception as e:
-        logger.warning("billing.credits.store_sqlite.sum_ledger error: %s", e)
-        return 0
+        logger.warning("billing.credits.store_sqlite.sum_ledger error: %s", type(e).__name__)
+        _bump("reads", type(e).__name__)
+        raise CreditStoreUnavailable("credit ledger sum failed") from e
 
 
 # ── Atomic append ─────────────────────────────────────────────────────────────
@@ -248,37 +267,49 @@ def apply(
 ) -> TxnResult:
     """Append one immutable ledger entry atomically and update the cached
     balance. `delta` is the SIGNED change. Rejects an overdrawing consume
-    (delta<0 driving balance below zero) unless allow_negative. Idempotent by
-    (user_id, reference) when reference is provided."""
-    _ensure_init()
+    (delta<0 driving balance below zero) unless allow_negative.
+
+    Idempotent by (user_id, reference) when reference is provided: an identical
+    retry (same type/amount/reason/metadata) returns the ORIGINAL transaction
+    and does NOT append; a reuse of the same reference with a DIFFERENT
+    immutable payload is rejected as REASON_CONFLICT (no append, no balance
+    change, original never mutated). An operational failure fails closed as
+    `CreditStoreUnavailable`."""
     uid = str(user_id)
     now = _now()
+    ref = str(reference) if reference else None
+    try:
+        _ensure_init()
+    except CreditStoreError:
+        raise
+    except Exception as e:  # pragma: no cover — init guards its own errors
+        logger.warning("billing.credits.store_sqlite.apply init error: %s", type(e).__name__)
+        raise CreditStoreUnavailable("credit store init failed") from e
     con = sqlite3.connect(credits_config.db_path(), timeout=10)
     con.row_factory = sqlite3.Row
     try:
         con.execute("PRAGMA journal_mode = WAL")
         # BEGIN IMMEDIATE takes the write lock now, so concurrent applies on any
-        # account serialise — no lost updates, no stale-read races.
+        # account serialise — no lost updates, no stale-read races. The
+        # reference lookup below therefore already sees every committed prior
+        # writer's row (identical conflict semantics to the Postgres path).
         con.execute("BEGIN IMMEDIATE")
 
         # Idempotency: a prior entry with the same reference wins; do not append
-        # a second one.
-        if reference:
+        # a second one. Compare the immutable payload so a same-reference reuse
+        # with a DIFFERENT operation is a conflict, not a false success.
+        if ref:
             prior = con.execute(
                 "SELECT * FROM billing_credit_transactions WHERE user_id=? AND reference=?",
-                (uid, str(reference)),
+                (uid, ref),
             ).fetchone()
             if prior is not None:
                 bal_row = con.execute(
                     "SELECT balance FROM billing_credit_accounts WHERE user_id=?", (uid,)
                 ).fetchone()
                 con.execute("ROLLBACK")
-                _bump("idempotent_hits")
-                return TxnResult(
-                    applied=True, reason_code=REASON_IDEMPOTENT,
-                    balance=int(bal_row["balance"]) if bal_row else int(prior["balance_after"]),
-                    idempotent=True, transaction=_row_to_txn(prior),
-                )
+                balance = int(bal_row["balance"]) if bal_row else int(prior["balance_after"])
+                return _resolve_prior(prior, balance, type, int(delta), reason, metadata)
 
         con.execute(
             "INSERT OR IGNORE INTO billing_credit_accounts (user_id, balance, created_at, updated_at) "
@@ -299,12 +330,12 @@ def apply(
             )
 
         tid = _new_id()
-        md = json.dumps(metadata or {})
+        md = credit_errors.canonical_metadata(metadata)
         con.execute(
             "INSERT INTO billing_credit_transactions "
             "(id, user_id, type, amount, balance_after, reason, reference, metadata_json, created_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (tid, uid, type, int(delta), new_balance, reason or "", reference, md, now),
+            (tid, uid, type, int(delta), new_balance, reason or "", ref, md, now),
         )
         con.execute(
             "UPDATE billing_credit_accounts SET balance=?, updated_at=? WHERE user_id=?",
@@ -314,20 +345,52 @@ def apply(
         _bump("appends")
         txn = CreditTransaction(
             id=tid, user_id=uid, type=type, amount=int(delta), balance_after=new_balance,
-            reason=reason or "", reference=reference, metadata=metadata or {}, created_at=now,
+            reason=reason or "", reference=ref, metadata=metadata or {}, created_at=now,
         )
         return TxnResult(applied=True, reason_code=REASON_APPLIED, balance=new_balance,
                          idempotent=False, transaction=txn)
+    except CreditStoreError:
+        try:
+            con.execute("ROLLBACK")
+        except Exception:  # pragma: no cover
+            pass
+        raise
     except Exception as e:
         try:
             con.execute("ROLLBACK")
         except Exception:  # pragma: no cover
             pass
-        logger.warning("billing.credits.store_sqlite.apply error: %s", e)
-        _bump("appends", str(e))
-        raise
+        logger.warning("billing.credits.store_sqlite.apply error: %s", type(e).__name__)
+        _bump("appends", type(e).__name__)
+        raise CreditStoreUnavailable("credit apply failed") from e
     finally:
         con.close()
+
+
+def _resolve_prior(
+    prior, balance: int, new_type: str, new_delta: int,
+    reason: str, metadata: Optional[dict],
+) -> TxnResult:
+    """Given an existing transaction for the same `(user_id, reference)`, decide
+    the deterministic outcome: an identical payload is an idempotent no-op (the
+    original transaction is returned, never mutated); a divergent payload is a
+    REASON_CONFLICT rejection. Balance is unchanged in both cases."""
+    if credit_errors.payload_conflict(
+        prior_type=prior["type"], prior_amount=prior["amount"],
+        prior_reason=prior["reason"], prior_metadata_raw=prior["metadata_json"],
+        new_type=new_type, new_delta=int(new_delta),
+        new_reason=reason, new_metadata=metadata,
+    ):
+        _bump("conflicts")
+        return TxnResult(
+            applied=False, reason_code=REASON_CONFLICT,
+            balance=int(balance), idempotent=False, transaction=None,
+        )
+    _bump("idempotent_hits")
+    return TxnResult(
+        applied=True, reason_code=REASON_IDEMPOTENT,
+        balance=int(balance), idempotent=True, transaction=_row_to_txn(prior),
+    )
 
 
 def table_counts() -> dict:

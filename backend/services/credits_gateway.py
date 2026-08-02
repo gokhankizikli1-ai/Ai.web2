@@ -31,6 +31,7 @@ from typing import Optional
 
 from backend.services.billing.credits import service as credits
 from backend.services.billing.credits import types as credit_types
+from backend.services.billing.credits.errors import CreditStoreError, CreditStoreUnavailable
 
 logger = logging.getLogger(__name__)
 
@@ -186,8 +187,14 @@ _LIFETIME_MAX_PAGES = 25
 
 def credit_summary(user_id: str) -> dict:
     """Authoritative snapshot for the account UI: current balance + lifetime
-    granted/consumed. Never raises; returns a dormant snapshot when the ledger
-    is disabled. `user_id` MUST be the backend-authenticated id."""
+    granted/consumed. Returns a dormant snapshot when the ledger is disabled.
+    `user_id` MUST be the backend-authenticated id.
+
+    FAIL CLOSED: when the authoritative store is unavailable this raises
+    `CreditStoreUnavailable` rather than returning a fabricated zero balance —
+    the read route maps that to a sanitized HTTP 503 so a storage outage is
+    never presented to the user (or the frontend) as a legitimate empty
+    account. The dormant (disabled) snapshot is a distinct, intentional state."""
     uid = (user_id or "").strip()
     enabled = credits.is_enabled()
     if not uid or not enabled:
@@ -196,11 +203,18 @@ def credit_summary(user_id: str) -> dict:
             "lifetime_granted": 0, "lifetime_consumed": 0, "lifetime_capped": False,
         }
 
-    balance = 0
+    # The authoritative balance must be correct or the whole read fails closed.
+    # A missing account legitimately reads 0; only an operational store failure
+    # raises CreditStoreUnavailable (→ 503), never a fake zero.
     try:
         balance = int(credits.get_balance(uid))
-    except Exception:  # pragma: no cover — read must not 500
-        balance = 0
+    except CreditStoreUnavailable:
+        raise
+    except CreditStoreError:
+        raise
+    except Exception as exc:  # unexpected read failure → fail closed, never fake 0
+        logger.warning("credit_summary balance read failed: %s", type(exc).__name__)
+        raise CreditStoreUnavailable("credit balance read failed") from exc
 
     granted = 0
     consumed = 0

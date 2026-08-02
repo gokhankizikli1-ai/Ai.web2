@@ -17,6 +17,8 @@ state. No secrets/tokens/PII are logged.
 HTTP contract:
   200  { enabled, balance, lifetime_granted, lifetime_consumed, lifetime_capped }
   401  not authenticated
+  503  { code: CREDIT_STORE_UNAVAILABLE }  authoritative credit store unavailable
+       (fail closed — NEVER a fabricated zero balance). Cache-Control: no-store.
 """
 from __future__ import annotations
 
@@ -28,6 +30,7 @@ from fastapi.responses import JSONResponse
 
 from backend.core.responses import ok as envelope_ok, err as envelope_err
 from backend.services import credits_gateway
+from backend.services.billing.credits.errors import CreditStoreError
 
 logger = logging.getLogger(__name__)
 
@@ -57,11 +60,23 @@ def _authenticated_uid(request: Request) -> Optional[str]:
 
 @router.get("/me")
 async def credits_me(request: Request) -> JSONResponse:
-    """The authenticated caller's authoritative credit snapshot."""
+    """The authenticated caller's authoritative credit snapshot.
+
+    Fails CLOSED with a stable 503 when the authoritative credit store is
+    unavailable — the balance is never fabricated as zero. The response is
+    sanitized (a stable non-secret error code only) and stays `no-store`."""
     uid = _authenticated_uid(request)
     if not uid:
         return _resp(401, envelope_err("authentication required", code="UNAUTHORIZED"))
-    return _resp(200, envelope_ok(credits_gateway.credit_summary(uid)))
+    try:
+        summary = credits_gateway.credit_summary(uid)
+    except CreditStoreError:
+        # No DSNs, SQL, ids or raw exception text — only a stable error code.
+        logger.warning("billing-credits: authoritative store unavailable for /me")
+        return _resp(503, envelope_err(
+            "credit service temporarily unavailable", code="CREDIT_STORE_UNAVAILABLE",
+        ))
+    return _resp(200, envelope_ok(summary))
 
 
 __all__ = ["router"]
