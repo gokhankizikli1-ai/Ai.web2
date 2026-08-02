@@ -406,6 +406,15 @@ def _build_full_app():
             logger.info("Admin mode: /v2/admin/billing/* webhook diagnostics installed")
         except Exception as _e:
             logger.warning("v2_admin_billing route install failed (non-fatal): %s", _e)
+        # Provider routing Phase 1 — /v2/admin/build-routing readiness view.
+        # Owner-only, read-only, same admin-mode gate so it stays undiscoverable
+        # when admin is off.
+        try:
+            from backend.routes.v2_admin_build_routing import router as _admin_build_routing_router
+            _app.include_router(_admin_build_routing_router)
+            logger.info("Admin mode: /v2/admin/build-routing readiness installed")
+        except Exception as _e:
+            logger.warning("v2_admin_build_routing route install failed (non-fatal): %s", _e)
 
     # Phase-B: import the providers package so KNOWN_PROVIDERS is
     # populated and bootstrap_default_providers() runs once. Safe even

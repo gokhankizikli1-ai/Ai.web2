@@ -112,6 +112,21 @@ async def _agent_run_handler(ctx: JobContext) -> dict:
     # for the M2 artifact generators.
     model = "gpt-4o-mini"
 
+    # Phase 1 provider-routing shadow (decision-only): record which
+    # provider/model the routing policy WOULD select for this project-run
+    # node. The pinned OpenAI model above is what ACTUALLY executes — this
+    # observes only, changes nothing, and makes zero Anthropic calls. Fully
+    # guarded so a router/config problem can never break a run.
+    try:
+        from backend.services import build_routing
+        build_routing.note_app_build_agent_run(
+            spec_id=spec.id,
+            deliverable_kind=str(payload.get("deliverable_kind") or ""),
+            executed_model=model,
+        )
+    except Exception:  # pragma: no cover — routing must never affect a run
+        pass
+
     # EPIC 2 — expand the prompt via the generation engine (planning +
     # invisible prompt expansion + component selection + design
     # directives). Orchestration-independent; falls back to the raw task
