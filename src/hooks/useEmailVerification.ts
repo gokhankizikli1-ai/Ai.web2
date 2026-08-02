@@ -32,7 +32,10 @@ export function useEmailVerification(): EmailVerificationState {
   const uid = user?.id ?? null;
 
   const [status, setStatus] = useState<VerificationStatus | null>(null);
-  const [loading, setLoading] = useState(false);
+  // Start UNRESOLVED (loading=true) so the first paint never flashes the
+  // "unverified" panel before the authoritative status has been fetched. The
+  // effect below flips it false once the fetch settles (or for a guest).
+  const [loading, setLoading] = useState(true);
   const [cooldown, setCooldown] = useState(0);
   const [sending, setSending] = useState(false);
   const [nonce, setNonce] = useState(0);
