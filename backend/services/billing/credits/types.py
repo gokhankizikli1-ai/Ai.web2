@@ -32,10 +32,11 @@ VALID_TYPES = frozenset({TYPE_GRANT, TYPE_CONSUME, TYPE_ADJUST, TYPE_REVOKE})
 
 # ── Result reason codes ───────────────────────────────────────────────────────
 REASON_APPLIED = "applied"                   # transaction appended
-REASON_IDEMPOTENT = "idempotent"             # prior transaction with same reference
+REASON_IDEMPOTENT = "idempotent"             # prior transaction, same reference AND same payload
 REASON_INSUFFICIENT = "insufficient_funds"   # consume would overdraw; rejected
 REASON_DISABLED = "disabled"                 # ledger dormant (ENABLE_BILLING_CREDITS off)
-REASON_INVALID = "invalid"                   # bad input (non-positive amount, etc.)
+REASON_INVALID = "invalid"                   # bad input (non-positive amount, blank/oversized reference, …)
+REASON_CONFLICT = "idempotency_conflict"     # same reference reused with a DIFFERENT immutable payload; rejected
 
 
 @dataclass(frozen=True)
@@ -105,6 +106,6 @@ class TxnResult:
 __all__ = [
     "TYPE_GRANT", "TYPE_CONSUME", "TYPE_ADJUST", "TYPE_REVOKE", "VALID_TYPES",
     "REASON_APPLIED", "REASON_IDEMPOTENT", "REASON_INSUFFICIENT",
-    "REASON_DISABLED", "REASON_INVALID",
+    "REASON_DISABLED", "REASON_INVALID", "REASON_CONFLICT",
     "CreditAccount", "CreditTransaction", "TxnResult",
 ]

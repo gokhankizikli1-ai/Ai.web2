@@ -30,14 +30,20 @@ Feature flag:
 Storage shares the billing database (billing.db / Postgres) — the
 `billing_credit_accounts` + `billing_credit_transactions` tables.
 """
-from backend.services.billing.credits import config, store, service
+from backend.services.billing.credits import config, store, service, errors
 from backend.services.billing.credits.types import (
     CreditAccount, CreditTransaction, TxnResult,
     TYPE_GRANT, TYPE_CONSUME, TYPE_ADJUST, TYPE_REVOKE,
 )
+from backend.services.billing.credits.errors import (
+    CreditStoreError, CreditStoreUnavailable,
+    CreditInvalidRequest, CreditIdempotencyConflict,
+)
 
 __all__ = [
-    "config", "store", "service",
+    "config", "store", "service", "errors",
     "CreditAccount", "CreditTransaction", "TxnResult",
     "TYPE_GRANT", "TYPE_CONSUME", "TYPE_ADJUST", "TYPE_REVOKE",
+    "CreditStoreError", "CreditStoreUnavailable",
+    "CreditInvalidRequest", "CreditIdempotencyConflict",
 ]

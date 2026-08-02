@@ -477,13 +477,14 @@ class AdjustBody(BaseModel):
 def _credit_result_response(result) -> JSONResponse:
     """Map a TxnResult to an HTTP response."""
     from backend.services.billing.credits.types import (
-        REASON_INSUFFICIENT, REASON_DISABLED, REASON_INVALID,
+        REASON_INSUFFICIENT, REASON_DISABLED, REASON_INVALID, REASON_CONFLICT,
     )
     if result.applied:
         return JSONResponse(content=envelope_ok(result.to_dict()), headers=_NO_STORE)
     status = {
         REASON_INSUFFICIENT: 409,
         REASON_DISABLED: 409,
+        REASON_CONFLICT: 409,   # reference reused with a different immutable payload
         REASON_INVALID: 400,
     }.get(result.reason_code, 400)
     raise HTTPException(status_code=status, detail={"code": result.reason_code, **result.to_dict()})
