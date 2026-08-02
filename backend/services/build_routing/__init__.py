@@ -16,10 +16,10 @@ Public surface (all decision-only, never raise, never call a provider):
     build_routing.describe_readiness()      # owner-only diagnostics snapshot
     build_routing.routing_mode()            # "disabled" | "shadow"
 """
-from backend.services.build_routing import types, policy
+from backend.services.build_routing import types, policy, execution
 from backend.services.build_routing.types import (
     BuildRoutingDecision,
-    MODE_DISABLED, MODE_SHADOW, VALID_MODES,
+    MODE_DISABLED, MODE_SHADOW, MODE_OWNER_ONLY, VALID_MODES,
     VALID_TASK_KINDS, WEB_BUILD_TASK_KINDS, APP_BUILD_TASK_KINDS,
     POLICY_VERSION,
 )
@@ -27,17 +27,19 @@ from backend.services.build_routing.policy import (
     routing_mode, decide,
     web_task_from_frontend_kind, app_task_from_markers,
     note_web_build_frontend_task, note_web_build_planning, note_app_build_agent_run,
-    describe_readiness,
+    record_execution, describe_readiness,
 )
+from backend.services.build_routing.execution import execute_website_planning
 
 __all__ = [
-    "types", "policy",
+    "types", "policy", "execution",
     "BuildRoutingDecision",
-    "MODE_DISABLED", "MODE_SHADOW", "VALID_MODES",
+    "MODE_DISABLED", "MODE_SHADOW", "MODE_OWNER_ONLY", "VALID_MODES",
     "VALID_TASK_KINDS", "WEB_BUILD_TASK_KINDS", "APP_BUILD_TASK_KINDS",
     "POLICY_VERSION",
     "routing_mode", "decide",
     "web_task_from_frontend_kind", "app_task_from_markers",
     "note_web_build_frontend_task", "note_web_build_planning", "note_app_build_agent_run",
-    "describe_readiness",
+    "record_execution", "describe_readiness",
+    "execute_website_planning",
 ]

@@ -39,16 +39,22 @@ class Config:
     # without code changes (e.g. swap to claude-haiku-4-5 for cost).
     MODEL_ANTHROPIC: str = os.getenv("MODEL_ANTHROPIC", "claude-sonnet-4-6")
 
-    # ── Build-task provider routing (Phase 1: decision-only shadow) ──────
+    # ── Build-task provider routing ──────────────────────────────────────
     # Centralized policy that decides which provider/model the Web Build and
-    # App Build tasks WOULD use. Phase 1 supports two SAFE modes only:
+    # App Build tasks use. Supported SAFE modes:
     #   disabled (default) — exact current behavior; OpenAI stays selected;
-    #                        nothing is computed or logged.
+    #                        nothing is computed or logged; ZERO Anthropic calls.
     #   shadow             — compute + log the decision only; execution stays
     #                        on OpenAI; ZERO Anthropic calls.
-    # There is intentionally NO active/cutover mode. A missing or unrecognized
-    # value resolves to `disabled` (fail safe: routing can never silently
-    # activate). The RUNTIME source of truth is
+    #   owner_only         — the ONLY mode that may execute real Anthropic
+    #                        traffic, and ONLY for `web_build.planning` when the
+    #                        request is a BACKEND-VERIFIED owner. Non-owners and
+    #                        every other task/mode stay on the existing OpenAI
+    #                        path; an Anthropic failure falls back once to the
+    #                        OpenAI website-planning transport. There is NO global
+    #                        active/cutover mode.
+    # A missing or unrecognized value resolves to `disabled` (fail safe: routing
+    # can never silently activate). The RUNTIME source of truth is
     # backend.services.build_routing.policy.routing_mode(), which re-reads this
     # var dynamically so a Railway flip is live without a restart (mirrors the
     # provider router / starter-abuse mode pattern); this attribute registers

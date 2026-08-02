@@ -255,6 +255,9 @@ async def process_chat(
     locale: str = None,             # i18n — resolved UI locale ("en"/"tr"/…)
     language_mode: str = None,      # i18n — raw choice ("auto"|"en"|"tr"|…)
     message_language: str = None,   # i18n — detected language of this message (Auto hint)
+    owner_session: bool = False,    # INTERNAL: backend-verified owner (ai_guard.resolve_owner);
+                                    # NEVER sourced from the request body/query. Default False keeps
+                                    # every other caller (and non-owner requests) on the existing paths.
 ) -> dict:
     text_lower = message.lower().strip()
 
@@ -735,12 +738,47 @@ async def process_chat(
                         _wb_sys = _wb_sys + "\n\n" + _lang_directive
                     if _wb_research_suffix:
                         _wb_sys = _wb_sys + _wb_research_suffix
-                    _wb_res = await ask_openai_website_structured(
-                        prompt=message,
-                        system=_wb_sys,
-                        model=cfg["model"],
-                        max_output_tokens=cfg["max_tokens"],
-                    )
+
+                    # The existing OpenAI website-planning transport, wrapped as a
+                    # zero-arg async planner. This is the ONLY planning executor
+                    # for every non-owner / non-owner_only case and the single
+                    # fallback for a verified owner when Anthropic fails. Its
+                    # Responses-API contract is preserved exactly.
+                    async def _wb_openai_planner():
+                        return await ask_openai_website_structured(
+                            prompt=message,
+                            system=_wb_sys,
+                            model=cfg["model"],
+                            max_output_tokens=cfg["max_tokens"],
+                        )
+
+                    # owner_only routing: a backend-verified owner MAY execute
+                    # website planning on Anthropic (once), falling back to the
+                    # OpenAI planner above on any provider failure. In
+                    # disabled/shadow or for a non-owner this returns the exact
+                    # OpenAI result with zero Anthropic calls. Fully guarded: any
+                    # routing problem degrades to the existing OpenAI planning.
+                    _wb_res = None
+                    _wb_routing = None
+                    if _build_routing is not None:
+                        try:
+                            _wb_res, _wb_routing = await _build_routing.execute_website_planning(
+                                message=message,
+                                system=_wb_sys,
+                                model=cfg["model"],
+                                max_output_tokens=cfg["max_tokens"],
+                                temperature=float(cfg.get("temperature", 0.6)),
+                                owner_eligible=bool(owner_session),
+                                openai_planner=_wb_openai_planner,
+                            )
+                        except Exception:
+                            logger.warning(
+                                "process_chat | website_builder | routing execution failed; using OpenAI planning",
+                            )
+                            _wb_res = None
+                            _wb_routing = None
+                    if _wb_res is None:
+                        _wb_res = await _wb_openai_planner()
                     _wb_exec = {
                         "status":        "succeeded" if _wb_res.ok else _wb_res.execution_status,
                         "endpoint":      _wb_res.endpoint,
@@ -769,10 +807,14 @@ async def process_chat(
                         _wb_exec["error_kind"]    = _wb_res.error_kind
                         _wb_exec["error_code"]    = _wb_res.error_code
                         _wb_exec["error_message"] = _wb_res.error_message
+                    # Sanitized provider-routing truth (bounded fields only — no
+                    # prompt/plan/secret). Present whenever the routing layer ran.
+                    if _wb_routing:
+                        _wb_exec["routing"] = _wb_routing
                     logger.info(
-                        "process_chat | website_builder | ok=%s | status=%s | model=%s | endpoint=%s | ms=%d | repair=%s | kind=%s",
-                        _wb_res.ok, _wb_exec["status"], _wb_res.model, _wb_res.endpoint,
-                        _wb_res.latency_ms, _wb_is_planning_repair, _wb_res.error_kind,
+                        "process_chat | website_builder | ok=%s | status=%s | model=%s | provider=%s | endpoint=%s | ms=%d | repair=%s | fallback=%s | kind=%s",
+                        _wb_res.ok, _wb_exec["status"], _wb_res.model, _wb_res.provider, _wb_res.endpoint,
+                        _wb_res.latency_ms, _wb_is_planning_repair, _wb_res.fallback_used, _wb_res.error_kind,
                     )
                     _wb_md: dict = {}
                     if _wb_research_meta:
