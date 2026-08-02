@@ -36,6 +36,14 @@ try:
 except Exception:
     _TOOLS_AVAILABLE = False
 
+# Phase 1 build-task provider routing (decision-only shadow mode). Optional and
+# fully guarded: an import failure leaves `_build_routing = None` and every call
+# site becomes a no-op, so a router/config problem can NEVER break Web Build.
+try:
+    from backend.services import build_routing as _build_routing
+except Exception:
+    _build_routing = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -352,6 +360,11 @@ async def process_chat(
                     # unavailable, we return a truthful typed failure and make ZERO OpenAI calls.
                     # STATIC reviews (and unknown markers) stay synchronous with the registered budget.
                     _fb_kind = _frontend_task_kind(message)
+                    # Phase 1 provider-routing shadow (decision-only): record what
+                    # provider/model the policy WOULD pick for this frontend task.
+                    # Execution below is unchanged (OpenAI); zero Anthropic calls.
+                    if _build_routing is not None:
+                        _build_routing.note_web_build_frontend_task(_fb_kind, executed_model=cfg["model"])
                     _fb_use_bg = _frontend_task_is_background(_fb_kind)
                     _fb_max_tokens = frontend_task_max_output_tokens(_fb_kind, cfg["max_tokens"])
 
@@ -709,6 +722,13 @@ async def process_chat(
                 # surfaced truthfully via metadata.ai_execution. One provider request per
                 # planning task (initial / strict repair / design-plan repair).
                 if canonical == "website_builder":
+                    # Phase 1 provider-routing shadow (decision-only): record the
+                    # website-planning routing decision. Execution below is
+                    # unchanged (OpenAI); zero Anthropic calls.
+                    if _build_routing is not None:
+                        _build_routing.note_web_build_planning(
+                            executed_model=cfg["model"], is_repair=_wb_is_planning_repair,
+                        )
                     _wb_mode = get_mode(canonical)
                     _wb_sys = _wb_mode.system_prompt if _wb_mode is not None else sys_p
                     if _lang_directive:

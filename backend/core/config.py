@@ -39,6 +39,22 @@ class Config:
     # without code changes (e.g. swap to claude-haiku-4-5 for cost).
     MODEL_ANTHROPIC: str = os.getenv("MODEL_ANTHROPIC", "claude-sonnet-4-6")
 
+    # ── Build-task provider routing (Phase 1: decision-only shadow) ──────
+    # Centralized policy that decides which provider/model the Web Build and
+    # App Build tasks WOULD use. Phase 1 supports two SAFE modes only:
+    #   disabled (default) — exact current behavior; OpenAI stays selected;
+    #                        nothing is computed or logged.
+    #   shadow             — compute + log the decision only; execution stays
+    #                        on OpenAI; ZERO Anthropic calls.
+    # There is intentionally NO active/cutover mode. A missing or unrecognized
+    # value resolves to `disabled` (fail safe: routing can never silently
+    # activate). The RUNTIME source of truth is
+    # backend.services.build_routing.policy.routing_mode(), which re-reads this
+    # var dynamically so a Railway flip is live without a restart (mirrors the
+    # provider router / starter-abuse mode pattern); this attribute registers
+    # the canonical name + default for discoverability. No secret value.
+    BUILD_PROVIDER_ROUTING_MODE: str = os.getenv("BUILD_PROVIDER_ROUTING_MODE", "disabled").strip().lower() or "disabled"
+
     # ── AI timeouts (seconds) ─────────────────────────────────────────────
     AI_TIMEOUT: int = int(os.getenv("AI_TIMEOUT", "30"))
     INTENT_TIMEOUT: int = int(os.getenv("INTENT_TIMEOUT", "15"))
