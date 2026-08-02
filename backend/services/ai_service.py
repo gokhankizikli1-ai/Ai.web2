@@ -409,7 +409,7 @@ async def process_chat(
                         )
                         # Started (queued/in_progress) → create the opaque per-user job record.
                         if (not _bg.ok) and _bg.execution_status in ("queued", "in_progress") and _bg.request_id:
-                            from backend.services.ai_background_responses import create_job
+                            from backend.services.ai_background_responses import create_job, job_expires_in_ms
                             _job_id = await create_job(str(user_id), _bg.request_id, _fb_kind, _bg.model, _fb_max_tokens)
                             if not _job_id:
                                 # Store WRITE failed after the OpenAI task started: best-effort cancel,
@@ -441,7 +441,9 @@ async def process_chat(
                                     "provider": _bg.provider, "request_id": None, "fallback_used": False,
                                     "background_mode": True, "background_job_id": _job_id,
                                     "background_task_kind": _fb_kind, "poll_after_ms": 2500,
-                                    "expires_in_ms": 540000, "store_required": True,
+                                    # Single-sourced from the backend TTL (JOB_TTL_S) so the
+                                    # advertised lifetime can never drift from the Redis retention.
+                                    "expires_in_ms": job_expires_in_ms(), "store_required": True,
                                     "background_store_available": True, "background_store_status": _probe.status,
                                     "configured_max_output_tokens": _fb_max_tokens,
                                 }},

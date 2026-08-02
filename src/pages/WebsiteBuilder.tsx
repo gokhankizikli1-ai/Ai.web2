@@ -241,7 +241,12 @@ export default function WebsiteBuilder() {
       err.kind === 'frontend_generation_rate_limited' ||
       // Phase 13F.2 — output-budget exhaustion and background-store-unavailable (no model call).
       err.kind === 'frontend_generation_output_limit' ||
-      err.kind === 'frontend_generation_background_unavailable'
+      err.kind === 'frontend_generation_background_unavailable' ||
+      // Background lifecycle failures — specific, retryable; a fresh build with no model-native
+      // output is never shown as a deterministic-fallback success.
+      err.kind === 'frontend_generation_background_missing' ||
+      err.kind === 'frontend_generation_background_poll_failed' ||
+      err.kind === 'frontend_generation_background_cancelled'
     )) {
       setErrorMsg(err.message);
       return;

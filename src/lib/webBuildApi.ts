@@ -456,6 +456,12 @@ export type WebBuildErrorKind =
   // Phase 13F.2 — the model exhausted its output budget (incomplete + max_output_tokens), and
   // the shared background job store was unavailable so no model request was started.
   | 'frontend_generation_output_limit' | 'frontend_generation_background_unavailable'
+  // Background lifecycle failures that were previously collapsed into the generic
+  // frontend_generation_failed. Distinct + retryable: the opaque ownership record was
+  // missing/expired, the browser's polling transport failed repeatedly, or the provider
+  // cancelled the response. None is a generated site.
+  | 'frontend_generation_background_missing' | 'frontend_generation_background_poll_failed'
+  | 'frontend_generation_background_cancelled'
   // Phase 14L.1 — the founder-beta AI protection layer BLOCKED this operation BEFORE any
   // model call (daily limit, concurrency, kill switch, global capacity, rate limit, …). The
   // specific backend code rides on WebBuildError.reason.betaCode and is localized via t().
@@ -466,7 +472,9 @@ export type FrontendGenerationErrorKind =
   | 'frontend_generation_client_timeout' | 'frontend_generation_timeout'
   | 'frontend_generation_failed' | 'frontend_generation_incomplete'
   | 'frontend_generation_access' | 'frontend_generation_quota' | 'frontend_generation_rate_limited'
-  | 'frontend_generation_output_limit' | 'frontend_generation_background_unavailable';
+  | 'frontend_generation_output_limit' | 'frontend_generation_background_unavailable'
+  | 'frontend_generation_background_missing' | 'frontend_generation_background_poll_failed'
+  | 'frontend_generation_background_cancelled';
 
 /** Phase 13F — bounded context attached to a thrown frontend-generation error (no raw provider
  *  payload / headers). Lets the UI + owner diagnostics identify the failure without a fake build. */
@@ -518,6 +526,18 @@ export function frontendGenerationErrorMessage(kind: FrontendGenerationErrorKind
       return tr
         ? 'Uzun süren ön yüz üretimi için gerekli arka plan görev deposuna erişilemedi. Model çağrısı başlatılmadı.'
         : 'The background job store required for long-running frontend generation was unavailable. No model request was started.';
+    case 'frontend_generation_background_missing':
+      return tr
+        ? 'Ön yüz üretim işi artık kullanılamıyor (süresi dolmuş olabilir). Eksik sonuç site olarak kabul edilmedi. Lütfen tekrar dene.'
+        : 'The frontend generation job is no longer available (it may have expired). The incomplete result was not accepted as a site. Please try again.';
+    case 'frontend_generation_background_poll_failed':
+      return tr
+        ? 'Ön yüz üretimi sürerken bağlantı tekrar tekrar kesildi ve durum alınamadı. Yeni bir üretim başlatılmadı. Lütfen tekrar dene.'
+        : 'The connection to the frontend generation job failed repeatedly and its status could not be read. No new generation was started. Please try again.';
+    case 'frontend_generation_background_cancelled':
+      return tr
+        ? 'Ön yüz üretimi sağlayıcı tarafında beklenmedik biçimde iptal edildi. Eksik proje kullanılmadı. Lütfen tekrar dene.'
+        : 'The frontend generation was unexpectedly cancelled on the provider side. The incomplete project was not used. Please try again.';
     default:
       return tr
         ? 'Ön yüz üretim isteği tamamlanamadı. Sağlayıcı hatası oluşturulmuş site olarak kabul edilmedi.'
@@ -530,14 +550,21 @@ export function frontendGenerationErrorMessage(kind: FrontendGenerationErrorKind
  *  over rate-limit; a client timeout (no response) is distinct from a backend execution timeout. */
 export function mapFrontendGenerationError(raw: FrontendBuilderRawArtifact): WebBuildError {
   const ek = raw.backendErrorKind;
-  // Phase 13F.1 — the background client workflow deadline is also a client timeout. A missing/
-  // expired background job, a store failure, an exhausted poll loop, or an unexpected provider
-  // cancellation all map to the generic frontend_generation_failed (the default) — they are
-  // never a completed fallback build. Queued/in_progress never reach here (the poller waits).
+  // Phase 13F.1 — the background client workflow deadline is also a client timeout. Background
+  // lifecycle failures are now classified specifically (missing/expired ownership record,
+  // repeated poll-transport failure, unexpected provider cancellation) instead of collapsing
+  // into the generic frontend_generation_failed — none is a completed fallback build.
+  // Queued/in_progress never reach here (the poller waits).
   const clientTimedOut = ek === 'client-timeout' || ek === 'background-client-timeout';
   const kind: FrontendGenerationErrorKind =
     // Phase 13F.2 — the shared background store was unavailable (no model request was started).
     ek === 'background-store-unavailable' ? 'frontend_generation_background_unavailable'
+    // Background lifecycle: opaque ownership record missing/expired (server or client 404).
+    : ek === 'background-job-missing' ? 'frontend_generation_background_missing'
+    // Background lifecycle: the browser's polling transport failed repeatedly (bounded retries).
+    : ek === 'background-poll-failed' ? 'frontend_generation_background_poll_failed'
+    // Background lifecycle: the provider cancelled the response unexpectedly (not a client abort).
+    : ek === 'background-cancelled-unexpectedly' ? 'frontend_generation_background_cancelled'
     : clientTimedOut ? 'frontend_generation_client_timeout'
     : raw.backendErrorCode === 'insufficient_quota' ? 'frontend_generation_quota'
     : ek === 'rate-limit' ? 'frontend_generation_rate_limited'
@@ -2287,6 +2314,11 @@ function frontendBuilderArtifact(
  * result via GET /v2/ai/background/{jobId} — no per-task polling duplication. It NEVER
  * creates another model Response (polling only retrieves the same one) and NEVER persists the
  * opaque job id or a raw OpenAI response id. */
+// Overall client polling budget (NOT one HTTP request). This MUST stay below the backend's
+// opaque-job retention (ai_background_responses.JOB_TTL_S, now 660s = this budget + a 120s
+// server-side safety margin) so the ownership record cannot expire during a valid poll window;
+// the final poll's ~25s HTTP timeout fits inside that margin. Do not raise this at or above the
+// backend TTL without raising the backend margin accordingly.
 const BACKGROUND_WORKFLOW_TIMEOUT_MS = 540_000;   // overall client budget (NOT one HTTP request)
 const BACKGROUND_POLL_HTTP_TIMEOUT_MS = 25_000;   // short per-poll GET timeout
 const BACKGROUND_MAX_TRANSIENT_POLL_FAILURES = 2; // consecutive network failures tolerated

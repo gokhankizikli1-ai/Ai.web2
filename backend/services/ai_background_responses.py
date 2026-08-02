@@ -2,7 +2,7 @@
 # Phase 13F.1 — opaque, short-lived, authenticated ownership records for OpenAI Background
 # Responses used by the dedicated frontend_builder full-source tasks.
 #
-# What this stores (Redis, TTL 540s): ONLY a minimal ownership mapping — the opaque Korvix
+# What this stores (Redis, bounded TTL — see JOB_TTL_S): ONLY a minimal ownership mapping — the opaque Korvix
 # job id, the authenticated user id, the RAW OpenAI response id (kept SERVER-SIDE, never sent
 # to the browser), the task kind, the model, and created/expires timestamps.
 #
@@ -29,12 +29,37 @@ from typing import Optional, Dict, Any
 
 logger = logging.getLogger(__name__)
 
-# Background Responses are only retrievable for a limited period; keep the ownership record
-# for a matching short, fixed TTL so stale user jobs disappear automatically.
-JOB_TTL_S = 540  # 9 minutes
+# ── Opaque-job retention lifetime — ONE authoritative definition ──────────────
+#
+# The Redis ownership record MUST outlive the browser's polling window by a
+# deliberate, bounded safety margin, otherwise the record can expire at the same
+# instant the client still considers the workflow valid — a final poll delayed by
+# normal network / event-loop / Redis timing then gets a 404 before the client
+# deadline elapses (the observed background-job-missing → generic failure).
+#
+# INVARIANT: JOB_TTL_S  >  browser polling window  +  final-poll / network margin.
+#
+# BROWSER_WORKFLOW_BUDGET_S mirrors the client's overall polling budget
+# (src/lib/webBuildApi.ts BACKGROUND_WORKFLOW_TIMEOUT_MS = 540_000). The margin
+# comfortably covers the client's final ~25s poll HTTP timeout plus network /
+# Redis / event-loop scheduling slack. This single derived value drives the Redis
+# expiry, the record's expires_at, AND the advertised expires_in_ms, so the
+# contract can never drift through duplicated magic numbers. The TTL is still
+# fixed and bounded — jobs expire automatically; there is NO sliding TTL.
+BROWSER_WORKFLOW_BUDGET_S = 540
+JOB_RETENTION_SAFETY_MARGIN_S = 120
+JOB_TTL_S = BROWSER_WORKFLOW_BUDGET_S + JOB_RETENTION_SAFETY_MARGIN_S  # 660s (11 min)
 _KEY_PREFIX = "aibg:"
 _JOB_ID_PREFIX = "job_"
 _MAX_FIELD = 200
+
+
+def job_expires_in_ms() -> int:
+    """Advertised opaque-job lifetime (ms) for the initial queued response — the
+    SAME authoritative retention used for the Redis TTL and the record's
+    expires_at. Callers must use this instead of a hardcoded literal so the
+    lifetime invariant stays single-sourced."""
+    return JOB_TTL_S * 1000
 
 
 # Phase 13F.2 — a TRUTHFUL asynchronous probe of the shared background store. It replaces the
