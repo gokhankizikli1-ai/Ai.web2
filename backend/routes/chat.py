@@ -698,6 +698,11 @@ async def chat(req: ChatRequest, request: Request):
             locale=req.language,
             language_mode=req.language_mode,
             message_language=req.message_language,
+            # Backend-verified owner (ai_guard.resolve_owner) computed above.
+            # Internal-only: never sourced from the request body/query. Enables
+            # owner-only Anthropic routing for Web Build planning when
+            # BUILD_PROVIDER_ROUTING_MODE=owner_only; ignored in every other mode.
+            owner_session=_owner_session,
         )
         reply = ai_result.get("reply", "")
         intent = ai_result.get("intent", "normal_chat")

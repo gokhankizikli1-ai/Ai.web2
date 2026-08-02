@@ -34,7 +34,7 @@ from typing import Dict, Optional
 from backend.services.build_routing.types import (
     BuildRoutingDecision,
     PROVIDER_OPENAI, PROVIDER_ANTHROPIC,
-    MODE_DISABLED, MODE_SHADOW, VALID_MODES,
+    MODE_DISABLED, MODE_SHADOW, MODE_OWNER_ONLY, VALID_MODES,
     TASK_WEB_PLANNING, TASK_WEB_CODEGEN, TASK_WEB_CONTRACT_REPAIR,
     TASK_WEB_QUALITY_REPAIR, TASK_WEB_STATIC_REVIEW,
     TASK_APP_PLANNING, TASK_APP_CODEGEN, TASK_APP_REVIEW,
@@ -57,10 +57,12 @@ _ENV_MODE = "BUILD_PROVIDER_ROUTING_MODE"
 
 
 def routing_mode() -> str:
-    """Return the active routing mode: `disabled` (default) or `shadow`.
+    """Return the active routing mode: `disabled` (default), `shadow`, or
+    `owner_only`.
 
     Missing, blank, or unrecognized values resolve to `disabled` so a
-    misconfiguration can never silently activate routing. Never raises."""
+    misconfiguration can never silently activate routing (fail-closed). Never
+    raises."""
     try:
         raw = (os.getenv(_ENV_MODE, MODE_DISABLED) or "").strip().lower()
     except Exception:  # pragma: no cover — env access must never break a build
@@ -195,6 +197,26 @@ _COUNTS_LOCK = threading.Lock()
 _COUNTS: Dict[str, int] = {}
 _LAST: Dict[str, str] = {}
 
+# Real-execution counters (owner_only mode). Bounded by the finite provider /
+# task-kind vocabulary; process-local, best-effort, purely diagnostic.
+_EXEC_COUNTS: Dict[str, int] = {}
+
+
+def record_execution(task_kind: str, *, attempted_provider: str,
+                     executed_provider: str, fallback_used: bool) -> None:
+    """Record a REAL build-task execution (owner_only mode). Bounded counters
+    only — no prompts, ids, models beyond the provider label, or PII. Never
+    raises."""
+    try:
+        with _COUNTS_LOCK:
+            _EXEC_COUNTS[f"attempted|{attempted_provider}"] = _EXEC_COUNTS.get(f"attempted|{attempted_provider}", 0) + 1
+            _EXEC_COUNTS[f"executed|{executed_provider}"] = _EXEC_COUNTS.get(f"executed|{executed_provider}", 0) + 1
+            _EXEC_COUNTS[f"task|{task_kind}|{executed_provider}"] = _EXEC_COUNTS.get(f"task|{task_kind}|{executed_provider}", 0) + 1
+            if fallback_used:
+                _EXEC_COUNTS["fallback|used"] = _EXEC_COUNTS.get("fallback|used", 0) + 1
+    except Exception:  # pragma: no cover — counters must never affect a build
+        pass
+
 
 def _record(decision: BuildRoutingDecision) -> None:
     key = f"{decision.task_kind}|{decision.selected_provider}"
@@ -214,7 +236,11 @@ def _record(decision: BuildRoutingDecision) -> None:
 
 def _counters_snapshot() -> dict:
     with _COUNTS_LOCK:
-        return {"by_task_provider": dict(_COUNTS), "last": dict(_LAST)}
+        return {
+            "by_task_provider": dict(_COUNTS),
+            "last": dict(_LAST),
+            "executions": dict(_EXEC_COUNTS),
+        }
 
 
 def _log(decision: BuildRoutingDecision) -> None:
@@ -278,6 +304,12 @@ def note_app_build_agent_run(*, spec_id: Optional[str], deliverable_kind: Option
 
 # ── Owner-only, read-only readiness view (no secrets / PII / network) ─────────
 
+# The ONLY task kinds that may execute real Anthropic traffic in owner_only mode.
+# This mini-phase adds exactly one: owner-verified Web Build website planning.
+# Everything else remains decision-only (shadow) or OpenAI-only.
+OWNER_ONLY_EXECUTABLE_TASK_KINDS = frozenset({TASK_WEB_PLANNING})
+
+
 def describe_readiness() -> dict:
     """Sanitized snapshot of the routing policy for owner diagnostics. Pure +
     read-only: makes NO network/provider call and mutates nothing. Contains no
@@ -287,19 +319,34 @@ def describe_readiness() -> dict:
     targets = {}
     for tk in sorted(VALID_TASK_KINDS):
         d = decide(tk, executed_model="(current-openai-model)", routing_mode=mode)
+        executable = tk in OWNER_ONLY_EXECUTABLE_TASK_KINDS
+        # Real Anthropic execution happens ONLY in owner_only mode, ONLY for an
+        # executable task kind, and ONLY for a verified owner (runtime gate).
+        if mode == MODE_OWNER_ONLY and executable:
+            real_execution = "anthropic_for_owner_else_openai"
+        elif d.selected_provider == PROVIDER_ANTHROPIC:
+            real_execution = "openai_only"        # would-prefer-Claude but not executed
+        else:
+            real_execution = "openai_only"
         targets[tk] = {
             "selected_provider": d.selected_provider,
             "selected_model": d.selected_model,
             "fallback_provider": d.fallback_provider,
             "decision_reason": d.decision_reason,
+            "owner_only_executable": executable,
+            "real_execution": real_execution,
         }
     return {
         "policy_version": POLICY_VERSION,
         "routing_mode": mode,
-        # Phase-1 invariants, surfaced so an operator can confirm safety:
-        "shadow_only": True,
-        "executes_anthropic": False,
-        "active_mode_available": False,
+        # Safety-relevant invariants, surfaced so an operator can confirm state:
+        "owner_only_available": True,
+        # Real Anthropic execution is possible ONLY in owner_only mode (and then
+        # only for a verified owner on an executable task). False in
+        # disabled/shadow — those never call Anthropic.
+        "executes_anthropic": mode == MODE_OWNER_ONLY,
+        "active_mode_available": False,   # no global cutover mode exists
+        "real_anthropic_task_kinds": sorted(OWNER_ONLY_EXECUTABLE_TASK_KINDS),
         "anthropic_provider_configured": _anthropic_provider_configured(),
         "configured_claude_model": _configured_claude_model(),
         "supported_task_kinds": sorted(VALID_TASK_KINDS),
@@ -312,5 +359,6 @@ __all__ = [
     "routing_mode", "decide",
     "web_task_from_frontend_kind", "app_task_from_markers",
     "note_web_build_frontend_task", "note_web_build_planning", "note_app_build_agent_run",
-    "describe_readiness",
+    "record_execution", "describe_readiness",
+    "OWNER_ONLY_EXECUTABLE_TASK_KINDS",
 ]
