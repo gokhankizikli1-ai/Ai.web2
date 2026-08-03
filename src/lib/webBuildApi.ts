@@ -2477,8 +2477,18 @@ async function pollFrontendBackgroundTask(
     return { ...d, metadata: meta };
   };
 
+  // Explicit user cancellation — the SINGLE place every abort path funnels through, so the
+  // "cancellation is immediate and still best-effort cancels the existing job" contract holds no
+  // matter WHERE the caller signal fires (loop top, during backgroundDelay, during a retrieval, or
+  // at the deadline). Best-effort cancels the SAME opaque job, then throws the same typed
+  // 'cancelled' error. Never creates a Response and never restarts generation.
+  const abortCancelled = async (): Promise<never> => {
+    await cancelBackgroundJob(jobId);
+    throw new WebBuildError('cancelled', 'Frontend Builder cancelled.');
+  };
+
   for (;;) {
-    if (signal?.aborted) { await cancelBackgroundJob(jobId); throw new WebBuildError('cancelled', 'Frontend Builder cancelled.'); }
+    if (signal?.aborted) await abortCancelled();
 
     if (Date.now() - started > workflowBudgetMs) {
       // ── Final authoritative deadline retrieval ──────────────────────────────────────────────
@@ -2487,7 +2497,7 @@ async function pollFrontendBackgroundTask(
       // perform EXACTLY ONE final GET of the SAME opaque job. This retrieves the existing job only
       // — it can never create a new Response and never restarts generation.
       const finalR = await retrieveBackgroundJob(jobId, signal);
-      if (finalR.kind === 'user-aborted') { await cancelBackgroundJob(jobId); throw new WebBuildError('cancelled', 'Frontend Builder cancelled.'); }
+      if (finalR.kind === 'user-aborted') await abortCancelled();
       // A real terminal result (completed / incomplete / failed) discovered at the deadline is
       // returned through the UNCHANGED parser/error-mapping path — NEVER overwritten by a timeout.
       if (finalR.kind === 'terminal') return annotate(finalR.data, pollCount + 1, { background_final_deadline_poll: true });
@@ -2495,6 +2505,10 @@ async function pollFrontendBackgroundTask(
       if (finalR.kind === 'missing') return annotate(finalR.data, pollCount, { background_final_deadline_poll: true });
       // A terminal 'cancelled' WITHOUT a user abort preserves the unexpected-cancellation class.
       if (finalR.kind === 'cancelled') return backgroundFailureData('background-cancelled-unexpectedly', taskKind, pollCount + 1, Date.now() - started, { background_final_deadline_poll: true });
+      // User cancellation WINS over the deadline-timeout classification: if the caller signal
+      // aborted around this final retrieval (e.g. the GET resolved just before the abort landed),
+      // treat it as an explicit cancellation, not a timeout.
+      if (signal?.aborted) await abortCancelled();
       // Still queued/in_progress, OR the single bounded final GET could not produce a usable
       // terminal result (network / non-404 HTTP failure). Either way the client budget is spent:
       // best-effort cancel the SAME job and return the truthful client-timeout. We deliberately
@@ -2505,11 +2519,20 @@ async function pollFrontendBackgroundTask(
       return backgroundFailureData('background-client-timeout', taskKind, pollCount, Date.now() - started, { background_final_deadline_poll: true, background_cancel_requested: true });
     }
 
-    await backgroundDelay(pollAfter, signal);   // throws 'cancelled' on abort
+    // Caller cancellation DURING the inter-poll delay must still best-effort cancel the job (the
+    // delay rejects with WebBuildError('cancelled') on abort). Funnel it through abortCancelled so
+    // the cancel-then-throw contract is identical to every other abort path; never swallow or
+    // remap a non-cancellation error.
+    try {
+      await backgroundDelay(pollAfter, signal);
+    } catch (err) {
+      if (err instanceof WebBuildError && err.kind === 'cancelled') await abortCancelled();
+      throw err;
+    }
 
     // Steady-state poll — the SAME single-retrieval helper used at the deadline (no duplication).
     const r = await retrieveBackgroundJob(jobId, signal);
-    if (r.kind === 'user-aborted') { await cancelBackgroundJob(jobId); throw new WebBuildError('cancelled', 'Frontend Builder cancelled.'); }
+    if (r.kind === 'user-aborted') await abortCancelled();
     if (r.kind === 'error') {
       // Bounded network / non-404 HTTP failure — tolerate a couple, then fail truthfully.
       transientFails += 1;
