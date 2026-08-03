@@ -417,27 +417,83 @@ function stripMotionComments(src: string): string {
   }
 }
 
+/* Applied transform/opacity/height motion utility or inline style (used as the "state is applied
+ * to rendered behavior" causal link). */
+const APPLIED_MOTION_UTIL_RE = /(translate|-translate|opacity-0|opacity-100|scale-\d|rotate-\d|transition-transform|transition-all|max-h-0|max-h-\[)/i;
+/* A React STATE setter/dispatch call — the state-mutation link. Excludes timer / DOM setters
+ * (setTimeout/setInterval/setAttribute/setProperty) that are not state mutations. */
+const STATE_MUTATION_RE = /\bset(?!Timeout\b|Interval\b|Attribute\b|Property\b)[A-Z]\w*\s*\(|\bdispatch\s*\(/;
+
 /**
  * STRONG, deterministic evidence that motion was actually IMPLEMENTED in the generated source —
- * executable usage only, never comments / imports / dependency names / planning text. Bounded
- * (scans a capped, comment-stripped blob). Pure + fail-open.
+ * executable usage only, never comments / imports / dependency names / planning text.
+ *
+ * CAUSALITY: state-driven, IntersectionObserver, Framer-Motion and canvas-rAF signals are
+ * evaluated PER FILE, so unrelated tokens in different files can never combine into false evidence
+ * (e.g. a `useState` in one file + a `transition-transform` class in another does NOT count). The
+ * ONLY intentionally cross-file signal is CSS `@keyframes` (legitimately defined in a stylesheet
+ * and applied elsewhere) — and it still requires an actual applied `animation`/`animate-[…]`
+ * reference. Self-contained className utilities (applied where written) and reduced-motion markers
+ * are matched project-wide. Bounded (per-file + project caps), synchronous, network-free,
+ * non-mutating, fail-open.
  */
 function detectMotionEvidence(files: FrontendGeneratedFile[]): MotionEvidence {
   try {
-    const code = stripMotionComments(files.map((f) => f.content).join('\n')).slice(0, 200000);
+    // Comment-stripped, per-file source (bounded per file). Comments/planning text cannot count.
+    const perFile = (Array.isArray(files) ? files : [])
+      .map((f) => stripMotionComments(typeof f?.content === 'string' ? f.content : '').slice(0, 60000));
+    // Project-wide blob (bounded) — ONLY for the legitimately cross-file / self-contained signals.
+    const code = perFile.join('\n').slice(0, 200000);
 
-    // Framer Motion, MEANINGFULLY used: imported AND a motion element/AnimatePresence AND a real
-    // animation prop. Importing framer-motion without using it never counts.
-    const importsFramer = /from\s+['"]framer-motion['"]/.test(code);
-    const motionEl = /<motion\.[a-z][a-zA-Z0-9]*/.test(code) || /<AnimatePresence[\s/>]/.test(code);
-    const framerAnimProp = /\b(initial|animate|whileInView|whileHover|whileTap|whileFocus|variants|exit)\s*=/.test(code)
-      || /\blayout(Id)?\s*[=}]/.test(code) || /\btransition\s*=\s*\{/.test(code);
-    const framerMeaningful = importsFramer && motionEl && framerAnimProp;
-    const framerStructural = framerMeaningful && /\b(whileInView|variants|animate|exit)\s*=|<AnimatePresence[\s/>]|\blayout(Id)?\s*[=}]/.test(code);
-    const framerMicro = framerMeaningful && /\b(whileHover|whileTap|whileFocus)\s*=/.test(code);
+    // ── Per-file causal signals (no cross-file token combination). ──
+    let framerStructural = false;
+    let framerMicro = false;
+    let stateMotion = false;
+    let observerReveal = false;
+    let canvasRaf = false;
+    for (const fc of perFile) {
+      if (!fc) continue;
 
-    // CSS @keyframes ACTUALLY applied: a defined keyframe name referenced by an `animation(-name)`
-    // declaration, or a Tailwind arbitrary `animate-[…name…]` utility. Unused @keyframes do not count.
+      // Framer Motion, MEANINGFULLY used WITHIN THIS FILE: imported AND a motion element/
+      // AnimatePresence AND a real animation prop — all in the same file. An import in one file
+      // never validates JSX in another.
+      const importsFramer = /from\s+['"]framer-motion['"]/.test(fc);
+      const motionEl = /<motion\.[a-z][a-zA-Z0-9]*/.test(fc) || /<AnimatePresence[\s/>]/.test(fc);
+      const animProp = /\b(initial|animate|whileInView|whileHover|whileTap|whileFocus|variants|exit)\s*=/.test(fc)
+        || /\blayout(Id)?\s*[=}]/.test(fc) || /\btransition\s*=\s*\{/.test(fc);
+      if (importsFramer && motionEl && animProp) {
+        if (/\b(whileInView|variants|animate|exit)\s*=|<AnimatePresence[\s/>]|\blayout(Id)?\s*[=}]/.test(fc)) framerStructural = true;
+        if (/\b(whileHover|whileTap|whileFocus)\s*=/.test(fc)) framerMicro = true;
+      }
+
+      // State-driven structural motion, SAME-FILE causal chain: a real useState/useReducer
+      // declaration + a corresponding state mutation (setX(…)/dispatch(…)) + that being applied to
+      // rendered className/style transform/opacity/height behavior. A bare useState plus an
+      // unrelated transform utility (in another file) never counts.
+      if (/\buse(State|Reducer)\s*\(/.test(fc) && STATE_MUTATION_RE.test(fc)
+        && (APPLIED_MOTION_UTIL_RE.test(fc) || /style\s*=\s*\{[\s\S]{0,400}?(transform|opacity|height)/i.test(fc))) {
+        stateMotion = true;
+      }
+
+      // IntersectionObserver reveal, SAME-FILE causal chain: an actual `new IntersectionObserver(…)`
+      // construction + at least one `.observe(…)` call + a connected visible effect (state
+      // mutation, class mutation, style mutation, or an applied transform/opacity/height). A bare
+      // token / import / type reference never counts.
+      if (/new\s+IntersectionObserver\s*\(/.test(fc) && /\.observe\s*\(/.test(fc)
+        && (STATE_MUTATION_RE.test(fc)
+          || /classList\.(add|remove|toggle)\s*\(/.test(fc)
+          || /\.style\.[a-zA-Z]/.test(fc)
+          || APPLIED_MOTION_UTIL_RE.test(fc))) {
+        observerReveal = true;
+      }
+
+      // Canvas rAF tied to a real rendering context, in the same file.
+      if (/requestAnimationFrame\s*\(/.test(fc) && /getContext\(\s*['"](2d|webgl2?)['"]/.test(fc)) canvasRaf = true;
+    }
+
+    // ── CSS @keyframes — intentionally cross-file: DEFINED in a stylesheet, APPLIED from another
+    //    file. Still requires an actual applied reference (an `animation(-name)` declaration or a
+    //    Tailwind arbitrary `animate-[…name…]` utility). Unused @keyframes never count. ──
     const kf = new Set<string>();
     for (const m of code.matchAll(/@keyframes\s+([A-Za-z_][\w-]*)/g)) kf.add(m[1].toLowerCase());
     let keyframesApplied = false;
@@ -449,26 +505,14 @@ function detectMotionEvidence(files: FrontendGeneratedFile[]): MotionEvidence {
       if (!keyframesApplied) keyframesApplied = [...kf].some((n) => new RegExp(`animate-\\[[^\\]]*${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i').test(code));
     }
 
-    // Canvas rAF animation.
-    const canvasRaf = /requestAnimationFrame\s*\(/.test(code) && /getContext\(\s*['"](2d|webgl2?)['"]/.test(code);
-
-    // State-driven structural motion: useState/useReducer combined with transform/opacity/height
-    // transitions, or an IntersectionObserver scroll reveal.
-    const stateMotion = (/\buse(State|Reducer)\s*\(/.test(code)
-      && /(translate|-translate|opacity-0|opacity-100|scale-\d|rotate-\d|transition-transform|transition-all|max-h-0|max-h-\[)/i.test(code))
-      || /IntersectionObserver/.test(code);
-
-    // Applied Tailwind animation utilities INSIDE a className attribute (comments already stripped).
-    // A custom arbitrary keyframe utility is structural; built-in spin/bounce/ping is only micro;
-    // skeleton `animate-pulse` never counts.
+    // ── Self-contained className utilities (the class is applied where written) + reduced-motion
+    //    markers — project-wide matching is safe (no cross-file token combination is possible). ──
     const classAttr = (re: RegExp): boolean => re.test(code);
     const appliedCustomAnim = classAttr(/class(?:Name)?\s*=\s*(["'`])(?:(?!\1)[\s\S]){0,600}?\banimate-\[[^\]]+\]/i);
     const appliedBuiltinAnim = classAttr(/class(?:Name)?\s*=\s*(["'`])(?:(?!\1)[\s\S]){0,600}?\banimate-(?!pulse\b)(spin|bounce|ping)\b/i);
-
-    // Micro-interaction: hover/focus/tap/active that TRANSFORMS (not `transition-colors` alone).
     const microTailwind = /\b(hover:scale-|hover:-?translate-|hover:rotate-|group-hover:(?:scale|translate|rotate)|active:scale-|focus(?:-visible)?:scale-|transition-transform)/i.test(code);
 
-    const composed = framerStructural || keyframesApplied || canvasRaf || stateMotion || appliedCustomAnim;
+    const composed = framerStructural || keyframesApplied || canvasRaf || stateMotion || observerReveal || appliedCustomAnim;
     const micro = composed || framerMicro || microTailwind || appliedBuiltinAnim;
     const reducedMotion = /prefers-reduced-motion/i.test(code) || /\buseReducedMotion\b/.test(code) || /\bmotion-reduce:/.test(code);
     return { composed, micro, reducedMotion };
