@@ -34,6 +34,14 @@ import {
 // Owner-only DELTA quality-repair — pure, deterministic delta parser/validator/merger. No
 // network. Flag-gated + owner-gated by the caller; fail-open never triggers a second repair call.
 import { resolveWebBuildQualityRepairMode, reconstructRepairRawFromDelta } from '@/lib/webBuildDeltaRepair';
+// Owner-only COMPACT quality-context — pure, deterministic, network-free selection of a bounded,
+// safe source subset for the delta-repair request + post-repair review. Fully safe-fallback: an
+// undefined context means the EXISTING full-context request is used (before the single call).
+import {
+  resolveWebBuildQualityContextMode, selectCompactRepairContext, selectCompactPostRepairContext,
+  disabledQualityContextDiagnostics,
+} from '@/lib/webBuildQualityContext';
+import type { CompactSourceContext } from '@/lib/webBuildQualityContext';
 import {
   attachFrontendBuilderRaw, attachFrontendBuilderQualityResult,
   attachFrontendBuilderContractRepairResult,
@@ -71,7 +79,7 @@ import type {
   FrontendBuilderRepairArtifact, FrontendBuilderAcceptanceArtifact,
   FrontendBuilderContractRepairArtifact, FrontendBuilderValidationArtifact, FrontendBuilderRawArtifact,
   FrontendBuilderReviewArtifact, FrontendBuilderReviewIssue, ImageAssetManifest,
-  FrontendDeltaRepairArtifact,
+  FrontendDeltaRepairArtifact, FrontendQualityContextDiagnostics,
 } from '@/lib/webBuildAgents';
 import type { WebBuildActivityDetailRow, WebBuildActivityReporter, WebBuildActivityStatus } from '@/lib/webBuildActivity';
 
@@ -871,20 +879,52 @@ export async function runFrontendBuilderQualityPipeline(
     //    the same `repairRaw.status !== 'completed'` branch — NEVER a second repair call. ──
     const repairMode = resolveWebBuildQualityRepairMode();
     const deltaEligible = repairMode === 'owner_delta' && opts?.ownerEligible === true;
+    // Owner-compact quality-context is eligible ONLY inside the owner-delta path. It never touches
+    // the full-project repair, the initial review, revisions or any non-owner/disabled path.
+    const contextMode = resolveWebBuildQualityContextMode();
+    const compactContextEligible = deltaEligible && contextMode === 'owner_compact';
     let deltaDiagnostics: FrontendDeltaRepairArtifact | undefined;
     let repairRaw: FrontendBuilderRawArtifact;
+    // Internal-only: the normalized changed/upsert paths from a valid reconstruction (used to build
+    // the compact post-repair review context) and the sanitized per-stage compact-context diagnostics.
+    let changedPaths: string[] | undefined;
+    let qualityContextRepairDiag: FrontendQualityContextDiagnostics | undefined;
+    let qualityContextPostDiag: FrontendQualityContextDiagnostics | undefined;
     if (deltaEligible) {
-      const deltaRaw = await generateFrontendBuilderDeltaRepairRaw(spec, activeFiles, initialReview, { signal: opts?.signal, deterministicWarnings: activeWarnings, qualityEvidence });
+      // Compact repair context (safe-fallback → undefined ⇒ the existing FULL delta request, before
+      // the single call; NEVER a second call). Only computed when the context flag is owner_compact.
+      let compactRepair: CompactSourceContext | undefined;
+      if (compactContextEligible) {
+        const sel = selectCompactRepairContext({ spec, activeFiles, initialReview, qualityEvidence });
+        compactRepair = sel.context;
+        qualityContextRepairDiag = sel.diagnostics;
+      } else {
+        qualityContextRepairDiag = disabledQualityContextDiagnostics('repair', activeFiles);
+      }
+      const deltaRaw = await generateFrontendBuilderDeltaRepairRaw(spec, activeFiles, initialReview, { signal: opts?.signal, deterministicWarnings: activeWarnings, qualityEvidence, compact: compactRepair });
       const reconstruction = reconstructRepairRawFromDelta({ deltaRaw, originalFiles: validation?.files ?? [] });
       repairRaw = reconstruction.repairRaw;
       deltaDiagnostics = reconstruction.diagnostics;
+      changedPaths = reconstruction.changedPaths;
     } else {
       repairRaw = await generateFrontendBuilderRepairRaw(spec, activeFiles, initialReview, { signal: opts?.signal, deterministicWarnings: activeWarnings, qualityEvidence });
     }
+    // Bounded, sanitized compact-context diagnostics for the repair artifact (repair + post-repair
+    // stages). Absent entirely for non-delta / disabled / non-owner repairs and old saved builds.
+    const qcExtra = (): Partial<FrontendBuilderRepairArtifact> => {
+      if (!qualityContextRepairDiag && !qualityContextPostDiag) return {};
+      return {
+        qualityContext: {
+          ...(qualityContextRepairDiag ? { repair: qualityContextRepairDiag } : {}),
+          ...(qualityContextPostDiag ? { postReview: qualityContextPostDiag } : {}),
+        },
+      };
+    };
     if (repairRaw.status !== 'completed') {
       const repair = repairArtifact('failed', repairRaw.reason || 'The repair call did not complete.', {
         model: repairRaw.model, provider: repairRaw.provider, requestId: repairRaw.requestId, initialScore: initialReview.score,
         ...(deltaDiagnostics ? { deltaRepair: deltaDiagnostics } : {}),
+        ...qcExtra(),
       });
       const acceptance = acceptanceArtifact('manual-review-required', initialProjectName, {
         initialReviewPassed: false, repairAttempted: true, repairAccepted: false, finalReviewPassed: false,
@@ -909,6 +949,7 @@ export async function runFrontendBuilderQualityPipeline(
         generatedCharCount: repairValidation.totalCharCount,
         initialScore: initialReview.score,
         ...(deltaDiagnostics ? { deltaRepair: deltaDiagnostics } : {}),
+        ...qcExtra(),
       });
       const acceptance = acceptanceArtifact('manual-review-required', initialProjectName, {
         initialReviewPassed: false, repairAttempted: true, repairAccepted: false, finalReviewPassed: false,
@@ -923,9 +964,20 @@ export async function runFrontendBuilderQualityPipeline(
     const severeWarningsAfterRepair = severeWarningCodes(repairValidation);
     const repairSevereGatePassed = severeWarningGatePassed(repairValidation);
 
-    // ── Step 7 — STATIC post-repair review of the repaired files (exactly one parse) ──
+    // ── Step 7 — STATIC post-repair review of the repaired files (exactly one parse). The
+    //    COMPLETE reconstructed project is ALWAYS parsed/validated locally above; only the model's
+    //    review CONTEXT is compacted (owner_delta compact mode + resolvable changed paths), never
+    //    the local gates. Safe-fallback → undefined ⇒ the existing full-source review request. ──
     const repairedActiveFiles = toActiveFiles(repairValidation.files);
-    const finalReviewRaw = await generateFrontendBuilderReviewRaw(spec, repairedActiveFiles, 'post-repair', initialReview, { signal: opts?.signal, deterministicWarnings: warningSummaries(repairValidation) });
+    let compactPost: CompactSourceContext | undefined;
+    if (compactContextEligible) {
+      // Post-repair compaction seeds on the reconstruction's changed paths; the selector itself
+      // safe-falls-back (context undefined) when they are absent/inconsistent or any bound fails.
+      const sel = selectCompactPostRepairContext({ spec, reconstructedFiles: repairedActiveFiles, changedPaths: changedPaths ?? [], initialReview });
+      compactPost = sel.context;
+      qualityContextPostDiag = sel.diagnostics;
+    }
+    const finalReviewRaw = await generateFrontendBuilderReviewRaw(spec, repairedActiveFiles, 'post-repair', initialReview, { signal: opts?.signal, deterministicWarnings: warningSummaries(repairValidation), compact: compactPost });
     const finalReview = parseFrontendBuilderReview(finalReviewRaw, 'post-repair', repairedActiveFiles, { heroComponentPath: repairValidation.heroComponentPath });
 
     // ── Step 8 — repair acceptance gate: valid + final pass + strict score improvement +
@@ -949,6 +1001,7 @@ export async function runFrontendBuilderQualityPipeline(
         generatedCharCount: repairValidation.totalCharCount,
         initialScore, finalScore,
         ...(deltaDiagnostics ? { deltaRepair: deltaDiagnostics } : {}),
+        ...qcExtra(),
       });
       const acceptance = acceptanceArtifact('repaired-approved', 'repaired-model-native', {
         initialReviewPassed: false, repairAttempted: true, repairAccepted: true, finalReviewPassed: true,
@@ -980,6 +1033,7 @@ export async function runFrontendBuilderQualityPipeline(
       generatedCharCount: repairValidation.totalCharCount,
       initialScore, finalScore: finalReview.status === 'completed' ? finalScore : undefined,
       ...(deltaDiagnostics ? { deltaRepair: deltaDiagnostics } : {}),
+      ...qcExtra(),
     });
     const acceptance = acceptanceArtifact('manual-review-required', initialProjectName, {
       initialReviewPassed: false, repairAttempted: true, repairAccepted: false,

@@ -255,6 +255,10 @@ export interface DeltaReconstruction {
   repairRaw: FrontendBuilderRawArtifact;
   /** Bounded, sanitized diagnostics for the acceptance/repair artifact. */
   diagnostics: FrontendDeltaRepairArtifact;
+  /** The NORMALIZED upsert paths (changed/added files) from a VALID reconstruction — INTERNAL
+   *  pipeline data used to build the compact post-repair review context. Absent when the delta
+   *  was rejected. These are safe, deduped, project-relative paths (never raw provider output). */
+  changedPaths?: string[];
 }
 
 /** Copy ONLY the truthful, bounded transport/telemetry fields from the delta call onto the
@@ -373,5 +377,6 @@ export function reconstructRepairRawFromDelta(input: {
       outputReductionRatio: reductionOf(deltaCharCount),
       accepted: true,
     },
+    changedPaths: parsed.upserts.map((u) => u.path),
   };
 }
