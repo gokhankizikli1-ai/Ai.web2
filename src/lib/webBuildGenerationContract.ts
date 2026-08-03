@@ -307,6 +307,254 @@ function resolveFirstViewport(files: FrontendGeneratedFile[]): { strong: boolean
   return { strong: true, firstSection: content.slice(start, start + 1800) };
 }
 
+/* ── Motion enforcement ───────────────────────────────────────────────────────
+ * The plan/spec can genuinely REQUIRE motion (composed Motion-Composer layers, or a non-static
+ * motion strategy). The other contract checks prove layout/hero/proof/imagery but NOT that the
+ * planned motion was actually implemented — so a site can claim motion readiness in diagnostics
+ * yet render static. These bounded, deterministic helpers close that gap: they resolve the
+ * requirement ONLY from the authoritative plan + sanitized spec, then look for STRONG executable
+ * evidence in the generated source (never comments, planning text, imports or dependency names).
+ */
+type MotionRequirementLevel = 'none' | 'micro' | 'composed';
+interface MotionRequirement {
+  required: boolean;
+  level: MotionRequirementLevel;
+  reducedMotionExpected: boolean;
+  summary: string;   // bounded, PLAN-derived label only (never source / prompt / PII)
+}
+const _NONE_MOTION: MotionRequirement = { required: false, level: 'none', reducedMotionExpected: false, summary: '' };
+
+/** Pattern/level tokens that mean "no motion" — never a requirement. */
+const MOTION_NONE_TOKEN_RE = /^(none|static|instant|off)$/;
+
+/**
+ * Decide whether the AUTHORITATIVE plan/spec genuinely requires motion, and at what level.
+ * Sources: `spec.assets.motionLayers` (the sanitized Motion-Composer projection) and
+ * `plan.motionStrategy` (motionLevel / interactionStyle / heroMotion). Deliberately static /
+ * minimal / reduced-motion plans, empty layer arrays and `none` patterns produce NO requirement.
+ * Pure + fail-open.
+ */
+function resolveMotionRequirement(
+  plan: ExperienceArchitecturePlan,
+  spec: FrontendBuildSpecification | undefined,
+): MotionRequirement {
+  try {
+    const ms = plan.motionStrategy;
+
+    // Explicit static / reduced-motion / no-animation intent → never a motion requirement.
+    if (norm(s(plan.signature?.interactionPattern)) === 'minimal_static') return _NONE_MOTION;
+    const directives = [
+      ...(ms?.userDirectives || []), ...(plan.userDirectives || []),
+      ...(plan.signature?.userDirectives || []),
+    ].join(' ').toLowerCase();
+    if (/no animation|no motion|without animation|reduce[d]? motion|prefers-reduced|static (only|site|page|layout)|minimal motion/.test(directives)
+      || (ms?.avoidMotion || []).some((a) => /\ball\b|\bany\b|\bevery\b|no motion|no animation/i.test(s(a)))) {
+      return _NONE_MOTION;
+    }
+
+    // Authoritative composed layers from the sanitized spec (preferred, concrete source).
+    const specLayers = Array.isArray(spec?.assets?.motionLayers) ? spec!.assets.motionLayers : [];
+    const meaningfulLayers = specLayers.filter((l) => {
+      const p = norm(s(l?.pattern));
+      const i = norm(s(l?.intensity));
+      return !!l && !!p && !MOTION_NONE_TOKEN_RE.test(p) && i !== 'none';
+    });
+
+    // Plan-level motion strategy signal (present only when motion intelligence ran).
+    const motionLevel = norm(s(ms?.motionLevel));            // '' | none | subtle | moderate | immersive
+    const interactionStyle = norm(s(ms?.interactionStyle));  // static | hover | scroll_reveal | parallax | cinematic | interactive
+    const heroMotion = norm(s(ms?.heroMotion));              // none | fade | slow_zoom | video_motion | interactive
+    const strategyRequiresMotion = !!motionLevel && motionLevel !== 'none'
+      && !!interactionStyle && interactionStyle !== 'static';
+
+    const intent = readIntent(plan);
+    // Required only when the plan genuinely composed motion. A soft-minimal plan with NO composed
+    // layers is never forced into decorative animation.
+    const required = meaningfulLayers.length > 0
+      || (strategyRequiresMotion && !(intent.minimal && meaningfulLayers.length === 0));
+    if (!required) return _NONE_MOTION;
+
+    // Structural (composed) vs micro-interaction-only. Any composed layer is structural motion;
+    // otherwise a moderate/immersive level, a scroll/parallax/cinematic/interactive style, or a
+    // structural hero motion is composed. A subtle + hover-only strategy is micro.
+    const structuralTargets = new Set<string>();
+    for (const l of meaningfulLayers) {
+      const t = norm(s(l.target));
+      if (t === 'hero') structuralTargets.add('hero');
+      else if (t === 'global') structuralTargets.add('global');
+      else if (t.startsWith('section:')) structuralTargets.add('section');
+    }
+    const structuralStrategy = motionLevel === 'moderate' || motionLevel === 'immersive'
+      || /scroll_reveal|parallax|cinematic|interactive/.test(interactionStyle)
+      || /slow_zoom|video_motion|interactive/.test(heroMotion);
+    const composed = meaningfulLayers.length > 0 || structuralStrategy;
+    const level: MotionRequirementLevel = composed ? 'composed' : 'micro';
+    const targetLabels = structuralTargets.size ? [...structuralTargets] : (composed ? ['hero'] : ['micro-interaction']);
+    return {
+      required: true,
+      level,
+      reducedMotionExpected: composed,
+      summary: composed
+        ? `composed structural motion (${targetLabels.slice(0, 4).join(', ')})`
+        : 'micro-interaction motion (hover/focus/tap/state)',
+    };
+  } catch {
+    return _NONE_MOTION;
+  }
+}
+
+interface MotionEvidence { composed: boolean; micro: boolean; reducedMotion: boolean; }
+
+/** Remove comments so a comment mentioning "animation"/"motion"/a class name can never count as
+ *  implementation proof. Bounded, best-effort — strips block and line comments (incl. `{/* … *​/}`). */
+function stripMotionComments(src: string): string {
+  try {
+    return src
+      .replace(/\/\*[\s\S]*?\*\//g, ' ')       // block comments (also the inner of {/* … */})
+      .replace(/(^|[^:])\/\/[^\n]*/g, '$1 ');  // line comments (the `[^:]` guard skips `://` URLs)
+  } catch {
+    return src;
+  }
+}
+
+/* Motion actually applied inside a state-bound className/style expression — a Tailwind motion
+ * utility OR a CSS/style motion property. It is tested ONLY within a bounded expression that
+ * already references a qualifying state variable, so a match proves the state DRIVES the motion. */
+const MOTION_EXPR_RE = /transition-transform|transition-all|max-h-|\btranslate|\bopacity|\bscale|\brotate|\bheight|\btransform|\breveal|\banimate-/i;
+/* A React STATE setter/dispatch call — the state-mutation link. Excludes timer / DOM setters
+ * (setTimeout/setInterval/setAttribute/setProperty) that are not state mutations. */
+const STATE_MUTATION_RE = /\bset(?!Timeout\b|Interval\b|Attribute\b|Property\b)[A-Z]\w*\s*\(|\bdispatch\s*\(/;
+/* Escape an identifier for safe inclusion in a dynamically-built RegExp. */
+const _reEsc = (x: string): string => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * STRONG, deterministic evidence that motion was actually IMPLEMENTED in the generated source —
+ * executable usage only, never comments / imports / dependency names / planning text.
+ *
+ * CAUSALITY: state-driven, IntersectionObserver, Framer-Motion and canvas-rAF signals are
+ * evaluated PER FILE, so unrelated tokens in different files can never combine into false evidence
+ * (e.g. a `useState` in one file + a `transition-transform` class in another does NOT count). The
+ * ONLY intentionally cross-file signal is CSS `@keyframes` (legitimately defined in a stylesheet
+ * and applied elsewhere) — and it still requires an actual applied `animation`/`animate-[…]`
+ * reference. Self-contained className utilities (applied where written) and reduced-motion markers
+ * are matched project-wide. Bounded (per-file + project caps), synchronous, network-free,
+ * non-mutating, fail-open.
+ */
+function detectMotionEvidence(files: FrontendGeneratedFile[]): MotionEvidence {
+  try {
+    // Comment-stripped, per-file source (bounded per file). Comments/planning text cannot count.
+    const perFile = (Array.isArray(files) ? files : [])
+      .map((f) => stripMotionComments(typeof f?.content === 'string' ? f.content : '').slice(0, 60000));
+    // Project-wide blob (bounded) — ONLY for the legitimately cross-file / self-contained signals.
+    const code = perFile.join('\n').slice(0, 200000);
+
+    // ── Per-file causal signals (no cross-file token combination). ──
+    let framerStructural = false;
+    let framerMicro = false;
+    let stateMotion = false;
+    let observerReveal = false;
+    let canvasRaf = false;
+    for (const fc of perFile) {
+      if (!fc) continue;
+
+      // Framer Motion, MEANINGFULLY used WITHIN THIS FILE: imported AND a motion element/
+      // AnimatePresence AND a real animation prop — all in the same file. An import in one file
+      // never validates JSX in another.
+      const importsFramer = /from\s+['"]framer-motion['"]/.test(fc);
+      const motionEl = /<motion\.[a-z][a-zA-Z0-9]*/.test(fc) || /<AnimatePresence[\s/>]/.test(fc);
+      const animProp = /\b(initial|animate|whileInView|whileHover|whileTap|whileFocus|variants|exit)\s*=/.test(fc)
+        || /\blayout(Id)?\s*[=}]/.test(fc) || /\btransition\s*=\s*\{/.test(fc);
+      if (importsFramer && motionEl && animProp) {
+        if (/\b(whileInView|variants|animate|exit)\s*=|<AnimatePresence[\s/>]|\blayout(Id)?\s*[=}]/.test(fc)) framerStructural = true;
+        if (/\b(whileHover|whileTap|whileFocus)\s*=/.test(fc)) framerMicro = true;
+      }
+
+      // State-driven structural motion, SAME-FILE VARIABLE-LEVEL correlation. Extract real
+      // state/setter pairs (`const [visible, setVisible] = useState(…)`, `const [s, dispatch] =
+      // useReducer(…)`); a pair only qualifies when its OWN setter/dispatch is actually invoked. It
+      // counts as motion ONLY when that state VARIABLE is referenced inside a bounded className/
+      // style expression that ITSELF applies motion (transform/opacity/height/scale/translate/
+      // rotate/reveal). So unrelated same-file tokens (e.g. mobile-menu state + an unrelated card
+      // transition) cannot combine. Fails conservative: no proven correlation ⇒ not counted.
+      if (!stateMotion) {
+        const qualVars: string[] = [];
+        for (const d of fc.matchAll(/(?:const|let|var)\s*\[\s*([A-Za-z_$][\w$]*)\s*,\s*([A-Za-z_$][\w$]*)\s*\]\s*=\s*use(?:State|Reducer)\s*\(/g)) {
+          const stateVar = d[1]; const setter = d[2];
+          if (new RegExp(`\\b${_reEsc(setter)}\\s*\\(`).test(fc)) qualVars.push(stateVar);
+        }
+        if (qualVars.length) {
+          for (const am of fc.matchAll(/(?:className|style)\s*=\s*\{/g)) {
+            const start = am.index ?? 0;
+            // Bound the window to THIS JSX opening tag (stop at its first `>`) so the state variable
+            // and the motion class must live on the SAME element — never a sibling's className.
+            const rest = fc.slice(start, start + 220);
+            const gt = rest.indexOf('>');
+            const win = gt > 0 ? rest.slice(0, gt) : rest;
+            if (MOTION_EXPR_RE.test(win) && qualVars.some((v) => new RegExp(`\\b${_reEsc(v)}\\b`).test(win))) {
+              stateMotion = true; break;
+            }
+          }
+        }
+      }
+
+      // IntersectionObserver reveal, SAME-FILE CALLBACK-LEVEL correlation: an actual `new
+      // IntersectionObserver(…)` + at least one `.observe(…)` call AND a state/class/style mutation
+      // that occurs INSIDE the observer callback (inline arrow/function) or inside the NAMED
+      // function passed directly to the observer. An unrelated setter/mutation elsewhere in the
+      // file never counts. No mutating callback ⇒ not counted (fail conservative).
+      if (!observerReveal && /new\s+IntersectionObserver\s*\(/.test(fc) && /\.observe\s*\(/.test(fc)) {
+        const bodies: string[] = [];
+        // Inline arrow/function callback → bounded window from the callback's opening brace.
+        for (const cm of fc.matchAll(/new\s+IntersectionObserver\s*\(\s*(?:async\s*)?(?:function\s*)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)?\s*(?:=>)?\s*\{/g)) {
+          const start = cm.index ?? 0;
+          bodies.push(fc.slice(start, start + 600));
+        }
+        // Named callback identifier passed to the observer → its own definition body.
+        for (const nm of fc.matchAll(/new\s+IntersectionObserver\s*\(\s*([A-Za-z_$][\w$]*)\s*[),]/g)) {
+          const id = _reEsc(nm[1]);
+          const dm = new RegExp(`(?:const|let|var)\\s+${id}\\s*=\\s*(?:async\\s*)?(?:function\\s*)?\\([^)]*\\)\\s*=>?\\s*\\{|function\\s+${id}\\s*\\([^)]*\\)\\s*\\{`).exec(fc);
+          if (dm) bodies.push(fc.slice(dm.index, dm.index + 600));
+        }
+        const mutatesInCallback = bodies.some((b) =>
+          STATE_MUTATION_RE.test(b) || /classList\.(?:add|remove|toggle)\s*\(/.test(b)
+          || /\.style\.[a-zA-Z]/.test(b) || /\.setAttribute\s*\(/.test(b));
+        if (mutatesInCallback) observerReveal = true;
+      }
+
+      // Canvas rAF tied to a real rendering context, in the same file.
+      if (/requestAnimationFrame\s*\(/.test(fc) && /getContext\(\s*['"](2d|webgl2?)['"]/.test(fc)) canvasRaf = true;
+    }
+
+    // ── CSS @keyframes — intentionally cross-file: DEFINED in a stylesheet, APPLIED from another
+    //    file. Still requires an actual applied reference (an `animation(-name)` declaration or a
+    //    Tailwind arbitrary `animate-[…name…]` utility). Unused @keyframes never count. ──
+    const kf = new Set<string>();
+    for (const m of code.matchAll(/@keyframes\s+([A-Za-z_][\w-]*)/g)) kf.add(m[1].toLowerCase());
+    let keyframesApplied = false;
+    if (kf.size) {
+      const low2 = code.toLowerCase();
+      for (const m of low2.matchAll(/animation(?:-name)?\s*:\s*([^;{}]+)[;}]/g)) {
+        if ([...kf].some((n) => m[1].includes(n))) { keyframesApplied = true; break; }
+      }
+      if (!keyframesApplied) keyframesApplied = [...kf].some((n) => new RegExp(`animate-\\[[^\\]]*${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i').test(code));
+    }
+
+    // ── Self-contained className utilities (the class is applied where written) + reduced-motion
+    //    markers — project-wide matching is safe (no cross-file token combination is possible). ──
+    const classAttr = (re: RegExp): boolean => re.test(code);
+    const appliedCustomAnim = classAttr(/class(?:Name)?\s*=\s*(["'`])(?:(?!\1)[\s\S]){0,600}?\banimate-\[[^\]]+\]/i);
+    const appliedBuiltinAnim = classAttr(/class(?:Name)?\s*=\s*(["'`])(?:(?!\1)[\s\S]){0,600}?\banimate-(?!pulse\b)(spin|bounce|ping)\b/i);
+    const microTailwind = /\b(hover:scale-|hover:-?translate-|hover:rotate-|group-hover:(?:scale|translate|rotate)|active:scale-|focus(?:-visible)?:scale-|transition-transform)/i.test(code);
+
+    const composed = framerStructural || keyframesApplied || canvasRaf || stateMotion || observerReveal || appliedCustomAnim;
+    const micro = composed || framerMicro || microTailwind || appliedBuiltinAnim;
+    const reducedMotion = /prefers-reduced-motion/i.test(code) || /\buseReducedMotion\b/.test(code) || /\bmotion-reduce:/.test(code);
+    return { composed, micro, reducedMotion };
+  } catch {
+    return { composed: false, micro: false, reducedMotion: false };
+  }
+}
+
 /**
  * Deterministic static checks of generated source against the contract. Only STRONG evidence
  * yields major/blocker; intentionally minimal / typography-first / app-first sites are not
@@ -314,11 +562,15 @@ function resolveFirstViewport(files: FrontendGeneratedFile[]): { strong: boolean
  *
  * `explicitRequest` is the user's ORIGINAL request (bounded): a pattern they explicitly asked
  * for (e.g. a pricing or testimonials section) is not flagged as unrequested.
+ *
+ * `spec` is the authoritative sanitized FrontendBuildSpecification (optional for backward
+ * compatibility): it supplies the composed motion layers used by the motion-enforcement check.
  */
 export function evaluateContractCompliance(
   files: FrontendGeneratedFile[] | undefined,
   plan: ExperienceArchitecturePlan | undefined,
   explicitRequest?: string,
+  spec?: FrontendBuildSpecification,
 ): ContractFinding[] {
   try {
     if (!plan || plan.version !== 'experience-arch-v1') return [];
@@ -443,6 +695,33 @@ export function evaluateContractCompliance(
       }
     }
 
+    // 10. Required motion not implemented. When the authoritative plan/spec genuinely requires
+    //     motion but the generated source shows no credible executable evidence, emit a bounded
+    //     MAJOR finding so the EXISTING single repair implements the planned motion. A structural
+    //     requirement is NOT satisfied by a lone button hover; a micro requirement accepts credible
+    //     hover/tap/focus/state evidence. Evidence never includes comments, imports or planning
+    //     text. Purely static source evidence — no claim of visual/runtime verification.
+    const motionReq = resolveMotionRequirement(plan, spec);
+    if (motionReq.required) {
+      const ev = detectMotionEvidence(files);
+      const satisfied = motionReq.level === 'micro' ? (ev.micro || ev.composed) : ev.composed;
+      if (!satisfied) {
+        out.push({
+          code: 'contract-missing-required-motion', severity: 'major',
+          message: `The authoritative motion plan requires ${motionReq.summary}, but the generated source shows no executable ${motionReq.level === 'composed' ? 'structural' : 'interaction'} motion (imports, comments and class names in text do not count).`,
+          repairInstruction: `Implement the planned ${motionReq.summary} purposefully — bounded Framer Motion (motion.* with initial/animate/whileInView/variants), applied CSS @keyframes, or state-driven reveal/interaction tied to the planned experience. Preserve the existing copy and layout intent, keep motion subtle, do NOT scatter decorative animation, and respect prefers-reduced-motion.`,
+        });
+      } else if (motionReq.reducedMotionExpected && !ev.reducedMotion) {
+        // Motion IS implemented but no reduced-motion protection is present. One bounded
+        // accessibility finding WITHIN the motion objective (not a general a11y refactor).
+        out.push({
+          code: 'contract-motion-missing-reduced-motion', severity: 'minor',
+          message: 'Required structural motion is implemented, but no prefers-reduced-motion protection was found in the generated source.',
+          repairInstruction: 'Add a reduced-motion guard for the implemented motion (a prefers-reduced-motion media query, Tailwind motion-reduce: variants, or Framer useReducedMotion) so the animation degrades to a static/subtle fallback.',
+        });
+      }
+    }
+
     return out;
   } catch {
     return [];
@@ -458,6 +737,10 @@ function categoryFor(code: string): FrontendBuilderReviewCategory {
     if (code.includes('radius')) return 'layout-rhythm';
     return 'palette-and-surfaces';   // central-tokens / hardcoded-colours
   }
+  // Motion enforcement → the dedicated existing categories (distinct so a motion finding is never
+  // shadowed by a same-category contract-fidelity finding during the category dedup).
+  if (code.includes('reduced-motion')) return 'accessibility-intent';
+  if (code.includes('motion')) return 'motion-and-interaction';
   if (code.includes('headline-first') || code.includes('hero') || code.includes('landing')) return 'concept-drift';
   if (code.includes('feature-cards') || code.includes('auto-')) return 'generic-template';
   if (code.includes('medium') || code.includes('proof')) return 'contract-fidelity';
