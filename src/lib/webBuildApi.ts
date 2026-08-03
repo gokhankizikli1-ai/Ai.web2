@@ -25,6 +25,7 @@ import type {
 } from '@/lib/webBuildAgents';
 import { hasAffirmedIntent } from '@/lib/webBuildProductIntent';
 import type { WebBuildFile } from '@/lib/webBuildPayload';
+import type { CompactSourceContext } from '@/lib/webBuildQualityContext';
 // PR #510 — the Experience Architecture enforcement block (a leaf; pure; returns "" when no
 // plan is attached, so the frontend_builder request is unchanged with the flag off).
 import { buildExperienceEnforcementBlock } from '@/lib/webBuildExperienceArchitecture';
@@ -2805,14 +2806,19 @@ export function buildFrontendBuilderReviewRequest(
   stage: FrontendBuilderReviewStage,
   previousReview?: FrontendBuilderReviewArtifact,
   deterministicWarnings?: string[],
+  compact?: CompactSourceContext,
 ): string {
   const input: Record<string, unknown> = {
     task: 'frontend-design-review',
     responseContract: 'frontend-review-v1',
     stage,
     specification: spec,
-    files: frontendFilesForRequest(files),
+    // Owner-compact post-repair review: send only the changed files + their deterministic
+    // supporting closure as full source, plus a metadata-only manifest of the omitted unchanged
+    // files. When `compact` is absent the request is byte-for-byte the pre-existing full-source one.
+    files: compact ? frontendFilesForRequest(compact.includedFiles) : frontendFilesForRequest(files),
   };
+  if (compact) input.omittedFilesManifest = compact.omittedManifest;
   // Phase 13B — bounded deterministic quality WARNINGS from the static validator
   // (shallow-project / shallow-section / minimal-styles / repetitive-section-structure /
   // internal-copy-leak / missing-hero-visual-layer). Signals only: the reviewer still
@@ -2832,6 +2838,12 @@ export function buildFrontendBuilderReviewRequest(
     'Review ONLY the specification and the source files below. You did NOT see a rendered',
     'page, a screenshot, a compiled bundle or a browser — never claim you did. Return ONLY',
     'the strict frontend-review-v1 JSON object (no Markdown fence, no prose before/after).',
+    ...(compact ? [
+      'CONTEXT NOTE: `files` contains the CHANGED files plus their directly-related supporting',
+      'source; `omittedFilesManifest` lists the remaining UNCHANGED project files (path/type/size',
+      'only). The omitted files exist and are unchanged — review the provided files in context and',
+      'do NOT penalize the omitted files for not being shown.',
+    ] : []),
     'BEGIN_FRONTEND_BUILD_SPEC_JSON',
     'BEGIN_FRONTEND_REVIEW_INPUT_JSON',
     JSON.stringify(input),
@@ -2850,13 +2862,13 @@ export async function generateFrontendBuilderReviewRaw(
   files: WebBuildFile[],
   stage: FrontendBuilderReviewStage,
   previousReview?: FrontendBuilderReviewArtifact,
-  opts?: { signal?: AbortSignal; deterministicWarnings?: string[] },
+  opts?: { signal?: AbortSignal; deterministicWarnings?: string[]; compact?: CompactSourceContext },
 ): Promise<FrontendBuilderReviewRawArtifact> {
   if (!spec) return reviewRawArtifact(stage, 'skipped', 'No Phase 12A specification available for the review.');
   if (spec.status === 'failed-open') return reviewRawArtifact(stage, 'skipped', 'The specification failed open; the review was skipped.');
   if (!files.length) return reviewRawArtifact(stage, 'skipped', 'No active model-native files to review.');
 
-  const message = buildFrontendBuilderReviewRequest(spec, files, stage, previousReview, opts?.deterministicWarnings);
+  const message = buildFrontendBuilderReviewRequest(spec, files, stage, previousReview, opts?.deterministicWarnings, opts?.compact);
   if (message.length > MAX_FRONTEND_TASK_REQUEST_CHARS) {
     return reviewRawArtifact(stage, 'failed', `The review request (${message.length} chars) exceeds the safe request limit (${MAX_FRONTEND_TASK_REQUEST_CHARS}).`);
   }
@@ -3038,10 +3050,18 @@ export function buildFrontendBuilderDeltaRepairRequest(
   initialReview: FrontendBuilderReviewArtifact,
   deterministicWarnings?: string[],
   qualityEvidence?: FrontendRepairQualityEvidence,
+  compact?: CompactSourceContext,
 ): string {
   const input = buildFrontendRepairInputPayload(spec, files, initialReview, deterministicWarnings, qualityEvidence);
   // The model receives the SAME bounded repair input; only the requested response shape differs.
   input.responseContract = 'frontend-delta-v1';
+  // Owner-compact repair: replace the full source with the selected target/dependency/root files
+  // as full source + a metadata-only manifest of the omitted files. When `compact` is absent the
+  // request is byte-for-byte the pre-existing full-source delta request.
+  if (compact) {
+    input.files = frontendFilesForRequest(compact.includedFiles);
+    input.omittedFilesManifest = compact.omittedManifest;
+  }
   return [
     '[FRONTEND BUILDER REQUEST]',
     '[FRONTEND REPAIR REQUEST]',
@@ -3050,6 +3070,13 @@ export function buildFrontendBuilderDeltaRepairRequest(
     'Preserve required public copy, required section order, the primary concept identity, the',
     'website language and the listed strengths. EXPAND shallow sections into fully realized',
     'compositions (never collapse or replace them); deepen the exact files listed in qualityEvidence.',
+    ...(compact ? [
+      'CONTEXT NOTE: `files` contains the files most relevant to these fixes (targets + their',
+      'directly-related source) as COMPLETE source; `omittedFilesManifest` lists the remaining',
+      'project files (path/type/size only). The omitted files EXIST and are correct — do NOT delete,',
+      'rename, move, recreate or rewrite them, and do NOT assume they are empty. Return upserts ONLY',
+      'for files you actually change or add.',
+    ] : []),
     'RESPONSE FORMAT (frontend-delta-v1) — output EXACTLY the two markers and a single JSON object',
     'between them, and nothing else:',
     '## FRONTEND_DELTA_V1',
@@ -3079,13 +3106,13 @@ export async function generateFrontendBuilderDeltaRepairRaw(
   spec: FrontendBuildSpecification | undefined,
   files: WebBuildFile[],
   initialReview: FrontendBuilderReviewArtifact,
-  opts?: { signal?: AbortSignal; deterministicWarnings?: string[]; qualityEvidence?: FrontendRepairQualityEvidence },
+  opts?: { signal?: AbortSignal; deterministicWarnings?: string[]; qualityEvidence?: FrontendRepairQualityEvidence; compact?: CompactSourceContext },
 ): Promise<FrontendBuilderRawArtifact> {
   if (!spec) return frontendBuilderArtifact('skipped', 'No Phase 12A specification available for the delta repair.');
   if (spec.status === 'failed-open') return frontendBuilderArtifact('skipped', 'The specification failed open; the delta repair was skipped.');
   if (!files.length) return frontendBuilderArtifact('skipped', 'No active model-native files to repair.');
 
-  const message = buildFrontendBuilderDeltaRepairRequest(spec, files, initialReview, opts?.deterministicWarnings, opts?.qualityEvidence);
+  const message = buildFrontendBuilderDeltaRepairRequest(spec, files, initialReview, opts?.deterministicWarnings, opts?.qualityEvidence, opts?.compact);
   if (message.length > MAX_FRONTEND_TASK_REQUEST_CHARS) {
     return frontendBuilderArtifact('failed', `The delta repair request (${message.length} chars) exceeds the safe request limit (${MAX_FRONTEND_TASK_REQUEST_CHARS}).`);
   }

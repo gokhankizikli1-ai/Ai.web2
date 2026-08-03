@@ -2460,6 +2460,55 @@ export interface FrontendBuilderRepairArtifact {
   /** Owner-only DELTA quality-repair diagnostics. Present ONLY when the single quality-repair ran
    *  in `owner_delta` mode; absent for disabled/non-owner/full-mode repairs and old saved builds. */
   deltaRepair?: FrontendDeltaRepairArtifact;
+
+  /** Owner-only COMPACT quality-context diagnostics (additive, optional). Present ONLY when the
+   *  quality-context mode was consulted during an `owner_delta` repair; carries the sanitized,
+   *  measured character counts for the compacted repair request and/or the compacted post-repair
+   *  review. Absent for disabled/non-owner/full-mode repairs and old saved builds. */
+  qualityContext?: {
+    repair?: FrontendQualityContextDiagnostics;
+    postReview?: FrontendQualityContextDiagnostics;
+  };
+}
+
+/** Bounded set of reasons the compact quality-context assembly safely fell back to the existing
+ *  full-context request BEFORE the single provider call (never a second call). */
+export type FrontendQualityContextFallbackReason =
+  | 'context-mode-disabled'
+  | 'no-targets'
+  | 'targets-missing'
+  | 'ambiguous-imports'
+  | 'too-many-files'
+  | 'exceeds-char-budget'
+  | 'insufficient-coverage'
+  | 'no-omitted-files'
+  | 'malformed-input'
+  | 'no-changed-paths'
+  | 'assembly-error';
+
+/** Sanitized, measured diagnostics for one compact quality-context assembly (repair request or
+ *  post-repair review). Character counts are the REAL serialized-source sizes for THIS call — never
+ *  a token/monetary/averaged saving claim. Never carries source, prompts, provider output, ids,
+ *  arbitrary error strings, secrets or PII. */
+export interface FrontendQualityContextDiagnostics {
+  version: 'frontend-quality-context-v1';
+  qualityContextMode: 'disabled' | 'owner_compact';
+  compactContextStage: 'repair' | 'post-repair';
+  compactContextEligible: boolean;
+  compactContextUsed: boolean;
+  /** Total serialized-source characters the FULL request would have sent (all active files). */
+  fullContextEstimatedChars: number;
+  /** Total serialized-source characters actually included when compact context was used
+   *  (equals fullContextEstimatedChars when compact was not used). */
+  compactContextChars: number;
+  includedSourceFileCount: number;
+  omittedSourceFileCount: number;
+  /** Changed/upserted file count (post-repair stage only). */
+  changedFileCount?: number;
+  /** 1 - compactContextChars/fullContextEstimatedChars, clamped to [0,1]. Measured chars only. */
+  reductionRatio: number;
+  /** Present only when compact context was NOT used (safe fallback to the full request). */
+  fallbackReason?: FrontendQualityContextFallbackReason;
 }
 
 /** The final Phase 12E acceptance record. `renderedVisualTestStatus` is ALWAYS
