@@ -41,12 +41,13 @@ logger = logging.getLogger(__name__)
 #
 # BROWSER_WORKFLOW_BUDGET_S is the MAXIMUM overall client polling budget across all
 # full-source background task kinds (src/lib/webBuildApi.ts). The default budget is
-# 540_000 ms, but `quality-repair` — which regenerates the entire multi-file project
-# from the existing files + spec + review findings — is granted an extended
-# 720_000 ms budget there; this value must mirror that MAXIMUM so the retention
+# 540_000 ms, but the FULL-PROJECT generation kinds — `initial-generation` and
+# `quality-repair`, both of which emit the entire multi-file project (initial from the
+# spec; quality-repair from the existing files + spec + review findings) — are granted an
+# extended 720_000 ms budget there; this value must mirror that MAXIMUM so the retention
 # invariant holds for the longest permitted poll window. The margin comfortably
-# covers the client's final ~25s poll HTTP timeout plus network / Redis / event-loop
-# scheduling slack. This single derived value drives the Redis expiry, the record's
+# covers the client's single final ~25s authoritative-poll HTTP timeout plus network /
+# Redis / event-loop scheduling slack. This single derived value drives the Redis expiry, the record's
 # expires_at, AND the advertised expires_in_ms, so the contract can never drift
 # through duplicated magic numbers. The TTL is still fixed and bounded — jobs expire
 # automatically; there is NO sliding TTL.
