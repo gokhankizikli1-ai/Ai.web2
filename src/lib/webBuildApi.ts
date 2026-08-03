@@ -2488,7 +2488,10 @@ async function pollFrontendBackgroundTask(
   };
 
   for (;;) {
-    if (signal?.aborted) await abortCancelled();
+    // `return abortCancelled()` (not `await`): the returned Promise<never> is assignable to this
+    // function's return type, best-effort cancels + throws WebBuildError('cancelled') at runtime
+    // exactly as before, AND — being a `return` — lets TypeScript narrow the retrieval union below.
+    if (signal?.aborted) return abortCancelled();
 
     if (Date.now() - started > workflowBudgetMs) {
       // ── Final authoritative deadline retrieval ──────────────────────────────────────────────
@@ -2497,7 +2500,7 @@ async function pollFrontendBackgroundTask(
       // perform EXACTLY ONE final GET of the SAME opaque job. This retrieves the existing job only
       // — it can never create a new Response and never restarts generation.
       const finalR = await retrieveBackgroundJob(jobId, signal);
-      if (finalR.kind === 'user-aborted') await abortCancelled();
+      if (finalR.kind === 'user-aborted') return abortCancelled();
       // A real terminal result (completed / incomplete / failed) discovered at the deadline is
       // returned through the UNCHANGED parser/error-mapping path — NEVER overwritten by a timeout.
       if (finalR.kind === 'terminal') return annotate(finalR.data, pollCount + 1, { background_final_deadline_poll: true });
@@ -2508,7 +2511,7 @@ async function pollFrontendBackgroundTask(
       // User cancellation WINS over the deadline-timeout classification: if the caller signal
       // aborted around this final retrieval (e.g. the GET resolved just before the abort landed),
       // treat it as an explicit cancellation, not a timeout.
-      if (signal?.aborted) await abortCancelled();
+      if (signal?.aborted) return abortCancelled();
       // Still queued/in_progress, OR the single bounded final GET could not produce a usable
       // terminal result (network / non-404 HTTP failure). Either way the client budget is spent:
       // best-effort cancel the SAME job and return the truthful client-timeout. We deliberately
@@ -2526,13 +2529,13 @@ async function pollFrontendBackgroundTask(
     try {
       await backgroundDelay(pollAfter, signal);
     } catch (err) {
-      if (err instanceof WebBuildError && err.kind === 'cancelled') await abortCancelled();
+      if (err instanceof WebBuildError && err.kind === 'cancelled') return abortCancelled();
       throw err;
     }
 
     // Steady-state poll — the SAME single-retrieval helper used at the deadline (no duplication).
     const r = await retrieveBackgroundJob(jobId, signal);
-    if (r.kind === 'user-aborted') await abortCancelled();
+    if (r.kind === 'user-aborted') return abortCancelled();
     if (r.kind === 'error') {
       // Bounded network / non-404 HTTP failure — tolerate a couple, then fail truthfully.
       transientFails += 1;
