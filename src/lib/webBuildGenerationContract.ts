@@ -417,12 +417,15 @@ function stripMotionComments(src: string): string {
   }
 }
 
-/* Applied transform/opacity/height motion utility or inline style (used as the "state is applied
- * to rendered behavior" causal link). */
-const APPLIED_MOTION_UTIL_RE = /(translate|-translate|opacity-0|opacity-100|scale-\d|rotate-\d|transition-transform|transition-all|max-h-0|max-h-\[)/i;
+/* Motion actually applied inside a state-bound className/style expression — a Tailwind motion
+ * utility OR a CSS/style motion property. It is tested ONLY within a bounded expression that
+ * already references a qualifying state variable, so a match proves the state DRIVES the motion. */
+const MOTION_EXPR_RE = /transition-transform|transition-all|max-h-|\btranslate|\bopacity|\bscale|\brotate|\bheight|\btransform|\breveal|\banimate-/i;
 /* A React STATE setter/dispatch call — the state-mutation link. Excludes timer / DOM setters
  * (setTimeout/setInterval/setAttribute/setProperty) that are not state mutations. */
 const STATE_MUTATION_RE = /\bset(?!Timeout\b|Interval\b|Attribute\b|Property\b)[A-Z]\w*\s*\(|\bdispatch\s*\(/;
+/* Escape an identifier for safe inclusion in a dynamically-built RegExp. */
+const _reEsc = (x: string): string => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
  * STRONG, deterministic evidence that motion was actually IMPLEMENTED in the generated source —
@@ -466,25 +469,56 @@ function detectMotionEvidence(files: FrontendGeneratedFile[]): MotionEvidence {
         if (/\b(whileHover|whileTap|whileFocus)\s*=/.test(fc)) framerMicro = true;
       }
 
-      // State-driven structural motion, SAME-FILE causal chain: a real useState/useReducer
-      // declaration + a corresponding state mutation (setX(…)/dispatch(…)) + that being applied to
-      // rendered className/style transform/opacity/height behavior. A bare useState plus an
-      // unrelated transform utility (in another file) never counts.
-      if (/\buse(State|Reducer)\s*\(/.test(fc) && STATE_MUTATION_RE.test(fc)
-        && (APPLIED_MOTION_UTIL_RE.test(fc) || /style\s*=\s*\{[\s\S]{0,400}?(transform|opacity|height)/i.test(fc))) {
-        stateMotion = true;
+      // State-driven structural motion, SAME-FILE VARIABLE-LEVEL correlation. Extract real
+      // state/setter pairs (`const [visible, setVisible] = useState(…)`, `const [s, dispatch] =
+      // useReducer(…)`); a pair only qualifies when its OWN setter/dispatch is actually invoked. It
+      // counts as motion ONLY when that state VARIABLE is referenced inside a bounded className/
+      // style expression that ITSELF applies motion (transform/opacity/height/scale/translate/
+      // rotate/reveal). So unrelated same-file tokens (e.g. mobile-menu state + an unrelated card
+      // transition) cannot combine. Fails conservative: no proven correlation ⇒ not counted.
+      if (!stateMotion) {
+        const qualVars: string[] = [];
+        for (const d of fc.matchAll(/(?:const|let|var)\s*\[\s*([A-Za-z_$][\w$]*)\s*,\s*([A-Za-z_$][\w$]*)\s*\]\s*=\s*use(?:State|Reducer)\s*\(/g)) {
+          const stateVar = d[1]; const setter = d[2];
+          if (new RegExp(`\\b${_reEsc(setter)}\\s*\\(`).test(fc)) qualVars.push(stateVar);
+        }
+        if (qualVars.length) {
+          for (const am of fc.matchAll(/(?:className|style)\s*=\s*\{/g)) {
+            const start = am.index ?? 0;
+            // Bound the window to THIS JSX opening tag (stop at its first `>`) so the state variable
+            // and the motion class must live on the SAME element — never a sibling's className.
+            const rest = fc.slice(start, start + 220);
+            const gt = rest.indexOf('>');
+            const win = gt > 0 ? rest.slice(0, gt) : rest;
+            if (MOTION_EXPR_RE.test(win) && qualVars.some((v) => new RegExp(`\\b${_reEsc(v)}\\b`).test(win))) {
+              stateMotion = true; break;
+            }
+          }
+        }
       }
 
-      // IntersectionObserver reveal, SAME-FILE causal chain: an actual `new IntersectionObserver(…)`
-      // construction + at least one `.observe(…)` call + a connected visible effect (state
-      // mutation, class mutation, style mutation, or an applied transform/opacity/height). A bare
-      // token / import / type reference never counts.
-      if (/new\s+IntersectionObserver\s*\(/.test(fc) && /\.observe\s*\(/.test(fc)
-        && (STATE_MUTATION_RE.test(fc)
-          || /classList\.(add|remove|toggle)\s*\(/.test(fc)
-          || /\.style\.[a-zA-Z]/.test(fc)
-          || APPLIED_MOTION_UTIL_RE.test(fc))) {
-        observerReveal = true;
+      // IntersectionObserver reveal, SAME-FILE CALLBACK-LEVEL correlation: an actual `new
+      // IntersectionObserver(…)` + at least one `.observe(…)` call AND a state/class/style mutation
+      // that occurs INSIDE the observer callback (inline arrow/function) or inside the NAMED
+      // function passed directly to the observer. An unrelated setter/mutation elsewhere in the
+      // file never counts. No mutating callback ⇒ not counted (fail conservative).
+      if (!observerReveal && /new\s+IntersectionObserver\s*\(/.test(fc) && /\.observe\s*\(/.test(fc)) {
+        const bodies: string[] = [];
+        // Inline arrow/function callback → bounded window from the callback's opening brace.
+        for (const cm of fc.matchAll(/new\s+IntersectionObserver\s*\(\s*(?:async\s*)?(?:function\s*)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)?\s*(?:=>)?\s*\{/g)) {
+          const start = cm.index ?? 0;
+          bodies.push(fc.slice(start, start + 600));
+        }
+        // Named callback identifier passed to the observer → its own definition body.
+        for (const nm of fc.matchAll(/new\s+IntersectionObserver\s*\(\s*([A-Za-z_$][\w$]*)\s*[),]/g)) {
+          const id = _reEsc(nm[1]);
+          const dm = new RegExp(`(?:const|let|var)\\s+${id}\\s*=\\s*(?:async\\s*)?(?:function\\s*)?\\([^)]*\\)\\s*=>?\\s*\\{|function\\s+${id}\\s*\\([^)]*\\)\\s*\\{`).exec(fc);
+          if (dm) bodies.push(fc.slice(dm.index, dm.index + 600));
+        }
+        const mutatesInCallback = bodies.some((b) =>
+          STATE_MUTATION_RE.test(b) || /classList\.(?:add|remove|toggle)\s*\(/.test(b)
+          || /\.style\.[a-zA-Z]/.test(b) || /\.setAttribute\s*\(/.test(b));
+        if (mutatesInCallback) observerReveal = true;
       }
 
       // Canvas rAF tied to a real rendering context, in the same file.
