@@ -39,16 +39,20 @@ logger = logging.getLogger(__name__)
 #
 # INVARIANT: JOB_TTL_S  >  browser polling window  +  final-poll / network margin.
 #
-# BROWSER_WORKFLOW_BUDGET_S mirrors the client's overall polling budget
-# (src/lib/webBuildApi.ts BACKGROUND_WORKFLOW_TIMEOUT_MS = 540_000). The margin
-# comfortably covers the client's final ~25s poll HTTP timeout plus network /
-# Redis / event-loop scheduling slack. This single derived value drives the Redis
-# expiry, the record's expires_at, AND the advertised expires_in_ms, so the
-# contract can never drift through duplicated magic numbers. The TTL is still
-# fixed and bounded — jobs expire automatically; there is NO sliding TTL.
-BROWSER_WORKFLOW_BUDGET_S = 540
+# BROWSER_WORKFLOW_BUDGET_S is the MAXIMUM overall client polling budget across all
+# full-source background task kinds (src/lib/webBuildApi.ts). The default budget is
+# 540_000 ms, but `quality-repair` — which regenerates the entire multi-file project
+# from the existing files + spec + review findings — is granted an extended
+# 720_000 ms budget there; this value must mirror that MAXIMUM so the retention
+# invariant holds for the longest permitted poll window. The margin comfortably
+# covers the client's final ~25s poll HTTP timeout plus network / Redis / event-loop
+# scheduling slack. This single derived value drives the Redis expiry, the record's
+# expires_at, AND the advertised expires_in_ms, so the contract can never drift
+# through duplicated magic numbers. The TTL is still fixed and bounded — jobs expire
+# automatically; there is NO sliding TTL.
+BROWSER_WORKFLOW_BUDGET_S = 720
 JOB_RETENTION_SAFETY_MARGIN_S = 120
-JOB_TTL_S = BROWSER_WORKFLOW_BUDGET_S + JOB_RETENTION_SAFETY_MARGIN_S  # 660s (11 min)
+JOB_TTL_S = BROWSER_WORKFLOW_BUDGET_S + JOB_RETENTION_SAFETY_MARGIN_S  # 840s (14 min)
 _KEY_PREFIX = "aibg:"
 _JOB_ID_PREFIX = "job_"
 _MAX_FIELD = 200

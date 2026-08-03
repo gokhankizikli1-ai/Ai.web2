@@ -2177,7 +2177,10 @@ function parseAiExecutionMetadata(data: Record<string, unknown>): AiExecutionMet
     backgroundJobId: boundedStr(exec.background_job_id, MAX_EXEC_ID_CHARS),
     backgroundTaskKind: boundedStr(exec.background_task_kind, MAX_EXEC_ERR_KIND_CHARS),
     pollAfterMs: clampMs(exec.poll_after_ms, 1000, 10000),
-    expiresInMs: clampMs(exec.expires_in_ms, 0, 600000),
+    // Ceiling bounds a hostile value but must not silently reduce the legitimate backend
+    // retention (ai_background_responses.JOB_TTL_S = 840s → 840000 ms advertised). Kept above
+    // that with headroom; still bounded (informational field, never a client-controlled deadline).
+    expiresInMs: clampMs(exec.expires_in_ms, 0, 900000),
     backgroundPollCount: boundedInt(exec.background_poll_count),
     backgroundWaitMs: boundedInt(exec.background_wait_ms),
     backgroundTerminalStatus: boundedStr(exec.background_terminal_status, MAX_EXEC_ERR_KIND_CHARS),
@@ -2314,14 +2317,32 @@ function frontendBuilderArtifact(
  * result via GET /v2/ai/background/{jobId} — no per-task polling duplication. It NEVER
  * creates another model Response (polling only retrieves the same one) and NEVER persists the
  * opaque job id or a raw OpenAI response id. */
-// Overall client polling budget (NOT one HTTP request). This MUST stay below the backend's
-// opaque-job retention (ai_background_responses.JOB_TTL_S, now 660s = this budget + a 120s
-// server-side safety margin) so the ownership record cannot expire during a valid poll window;
-// the final poll's ~25s HTTP timeout fits inside that margin. Do not raise this at or above the
+// Overall client polling budget (NOT one HTTP request), resolved per background task kind.
+// The MAXIMUM of these budgets MUST stay below the backend's opaque-job retention
+// (ai_background_responses.JOB_TTL_S, now 840s = 720s max browser budget + a 120s server-side
+// safety margin) so the ownership record cannot expire during a valid poll window; the final
+// poll's ~25s HTTP timeout fits inside that margin. Do not raise any budget at or above the
 // backend TTL without raising the backend margin accordingly.
-const BACKGROUND_WORKFLOW_TIMEOUT_MS = 540_000;   // overall client budget (NOT one HTTP request)
+//
+// Default budget for initial-generation / contract-repair / revision / unknown / missing kinds.
+const BACKGROUND_WORKFLOW_TIMEOUT_MS = 540_000;
+// `quality-repair` regenerates the COMPLETE multi-file project from the existing files + build
+// spec + review findings + quality evidence + preservation instructions, so it legitimately runs
+// materially longer than initial generation. It gets an extended budget; every other kind keeps
+// the default. This is the ONLY task kind with a longer deadline.
+const BACKGROUND_WORKFLOW_TIMEOUT_QUALITY_REPAIR_MS = 720_000;
 const BACKGROUND_POLL_HTTP_TIMEOUT_MS = 25_000;   // short per-poll GET timeout
 const BACKGROUND_MAX_TRANSIENT_POLL_FAILURES = 2; // consecutive network failures tolerated
+
+/** Resolve the overall client polling budget from the BACKEND-classified background task kind.
+ *  Deterministic + fail-safe: exact `quality-repair` → extended budget; everything else
+ *  (including undefined / unknown / any other kind) → the default. The task kind comes ONLY from
+ *  the backend execution metadata (`background_task_kind`) — never a client-controlled override. */
+function backgroundWorkflowBudgetMs(taskKind: string | undefined): number {
+  return taskKind === 'quality-repair'
+    ? BACKGROUND_WORKFLOW_TIMEOUT_QUALITY_REPAIR_MS
+    : BACKGROUND_WORKFLOW_TIMEOUT_MS;
+}
 
 function clampPollMs(v: number | undefined, dflt: number): number {
   return typeof v === 'number' && isFinite(v) ? Math.min(10_000, Math.max(1_000, Math.round(v))) : dflt;
@@ -2360,8 +2381,9 @@ function backgroundFailureData(errorKind: string, taskKind: string | undefined, 
  * Poll a queued background job to a terminal /chat-shaped result. Non-background data, or data
  * that is already terminal (immediate completion / old synchronous backend), is returned
  * unchanged so the existing parser path is byte-identical. Caller cancellation → best-effort
- * cancel + throw 'cancelled'. The 540s overall budget → a synthetic `background-client-timeout`
- * failure (Phase 13F maps it to frontend_generation_client_timeout). Never creates a Response.
+ * cancel + throw 'cancelled'. The task-aware overall budget (720s for quality-repair, 540s
+ * otherwise) → a synthetic `background-client-timeout` failure (Phase 13F maps it to
+ * frontend_generation_client_timeout). Never creates a Response.
  */
 async function pollFrontendBackgroundTask(
   initialData: Record<string, unknown>,
@@ -2374,6 +2396,9 @@ async function pollFrontendBackgroundTask(
 
   const signal = opts?.signal;
   const taskKind = exec0.backgroundTaskKind;
+  // Task-aware overall polling budget (quality-repair gets the extended deadline). Resolved once
+  // from the backend-classified task kind; never restarts generation and never creates a Response.
+  const workflowBudgetMs = backgroundWorkflowBudgetMs(taskKind);
   const started = Date.now();
   let pollAfter = clampPollMs(exec0.pollAfterMs, 2500);
   let pollCount = 0;
@@ -2390,7 +2415,7 @@ async function pollFrontendBackgroundTask(
 
   for (;;) {
     if (signal?.aborted) { await cancelBackgroundJob(jobId); throw new WebBuildError('cancelled', 'Frontend Builder cancelled.'); }
-    if (Date.now() - started > BACKGROUND_WORKFLOW_TIMEOUT_MS) {
+    if (Date.now() - started > workflowBudgetMs) {
       await cancelBackgroundJob(jobId);
       return backgroundFailureData('background-client-timeout', taskKind, pollCount, Date.now() - started);
     }
