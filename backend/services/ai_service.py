@@ -302,6 +302,10 @@ async def process_chat(
                     _fb_mode = get_mode(canonical)
                     if _fb_mode is not None:
                         sys_p = _fb_mode.system_prompt
+                    # Owner-only task-scoped system prompt diagnostics (bounded numeric only).
+                    # Populated after the server-side task classification below; merged into the
+                    # ai_execution metadata of every frontend return. None ⇒ nothing to add.
+                    _fb_prompt_diag = None
 
                     # Phase 13C.1 — the dedicated Frontend Builder uses the OpenAI
                     # Responses API through an ISOLATED, truthful transport. A provider
@@ -345,6 +349,10 @@ async def process_chat(
                             _md["error_kind"]    = res.error_kind
                             _md["error_code"]    = res.error_code
                             _md["error_message"] = res.error_message
+                        # Owner-only task-scoped system-prompt diagnostics (bounded numeric only;
+                        # never prompt text / user content / source / secrets). Absent ⇒ unchanged.
+                        if _fb_prompt_diag:
+                            _md.update(_fb_prompt_diag)
                         return {
                             "reply":      res.text if res.ok else "",
                             "intent":     canonical,
@@ -363,6 +371,21 @@ async def process_chat(
                     # unavailable, we return a truthful typed failure and make ZERO OpenAI calls.
                     # STATIC reviews (and unknown markers) stay synchronous with the registered budget.
                     _fb_kind = _frontend_task_kind(message)
+                    # Owner-only TASK-SCOPED system prompt (server-authoritative). For a
+                    # backend-verified owner session with the flag on, select a task-scoped
+                    # byte-for-byte subset of the legacy frontend_builder prompt so the request
+                    # ships only the sections THIS task uses. Fully safe-fallback (flag off,
+                    # non-owner, unknown kind, or any integrity problem) → the COMPLETE legacy
+                    # prompt, resolved HERE (before the single provider call — never a retry,
+                    # never a second call). Both transports below use the selected `sys_p`.
+                    # Model, budget, reasoning effort, transport and call count are unchanged.
+                    try:
+                        from backend.services.ai.frontend_task_prompt import select_frontend_system_prompt
+                        sys_p, _fb_prompt_diag = select_frontend_system_prompt(
+                            task_kind=_fb_kind, legacy_prompt=sys_p, owner_session=bool(owner_session),
+                        )
+                    except Exception:
+                        _fb_prompt_diag = None
                     # Phase 1 provider-routing shadow (decision-only): record what
                     # provider/model the policy WOULD pick for this frontend task.
                     # Execution below is unchanged (OpenAI); zero Anthropic calls.
@@ -446,6 +469,8 @@ async def process_chat(
                                     "expires_in_ms": job_expires_in_ms(), "store_required": True,
                                     "background_store_available": True, "background_store_status": _probe.status,
                                     "configured_max_output_tokens": _fb_max_tokens,
+                                    # Owner-only task-scoped system-prompt diagnostics (bounded numeric).
+                                    **(_fb_prompt_diag or {}),
                                 }},
                             }
                         # Completed immediately, OR the create failed at the provider (not started):
