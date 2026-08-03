@@ -816,19 +816,27 @@ async def chat(req: ChatRequest, request: Request):
             if _is_frontend_gen:
                 if _bg_job and _nonterminal:
                     # Capture the frontend-generation INPUT attribution now (bounded
-                    # fingerprint + context size) — the terminal record lands on a
-                    # later poll with no request body to derive it from.
+                    # fingerprint + context size) AND the canonical server-derived stage
+                    # attribution — the terminal record lands on a later poll with no
+                    # request body / task kind to derive them from. Prefer the backend-
+                    # classified background_task_kind; fall back to the request marker.
+                    _bg_kind = _exec2.get("background_task_kind")
+                    _bg_stage, _bg_retry, _bg_reason = _web_build_frontend_stage(message, _bg_kind)
                     _ct.link_background_job(job_id=str(_bg_job), build_id=_build_id, user_id=str(user_id),
-                                            input_fingerprint=_wb_fp, context_bytes=_wb_ctx)
+                                            input_fingerprint=_wb_fp, context_bytes=_wb_ctx,
+                                            stage=_bg_stage, retry_number=_bg_retry, retry_reason=_bg_reason,
+                                            background_task_kind=(str(_bg_kind) if _bg_kind else None))
                     logger.info(
-                        "WEB_BUILD_BG link | build_id=%s | job_id=%s | kind=%s",
-                        _build_id, str(_bg_job)[:14], _exec2.get("background_task_kind") or "-",
+                        "WEB_BUILD_BG link | build_id=%s | job_id=%s | kind=%s | stage=%s | retry=%s",
+                        _build_id, str(_bg_job)[:14], _bg_kind or "-", _bg_stage, _bg_retry,
                     )
                 else:
                     _fg_ok = _status2 in ("succeeded", "completed") or (bool(reply) and not _exec2.get("error_kind"))
-                    # Canonical frontend stage from the request marker (server-derived):
-                    # revision / review-validation / repair vs the initial generation.
-                    _fe_stage, _fe_retry, _fe_reason = _web_build_frontend_stage(message)
+                    # Canonical frontend stage (server-derived): prefer the backend-
+                    # classified task kind; fall back to the request marker. Attributes
+                    # review→validation / contract→repair / quality→quality_repair /
+                    # revision distinctly from the initial generation.
+                    _fe_stage, _fe_retry, _fe_reason = _web_build_frontend_stage(message, _exec2.get("background_task_kind"))
                     _record_web_build_frontend_terminal(
                         build_id=_build_id, user_id=str(user_id),
                         provider=_exec2.get("provider") or prov or "openai",
@@ -1131,22 +1139,51 @@ def _finalize_web_build_guard(
                        str(operation_id), _e)
 
 
-def _web_build_frontend_stage(message: str) -> tuple:
-    """Server-derive the canonical frontend stage from the request marker.
-    Returns (stage, retry_number, retry_reason). Frontend REVISION / REVIEW
-    (validation) / repair are distinct pipeline steps from the initial generation;
-    the background poll path, which has no message, defaults to frontend_generation."""
+def _web_build_frontend_stage(message: str, task_kind=None) -> tuple:
+    """Server-derive the canonical frontend cost attribution — (stage, retry_number,
+    retry_reason) — from the ALREADY-CLASSIFIED backend background task kind, with the
+    request marker as a backward-compatible fallback when the task kind is absent
+    (old links / an unclassified sync call). NEVER derived from any client payload.
+
+    Canonical taxonomy (matches ai_client._frontend_task_kind):
+      initial-generation → frontend_generation      | retry 0 | reason none
+      initial-review     → frontend_validation       | retry 0 | reason initial_review
+      final-review       → frontend_validation       | retry 0 | reason post_repair_review
+      contract-repair    → frontend_repair           | retry 1 | reason contract
+      quality-repair     → frontend_quality_repair   | retry 1 | reason quality
+      revision           → revision                  | retry 1 | reason revision
+
+    A REVIEW is a validation stage, NOT a provider retry, so initial/final review calls
+    are retry_number=0 and never inflate retry-cost analytics."""
     from backend.services.cost_tracking.types import (
         STAGE_FRONTEND_GENERATION, STAGE_FRONTEND_VALIDATION,
-        STAGE_FRONTEND_REPAIR, STAGE_REVISION,
+        STAGE_FRONTEND_REPAIR, STAGE_FRONTEND_QUALITY_REPAIR, STAGE_REVISION,
     )
+    tk = (task_kind or "").strip().lower()
+    if tk:
+        # Authoritative: the server-classified background task kind.
+        _BY_KIND = {
+            "initial-generation": (STAGE_FRONTEND_GENERATION, 0, None),
+            "initial-review":     (STAGE_FRONTEND_VALIDATION, 0, "initial_review"),
+            "final-review":       (STAGE_FRONTEND_VALIDATION, 0, "post_repair_review"),
+            "contract-repair":    (STAGE_FRONTEND_REPAIR, 1, "contract"),
+            "quality-repair":     (STAGE_FRONTEND_QUALITY_REPAIR, 1, "quality"),
+            "revision":           (STAGE_REVISION, 1, "revision"),
+        }
+        # An unknown/unclassified kind falls through to the safe generation default.
+        return _BY_KIND.get(tk, (STAGE_FRONTEND_GENERATION, 0, None))
+    # ── Fallback: request-marker inspection (no classified task kind available) ──
     m = message or ""
+    if "[FRONTEND REVIEW REQUEST]" in m:
+        return ((STAGE_FRONTEND_VALIDATION, 0, "post_repair_review")
+                if "stage: post-repair" in m.lower()
+                else (STAGE_FRONTEND_VALIDATION, 0, "initial_review"))
+    if "[FRONTEND CONTRACT REPAIR REQUEST]" in m:
+        return (STAGE_FRONTEND_REPAIR, 1, "contract")
+    if "[FRONTEND REPAIR REQUEST]" in m:
+        return (STAGE_FRONTEND_QUALITY_REPAIR, 1, "quality")
     if "[FRONTEND REVISION REQUEST]" in m:
         return (STAGE_REVISION, 1, "revision")
-    if "[FRONTEND REVIEW REQUEST]" in m:
-        return (STAGE_FRONTEND_VALIDATION, 1, "review")
-    if "[FRONTEND REPAIR REQUEST]" in m or "[FRONTEND QUALITY REPAIR REQUEST]" in m:
-        return (STAGE_FRONTEND_REPAIR, 1, "contract")
     return (STAGE_FRONTEND_GENERATION, 0, None)
 
 
@@ -1326,9 +1363,14 @@ async def background_poll(job_id: str, request: Request):
                 error_kind=res.error_kind, error_code=res.error_code,
                 error_message=res.error_message, request_id=res.request_id,
                 latency_ms=res.latency_ms, job_id=job_id,
-                # Input attribution captured when the job was linked (no body here).
+                # Input + canonical STAGE attribution captured when the job was linked
+                # (no body / task kind here). Historical links predate these columns →
+                # NULL → the terminal helper falls back to its safe defaults.
                 input_fingerprint=_link.get("input_fingerprint"),
                 context_bytes=int(_link.get("context_bytes") or 0),
+                stage=_link.get("stage"),
+                retry_number=int(_link.get("retry_number") or 0),
+                retry_reason=_link.get("retry_reason"),
             )
         else:
             logger.warning(
@@ -1376,6 +1418,11 @@ async def background_cancel(job_id: str, request: Request):
                     job_id=job_id,
                     input_fingerprint=_link.get("input_fingerprint"),
                     context_bytes=int(_link.get("context_bytes") or 0),
+                    # Attribute the cancelled call to its real stage (review/repair/
+                    # revision), captured at link time; NULL on historical links → default.
+                    stage=_link.get("stage"),
+                    retry_number=int(_link.get("retry_number") or 0),
+                    retry_reason=_link.get("retry_reason"),
                 )
         except Exception as _cterr:
             logger.warning("WEB_BUILD_BG terminal | job_id=%s | cancel finalize failed: %s",

@@ -182,9 +182,17 @@ def _init() -> None:
             # then input attribution (fingerprint + context size) for background
             # frontend generation, whose terminal record lands on a later poll with
             # no request body — the input attribution is captured at LINK time.
+            # It then gained the canonical frontend STAGE attribution (stage /
+            # retry_number / retry_reason) + the classified background task kind, so
+            # the terminal poll attributes reviews/repairs/revisions to their real
+            # pipeline step instead of defaulting everything to frontend_generation.
+            # All additive + nullable: historical links without them fall back to the
+            # existing safe defaults at terminal time; never rewritten.
             for col_def in (
                 "terminal_recorded_at TEXT",
                 "input_fingerprint TEXT", "context_bytes INTEGER NOT NULL DEFAULT 0",
+                "stage TEXT", "retry_number INTEGER", "retry_reason TEXT",
+                "background_task_kind TEXT",
             ):
                 try:
                     conn.execute(f"ALTER TABLE cost_job_links ADD COLUMN {col_def}")
@@ -254,19 +262,36 @@ def build_exists(build_id: str) -> bool:
 
 # ── Background job → build link (terminal frontend failures) ─────────────────
 def link_job(*, job_id: str, build_id: str, user_id: str, created_at: str,
-             input_fingerprint: Optional[str] = None, context_bytes: int = 0) -> None:
+             input_fingerprint: Optional[str] = None, context_bytes: int = 0,
+             stage: Optional[str] = None, retry_number: Optional[int] = None,
+             retry_reason: Optional[str] = None,
+             background_task_kind: Optional[str] = None) -> None:
     """Associate an opaque background frontend job id with its build. Idempotent.
     Captures the frontend-generation INPUT attribution (one-way fingerprint + the
     context size in bytes, never the content) at link time so the terminal record,
     which arrives on a later poll with no request body, can still attribute the
-    call's input context."""
+    call's input context.
+
+    Also persists the canonical, SERVER-DERIVED stage attribution (`stage` /
+    `retry_number` / `retry_reason`) + the classified `background_task_kind`, so the
+    terminal poll records the call under its real pipeline step (review / repair /
+    quality-repair / revision) instead of defaulting to frontend_generation. These
+    are canonical short values; `stage`/`retry_reason`/`background_task_kind` are
+    bounded to a small safe length and never carry prompt/source/secret content."""
     _init()
+    _stage = (str(stage)[:64] if stage else None)
+    _reason = (str(retry_reason)[:64] if retry_reason else None)
+    _kind = (str(background_task_kind)[:64] if background_task_kind else None)
+    _retry = (int(retry_number) if retry_number is not None else None)
     with _connect() as conn:
         conn.execute(
-            "INSERT INTO cost_job_links (job_id, build_id, user_id, created_at, input_fingerprint, context_bytes) "
-            "VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(job_id) DO NOTHING",
+            "INSERT INTO cost_job_links "
+            "(job_id, build_id, user_id, created_at, input_fingerprint, context_bytes, "
+            " stage, retry_number, retry_reason, background_task_kind) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(job_id) DO NOTHING",
             (str(job_id), str(build_id), str(user_id), created_at,
-             input_fingerprint, int(context_bytes or 0)),
+             input_fingerprint, int(context_bytes or 0),
+             _stage, _retry, _reason, _kind),
         )
         conn.commit()
 
@@ -275,9 +300,12 @@ def build_id_for_job(job_id: str) -> Optional[Dict[str, Any]]:
     _init()
     with _connect() as conn:
         row = conn.execute(
-            "SELECT build_id, user_id, input_fingerprint, context_bytes "
+            "SELECT build_id, user_id, input_fingerprint, context_bytes, "
+            "stage, retry_number, retry_reason, background_task_kind "
             "FROM cost_job_links WHERE job_id = ?", (str(job_id),)
         ).fetchone()
+        # Historical links created before the stage columns existed return NULL for
+        # them → the terminal path falls back to its existing safe defaults.
         return dict(row) if row else None
 
 
