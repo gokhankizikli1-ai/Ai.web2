@@ -310,7 +310,7 @@ function renderMotionContractLines(motion: FrontendGenerationContractMotion): st
   out.push(
     '- State-driven motion must connect the triggering state/observer/event to a VISIBLE transform, opacity, height, scale, translate, rotation, reveal or transition on the rendered element.',
     '- IntersectionObserver must actually observe elements and change rendered state/class/style (a bare observer that changes nothing does not count).',
-    '- CSS @keyframes must be APPLIED to a rendered element via an animation declaration/class; Framer Motion counts only with real motion.*/AnimatePresence elements AND actual animation props (initial/animate/whileInView/variants/…); canvas motion counts only with a real 2D/WebGL context driven by a requestAnimationFrame loop.',
+    '- CSS @keyframes must be APPLIED to a rendered element via an animation declaration/class; Framer Motion counts only when real motion.* elements or AnimatePresence are rendered with actual animation props (initial, animate, whileInView, variants, layout, exit, or transition); canvas motion counts only with a real 2D/WebGL context driven by a requestAnimationFrame loop.',
   );
   if (motion.reducedMotionRequired) {
     out.push('- Include a prefers-reduced-motion (or equivalent) fallback that degrades the motion to a static/subtle state.');
