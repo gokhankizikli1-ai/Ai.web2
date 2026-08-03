@@ -1672,6 +1672,31 @@ export interface FrontendGenerationContract {
    *  BINDING sub-section, never a second competing block). Present only when the brand-design
    *  flag is on AND a usable plan exists; absent ⇒ the contract is byte-for-byte the pre-#522 one. */
   brandDesignSystem?: BrandDesignSystem;
+  /** First-pass motion contract parity. Present ONLY when the hard-generation-contract flag is on
+   *  AND the authoritative plan/spec genuinely requires motion. Carries a bounded, sanitized binding
+   *  motion IMPLEMENTATION requirement derived from the SAME resolver the post-generation motion
+   *  enforcement uses, so the initial generation and the validation share one motion interpretation.
+   *  Absent ⇒ the contract is byte-for-byte unchanged (static / minimal / reduced-motion-only / old
+   *  plans included). No source, prompt, PII or unbounded plan content is ever stored here. */
+  motion?: FrontendGenerationContractMotion;
+}
+
+/** Bounded, sanitized binding motion implementation requirement carried on the generation contract
+ *  (first-pass parity with the post-generation motion enforcement). All fields are plan-derived
+ *  enums / short labels — never generated source, prompts, provider output, ids or secrets. */
+export interface FrontendGenerationContractMotion {
+  /** `micro` = meaningful hover/focus/tap/state feedback; `composed` = ≥1 real structural motion
+   *  system on a planned target. `none` never produces this object (motion is simply absent). */
+  level: 'micro' | 'composed';
+  /** Sanitized target classes the motion must apply to: 'hero' | 'global' | 'section' |
+   *  'micro-interaction'. Bounded. */
+  targets: string[];
+  /** Sanitized planned motion pattern names (bounded); optional. */
+  patterns?: string[];
+  /** Whether a prefers-reduced-motion (or equivalent) accessible fallback is required (composed). */
+  reducedMotionRequired: boolean;
+  /** Short bounded, plan-derived label (never source/prompt/PII). */
+  summary: string;
 }
 
 /* ── Brand Design System (PR #522) ────────────────────────────────────────────
