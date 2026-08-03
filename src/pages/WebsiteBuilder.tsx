@@ -23,6 +23,7 @@ import {
   buildWebBuildPayload, type WebBuildPayload,
 } from '@/lib/webBuildPayload';
 import { runFrontendBuilderQualityPipeline } from '@/lib/webBuildFrontendQuality';
+import { useOwnerMode } from '@/hooks/useOwnerMode';
 import { createMeasurementProducer } from '@/lib/webBuildMeasurementService';
 import { createVisionReviewProducer } from '@/lib/webBuildVisionReview';
 import { runFrontendBuilderRevision } from '@/lib/webBuildFrontendRevision';
@@ -40,6 +41,12 @@ const ACCENT = '#60A5FA';
 
 export default function WebsiteBuilder() {
   const { t, lang } = useLanguageStore();
+  // Owner-only DELTA quality-repair gate — the TRUSTED, backend-confirmed owner signal
+  // (useOwnerMode reads /v2/admin/status). Mirrored into a ref so the async build execute()
+  // reads the freshest confirmed value at execution time.
+  const { isOwner } = useOwnerMode();
+  const ownerEligibleRef = useRef(false);
+  useEffect(() => { ownerEligibleRef.current = isOwner === true; }, [isOwner]);
 
   const [input, setInput] = useState('');
   const [inputFocused, setInputFocused] = useState(false);
@@ -291,7 +298,7 @@ export default function WebsiteBuilder() {
         // Phase 12E — one centralized frontend quality pipeline (unchanged): the
         // dedicated builder call + Phase 12C/12D consumption, then the static design
         // review + at most one bounded repair + final acceptance. Only cancellation throws.
-        return runFrontendBuilderQualityPipeline(planned, { signal, renderedVisualProducer, visionReviewProducer });
+        return runFrontendBuilderQualityPipeline(planned, { signal, renderedVisualProducer, visionReviewProducer, ownerEligible: ownerEligibleRef.current });
       },
     });
   }, [lang, selectedMode]);

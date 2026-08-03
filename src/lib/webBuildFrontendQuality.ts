@@ -28,8 +28,12 @@
  */
 import {
   generateFrontendBuilderRaw, generateFrontendBuilderReviewRaw, generateFrontendBuilderRepairRaw,
+  generateFrontendBuilderDeltaRepairRaw,
   generateFrontendBuilderContractRepairRaw, WebBuildError, mapFrontendGenerationError,
 } from '@/lib/webBuildApi';
+// Owner-only DELTA quality-repair — pure, deterministic delta parser/validator/merger. No
+// network. Flag-gated + owner-gated by the caller; fail-open never triggers a second repair call.
+import { resolveWebBuildQualityRepairMode, reconstructRepairRawFromDelta } from '@/lib/webBuildDeltaRepair';
 import {
   attachFrontendBuilderRaw, attachFrontendBuilderQualityResult,
   attachFrontendBuilderContractRepairResult,
@@ -67,6 +71,7 @@ import type {
   FrontendBuilderRepairArtifact, FrontendBuilderAcceptanceArtifact,
   FrontendBuilderContractRepairArtifact, FrontendBuilderValidationArtifact, FrontendBuilderRawArtifact,
   FrontendBuilderReviewArtifact, FrontendBuilderReviewIssue, ImageAssetManifest,
+  FrontendDeltaRepairArtifact,
 } from '@/lib/webBuildAgents';
 import type { WebBuildActivityDetailRow, WebBuildActivityReporter, WebBuildActivityStatus } from '@/lib/webBuildActivity';
 
@@ -466,6 +471,14 @@ export async function runFrontendBuilderQualityPipeline(
   opts?: {
     signal?: AbortSignal;
     reporter?: WebBuildActivityReporter;
+    // Owner-only DELTA quality-repair gate. TRUE only when the caller resolved a TRUSTED
+    // owner session (backend-confirmed via useOwnerMode) — never inferred here from request
+    // content, query params, localStorage or headers. When true AND the mode flag is
+    // `owner_delta`, the single quality-repair returns bounded file upserts that are merged
+    // into the original validated project and re-validated by the UNCHANGED validator +
+    // acceptance gates. Absent / false ⇒ the existing full-project quality-repair is used,
+    // byte-for-byte unchanged. It NEVER changes the model-call ceiling.
+    ownerEligible?: boolean;
     // PR #516 — OPTIONAL rendered visual input (caller-captured screenshot metadata + viewport
     // + optional runtime-compiled flag). When absent (or the flag is off) the rendered visual
     // evaluation is skipped entirely and the pipeline is byte-for-byte unchanged.
@@ -848,10 +861,30 @@ export async function runFrontendBuilderQualityPipeline(
       heroComponentPath: validation?.heroComponentPath,
     };
     emit('quality-repair', 'active');
-    const repairRaw = await generateFrontendBuilderRepairRaw(spec, activeFiles, initialReview, { signal: opts?.signal, deterministicWarnings: activeWarnings, qualityEvidence });
+    // ── Owner-only DELTA repair branch. The SINGLE quality-repair call still runs at most once.
+    //    In `owner_delta` mode AND a trusted owner session, the repair returns bounded file
+    //    upserts which the pure delta module merges into the ORIGINAL validated project and
+    //    reconstructs into a complete frontend-files-v1 project; that reconstructed project then
+    //    flows through the IDENTICAL Phase 12C validation + post-repair review + acceptance gates
+    //    below. Disabled / non-owner ⇒ the existing full-project repair runs, byte-for-byte
+    //    unchanged. A malformed / unsafe / rejected delta fails OPEN to the original project via
+    //    the same `repairRaw.status !== 'completed'` branch — NEVER a second repair call. ──
+    const repairMode = resolveWebBuildQualityRepairMode();
+    const deltaEligible = repairMode === 'owner_delta' && opts?.ownerEligible === true;
+    let deltaDiagnostics: FrontendDeltaRepairArtifact | undefined;
+    let repairRaw: FrontendBuilderRawArtifact;
+    if (deltaEligible) {
+      const deltaRaw = await generateFrontendBuilderDeltaRepairRaw(spec, activeFiles, initialReview, { signal: opts?.signal, deterministicWarnings: activeWarnings, qualityEvidence });
+      const reconstruction = reconstructRepairRawFromDelta({ deltaRaw, originalFiles: validation?.files ?? [] });
+      repairRaw = reconstruction.repairRaw;
+      deltaDiagnostics = reconstruction.diagnostics;
+    } else {
+      repairRaw = await generateFrontendBuilderRepairRaw(spec, activeFiles, initialReview, { signal: opts?.signal, deterministicWarnings: activeWarnings, qualityEvidence });
+    }
     if (repairRaw.status !== 'completed') {
       const repair = repairArtifact('failed', repairRaw.reason || 'The repair call did not complete.', {
         model: repairRaw.model, provider: repairRaw.provider, requestId: repairRaw.requestId, initialScore: initialReview.score,
+        ...(deltaDiagnostics ? { deltaRepair: deltaDiagnostics } : {}),
       });
       const acceptance = acceptanceArtifact('manual-review-required', initialProjectName, {
         initialReviewPassed: false, repairAttempted: true, repairAccepted: false, finalReviewPassed: false,
@@ -875,6 +908,7 @@ export async function runFrontendBuilderQualityPipeline(
         generatedFileCount: repairValidation.fileCount,
         generatedCharCount: repairValidation.totalCharCount,
         initialScore: initialReview.score,
+        ...(deltaDiagnostics ? { deltaRepair: deltaDiagnostics } : {}),
       });
       const acceptance = acceptanceArtifact('manual-review-required', initialProjectName, {
         initialReviewPassed: false, repairAttempted: true, repairAccepted: false, finalReviewPassed: false,
@@ -914,6 +948,7 @@ export async function runFrontendBuilderQualityPipeline(
         generatedFileCount: repairValidation.fileCount,
         generatedCharCount: repairValidation.totalCharCount,
         initialScore, finalScore,
+        ...(deltaDiagnostics ? { deltaRepair: deltaDiagnostics } : {}),
       });
       const acceptance = acceptanceArtifact('repaired-approved', 'repaired-model-native', {
         initialReviewPassed: false, repairAttempted: true, repairAccepted: true, finalReviewPassed: true,
@@ -944,6 +979,7 @@ export async function runFrontendBuilderQualityPipeline(
       generatedFileCount: repairValidation.fileCount,
       generatedCharCount: repairValidation.totalCharCount,
       initialScore, finalScore: finalReview.status === 'completed' ? finalScore : undefined,
+      ...(deltaDiagnostics ? { deltaRepair: deltaDiagnostics } : {}),
     });
     const acceptance = acceptanceArtifact('manual-review-required', initialProjectName, {
       initialReviewPassed: false, repairAttempted: true, repairAccepted: false,

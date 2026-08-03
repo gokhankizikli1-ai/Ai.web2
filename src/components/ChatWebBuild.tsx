@@ -16,6 +16,7 @@ import {
 import * as aiGuard from '@/lib/aiGuard';
 import { buildWebBuildPayload, type WebBuildPayload } from '@/lib/webBuildPayload';
 import { runFrontendBuilderQualityPipeline } from '@/lib/webBuildFrontendQuality';
+import { useOwnerMode } from '@/hooks/useOwnerMode';
 import { runFrontendBuilderRevision } from '@/lib/webBuildFrontendRevision';
 import { saveWebBuildPayloadToProject } from '@/lib/webBuildProject';
 import { applyImageReplacement, type ImageReplacementInput } from '@/lib/webBuildImageReplace';
@@ -80,6 +81,12 @@ interface ChatWebBuildProps {
 
 export default function ChatWebBuild({ initialPrompt, initialMode = null, restoreRunId, sessionId, onPersistSession }: ChatWebBuildProps) {
   const { t, lang } = useLanguageStore();
+  // Owner-only DELTA quality-repair gate — the TRUSTED, backend-confirmed owner signal
+  // (useOwnerMode reads /v2/admin/status). Mirrored into a ref so the async build callback
+  // reads the freshest confirmed value at execution time without re-creating the callback.
+  const { isOwner } = useOwnerMode();
+  const ownerEligibleRef = useRef(false);
+  useEffect(() => { ownerEligibleRef.current = isOwner === true; }, [isOwner]);
 
   const [input, setInput] = useState('');
   const [payload, setPayload] = useState<WebBuildPayload | null>(null);
@@ -325,7 +332,7 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
       // call + Phase 12C/12D consumption, then the static design review + at most one
       // bounded repair + final acceptance. Fails open (keeps the validated project);
       // only explicit caller cancellation throws. It reports the frontend-* stages itself.
-      const next = await runFrontendBuilderQualityPipeline(planned, { signal: controller.signal, reporter });
+      const next = await runFrontendBuilderQualityPipeline(planned, { signal: controller.signal, reporter, ownerEligible: ownerEligibleRef.current });
       if (abortRef.current !== controller) return;
       reporter({ phase: 'preview', status: 'active' });
       setPayload(next);

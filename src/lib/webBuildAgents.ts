@@ -2396,6 +2396,41 @@ export interface FrontendBuilderReviewArtifact {
   responseCharCount: number;
 }
 
+/** Owner-only DELTA quality-repair diagnostics (bounded, sanitized, additive). Present on the
+ *  repair artifact ONLY when the single quality-repair ran in `owner_delta` mode (mode flag on
+ *  AND a trusted owner session). Records the reconstruction of the COMPLETE project from a bounded
+ *  set of file upserts — never file contents, prompts, provider responses, ids, secrets or PII.
+ *
+ *  `accepted` is a DELTA-LEVEL fact only: the returned delta passed every delta safety check
+ *  (well-formed, bounded, safe paths, no duplicates, non-empty contents) AND was deterministically
+ *  merged into the original validated project to yield a reconstructed candidate. It does NOT mean
+ *  the reconstructed project passed the UNCHANGED full-project validator or the score/severe-warning
+ *  acceptance gate — those remain the parent repair artifact's `status`. When `accepted` is false the
+ *  original validated project stays active and NO second repair call is made (`rejectionReason` says
+ *  why). Old saved builds and full-mode repairs simply lack this field. */
+export interface FrontendDeltaRepairArtifact {
+  version: 'frontend-delta-repair-v1';
+  /** The repair response format REQUESTED from the model on this run. */
+  requestedRepairFormat: 'owner-delta-upserts';
+  /** Number of file upserts the model returned (0 when malformed/empty). */
+  returnedUpsertCount: number;
+  /** Size of the raw delta response in characters. */
+  deltaCharCount: number;
+  /** Total character size of the ORIGINAL validated project (the merge base). */
+  originalProjectCharCount: number;
+  /** Total character size of the reconstructed complete project (0 when not reconstructed). */
+  reconstructedProjectCharCount: number;
+  /** Approximate output reduction of the delta response vs the original project size, in [0,1]
+   *  (1 - deltaChars/originalChars, clamped). A bounded, measured ratio of THIS run's characters —
+   *  never an extrapolated or averaged cost/token saving claim. */
+  outputReductionRatio: number;
+  /** True when the delta passed every delta-level safety check and produced a reconstructed
+   *  candidate (see the interface note — this is NOT the final repair acceptance). */
+  accepted: boolean;
+  /** Bounded reason the delta was rejected at the delta level (absent when accepted). */
+  rejectionReason?: string;
+}
+
 /** The persisted, bounded record of the single Phase 12E repair attempt. Never
  *  carries the full repair raw response twice — only bounded metadata + the score
  *  deltas needed to prove the repaired project was validated and accepted. */
@@ -2421,6 +2456,10 @@ export interface FrontendBuilderRepairArtifact {
   model?: string;
   provider?: string;
   requestId?: string;
+
+  /** Owner-only DELTA quality-repair diagnostics. Present ONLY when the single quality-repair ran
+   *  in `owner_delta` mode; absent for disabled/non-owner/full-mode repairs and old saved builds. */
+  deltaRepair?: FrontendDeltaRepairArtifact;
 }
 
 /** The final Phase 12E acceptance record. `renderedVisualTestStatus` is ALWAYS
