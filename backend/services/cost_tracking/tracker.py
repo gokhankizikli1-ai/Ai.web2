@@ -124,20 +124,30 @@ def build_exists(build_id: str) -> bool:
 # ── Background job → build correlation ───────────────────────────────────────
 def link_background_job(*, job_id: str, build_id: str, user_id: str,
                         input_fingerprint: Optional[str] = None,
-                        context_bytes: int = 0) -> None:
+                        context_bytes: int = 0,
+                        stage: Optional[str] = None,
+                        retry_number: Optional[int] = None,
+                        retry_reason: Optional[str] = None,
+                        background_task_kind: Optional[str] = None) -> None:
     """Record that an opaque background frontend job belongs to `build_id`, so
     its TERMINAL result (which arrives on a separate poll request) is recorded
     against the right build. Also captures the frontend-generation input
-    attribution (one-way fingerprint + context byte size) at link time — the poll
-    that records the terminal call has no request body to derive it from.
-    Best-effort; never raises."""
+    attribution (one-way fingerprint + context byte size) AND the canonical,
+    server-derived stage attribution (`stage`/`retry_number`/`retry_reason` +
+    the classified `background_task_kind`) at link time — the poll that records
+    the terminal call has no request body to derive them from, so without this it
+    would default every background call to frontend_generation. Best-effort;
+    never raises. Attribution is server-derived only — never from a client value."""
     if not job_id or not build_id:
         return
     try:
         store.link_job(job_id=str(job_id), build_id=str(build_id),
                        user_id=str(user_id), created_at=_now_iso(),
                        input_fingerprint=input_fingerprint,
-                       context_bytes=int(context_bytes or 0))
+                       context_bytes=int(context_bytes or 0),
+                       stage=stage, retry_number=retry_number,
+                       retry_reason=retry_reason,
+                       background_task_kind=background_task_kind)
     except Exception as exc:
         logger.debug("cost_tracking.link_background_job skipped: %s", exc)
 
