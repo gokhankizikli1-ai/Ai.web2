@@ -2322,26 +2322,33 @@ function frontendBuilderArtifact(
 // The MAXIMUM of these budgets MUST stay below the backend's opaque-job retention
 // (ai_background_responses.JOB_TTL_S, now 840s = 720s max browser budget + a 120s server-side
 // safety margin) so the ownership record cannot expire during a valid poll window; the final
-// poll's ~25s HTTP timeout fits inside that margin. Do not raise any budget at or above the
-// backend TTL without raising the backend margin accordingly.
+// authoritative poll's ~25s HTTP timeout fits inside that margin. Do not raise any budget at or
+// above the backend TTL without raising the backend margin accordingly.
 //
-// Default budget for initial-generation / contract-repair / revision / unknown / missing kinds.
+// Default budget for the shorter full-source background kinds: contract-repair / revision /
+// unknown / missing / unrecognized.
 const BACKGROUND_WORKFLOW_TIMEOUT_MS = 540_000;
-// `quality-repair` regenerates the COMPLETE multi-file project from the existing files + build
-// spec + review findings + quality evidence + preservation instructions, so it legitimately runs
-// materially longer than initial generation. It gets an extended budget; every other kind keeps
-// the default. This is the ONLY task kind with a longer deadline.
-const BACKGROUND_WORKFLOW_TIMEOUT_QUALITY_REPAIR_MS = 720_000;
-const BACKGROUND_POLL_HTTP_TIMEOUT_MS = 25_000;   // short per-poll GET timeout
+// FULL-PROJECT generation kinds — the INITIAL generation and the QUALITY repair both emit the
+// COMPLETE multi-file project (initial from the spec; quality-repair from the existing files +
+// spec + review findings + quality evidence + preservation instructions) and legitimately run
+// materially longer, so BOTH get the extended budget. This is the MAXIMUM client polling budget
+// across all kinds and MUST stay below the backend opaque-job retention (see the note above).
+const BACKGROUND_WORKFLOW_TIMEOUT_LONG_MS = 720_000;
+const BACKGROUND_POLL_HTTP_TIMEOUT_MS = 25_000;   // short per-poll GET timeout (also the final poll)
 const BACKGROUND_MAX_TRANSIENT_POLL_FAILURES = 2; // consecutive network failures tolerated
 
+// The full-project generation kinds that receive the extended long-running budget. Read ONLY from
+// the backend-classified task kind — never a client/user/request-body override.
+const _LONG_RUNNING_BACKGROUND_KINDS = new Set<string>(['initial-generation', 'quality-repair']);
+
 /** Resolve the overall client polling budget from the BACKEND-classified background task kind.
- *  Deterministic + fail-safe: exact `quality-repair` → extended budget; everything else
- *  (including undefined / unknown / any other kind) → the default. The task kind comes ONLY from
- *  the backend execution metadata (`background_task_kind`) — never a client-controlled override. */
+ *  Deterministic + fail-safe: the full-project generation kinds (initial-generation, quality-repair)
+ *  → the extended 720s budget; every other kind (contract-repair / revision / unknown / undefined /
+ *  unrecognized) → the 540s default. The task kind comes ONLY from the backend execution metadata
+ *  (`background_task_kind`) — never a client-controlled override. */
 function backgroundWorkflowBudgetMs(taskKind: string | undefined): number {
-  return taskKind === 'quality-repair'
-    ? BACKGROUND_WORKFLOW_TIMEOUT_QUALITY_REPAIR_MS
+  return taskKind && _LONG_RUNNING_BACKGROUND_KINDS.has(taskKind)
+    ? BACKGROUND_WORKFLOW_TIMEOUT_LONG_MS
     : BACKGROUND_WORKFLOW_TIMEOUT_MS;
 }
 
@@ -2369,22 +2376,77 @@ async function cancelBackgroundJob(jobId: string): Promise<void> {
   } catch { /* best-effort */ }
 }
 
-/** Synthetic terminal /chat-shaped data → the unchanged artifact builder maps it to `failed`. */
-function backgroundFailureData(errorKind: string, taskKind: string | undefined, pollCount: number, waitMs: number): Record<string, unknown> {
+/** Synthetic terminal /chat-shaped data → the unchanged artifact builder maps it to `failed`.
+ *  `extra` carries only bounded, non-sensitive lifecycle diagnostics (booleans / small numbers) —
+ *  never source, prompt, user content, provider payload, tokens, auth or raw response ids. */
+function backgroundFailureData(
+  errorKind: string, taskKind: string | undefined, pollCount: number, waitMs: number,
+  extra?: Record<string, unknown>,
+): Record<string, unknown> {
   return { reply: '', mode: 'frontend_builder', metadata: { ai_execution: {
     status: 'failed', endpoint: 'responses', background_mode: true, background_task_kind: taskKind,
     error_kind: errorKind, background_poll_count: pollCount, background_wait_ms: waitMs,
-    background_terminal_status: 'failed',
+    background_terminal_status: 'failed', ...(extra || {}),
   } } };
+}
+
+/* ── Single bounded retrieval of an EXISTING opaque background job ─────────────────────────
+ * ONE authoritative GET /v2/ai/background/{jobId} (reusing the shared endpoint, Authorization
+ * behavior and per-request HTTP timeout). It ONLY retrieves the already-existing opaque job — it
+ * can NEVER create a new OpenAI Response and NEVER recurses. Both the steady-state poll and the
+ * SINGLE final-deadline retrieval call this, so the fetch/auth/timeout/parse/classify logic lives
+ * in exactly one place. The raw OpenAI response id stays server-only (never read/persisted here). */
+type BackgroundRetrieval =
+  | { kind: 'terminal'; data: Record<string, unknown> }   // completed / incomplete / failed / other terminal
+  | { kind: 'running'; data: Record<string, unknown> }    // queued / in_progress
+  | { kind: 'missing'; data: Record<string, unknown> }    // HTTP 404 (missing / expired / not-owned) — terminal
+  | { kind: 'cancelled'; data: Record<string, unknown> }  // provider terminal 'cancelled' without a user abort
+  | { kind: 'user-aborted' }                              // the caller signal aborted during retrieval
+  | { kind: 'error' };                                    // bounded network / non-404 HTTP failure
+
+async function retrieveBackgroundJob(jobId: string, signal?: AbortSignal): Promise<BackgroundRetrieval> {
+  const pollTimer = new AbortController();
+  const to = setTimeout(() => pollTimer.abort(), BACKGROUND_POLL_HTTP_TIMEOUT_MS);
+  const onAbort = () => pollTimer.abort();
+  if (signal) { if (signal.aborted) pollTimer.abort(); else signal.addEventListener('abort', onAbort, { once: true }); }
+  try {
+    const headers: Record<string, string> = {};
+    try { const tok = localStorage.getItem('korvix_access_token'); if (tok) headers['Authorization'] = `Bearer ${tok}`; } catch { /* ignore */ }
+    const resp = await fetch(`${apiBase()}/v2/ai/background/${encodeURIComponent(jobId)}`, { method: 'GET', headers, signal: pollTimer.signal });
+    // 404 = missing / expired / not-owned → TERMINAL (never transient, never retried). Preserve the
+    // existing synthetic failure shape when the body is unreadable.
+    if (resp.status === 404) {
+      const data = await resp.json().catch(() => ({ reply: '', mode: 'frontend_builder', metadata: { ai_execution: { status: 'failed', error_kind: 'background-job-missing', background_mode: true } } }));
+      return { kind: 'missing', data };
+    }
+    if (!resp.ok) return { kind: 'error' };
+    const data = await resp.json();
+    const exec = parseAiExecutionMetadata(data);
+    if (exec.status === 'queued' || exec.status === 'in_progress') return { kind: 'running', data };
+    if (exec.status === 'cancelled') return { kind: 'cancelled', data };
+    return { kind: 'terminal', data };
+  } catch {
+    if (signal?.aborted) return { kind: 'user-aborted' };
+    return { kind: 'error' };
+  } finally {
+    clearTimeout(to);
+    if (signal) signal.removeEventListener('abort', onAbort);
+  }
 }
 
 /**
  * Poll a queued background job to a terminal /chat-shaped result. Non-background data, or data
  * that is already terminal (immediate completion / old synchronous backend), is returned
  * unchanged so the existing parser path is byte-identical. Caller cancellation → best-effort
- * cancel + throw 'cancelled'. The task-aware overall budget (720s for quality-repair, 540s
- * otherwise) → a synthetic `background-client-timeout` failure (Phase 13F maps it to
- * frontend_generation_client_timeout). Never creates a Response.
+ * cancel + throw 'cancelled'. The task-aware overall budget (720s for the full-project generation
+ * kinds initial-generation / quality-repair, 540s otherwise) is the client workflow deadline.
+ *
+ * At that deadline the poller does NOT blindly cancel: it performs EXACTLY ONE final authoritative
+ * GET of the SAME job first (retrieval only — never a new Response). A terminal result found there
+ * is returned through the unchanged parser path; only a still-running job (or a final GET that
+ * cannot produce a usable terminal result) is best-effort cancelled and mapped to the synthetic
+ * `background-client-timeout` failure (Phase 13F → frontend_generation_client_timeout). Never
+ * creates a Response, never retries generation, never adds a second provider call.
  */
 async function pollFrontendBackgroundTask(
   initialData: Record<string, unknown>,
@@ -2397,65 +2459,76 @@ async function pollFrontendBackgroundTask(
 
   const signal = opts?.signal;
   const taskKind = exec0.backgroundTaskKind;
-  // Task-aware overall polling budget (quality-repair gets the extended deadline). Resolved once
-  // from the backend-classified task kind; never restarts generation and never creates a Response.
+  // Task-aware overall polling budget (full-project generation kinds get the extended deadline).
+  // Resolved once from the backend-classified task kind; never restarts generation, never a Response.
   const workflowBudgetMs = backgroundWorkflowBudgetMs(taskKind);
   const started = Date.now();
   let pollAfter = clampPollMs(exec0.pollAfterMs, 2500);
   let pollCount = 0;
   let transientFails = 0;
 
-  const annotate = (d: Record<string, unknown>, count: number): Record<string, unknown> => {
+  const annotate = (d: Record<string, unknown>, count: number, extra?: Record<string, unknown>): Record<string, unknown> => {
     const meta = (d.metadata && typeof d.metadata === 'object') ? { ...(d.metadata as Record<string, unknown>) } : {};
     const ex = (meta.ai_execution && typeof meta.ai_execution === 'object') ? { ...(meta.ai_execution as Record<string, unknown>) } : {};
     ex.background_poll_count = count;
     ex.background_wait_ms = Date.now() - started;
+    if (extra) Object.assign(ex, extra);   // bounded, non-sensitive lifecycle flags only
     meta.ai_execution = ex;
     return { ...d, metadata: meta };
   };
 
   for (;;) {
     if (signal?.aborted) { await cancelBackgroundJob(jobId); throw new WebBuildError('cancelled', 'Frontend Builder cancelled.'); }
+
     if (Date.now() - started > workflowBudgetMs) {
+      // ── Final authoritative deadline retrieval ──────────────────────────────────────────────
+      // The client workflow budget elapsed. Before cancelling an expensive generation that may
+      // have COMPLETED (or begun transitioning to a terminal state) since the previous poll,
+      // perform EXACTLY ONE final GET of the SAME opaque job. This retrieves the existing job only
+      // — it can never create a new Response and never restarts generation.
+      const finalR = await retrieveBackgroundJob(jobId, signal);
+      if (finalR.kind === 'user-aborted') { await cancelBackgroundJob(jobId); throw new WebBuildError('cancelled', 'Frontend Builder cancelled.'); }
+      // A real terminal result (completed / incomplete / failed) discovered at the deadline is
+      // returned through the UNCHANGED parser/error-mapping path — NEVER overwritten by a timeout.
+      if (finalR.kind === 'terminal') return annotate(finalR.data, pollCount + 1, { background_final_deadline_poll: true });
+      // 404 preserves the existing missing / expired / not-owned behavior (pre-increment count).
+      if (finalR.kind === 'missing') return annotate(finalR.data, pollCount, { background_final_deadline_poll: true });
+      // A terminal 'cancelled' WITHOUT a user abort preserves the unexpected-cancellation class.
+      if (finalR.kind === 'cancelled') return backgroundFailureData('background-cancelled-unexpectedly', taskKind, pollCount + 1, Date.now() - started, { background_final_deadline_poll: true });
+      // Still queued/in_progress, OR the single bounded final GET could not produce a usable
+      // terminal result (network / non-404 HTTP failure). Either way the client budget is spent:
+      // best-effort cancel the SAME job and return the truthful client-timeout. We deliberately
+      // classify a failed final GET as `background-client-timeout` (not `background-poll-failed`):
+      // the proximate, contract-accurate cause is that the client workflow deadline elapsed, and a
+      // transient blip on this ONE final GET neither restarts generation nor adds a provider call.
       await cancelBackgroundJob(jobId);
-      return backgroundFailureData('background-client-timeout', taskKind, pollCount, Date.now() - started);
+      return backgroundFailureData('background-client-timeout', taskKind, pollCount, Date.now() - started, { background_final_deadline_poll: true, background_cancel_requested: true });
     }
+
     await backgroundDelay(pollAfter, signal);   // throws 'cancelled' on abort
 
-    const pollTimer = new AbortController();
-    const to = setTimeout(() => pollTimer.abort(), BACKGROUND_POLL_HTTP_TIMEOUT_MS);
-    const onAbort = () => pollTimer.abort();
-    if (signal) { if (signal.aborted) pollTimer.abort(); else signal.addEventListener('abort', onAbort, { once: true }); }
-    let data: Record<string, unknown>;
-    try {
-      const headers: Record<string, string> = {};
-      try { const tok = localStorage.getItem('korvix_access_token'); if (tok) headers['Authorization'] = `Bearer ${tok}`; } catch { /* ignore */ }
-      const resp = await fetch(`${apiBase()}/v2/ai/background/${encodeURIComponent(jobId)}`, { method: 'GET', headers, signal: pollTimer.signal });
-      // 404 = missing / expired / not-owned → a TERMINAL failure (never transient, never retried).
-      if (resp.status === 404) return annotate(await resp.json().catch(() => ({ reply: '', mode: 'frontend_builder', metadata: { ai_execution: { status: 'failed', error_kind: 'background-job-missing', background_mode: true } } })), pollCount);
-      if (!resp.ok) throw new Error('poll http ' + resp.status);
-      data = await resp.json();
-    } catch (err) {
-      if (signal?.aborted) { await cancelBackgroundJob(jobId); throw new WebBuildError('cancelled', 'Frontend Builder cancelled.'); }
+    // Steady-state poll — the SAME single-retrieval helper used at the deadline (no duplication).
+    const r = await retrieveBackgroundJob(jobId, signal);
+    if (r.kind === 'user-aborted') { await cancelBackgroundJob(jobId); throw new WebBuildError('cancelled', 'Frontend Builder cancelled.'); }
+    if (r.kind === 'error') {
+      // Bounded network / non-404 HTTP failure — tolerate a couple, then fail truthfully.
       transientFails += 1;
       if (transientFails > BACKGROUND_MAX_TRANSIENT_POLL_FAILURES) {
         await cancelBackgroundJob(jobId);
         return backgroundFailureData('background-poll-failed', taskKind, pollCount, Date.now() - started);
       }
       continue;
-    } finally {
-      clearTimeout(to);
-      if (signal) signal.removeEventListener('abort', onAbort);
     }
 
     transientFails = 0;
+    // 404 = missing / expired / not-owned → TERMINAL failure. Matches the original: the 404 short-
+    // circuits BEFORE this iteration's poll-count increment (bounded diagnostic only).
+    if (r.kind === 'missing') return annotate(r.data, pollCount);
     pollCount += 1;
-    const exec = parseAiExecutionMetadata(data);
-    pollAfter = clampPollMs(exec.pollAfterMs, pollAfter);
-    if (exec.status === 'queued' || exec.status === 'in_progress') continue;
     // A background 'cancelled' terminal WITHOUT a user abort is unexpected → treat as failed.
-    if (exec.status === 'cancelled') return backgroundFailureData('background-cancelled-unexpectedly', taskKind, pollCount, Date.now() - started);
-    return annotate(data, pollCount);   // completed / incomplete / failed → unchanged parser path
+    if (r.kind === 'cancelled') return backgroundFailureData('background-cancelled-unexpectedly', taskKind, pollCount, Date.now() - started);
+    if (r.kind === 'running') { pollAfter = clampPollMs(parseAiExecutionMetadata(r.data).pollAfterMs, pollAfter); continue; }
+    return annotate(r.data, pollCount);   // completed / incomplete / failed → unchanged parser path
   }
 }
 
