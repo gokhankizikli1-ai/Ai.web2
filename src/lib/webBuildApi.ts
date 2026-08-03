@@ -2897,13 +2897,19 @@ export interface FrontendRepairQualityEvidence {
   heroComponentPath?: string;
 }
 
-export function buildFrontendBuilderRepairRequest(
+/** Assemble the bounded, privacy-safe repair INPUT payload shared by the full-project repair
+ *  request and the owner-only delta repair request. Extracting it keeps a single source of
+ *  truth for what the repair model receives; both callers serialize this exact object (the
+ *  delta caller only overrides `responseContract`), so the full-repair request stays byte-for-
+ *  byte unchanged. Sends ONLY: the spec, the active files, ≤8 highest-severity actionable issues,
+ *  ≤6 strengths, bounded deterministic warnings and the real-file quality evidence. */
+function buildFrontendRepairInputPayload(
   spec: FrontendBuildSpecification,
   files: WebBuildFile[],
   initialReview: FrontendBuilderReviewArtifact,
   deterministicWarnings?: string[],
   qualityEvidence?: FrontendRepairQualityEvidence,
-): string {
+): Record<string, unknown> {
   // Highest-severity first (blocker > major > minor), capped at 8 actionable issues.
   const rank: Record<string, number> = { blocker: 0, major: 1, minor: 2 };
   const issuesToFix = [...(initialReview.issues || [])]
@@ -2941,6 +2947,17 @@ export function buildFrontendBuilderRepairRequest(
       heroComponentPath: qualityEvidence.heroComponentPath,
     };
   }
+  return input;
+}
+
+export function buildFrontendBuilderRepairRequest(
+  spec: FrontendBuildSpecification,
+  files: WebBuildFile[],
+  initialReview: FrontendBuilderReviewArtifact,
+  deterministicWarnings?: string[],
+  qualityEvidence?: FrontendRepairQualityEvidence,
+): string {
+  const input = buildFrontendRepairInputPayload(spec, files, initialReview, deterministicWarnings, qualityEvidence);
   return [
     '[FRONTEND BUILDER REQUEST]',
     '[FRONTEND REPAIR REQUEST]',
@@ -3005,6 +3022,98 @@ export async function generateFrontendBuilderRepairRaw(
     rawResponse: reply,
     responseCharCount: charCount,
     truncatedForStorage: false,
+  });
+}
+
+/* ── Owner-only DELTA quality repair (same bounded call, delta response) ───────────────
+ * Identical transport, discriminator, timeout and backend classification as the full
+ * quality repair above — so cost stage attribution stays `quality-repair` and no new
+ * provider call / endpoint / background job kind is introduced. The ONLY difference is the
+ * RESPONSE contract: the model returns file UPSERTS (frontend-delta-v1) instead of the
+ * complete project, which the pure delta module reconstructs + validates. Runs ONLY when the
+ * caller has already resolved `owner_delta` mode AND a trusted owner session. */
+export function buildFrontendBuilderDeltaRepairRequest(
+  spec: FrontendBuildSpecification,
+  files: WebBuildFile[],
+  initialReview: FrontendBuilderReviewArtifact,
+  deterministicWarnings?: string[],
+  qualityEvidence?: FrontendRepairQualityEvidence,
+): string {
+  const input = buildFrontendRepairInputPayload(spec, files, initialReview, deterministicWarnings, qualityEvidence);
+  // The model receives the SAME bounded repair input; only the requested response shape differs.
+  input.responseContract = 'frontend-delta-v1';
+  return [
+    '[FRONTEND BUILDER REQUEST]',
+    '[FRONTEND REPAIR REQUEST]',
+    'Task: apply the bounded review fixes, then return ONLY the files you actually change or add',
+    'as a delta of COMPLETE-file upserts — do NOT re-emit unchanged files.',
+    'Preserve required public copy, required section order, the primary concept identity, the',
+    'website language and the listed strengths. EXPAND shallow sections into fully realized',
+    'compositions (never collapse or replace them); deepen the exact files listed in qualityEvidence.',
+    'RESPONSE FORMAT (frontend-delta-v1) — output EXACTLY the two markers and a single JSON object',
+    'between them, and nothing else:',
+    '## FRONTEND_DELTA_V1',
+    '{"upserts":[{"path":"<normalized relative path>","language":"tsx|ts|css","content":"<COMPLETE new file contents>"}]}',
+    '## END_FRONTEND_DELTA_V1',
+    'Rules: each upsert MUST contain the COMPLETE replacement contents for that file (never a diff,',
+    'hunk, line-range patch, "// unchanged" ellipsis or prose). Include ONLY files you change or add;',
+    'do NOT include unchanged files and do NOT delete files. Use normalized relative project paths',
+    '(no absolute paths, no "../" traversal, no backslashes). Emit valid JSON only — no Markdown,',
+    'comments or any text outside the two markers.',
+    'BEGIN_FRONTEND_BUILD_SPEC_JSON',
+    'BEGIN_FRONTEND_REPAIR_INPUT_JSON',
+    JSON.stringify(input),
+    'END_FRONTEND_REPAIR_INPUT_JSON',
+    'END_FRONTEND_BUILD_SPEC_JSON',
+  ].join('\n');
+}
+
+/**
+ * Run the single owner-only DELTA repair call. Reuses the exact `frontend_builder` repair
+ * transport (same timeout, same backend task kind → same cost attribution). Returns a raw
+ * artifact whose `rawResponse` is the frontend-delta-v1 body for the pure delta module to
+ * parse + reconstruct. Fails open on every transport/mode/size problem; propagates only
+ * caller cancellation. NEVER makes a second call.
+ */
+export async function generateFrontendBuilderDeltaRepairRaw(
+  spec: FrontendBuildSpecification | undefined,
+  files: WebBuildFile[],
+  initialReview: FrontendBuilderReviewArtifact,
+  opts?: { signal?: AbortSignal; deterministicWarnings?: string[]; qualityEvidence?: FrontendRepairQualityEvidence },
+): Promise<FrontendBuilderRawArtifact> {
+  if (!spec) return frontendBuilderArtifact('skipped', 'No Phase 12A specification available for the delta repair.');
+  if (spec.status === 'failed-open') return frontendBuilderArtifact('skipped', 'The specification failed open; the delta repair was skipped.');
+  if (!files.length) return frontendBuilderArtifact('skipped', 'No active model-native files to repair.');
+
+  const message = buildFrontendBuilderDeltaRepairRequest(spec, files, initialReview, opts?.deterministicWarnings, opts?.qualityEvidence);
+  if (message.length > MAX_FRONTEND_TASK_REQUEST_CHARS) {
+    return frontendBuilderArtifact('failed', `The delta repair request (${message.length} chars) exceeds the safe request limit (${MAX_FRONTEND_TASK_REQUEST_CHARS}).`);
+  }
+
+  const outcome = await callFrontendBuilderTask(message, FRONTEND_REPAIR_TIMEOUT_MS, spec.prompt || '', opts);
+  if (!outcome.ok) return frontendBuilderArtifact('failed', outcome.reason);
+
+  const { reply, reportedMode, model, provider, requestId } = outcome.data;
+  const base: Partial<FrontendBuilderRawArtifact> = { model, provider, requestId };
+  if (reportedMode && reportedMode !== FRONTEND_BUILDER_MODE) {
+    return frontendBuilderArtifact('failed', 'Backend routed the delta repair request to an unexpected mode.', base);
+  }
+  if (!reply.trim()) return frontendBuilderArtifact('failed', 'The delta repair returned an empty response.', base);
+  const charCount = reply.length;
+  if (charCount > MAX_FRONTEND_RAW_RESPONSE_CHARS) {
+    return frontendBuilderArtifact('failed', `The delta repair response (${charCount} chars) exceeds the storage cap (${MAX_FRONTEND_RAW_RESPONSE_CHARS}) and cannot be reconstructed safely.`, {
+      ...base,
+      rawResponse: reply.slice(0, MAX_FRONTEND_RAW_RESPONSE_CHARS),
+      responseCharCount: charCount,
+      truncatedForStorage: true,
+    });
+  }
+  return frontendBuilderArtifact('completed', 'Owner-delta quality repair returned a raw frontend-delta-v1 response; delta reconstruction has not run yet.', {
+    ...base,
+    rawResponse: reply,
+    responseCharCount: charCount,
+    truncatedForStorage: false,
+    responseShape: deriveResponseShape(reply),
   });
 }
 
