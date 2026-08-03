@@ -15,7 +15,8 @@
  *     VITE_ENABLE_HARD_GENERATION_CONTRACT=false
  */
 import type {
-  ExperienceArchitecturePlan, FrontendGenerationContract, FrontendBuildSpecification,
+  ExperienceArchitecturePlan, FrontendGenerationContract, FrontendGenerationContractMotion,
+  FrontendBuildSpecification,
   FrontendGeneratedFile, FrontendBuilderReviewIssue, FrontendBuilderReviewCategory,
   FrontendBuilderReviewSeverity, ExperienceVisualMedium,
 } from '@/lib/webBuildAgents';
@@ -219,6 +220,21 @@ export function buildGenerationContract(
       ? compileBrandDesignSystem(plan, { spec, explicitRequest })
       : undefined;
 
+    // First-pass motion contract parity — from the SAME authoritative resolver the post-generation
+    // enforcement uses, so the initial-generation instructions and the validation share one motion
+    // interpretation. Present ONLY when the plan/spec genuinely requires motion (fail-open: static /
+    // minimal / reduced-motion-only / missing plans produce no motion block). Sanitized + bounded.
+    const motionReq = resolveMotionRequirement(plan, spec);
+    const motion = (motionReq.required && (motionReq.level === 'micro' || motionReq.level === 'composed'))
+      ? {
+          level: motionReq.level as 'micro' | 'composed',
+          targets: cleanList(motionReq.targets, 4),
+          ...(motionReq.patterns.length ? { patterns: cleanList(motionReq.patterns, 6) } : {}),
+          reducedMotionRequired: !!motionReq.reducedMotionExpected,
+          summary: cap(motionReq.summary),
+        }
+      : undefined;
+
     return {
       version: 'generation-contract-v1',
       entryRequirement: cap(entryRequirement),
@@ -231,6 +247,7 @@ export function buildGenerationContract(
       forbiddenPatterns,
       creativeFreedom,
       ...(brandDesignSystem ? { brandDesignSystem } : {}),
+      ...(motion ? { motion } : {}),
     };
   } catch {
     return undefined;
@@ -255,12 +272,51 @@ export function renderGenerationContractBlock(contract: FrontendGenerationContra
   if (contract.requiredSections.length) lines.push(`- Respect this section sequence: ${contract.requiredSections.join(' → ')}.`);
   lines.push(`- FORBIDDEN (do NOT use unless the user request explicitly asks for it): ${contract.forbiddenPatterns.join('; ')}.`);
   lines.push(`- Creative freedom: ${contract.creativeFreedom.join('; ')}.`);
-  lines.push('- Use motion only to explain state/transitions, never as decorative filler.');
+  // First-pass motion parity: when the authoritative plan requires motion, emit the concise BINDING
+  // implementation block (same interpretation as the post-generation enforcement). Otherwise keep
+  // the pre-existing generic line byte-for-byte — so static/minimal/reduced-motion/old contracts are
+  // unchanged.
+  if (contract.motion) {
+    lines.push(...renderMotionContractLines(contract.motion));
+  } else {
+    lines.push('- Use motion only to explain state/transitions, never as decorative filler.');
+  }
   // PR #522 — the Brand Design System rides as ONE nested sub-section of THIS contract (never a
   // second competing block). Empty string when absent ⇒ the block is byte-for-byte unchanged.
   const brandBlock = renderBrandDesignSystemBlock(contract.brandDesignSystem);
   if (brandBlock) { lines.push(''); lines.push(brandBlock); }
   return lines.join('\n');
+}
+
+/**
+ * Render the compact, BINDING first-pass motion implementation block. Concise + imperative — it
+ * tells the frontend model to implement the PLANNED motion as real executable React/CSS on this
+ * initial pass (so the expensive full-project quality-repair is needed less often), and states
+ * exactly what does NOT count. Bounded: a fixed set of short lines, gated by level + reduced-motion;
+ * never the full plan. No source/prompt/PII. Symmetric with detectMotionEvidence's acceptance rules.
+ */
+function renderMotionContractLines(motion: FrontendGenerationContractMotion): string[] {
+  const targets = (motion.targets || []).join(', ') || 'the planned targets';
+  const patterns = (motion.patterns && motion.patterns.length) ? ` Planned patterns: ${motion.patterns.join('; ')}.` : '';
+  const out: string[] = [
+    `- MOTION CONTRACT — BINDING: implement the planned ${cap(motion.summary)} as REAL executable React/CSS in THIS initial generation, applied to: ${targets}.${patterns}`,
+    '- Executable only: imports, dependency names, comments, planning prose, JSON labels, unused @keyframes, and class names never applied to a rendered element do NOT satisfy this.',
+  ];
+  if (motion.level === 'composed') {
+    out.push('- This is COMPOSED/STRUCTURAL motion: a single button hover, pulse, spinner, skeleton or decorative glow does NOT satisfy it — build at least one real motion SYSTEM connected to the planned target (hero / global atmosphere / relevant sections).');
+  } else {
+    out.push('- This is MICRO motion: meaningful hover/focus/tap/state feedback is required; do NOT force scroll/parallax/cinematic systems the plan did not request.');
+  }
+  out.push(
+    '- State-driven motion must connect the triggering state/observer/event to a VISIBLE transform, opacity, height, scale, translate, rotation, reveal or transition on the rendered element.',
+    '- IntersectionObserver must actually observe elements and change rendered state/class/style (a bare observer that changes nothing does not count).',
+    '- CSS @keyframes must be APPLIED to a rendered element via an animation declaration/class; Framer Motion counts only when real motion.* elements or AnimatePresence are rendered with actual animation props (initial, animate, whileInView, variants, layout, exit, or transition); canvas motion counts only with a real 2D/WebGL context driven by a requestAnimationFrame loop.',
+  );
+  if (motion.reducedMotionRequired) {
+    out.push('- Include a prefers-reduced-motion (or equivalent) fallback that degrades the motion to a static/subtle state.');
+  }
+  out.push('- Keep it responsive and purposeful — no constant distracting movement — and use ONLY packages already available in this project (do not invent unavailable dependencies).');
+  return out;
 }
 
 /* ── Deterministic static enforcement ─────────────────────────────────────────*/
@@ -320,9 +376,13 @@ interface MotionRequirement {
   required: boolean;
   level: MotionRequirementLevel;
   reducedMotionExpected: boolean;
-  summary: string;   // bounded, PLAN-derived label only (never source / prompt / PII)
+  summary: string;      // bounded, PLAN-derived label only (never source / prompt / PII)
+  targets: string[];    // sanitized target classes: 'hero' | 'global' | 'section' | 'micro-interaction'
+  patterns: string[];   // sanitized planned motion pattern names (bounded)
 }
-const _NONE_MOTION: MotionRequirement = { required: false, level: 'none', reducedMotionExpected: false, summary: '' };
+const _NONE_MOTION: MotionRequirement = {
+  required: false, level: 'none', reducedMotionExpected: false, summary: '', targets: [], patterns: [],
+};
 
 /** Pattern/level tokens that mean "no motion" — never a requirement. */
 const MOTION_NONE_TOKEN_RE = /^(none|static|instant|off)$/;
@@ -390,6 +450,9 @@ function resolveMotionRequirement(
     const composed = meaningfulLayers.length > 0 || structuralStrategy;
     const level: MotionRequirementLevel = composed ? 'composed' : 'micro';
     const targetLabels = structuralTargets.size ? [...structuralTargets] : (composed ? ['hero'] : ['micro-interaction']);
+    // Sanitized planned pattern names from the composed layers (concept names only, e.g.
+    // 'floating-cards' / 'integration-orbit') — bounded, never source/prompt content.
+    const patterns = cleanList(meaningfulLayers.map((l) => s(l.pattern)).filter((p) => !MOTION_NONE_TOKEN_RE.test(norm(p))), 6);
     return {
       required: true,
       level,
@@ -397,6 +460,8 @@ function resolveMotionRequirement(
       summary: composed
         ? `composed structural motion (${targetLabels.slice(0, 4).join(', ')})`
         : 'micro-interaction motion (hover/focus/tap/state)',
+      targets: targetLabels.slice(0, 4),
+      patterns,
     };
   } catch {
     return _NONE_MOTION;
