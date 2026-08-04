@@ -179,13 +179,11 @@ function focalFor(role: string, family: string, mediaRole: string, ctaRole: stri
 }
 
 export function deriveExperienceQualityContract(input: ExperienceQualityInput): ExperienceQualityContract | undefined {
-  const identity = input.identity;
   const comp = input.composition;
   const content = input.contentNarrative;
   const raw = (input.sections || []).filter((s) => s && s.id).slice(0, MAX_SECTIONS);
   if (!comp && !content && raw.length === 0) return undefined;
   const ordered = [...raw].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-  const total = ordered.length;
   const compById = new Map((comp?.sections || []).map((s) => [s.id, s]));
   const contentById = new Map((content?.sections || []).map((s) => [s.id, s]));
   const slotSet = new Set((input.imageSlots || []).filter((s) => s && s.id).map((s) => s.id));
