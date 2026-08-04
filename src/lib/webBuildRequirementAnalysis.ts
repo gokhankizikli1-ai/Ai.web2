@@ -30,6 +30,7 @@ import type {
   FrontendGeneratedFile, FrontendBindingRequirements,
   FrontendBuilderReviewIssue, FrontendBuilderReviewSeverity, FrontendBuilderReviewCategory,
 } from '@/lib/webBuildAgents';
+import type { ImageCoverageRequirement } from '@/lib/webBuildImageCoverage';
 
 /* ── Bounds ───────────────────────────────────────────────────────────────── */
 const MAX_SRC_CHARS = 240_000;      // total source scanned
@@ -51,7 +52,11 @@ export type BindingIssueCode =
   | 'binding-responsive-evidence-missing'
   | 'binding-media-missing'
   | 'cross-sector-semantic-drift'
-  | 'requirement-evidence-ambiguous';
+  | 'requirement-evidence-ambiguous'
+  // Semantic image-coverage findings (feature-scoped; reuse of the media analysis).
+  | 'required-image-not-rendered'
+  | 'required-image-semantically-mismatched'
+  | 'required-image-uncovered';
 
 export interface BindingIssue {
   code: BindingIssueCode;
@@ -75,6 +80,11 @@ export interface BindingAcceptanceResult {
   satisfiedControlCount: number;
   driftIssueCount: number;
   issues: BindingIssue[];
+  /* ── Semantic image-coverage (present only when an image-coverage contract was analyzed). ── */
+  imageCoverageStatus?: 'pass' | 'warning' | 'fail';
+  requiredImageCount?: number;
+  renderedRequiredImageCount?: number;
+  uncoveredRequiredImageCount?: number;
 }
 
 /** Drift policy resolved at the call site from existing artifacts (sector/ledger/binding). */
@@ -474,23 +484,95 @@ function analyzeDrift(files: FrontendGeneratedFile[], src: string, policy: Drift
   return issues;
 }
 
+/* ── Semantic image-coverage acceptance (feature-scoped; reuses the media image model) ───────────
+ * For a `required`/`image-led` coverage contract, prove that EACH required semantic image is a
+ * rendered, non-decorative, semantically-relevant content image — never a logo/avatar/icon, an
+ * unused manifest asset, a URL that only appears in a constant, or one unrelated photo reused for
+ * every purpose (greedy per-target assignment). Absent/`none`/`optional`/explicit-no-photo ⇒ no
+ * findings (so explicit typography-only and software/dashboard builds are never blocked). Pure. */
+interface ImageCoverageAnalysis { issues: BindingIssue[]; required: number; rendered: number; uncovered: number; }
+function analyzeImageCoverage(
+  units: FileUnit[], list: FrontendGeneratedFile[], srcLower: string,
+  coverage: ImageCoverageRequirement | undefined,
+): ImageCoverageAnalysis {
+  const empty: ImageCoverageAnalysis = { issues: [], required: 0, rendered: 0, uncovered: 0 };
+  if (!coverage || coverage.explicitNoPhoto) return empty;
+  if (coverage.mode !== 'required' && coverage.mode !== 'image-led') return empty;
+  const requiredTargets = (coverage.targets || []).filter((t) => t.required);
+  if (!requiredTargets.length) return empty;
+
+  // Rendered, non-decorative content images available across the project (greedy pool).
+  const pool = units.flatMap((u) => u.images).filter((im) => im.content && !im.decorative).map((im) => ({ im, used: false }));
+  const anyContentImages = pool.length > 0;
+  const issues: BindingIssue[] = [];
+  let rendered = 0; let uncovered = 0;
+
+  for (const t of requiredTargets) {
+    const exp = new Set<string>();
+    for (const a of (t.aliases || [])) tokenize(a, 3).forEach((x) => exp.add(x));
+    labelTokens(t.label).forEach((x) => exp.add(x));
+    tokenize(t.query, 3).forEach((x) => exp.add(x));
+    // Purpose/section words help match a relevant image; drop generic stop tokens.
+    [...exp].filter((x) => STOP.has(x)).forEach((x) => exp.delete(x));
+
+    const hit = pool.find((p) => !p.used && p.im.tokens.some((tok) => exp.has(tok)));
+    if (hit) { hit.used = true; rendered += 1; continue; }
+
+    uncovered += 1;
+    const approved = t.matchStatus === 'sourced';
+    const label = t.label || t.purpose;
+    // The approved slot id / dom id appears somewhere in source (e.g. hidden in a constant or an
+    // unused manifest entry) but no rendered semantic image consumed it → "not rendered".
+    const slotTok = (t.slotId || '').toLowerCase();
+    const domTok = (t.domId || '').toLowerCase();
+    const slotInSrc = (slotTok.length >= 3 && srcLower.includes(slotTok)) || (domTok.length >= 3 && srcLower.includes(domTok));
+    if (approved && (slotInSrc || !anyContentImages)) {
+      issues.push({ code: 'required-image-not-rendered', severity: 'major', requirementId: t.id, label,
+        files: filesMatching(list, ['img', 'image', 'picture']),
+        evidence: cap(`required image "${label}" has an approved sourced asset but no rendered semantic <img>/picture consumes it — a URL hidden in a constant or unused manifest asset does not count`),
+        repairInstruction: cap(`Render the approved image for "${label}" as a real semantic <img> (or a single permitted background image) in its intended section, using the provided url + data-korvix-image-slot; do not leave it unused.`) });
+    } else if (anyContentImages) {
+      issues.push({ code: 'required-image-semantically-mismatched', severity: 'major', requirementId: t.id, label,
+        files: filesMatching(list, ['img', 'image', 'picture']),
+        evidence: cap(`required image "${label}" is not satisfied — the rendered content images are not semantically relevant to it (a logo/avatar/icon, a decorative shape, or one unrelated photo reused for every section does not satisfy a distinct semantic purpose)`),
+        repairInstruction: cap(`Render a distinct, semantically-relevant image for "${label}" (matching alt/source/slot text); do not reuse one unrelated photo for multiple required purposes.`) });
+    } else {
+      issues.push({ code: 'required-image-uncovered', severity: 'major', requirementId: t.id, label,
+        files: [],
+        evidence: cap(`required image "${label}" is uncovered — no relevant rendered imagery, and stock/AI fallback produced no safe persistable asset${t.failureReason ? ` (${t.failureReason})` : ''}`),
+        repairInstruction: cap(`Provide a real, semantically-relevant image for "${label}" (stock or manual upload); a gradient, CSS shape, logo or icon does not satisfy required photography.`) });
+    }
+  }
+  return { issues, required: requiredTargets.length, rendered, uncovered };
+}
+
 /**
- * Run the deterministic binding-satisfaction + cross-sector-drift analysis over the COMPLETE
- * generated project. `binding` undefined ⇒ legacy result (pass, legacyContractUsed=true). Pure.
+ * Run the deterministic binding-satisfaction + cross-sector-drift + image-coverage analysis over the
+ * COMPLETE generated project. `binding` undefined ⇒ legacy binding result, but drift AND image
+ * coverage can still be enforced when their inputs are supplied. Pure.
  */
 export function analyzeBindingAcceptance(
   files: FrontendGeneratedFile[] | undefined,
   binding: FrontendBindingRequirements | undefined,
   policy?: DriftPolicy,
+  coverage?: ImageCoverageRequirement,
 ): BindingAcceptanceResult {
   try {
     if (!binding || !Array.isArray(binding.requirements) || binding.requirements.length === 0) {
-      // No binding contract, but drift can still be checked when a policy is supplied.
-      const driftOnly = analyzeDrift(files || [], ((files || []).map((f) => f.content).join('\n').toLowerCase()).slice(0, MAX_SRC_CHARS), policy);
-      if (driftOnly.length) {
-        return { ...LEGACY_RESULT, legacyContractUsed: !binding, status: 'fail', driftIssueCount: driftOnly.length, issues: driftOnly.slice(0, MAX_ISSUES) };
+      // No binding contract, but drift AND image coverage can still be enforced from their inputs.
+      const listNB = Array.isArray(files) ? files : [];
+      const srcLowerNB = listNB.map((f) => f.content).join('\n').slice(0, MAX_SRC_CHARS).toLowerCase();
+      const driftOnly = analyzeDrift(listNB, srcLowerNB, policy);
+      const cov = analyzeImageCoverage(listNB.slice(0, MAX_UNITS).map(buildUnit), listNB, srcLowerNB, coverage);
+      const covFields = cov.required
+        ? { imageCoverageStatus: (cov.uncovered ? 'fail' : 'pass') as 'fail' | 'pass', requiredImageCount: cov.required, renderedRequiredImageCount: cov.rendered, uncoveredRequiredImageCount: cov.uncovered }
+        : {};
+      const allIssues = [...driftOnly, ...cov.issues].slice(0, MAX_ISSUES);
+      if (allIssues.length) {
+        const blockingNB = allIssues.some((i) => i.severity === 'blocker' || i.code === 'cross-sector-semantic-drift' || i.code.startsWith('required-image-'));
+        return { ...LEGACY_RESULT, legacyContractUsed: !binding, status: blockingNB ? 'fail' : 'warning', driftIssueCount: driftOnly.length, issues: allIssues, ...covFields };
       }
-      return { ...LEGACY_RESULT, legacyContractUsed: !binding };
+      return { ...LEGACY_RESULT, legacyContractUsed: !binding, ...covFields };
     }
     const list = Array.isArray(files) ? files : [];
     const src = list.map((f) => f.content).join('\n').slice(0, MAX_SRC_CHARS);
@@ -660,9 +742,15 @@ export function analyzeBindingAcceptance(
     const driftIssues = analyzeDrift(list, srcLower, policy);
     for (const d of driftIssues) push(d);
 
+    // ── Semantic image coverage (reuses the media image model; feature-scoped, greedy). ──
+    const coverageAnalysis = analyzeImageCoverage(units, list, srcLower, coverage);
+    for (const c of coverageAnalysis.issues) push(c);
+
     const blocking = issues.some((i) => i.severity === 'blocker'
       || i.code === 'binding-control-missing' || i.code === 'binding-media-missing'
-      || i.code === 'binding-section-missing' || i.code === 'binding-mobile-nav-nonfunctional');
+      || i.code === 'binding-section-missing' || i.code === 'binding-mobile-nav-nonfunctional'
+      || i.code === 'required-image-not-rendered' || i.code === 'required-image-semantically-mismatched'
+      || i.code === 'required-image-uncovered');
     const warned = issues.some((i) => i.code === 'requirement-evidence-ambiguous' || i.code === 'binding-responsive-evidence-missing');
     const status: BindingAcceptanceResult['status'] = blocking ? 'fail' : warned ? 'warning' : 'pass';
 
@@ -680,6 +768,11 @@ export function analyzeBindingAcceptance(
       satisfiedControlCount: satisfiedControls,
       driftIssueCount: driftIssues.length,
       issues: issues.slice(0, MAX_ISSUES),
+      ...(coverageAnalysis.required
+        ? { imageCoverageStatus: (coverageAnalysis.uncovered ? 'fail' : 'pass') as 'fail' | 'pass',
+            requiredImageCount: coverageAnalysis.required, renderedRequiredImageCount: coverageAnalysis.rendered,
+            uncoveredRequiredImageCount: coverageAnalysis.uncovered }
+        : {}),
     };
   } catch {
     // Fail-open: never break the build. Treat as legacy (no blocking findings) on internal error.
@@ -703,6 +796,9 @@ const CODE_CATEGORY: Record<BindingIssueCode, FrontendBuilderReviewCategory> = {
   'binding-media-missing': 'component-composition',
   'cross-sector-semantic-drift': 'concept-drift',
   'requirement-evidence-ambiguous': 'maintainability',
+  'required-image-not-rendered': 'component-composition',
+  'required-image-semantically-mismatched': 'component-composition',
+  'required-image-uncovered': 'component-composition',
 };
 
 export function bindingIssuesToReviewIssues(result: BindingAcceptanceResult | undefined): FrontendBuilderReviewIssue[] {

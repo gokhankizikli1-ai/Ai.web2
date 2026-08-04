@@ -2056,6 +2056,25 @@ export function buildFrontendBuilderRequest(spec: FrontendBuildSpecification): s
     'typography exactly as before. Keep the provider/photographer fields intact for attribution.',
     '',
   ] : [];
+  // Phase (image coverage) — MANDATORY semantic coverage for required/image-led sites. Names each
+  // required image purpose + approved slot so the model renders a real, relevant <img> in its
+  // intended section (never hides the URL, reuses one photo, or substitutes a gradient/logo).
+  const coverageReq = spec.imageCoverage;
+  const requiredCoverageTargets = (coverageReq && (coverageReq.mode === 'required' || coverageReq.mode === 'image-led') && !coverageReq.explicitNoPhoto)
+    ? (coverageReq.targets || []).filter((t) => t.required).slice(0, 6) : [];
+  const coverageBlock = requiredCoverageTargets.length > 0 ? [
+    'REQUIRED IMAGE COVERAGE:',
+    `This site REQUIRES real, semantically-relevant photography (mode: ${coverageReq!.mode}). For EACH`,
+    'required purpose below you MUST render a distinct, semantic <img> (or one permitted HTTPS',
+    'background image) that actually depicts that purpose, in its intended section:',
+    ...requiredCoverageTargets.map((t) => `- ${t.label}${t.hero ? ' (hero)' : ''} — slot "${t.slotId || t.id}" — ${t.altText}`),
+    'An approved slot "url" MUST appear on a VISIBLE <img>/picture/background in that section — a URL',
+    'left only in a constant, data file or unused manifest entry does NOT count as rendered. Do NOT',
+    'satisfy a required purpose with a logo, avatar, icon, decorative shape, gradient or chart; do NOT',
+    'reuse ONE image for multiple distinct purposes; do NOT invent remote URLs. Preserve the',
+    'data-korvix-id and data-korvix-image-slot attributes on each rendered image.',
+    '',
+  ] : [];
   // Phase 12G — the BINDING user-requirements block (acceptance conditions the generated project
   // MUST implement as real frontend behavior). Present only when explicit requirements were
   // extracted; absent ⇒ byte-for-byte the pre-#12G request. Composes with the motion contract.
@@ -2074,6 +2093,7 @@ export function buildFrontendBuilderRequest(spec: FrontendBuildSpecification): s
     ...contractLines,
     ...experienceBlock,
     ...imageBlock,
+    ...coverageBlock,
     ...bindingLines,
     // Phase 13F.2 — eliminate REDUNDANT tokens (not design quality). Fully implement the spec —
     // required sections, motion/composition and the quality bar are UNCHANGED — but do not waste

@@ -772,6 +772,22 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
       // deterministic renderer; Candidate Preview is the real generated frontend.
       ownerRows.push(['frontendQualityFacts', 'planningQualityEstimate ≠ staticReviewScore ≠ deterministicWarningReview ≠ acceptance ≠ renderedVisualTest (pending-manual-test)']);
       ownerRows.push(['frontendPreviewFacts', 'Safe Preview = deterministic renderer · Candidate Preview = real generated frontend · static/deterministic review + sandbox run are NOT visual approval']);
+      // Phase (image coverage) — SEPARATE stock / AI / coverage diagnostics. Distinct from the
+      // session-local manual AI generation count shown below (manualSessionAiGeneratedCount).
+      if (fac.imageCoverageMode) {
+        ownerRows.push(['imageCoverageMode', fac.imageCoverageMode]);
+        if (fac.requiredSemanticImageCount != null) {
+          ownerRows.push(['imageCoverage', `required ${fac.requiredSemanticImageCount} · rendered ${fac.renderedRequiredImageCount ?? '—'} · uncovered ${fac.uncoveredRequiredImageCount ?? '—'} · status ${fac.imageCoverageAcceptanceStatus || '—'}`]);
+        }
+        if (fac.stockRequestedCount != null || fac.stockSourcedCount != null) {
+          ownerRows.push(['imageStockSourcing', `requested ${fac.stockRequestedCount ?? '—'} · sourced ${fac.stockSourcedCount ?? '—'} · pexels ${fac.pexelsStatus || '—'} · unsplash ${fac.unsplashStatus || '—'} · manifest ${fac.imageAssetManifestStatus || '—'}`]);
+        }
+        if (fac.automaticAiFallbackAttemptCount != null) {
+          ownerRows.push(['imageAutomaticAiFallback', `attempts ${fac.automaticAiFallbackAttemptCount} · usable ${fac.automaticAiFallbackUsableCount ?? 0}`]);
+        }
+        if (fac.visualStrategyPhotographyMode) ownerRows.push(['visualStrategyPhotography', `${fac.visualStrategyPhotographyMode} · photoSlots ${fac.visualStrategyPhotoSlotCount ?? 0} · deterministicFallback ${String(!!fac.deterministicCoverageFallbackUsed)}`]);
+        if (fac.imageCoverageReasonCodes?.length) ownerRows.push(['imageCoverageReasons', fac.imageCoverageReasonCodes.slice(0, 8).join(', ')]);
+      }
     }
 
     // Phase 13D — model-native REVISION diagnostics (owner-only). Present only on an
@@ -1192,11 +1208,14 @@ function CompletedPlanSummary({ step }: { step: WebBuildStep }) {
                 <span className="min-w-0 break-words text-[#CBD5E1]">{v}</span>
               </div>
             ))}
-            {/* Phase 10D — live image generation status (owner-only). */}
+            {/* Phase 10D — live image generation status (owner-only). NOTE: this count is the
+                MANUAL, session-local (in-memory) owner AI generations only — it is NOT the
+                generation-time Pexels/Unsplash stock assets nor the automatic AI fallback (those
+                are shown above as imageStockSourcing / imageAutomaticAiFallback / imageCoverage). */}
             {hasImagePipeline && ([
               ['imageGenerationEnabled', imgHealth ? String(imgHealth.enabled) : 'checking…'],
               ['imageGenerationProvider', imgHealth ? `${imgHealth.provider}${imgHealth.configured ? ' · configured' : ' · not-configured'}${imgHealth.ownerOnly ? ' · owner-only' : ''}` : '—'],
-              ['generatedImageCount', String(generatedImageCount)],
+              ['manualSessionAiGeneratedCount', String(generatedImageCount)],
               ...(imgHealth?.missingReason ? [['providerMissingReason', imgHealth.missingReason]] as Array<[string, string]> : []),
             ] as Array<[string, string]>).map(([k, v]) => (
               <div key={k} className="flex gap-2">

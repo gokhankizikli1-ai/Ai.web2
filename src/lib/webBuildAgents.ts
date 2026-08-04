@@ -1152,6 +1152,9 @@ export interface ImageAssetManifest {
   requested: number;
   sourced: number;
   elapsedMs: number;
+  /** Phase (image coverage) — bounded coverage diagnostics (counts + reason codes only; no URLs
+   *  or secrets). Additive/optional; absent on old builds. */
+  coverage?: import('@/lib/webBuildImageCoverage').ImageCoverageDiagnostics;
 }
 
 export type AgentId = 'research' | 'ui_art_director' | 'strategy' | 'vertical_intelligence' | 'layout_architect' | 'component_engineer' | 'reviewer' | 'quality_director' | 'asset_director' | 'motion_composer' | 'image_pipeline' | 'fixer';
@@ -2048,6 +2051,12 @@ export interface FrontendBuildSpecification {
    *  BOTH generation and acceptance from the SAME normalized data. */
   bindingRequirements?: FrontendBindingRequirements;
 
+  /** Phase (image coverage) — the authoritative semantic image-coverage requirement. OPTIONAL and
+   *  additive: present only on fresh builds where coverage was derived; absent ⇒ legacy behavior
+   *  (no coverage-driven sourcing fallback, no image-coverage acceptance). Derived deterministically
+   *  from binding media, sector/vertical, image-led direction and explicit no-photo instructions. */
+  imageCoverage?: import('@/lib/webBuildImageCoverage').ImageCoverageRequirement;
+
   honestyRules: string[];
   sourceTrace: string[];
   missingInputs: string[];
@@ -2655,6 +2664,27 @@ export interface FrontendBuilderAcceptanceArtifact {
   legacyContractUsed?: boolean;
   bindingInitialAnalysisStatus?: 'pass' | 'warning' | 'fail';
   bindingPostRepairAnalysisStatus?: 'pass' | 'warning' | 'fail';
+
+  /* ── Phase (image coverage) — separate, truthful stock / AI / coverage diagnostics. All
+   *    OPTIONAL, additive; counts + bounded reason codes only (never URLs, keys or prompts). ── */
+  imageCoverageMode?: 'none' | 'optional' | 'required' | 'image-led';
+  requiredSemanticImageCount?: number;
+  renderedRequiredImageCount?: number;
+  uncoveredRequiredImageCount?: number;
+  stockRequestedCount?: number;
+  stockSourcedCount?: number;
+  /** Automatic generation-time AI fallback (bounded, hero-first). Distinct from the manual,
+   *  session-local owner AI generations counted in the UI as manualSessionAiGeneratedCount. */
+  automaticAiFallbackAttemptCount?: number;
+  automaticAiFallbackUsableCount?: number;
+  deterministicCoverageFallbackUsed?: boolean;
+  visualStrategyPhotographyMode?: string;
+  visualStrategyPhotoSlotCount?: number;
+  imageAssetManifestStatus?: string;
+  pexelsStatus?: string;
+  unsplashStatus?: string;
+  imageCoverageReasonCodes?: string[];
+  imageCoverageAcceptanceStatus?: 'pass' | 'warning' | 'fail';
 
   reason: string;
 }
