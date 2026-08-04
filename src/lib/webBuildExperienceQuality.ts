@@ -250,6 +250,17 @@ export function deriveExperienceQualityContract(input: ExperienceQualityInput): 
           ...(ctaRole !== 'none' ? ['the CTA is a real link/button with a clear accessible name'] : []),
         ]).slice(0, MAX_OBLIGATIONS),
       },
+      // Phase 5 — performance / media delivery (reuse #559 media decisions; intelligent delivery only).
+      performance: {
+        mediaPriority: (i === 0 && mediaRole !== 'none') ? 'hero' : (family === 'full-bleed-transition' && mediaRole !== 'none') ? 'decorative' : mediaRole !== 'none' ? 'below-fold' : 'none',
+        motionPolicy: 'motion is subtle and respects prefers-reduced-motion; no unbounded continuous animation on content',
+        obligations: uniq([
+          ...(i === 0 && mediaRole !== 'none' ? ['prioritize the hero/LCP image (eager, fetchpriority high); reserve its aspect ratio'] : []),
+          ...(i > 0 && mediaRole !== 'none' ? ['lazy-load this below-fold image and reserve width/height/aspect to avoid layout shift'] : []),
+          'avoid duplicating the same heavy media; avoid large inline base64 payloads',
+          'motion respects prefers-reduced-motion; no unbounded continuous animation',
+        ]).slice(0, MAX_OBLIGATIONS),
+      },
       ambiguityNote: '',
     };
   });
@@ -257,7 +268,7 @@ export function deriveExperienceQualityContract(input: ExperienceQualityInput): 
   const dominant = sections.filter((s) => s.hierarchyRelation === 'dominant moment').length;
   return {
     version: 'experience-quality-v1', status: 'derived',
-    subPolicies: ['coherence', 'responsive', 'interaction', 'accessibility'],
+    subPolicies: ['coherence', 'responsive', 'interaction', 'accessibility', 'performance'],
     rhythmObligation: clip(comp?.globalRhythm || content?.positioningThesis || 'one coherent experience: vary section weight and density, keep 1–2 dominant moments, and make every section point its content, media, hierarchy and CTA the same way', MAX_TEXT),
     globalResponsive: [
       'every multi-column layout collapses to one readable column on mobile',
@@ -274,7 +285,13 @@ export function deriveExperienceQualityContract(input: ExperienceQualityInput): 
       'respect prefers-reduced-motion; never communicate state by colour alone',
       'prefer native semantics over redundant/invalid ARIA',
     ],
-    globalPerformance: [],
+    globalPerformance: [
+      'prioritize the hero/LCP image; never lazy-load it',
+      'lazy-load below-fold images and reserve width/height/aspect to avoid layout shift',
+      'do not duplicate the same heavy media across sections; avoid large inline base64 payloads',
+      'motion respects prefers-reduced-motion; avoid unbounded continuous animation on content',
+      'keep decorative effects (blur/filters) cheap; deliver responsive image sizes',
+    ],
     sections,
     reasons: [`connected ${sections.length} sections across composition/content/visual/media with ${dominant} dominant moment(s)`].slice(0, MAX_LIST),
     derivationBasis: uniq([
@@ -495,6 +512,8 @@ export function analyzeExperienceQuality(
     interactionCheck(byId, factById, push);
     // ── Phase 4 — accessibility & keyboard usability. ──
     accessibilityCheck(byId, factById, push);
+    // ── Phase 5 — performance, media delivery & runtime resilience. ──
+    performanceCheck(facts, byId, factById, push);
 
     const coherenceFindingCount = issues.filter((i) => i.subPolicy === 'coherence').length;
     const responsiveFindingCount = issues.filter((i) => i.subPolicy === 'responsive').length;
@@ -657,6 +676,64 @@ function accessibilityCheck(
           repairInstruction: capEv('Use a <button> with aria-expanded/aria-controls for the disclosure/menu toggle and an operable close.') });
       }
     }
+  }
+}
+
+/** Phase 5 — performance / media delivery. Reuses #559 media decisions (no new sourcing). Blocks only
+ *  strong, high-impact systemic waste; unprovable runtime cost warns/fails open. */
+function performanceCheck(
+  facts: SectionFacts[],
+  byId: Map<string, ExperienceSectionObligation>,
+  factById: Map<string, SectionFacts>,
+  push: (x: ExperienceIssue) => void,
+): void {
+  const imgOf = (r: string): string[] => r.match(/<img\b[^>]*>/gi) || [];
+  const allImgs = facts.flatMap((f) => imgOf(f.render));
+  const lazyImgs = allImgs.filter((t) => /loading=["']lazy["']/i.test(t));
+  const sectionsWithImg = facts.filter((f) => imgOf(f.render).length > 0);
+  // 1. All images eager (no lazy anywhere) on an image-heavy page (blocker).
+  if (allImgs.length >= 6 && sectionsWithImg.length >= COLLAPSE_MIN && lazyImgs.length === 0) {
+    push({ code: 'experience-all-eager', severity: 'major', subPolicy: 'performance', label: 'no lazy-loading', files: uniq(sectionsWithImg.map((f) => f.path)).slice(0, MAX_ISSUE_FILES),
+      evidence: capEv(`${allImgs.length} images across ${sectionsWithImg.length} sections load eagerly with zero lazy-loading — below-fold media is downloaded up front, hurting load performance`),
+      repairInstruction: capEv('Lazy-load below-fold images (loading="lazy") and keep only the hero/LCP image eager.') });
+  }
+  // 2. Hero/LCP image lazy-loaded (blocker).
+  for (const [id, ob] of byId) {
+    if (ob.performance?.mediaPriority !== 'hero') continue;
+    const f = factById.get(id);
+    if (f && !f.hasDynamic && imgOf(f.render).some((t) => /loading=["']lazy["']/i.test(t))) {
+      push({ code: 'experience-hero-lazy', severity: 'major', subPolicy: 'performance', label: 'hero image lazy-loaded', files: [f.path],
+        evidence: capEv(`the hero section "${id}" lazy-loads its image — the LCP image should load eagerly (with priority), not be deferred`),
+        repairInstruction: capEv('Load the hero/LCP image eagerly (remove loading="lazy"; add fetchpriority="high").') });
+      break;
+    }
+  }
+  // 3. Unbounded continuous animation across several elements with NO reduced-motion anywhere (blocker).
+  const reducedMotion = facts.some((f) => /motion-reduce:|prefers-reduced-motion/i.test(f.clean));
+  const infinite = facts.reduce((acc, f) => acc + ((f.render.match(/\banimate-(?:spin|bounce|ping)\b/g) || []).length) + ((f.clean.match(/animation:[^;]*\binfinite\b/gi) || []).length), 0);
+  if (infinite >= COLLAPSE_MIN && !reducedMotion) {
+    push({ code: 'experience-unbounded-motion', severity: 'major', subPolicy: 'performance', label: 'unbounded motion, no reduced-motion', files: [],
+      evidence: capEv(`${infinite} continuous/infinite animations run with no prefers-reduced-motion handling anywhere — this wastes runtime and ignores motion sensitivity`),
+      repairInstruction: capEv('Gate continuous animations behind prefers-reduced-motion (motion-reduce:) and avoid unbounded animation on content.') });
+  }
+  // 4. Giant or repeated inline base64 payloads (blocker).
+  const base64 = facts.flatMap((f) => f.clean.match(/data:(?:image|font)\/[^;]{1,20};base64,[A-Za-z0-9+/=]{2000,}/gi) || []);
+  const huge = base64.filter((b) => b.length >= 40000);
+  const repeated = base64.filter((b) => b.length >= 8000);
+  const repeatedDup = new Set(repeated).size < repeated.length && repeated.length >= 3;
+  if (huge.length >= 1 || repeatedDup) {
+    push({ code: 'experience-huge-inline', severity: 'major', subPolicy: 'performance', label: 'huge/duplicated inline media', files: [],
+      evidence: capEv(`${huge.length ? `a ${Math.round((huge[0]?.length || 0) / 1000)}KB inline base64 payload is embedded` : `${repeated.length} large inline base64 payloads (some duplicated) are embedded`} — inline media bloats the bundle and blocks parsing`),
+      repairInstruction: capEv('Serve media as real image files (reuse the sourced assets) instead of embedding large/duplicated base64 inline.') });
+  }
+  // 5. Duplicate heavy media reused across many sections (warning — often intentional, e.g. logos).
+  const srcCount = new Map<string, number>();
+  for (const t of allImgs) { const m = /src=["']([^"']+)["']/i.exec(t); if (m && m[1] && !/logo|icon|favicon/i.test(m[1])) srcCount.set(m[1], (srcCount.get(m[1]) || 0) + 1); }
+  const dup = [...srcCount.entries()].filter(([, c]) => c >= 3);
+  if (dup.length) {
+    push({ code: 'experience-perf-warn', severity: 'minor', subPolicy: 'performance', label: 'repeated large media', files: [],
+      evidence: capEv(`${dup.length} image source(s) are reused in 3+ places — verify this is intentional (a shared asset), not duplicated heavy media`),
+      repairInstruction: capEv('Reuse a single optimized asset reference; avoid loading the same heavy image many times unnecessarily.') });
   }
 }
 
