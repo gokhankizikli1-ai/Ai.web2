@@ -187,6 +187,22 @@ export function deriveExperienceQualityContract(input: ExperienceQualityInput): 
         ...(ctaRole === 'primary' ? ['the primary CTA must carry the strongest interactive emphasis in this section'] : []),
         ...(mediaRole === 'anchor' ? ['imagery serves this section’s message, not generic decoration'] : []),
       ]).slice(0, MAX_OBLIGATIONS),
+      // Phase 2 — responsive obligations, derived from the same authoritative signals.
+      responsive: {
+        stackOrder: clip(focal === 'media' ? 'headline → media → CTA' : `${focal} → supporting → ${ctaRole !== 'none' ? 'CTA' : 'next'}`, 70),
+        criticalAdjacency: ctaRole !== 'none' ? 'keep the CTA with its context' : focal === 'controls' ? 'keep controls with their output' : 'keep the heading with its supporting copy',
+        overflowPolicy: 'wrap long headings; never clip required copy; card strips scroll accessibly',
+        mediaAspectRole: mediaRole === 'none' ? 'n/a' : 'reserve aspect ratio; crop keeps the subject',
+        overlayReadability: (mediaRole === 'background' || mediaRole === 'anchor') ? 'text over media keeps a scrim/protected panel at every breakpoint' : 'n/a',
+        ctaPreserved: ctaRole !== 'none',
+        controlPreserved: (s.interactionHints || []).length > 0,
+        obligations: uniq([
+          'multi-column layouts collapse to one readable column on mobile',
+          ...(ctaRole === 'primary' ? ['keep the primary CTA visible and reachable (full-width) on mobile'] : []),
+          ...(mediaRole !== 'none' ? ['reserve media aspect ratio to prevent layout shift'] : []),
+          ...(contentLayoutFit === 'tight' ? ['let dense content wrap; do not clip it in a fixed-height box'] : []),
+        ]).slice(0, MAX_OBLIGATIONS),
+      },
       ambiguityNote: '',
     };
   });
@@ -194,9 +210,15 @@ export function deriveExperienceQualityContract(input: ExperienceQualityInput): 
   const dominant = sections.filter((s) => s.hierarchyRelation === 'dominant moment').length;
   return {
     version: 'experience-quality-v1', status: 'derived',
-    subPolicies: ['coherence'],
+    subPolicies: ['coherence', 'responsive'],
     rhythmObligation: clip(comp?.globalRhythm || content?.positioningThesis || 'one coherent experience: vary section weight and density, keep 1–2 dominant moments, and make every section point its content, media, hierarchy and CTA the same way', MAX_TEXT),
-    globalResponsive: [],
+    globalResponsive: [
+      'every multi-column layout collapses to one readable column on mobile',
+      'preserve semantic reading/tab order at all breakpoints',
+      'no required copy clipped; long headings wrap instead of overflowing',
+      'the primary CTA and any required control/output stay visible and reachable on mobile',
+      'reserve media aspect ratio to prevent layout shift; text over media keeps its scrim',
+    ],
     globalAccessibility: [],
     globalPerformance: [],
     sections,
@@ -397,6 +419,7 @@ export function analyzeExperienceQuality(
     const units = collectSectionUnits(list, contract.sections.map((s) => s.id));
     const facts = units.slice(0, MAX_SECTIONS).map((u) => factsFor(u.id, u.path, u.content));
     const factById = new Map(facts.map((f) => [f.id, f]));
+    const byId = new Map(contract.sections.map((s) => [s.id, s]));
     let ambiguous = 0;
     for (const f of facts) if (f.hasDynamic || f.hasChildComponent) ambiguous += 1;
 
@@ -412,6 +435,8 @@ export function analyzeExperienceQuality(
         repairInstruction: capEv('Give dense/proof sections a layout with room (columns/structure) matching their content; do not cram them into a minimal centered block.') });
     }
     coherenceRhythmCheck(contract, facts, push);
+    // ── Phase 2 — responsive layout & content-fit. ──
+    responsiveCheck(facts, byId, factById, push);
 
     const coherenceFindingCount = issues.filter((i) => i.subPolicy === 'coherence').length;
     const responsiveFindingCount = issues.filter((i) => i.subPolicy === 'responsive').length;
@@ -440,6 +465,54 @@ function coherenceRhythmCheck(contract: ExperienceQualityContract, facts: Sectio
       repairInstruction: capEv('Vary section structure/weight so the page has rhythm and 1–2 dominant moments, not one repeated centered column.') });
   }
   void contract;
+}
+
+/** Phase 2 — responsive: block only a SYSTEMIC desktop-only grid (unique to this phase; #561/#562 do
+ *  not own it). Isolated cases, clipping and mobile-CTA risks are warnings. Ambiguity fails open. */
+function responsiveCheck(
+  facts: SectionFacts[],
+  byId: Map<string, ExperienceSectionObligation>,
+  factById: Map<string, SectionFacts>,
+  push: (x: ExperienceIssue) => void,
+): void {
+  // A multi-column grid that provably never collapses (no responsive grid variant, no single-col
+  // fallback, no flex-col, no flex-wrap) is desktop-only. Dynamic/child regions fail open.
+  const desktopOnly = facts.filter((f) => {
+    if (f.hasDynamic || f.hasChildComponent) return false;
+    const r = f.render;
+    if (!/\bgrid-cols-[2-9]\b/.test(r)) return false;
+    const collapses = /(?:sm|md|lg|xl):grid-cols/.test(r) || /\bgrid-cols-1\b/.test(r)
+      || /\bflex-col\b/.test(r) || /(?:sm|md|lg|xl):flex-col/.test(r) || /\bflex-wrap\b/.test(r);
+    return !collapses;
+  });
+  if (desktopOnly.length >= COLLAPSE_MIN && desktopOnly.length >= Math.ceil(facts.length * 0.6)) {
+    push({ code: 'experience-desktop-only', severity: 'major', subPolicy: 'responsive', label: 'desktop-only grids', files: uniq(desktopOnly.map((f) => f.path)).slice(0, MAX_ISSUE_FILES),
+      evidence: capEv(`${desktopOnly.length} of ${facts.length} sections use a fixed multi-column grid (grid-cols-N) with no responsive collapse, single-column fallback, flex-col or wrap — the layout is desktop-only and breaks on mobile`),
+      repairInstruction: capEv('Make multi-column grids collapse on mobile (e.g. grid-cols-1 md:grid-cols-N) so each section stays readable on narrow screens.') });
+  } else if (desktopOnly.length >= 1) {
+    push({ code: 'experience-responsive-warn', severity: 'minor', subPolicy: 'responsive', label: 'possible desktop-only grid', files: uniq(desktopOnly.map((f) => f.path)).slice(0, MAX_ISSUE_FILES),
+      evidence: capEv(`${desktopOnly.length} section(s) use a multi-column grid with no visible responsive collapse — verify they stack on mobile`),
+      repairInstruction: capEv('Add a responsive collapse (grid-cols-1 md:grid-cols-N) so the grid stacks on mobile.') });
+  }
+  // Harmful clipping of substantial copy in a small fixed-height overflow box (warning).
+  const clipped = facts.filter((f) => !f.hasDynamic && f.words >= 20 && /\boverflow-hidden\b/.test(f.render)
+    && /\b(?:max-)?h-\[\d{2,3}px\]/.test(f.render) && !/line-clamp/.test(f.render));
+  if (clipped.length) {
+    push({ code: 'experience-harmful-clip', severity: 'minor', subPolicy: 'responsive', label: 'possible copy clipping', files: uniq(clipped.map((f) => f.path)).slice(0, MAX_ISSUE_FILES),
+      evidence: capEv(`${clipped.length} section(s) place substantial copy in a small fixed-height overflow-hidden box with no line-clamp — verify text is not clipped on narrow screens`),
+      repairInstruction: capEv('Avoid fixed heights that clip copy; let text wrap or use an intentional line-clamp with a full view.') });
+  }
+  // Primary-CTA section hidden at the base breakpoint with no responsive reveal (warning).
+  for (const [id, ob] of byId) {
+    if (ob.ctaRole !== 'primary') continue;
+    const f = factById.get(id);
+    if (f && !f.hasDynamic && /\bhidden\b/.test(f.render) && !/(?:sm|md|lg|xl):(?:block|flex|inline|inline-block|grid)/.test(f.render)) {
+      push({ code: 'experience-cta-hidden-mobile', severity: 'minor', subPolicy: 'responsive', label: 'primary CTA may be hidden', files: [f.path],
+        evidence: capEv(`the primary-CTA section "${id}" uses a base "hidden" utility with no responsive reveal — verify the CTA is visible on mobile`),
+        repairInstruction: capEv('Do not hide the primary CTA at the base breakpoint; keep it visible on mobile.') });
+      break;
+    }
+  }
 }
 
 export function hasBlockingExperienceFindings(result: ExperienceAcceptanceResult | undefined): boolean {
