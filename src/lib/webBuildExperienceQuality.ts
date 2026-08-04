@@ -436,16 +436,16 @@ function factsFor(id: string, path: string, content: string): SectionFacts {
  * ──────────────────────────────────────────────────────────────────────────── */
 export type ExperienceIssueCode =
   // Phase 1 — coherence
-  | 'experience-focal-conflict' | 'experience-flat-rhythm' | 'experience-content-layout-tight'
+  | 'experience-flat-rhythm' | 'experience-content-layout-tight'
   // Phase 2 — responsive
-  | 'experience-desktop-only' | 'experience-mobile-order-conflict' | 'experience-harmful-clip'
-  | 'experience-text-over-media-unsafe' | 'experience-cta-hidden-mobile' | 'experience-responsive-warn'
+  | 'experience-desktop-only' | 'experience-harmful-clip'
+  | 'experience-cta-hidden-mobile' | 'experience-responsive-warn'
   // Phase 3 — interaction
-  | 'experience-interaction-no-feedback' | 'experience-interaction-output-uncorrelated' | 'experience-interaction-warn'
+  | 'experience-interaction-no-feedback' | 'experience-interaction-warn'
   // Phase 4 — accessibility
   | 'experience-clickable-div' | 'experience-input-unlabeled' | 'experience-menu-no-control' | 'experience-a11y-warn'
   // Phase 5 — performance
-  | 'experience-all-eager' | 'experience-hero-lazy' | 'experience-duplicate-heavy-media'
+  | 'experience-all-eager' | 'experience-hero-lazy'
   | 'experience-unbounded-motion' | 'experience-huge-inline' | 'experience-perf-warn';
 
 export interface ExperienceIssue {
@@ -607,7 +607,9 @@ function interactionCheck(
     const f = factById.get(id);
     if (!f || f.hasDynamic || f.hasChildComponent) continue;   // state may live in a child/prop → fail open
     const region = f.clean;
-    const hasHandler = /\bon(?:Click|Change|Submit|Input|KeyDown|Toggle)\s*=/.test(region);
+    // Handlers are JSX attributes → detect via render evidence (excludes strings/comments), so a string
+    // literal containing "onClick=" can never masquerade as a real handler.
+    const hasHandler = /\bon(?:Click|Change|Submit|Input|KeyDown|Toggle)\s*=/.test(f.render);
     if (!hasHandler) continue;                                   // no local interactivity to judge
     const stateVars: string[] = [];
     const sre = /const\s*\[\s*(\w+)\s*,\s*set\w+\s*\]\s*=\s*(?:React\.)?useState/g;
@@ -640,7 +642,9 @@ function accessibilityCheck(
   for (const [id, ob] of byId) {
     const f = factById.get(id);
     if (!f || f.hasDynamic || f.hasChildComponent) continue;   // fail open on ambiguous structure
-    const r = f.clean;
+    // JSX-attribute signals (controls, labels, roles) live in tags → use render evidence so strings/
+    // comments can never satisfy or trip these checks. (useState lives in JS → read from f.clean below.)
+    const r = f.render;
     // 1. Interactive control implemented ONLY as a non-focusable clickable div/span (no real button/
     //    link, no role=button, no tabIndex, no key handler) → not keyboard-operable.
     const divClick = /<(?:div|span)\b[^>]{0,300}\bon(?:Click|MouseDown)\s*=/.test(r);
@@ -668,7 +672,7 @@ function accessibilityCheck(
     }
     // 3. Mobile menu / disclosure that toggles but exposes no disclosure state / operable control (warning).
     if (ob.interaction && (ob.interaction.kind === 'navigation' || ob.interaction.kind === 'disclosure')) {
-      const toggles = /\bon(?:Click|Toggle)\s*=/.test(r) || /useState/.test(r);
+      const toggles = /\bon(?:Click|Toggle)\s*=/.test(r) || /useState/.test(f.clean);
       const exposes = /aria-(?:expanded|controls|hidden)=/.test(r) || /<button\b/.test(r);
       if (toggles && !exposes) {
         push({ code: 'experience-menu-no-control', severity: 'minor', subPolicy: 'accessibility', label: 'disclosure state not exposed', files: [f.path],
@@ -742,17 +746,13 @@ export function hasBlockingExperienceFindings(result: ExperienceAcceptanceResult
 }
 
 const EXPERIENCE_CATEGORY: Record<ExperienceIssueCode, FrontendBuilderReviewCategory> = {
-  'experience-focal-conflict': 'visual-hierarchy',
   'experience-flat-rhythm': 'layout-rhythm',
   'experience-content-layout-tight': 'layout-rhythm',
   'experience-desktop-only': 'responsive-intent',
-  'experience-mobile-order-conflict': 'responsive-intent',
   'experience-harmful-clip': 'responsive-intent',
-  'experience-text-over-media-unsafe': 'accessibility-intent',
   'experience-cta-hidden-mobile': 'responsive-intent',
   'experience-responsive-warn': 'responsive-intent',
   'experience-interaction-no-feedback': 'motion-and-interaction',
-  'experience-interaction-output-uncorrelated': 'motion-and-interaction',
   'experience-interaction-warn': 'motion-and-interaction',
   'experience-clickable-div': 'accessibility-intent',
   'experience-input-unlabeled': 'accessibility-intent',
@@ -760,7 +760,6 @@ const EXPERIENCE_CATEGORY: Record<ExperienceIssueCode, FrontendBuilderReviewCate
   'experience-a11y-warn': 'accessibility-intent',
   'experience-all-eager': 'maintainability',
   'experience-hero-lazy': 'maintainability',
-  'experience-duplicate-heavy-media': 'maintainability',
   'experience-unbounded-motion': 'motion-and-interaction',
   'experience-huge-inline': 'maintainability',
   'experience-perf-warn': 'maintainability',
