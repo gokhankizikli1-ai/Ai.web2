@@ -788,6 +788,16 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
         if (fac.visualStrategyPhotographyMode) ownerRows.push(['visualStrategyPhotography', `${fac.visualStrategyPhotographyMode} · photoSlots ${fac.visualStrategyPhotoSlotCount ?? 0} · deterministicFallback ${String(!!fac.deterministicCoverageFallbackUsed)}`]);
         if (fac.imageCoverageReasonCodes?.length) ownerRows.push(['imageCoverageReasons', fac.imageCoverageReasonCodes.slice(0, 8).join(', ')]);
       }
+      // Phase (research-grounded direction) — bounded research/sector-direction diagnostics.
+      const rd = fac.researchDirection;
+      if (rd) {
+        ownerRows.push(['researchEvidence', `${rd.researchEvidenceVersion} · ${rd.researchSufficiency} · sector ${rd.sector}${rd.subsector ? `/${rd.subsector}` : ''}`]);
+        ownerRows.push(['researchSources', `validated ${rd.validatedSourceCount} · discarded ${rd.discardedSourceCount} · conflicting ${rd.conflictingFindingCount} · angles ${rd.coveredAngleCount}`]);
+        ownerRows.push(['researchFindings', `source-backed ${rd.sourceBackedFindingCount} · inferred ${rd.inferredFindingCount} · user-provided ${rd.userProvidedFindingCount}`]);
+        ownerRows.push(['researchDirectionPatterns', `required ${rd.requiredPatternCount} · recommended ${rd.recommendedPatternCount} · forbidden ${rd.forbiddenModuleCount} · contract ${rd.contractCharCount} chars`]);
+        if (rd.consumedBy?.length) ownerRows.push(['researchConsumedBy', rd.consumedBy.slice(0, 6).join(', ')]);
+        if (rd.researchGroundingStatus) ownerRows.push(['researchGroundingStatus', `${rd.researchGroundingStatus}${rd.researchGroundingIssueCodes?.length ? ` · ${rd.researchGroundingIssueCodes.slice(0, 6).join(', ')}` : ''}`]);
+      }
     }
 
     // Phase 13D — model-native REVISION diagnostics (owner-only). Present only on an

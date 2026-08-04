@@ -27,6 +27,7 @@ import { hasAffirmedIntent } from '@/lib/webBuildProductIntent';
 import type { WebBuildFile } from '@/lib/webBuildPayload';
 import type { CompactSourceContext } from '@/lib/webBuildQualityContext';
 import { renderBindingRequirementsBlock } from '@/lib/webBuildBindingRequirements';
+import { renderResearchDirectionBlock } from '@/lib/webBuildResearchDirection';
 // PR #510 — the Experience Architecture enforcement block (a leaf; pure; returns "" when no
 // plan is attached, so the frontend_builder request is unchanged with the flag off).
 import { buildExperienceEnforcementBlock } from '@/lib/webBuildExperienceArchitecture';
@@ -2056,6 +2057,11 @@ export function buildFrontendBuilderRequest(spec: FrontendBuildSpecification): s
     'typography exactly as before. Keep the provider/photographer fields intact for attribution.',
     '',
   ] : [];
+  // Phase (research-grounded direction) — one compact block that names the researched business
+  // identity, audience, conversion model, visual thesis, required/forbidden patterns and evidence
+  // status so the coding model builds a sector-true, non-template site. Absent ⇒ unchanged request.
+  const researchDirectionBlock = renderResearchDirectionBlock(spec.researchDirection);
+
   // Phase (image coverage) — MANDATORY semantic coverage for required/image-led sites. Names each
   // required image purpose + approved slot so the model renders a real, relevant <img> in its
   // intended section (never hides the URL, reuses one photo, or substitutes a gradient/logo).
@@ -2092,6 +2098,7 @@ export function buildFrontendBuilderRequest(spec: FrontendBuildSpecification): s
     '',
     ...contractLines,
     ...experienceBlock,
+    ...researchDirectionBlock,
     ...imageBlock,
     ...coverageBlock,
     ...bindingLines,

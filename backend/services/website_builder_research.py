@@ -127,17 +127,22 @@ def _extract_idea(message: str) -> str:
 # Each angle is a neutral research DIMENSION applied to the user's own idea, so
 # any website concept gets category + audience + conversion + competitor +
 # design + trust + model + atmosphere + structure coverage.
+# Angles seek SECTOR INTELLIGENCE (customer decision criteria, trust barriers, enquiry/booking
+# behavior, expected information architecture, terminology, imagery subjects, sector pitfalls) —
+# NOT generic "best website design" inspiration. Generic web-design queries never dominate unless
+# the idea itself is about web design. The first 5 (used for long, already-specific ideas) are the
+# highest-signal sector angles. Every query stays `{core}`-derived and within the existing budget.
 _ANGLES: list[tuple[str, str]] = [
     ("category",     "{core}"),
-    ("audience",     "{core} target audience needs and expectations"),
-    ("conversion",   "{core} landing page conversion best practices"),
-    ("competitors",  "{core} competitors and product examples"),
-    ("design",       "{core} website design inspiration"),
-    ("trust",        "{core} trust signals customers look for"),
-    ("model",        "{core} pricing membership booking or signup model"),
-    ("atmosphere",   "{core} brand visual style and mood"),
-    ("structure",    "{core} website sections and page structure"),
-    ("content",      "{core} content and messaging examples"),
+    ("audience",     "{core} customer decision criteria and what buyers evaluate"),
+    ("conversion",   "{core} how customers enquire book or purchase"),
+    ("trust",        "{core} trust barriers and proof customers look for"),
+    ("structure",    "{core} what pages and sections customers expect"),
+    ("content",      "{core} sector terminology and content conventions"),
+    ("visual",       "{core} imagery subjects and visual conventions"),
+    ("model",        "{core} business model pricing booking or enquiry"),
+    ("competitors",  "{core} established providers and how they present"),
+    ("pitfalls",     "{core} common low-quality website mistakes to avoid"),
 ]
 
 
@@ -402,7 +407,22 @@ async def run_web_build_research(*, user_id: Optional[str], idea: str) -> tuple[
         err = r.get("error") or r.get("reason")
         if err:
             errors.append(str(err)[:120])
-        for c in (r.get("citations") or []):
+        # build_web_search_context_block returns structured sources under "sources"
+        # (url/title/domain/publishedAt); some paths/tests use "citations". Read BOTH so real,
+        # license-clear source metadata actually reaches synthesis. Historically only "citations"
+        # was read — a key this path never sets — so every live query yielded zero candidates and
+        # the whole research pass silently degraded to no-sources (inference-only). The per-query
+        # provider "answer" seeds the FIRST source's snippet so ranking + the synthesis block have
+        # grounded content (never fabricated — it is the provider's own answer for THIS query).
+        raw_sources = r.get("sources") or r.get("citations") or []
+        answer = (r.get("answer") or "").strip()
+        answer_seeded = False
+        for c in raw_sources:
+            if not isinstance(c, dict):
+                continue
+            if answer and not answer_seeded and not (c.get("snippet") or c.get("content")):
+                c = {**c, "answer": answer}
+                answer_seeded = True
             nc = _norm_citation(c, angle)
             if nc:
                 cands.append(nc)
