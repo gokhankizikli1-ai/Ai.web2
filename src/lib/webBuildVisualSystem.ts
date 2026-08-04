@@ -597,6 +597,21 @@ function chromeSignature(uc: string): string {
   return `r:${radius}|s:${surface}|b:${border}|sh:${shadow}`;
 }
 
+/** Reduce comment-free source to RENDER-RELEVANT evidence only — JSX opening/closing tags (with their
+ *  className/style attributes and structural tag names) plus class/style attribute values — so unused
+ *  string constants, object metadata, console/debug strings and other non-rendered text cannot
+ *  register fake token/semantic/arbitrary evidence. Bounded and deterministic; a token/var/class only
+ *  counts when it appears inside actual rendered markup. Inline style objects (style={{…}}) are kept
+ *  because they carry real var(--token) and colour values used by rendered output. Fails open. */
+function renderEvidence(cleanSrc: string): string {
+  try {
+    const tags = cleanSrc.match(/<\/?[A-Za-z][^>]{0,600}>/g) || [];
+    const classVals = cleanSrc.match(/\b(?:class|className)\s*=\s*(?:"[^"]*"|'[^']*'|\{[^}]{0,600}\})/g) || [];
+    const styleVals = cleanSrc.match(/\bstyle\s*=\s*(?:\{\{[^}]{0,600}\}\}|"[^"]*"|'[^']*')/g) || [];
+    return tags.concat(classVals, styleVals).join('\n');
+  } catch { return cleanSrc || ''; }
+}
+
 export function analyzeVisualSystem(
   files: FrontendGeneratedFile[] | undefined,
   contract: VisualSystemContract | undefined,
@@ -610,23 +625,29 @@ export function analyzeVisualSystem(
 
     const codeFiles = list.filter((f) => isCode(f.path));
     const styleFiles = list.filter((f) => isStyle(f.path));
-    // Comment/example-free EXECUTABLE source only (defect 2): comments and doc examples can never
-    // register fake CSS-variable definitions/usages, semantic classes or arbitrary values.
+    // Comment/example-free source (defect 2). `codeSrc` is the whole comment-free code (used only for
+    // import parsing); `codeRender` is reduced to RENDER-RELEVANT evidence (JSX tags + class/style
+    // values), so unused string constants, object metadata and console/debug strings can never register
+    // fake token/semantic/arbitrary evidence. CSS files are executable declarations kept whole.
     const codeSrc = codeFiles.map((f) => stripComments((f.content || '').slice(0, MAX_FILE_SCAN), false)).join('\n');
+    const codeRender = renderEvidence(codeSrc);
     const styleSrc = styleFiles.map((f) => stripComments((f.content || '').slice(0, MAX_FILE_SCAN), true)).join('\n');
 
-    // ── Token SOURCE is DECLARED/IMPORTED vs actually CONSUMED — never conflated (defect 1). ──
-    const cssVarDefs = (styleSrc.match(/--[a-z][\w-]*\s*:/gi) || []).length + (codeSrc.match(/--[a-z][\w-]*\s*:/gi) || []).length;
-    const varUsages = (codeSrc.match(/var\(--[a-z][\w-]*/gi) || []).length + (styleSrc.match(/var\(--[a-z][\w-]*/gi) || []).length;
-    const semanticTailwind = (codeSrc.match(/(?:bg|text|border|ring|from|via|to|fill|stroke|divide|placeholder|caret|outline|decoration)-(?:primary|secondary|background|foreground|surface|card|muted|accent|border|ring|destructive|popover|input|brand)(?:-foreground)?\b/g) || []).length;
+    // ── Token SOURCE is DECLARED/IMPORTED vs actually CONSUMED — never conflated (defect 1). All
+    //    definition/usage/semantic evidence is drawn from executable CSS + RENDERED code only. ──
+    const cssVarDefs = (styleSrc.match(/--[a-z][\w-]*\s*:/gi) || []).length + (codeRender.match(/--[a-z][\w-]*\s*:/gi) || []).length;
+    const varUsages = (codeRender.match(/var\(--[a-z][\w-]*/gi) || []).length + (styleSrc.match(/var\(--[a-z][\w-]*/gi) || []).length;
+    const semanticTailwind = (codeRender.match(/(?:bg|text|border|ring|from|via|to|fill|stroke|divide|placeholder|caret|outline|decoration)-(?:primary|secondary|background|foreground|surface|card|muted|accent|border|ring|destructive|popover|input|brand)(?:-foreground)?\b/g) || []).length;
     // A theme/tokens/design-system module being IMPORTED or merely EXISTING proves declaration only.
     const themeModuleImported = /import\b[^;]*\bfrom\s+['"][^'"]*(?:designSystem|\/theme|\/tokens|\/design-system|\/styles\/theme)['"]/i.test(codeSrc);
     const themeModuleDeclared = themeModuleImported
       || list.some((f) => /(?:designSystem|theme|tokens)\.(?:t|j)sx?$/i.test(f.path)
         && /export\s+(?:const|default|function|let|var)|--[a-z]/.test(stripComments(f.content || '', isStyle(f.path))));
-    // CONSUMPTION must be PROVEN from rendered code — declaration/import/unused constants never suffice.
+    // CONSUMPTION must be PROVEN from RENDERED output — an imported identifier counts only when it
+    // appears inside rendered JSX/className/style (codeRender excludes imports, console/debug, metadata
+    // and unused helpers/objects), or via a stylesheet value. Import-only/debug-only never suffice.
     const themeIds = importedThemeIdentifiers(codeSrc);
-    const moduleTokensConsumed = themeIds.some((id) => (codeSrc.match(new RegExp(`\\b${id}\\b`, 'g')) || []).length >= 2);
+    const moduleTokensConsumed = themeIds.some((id) => new RegExp(`\\b${id}\\b`).test(codeRender));
     const cssVarsConsumed = cssVarDefs >= 1 && varUsages >= 3;
     const semanticConsumed = semanticTailwind >= 8;
     const tokenSource: VisualSystemAcceptanceResult['tokenSource'] = themeModuleDeclared ? 'theme-module'
@@ -635,18 +656,19 @@ export function analyzeVisualSystem(
     // themeModule existence/import ALONE never sets this — only proven consumption does.
     const tokenConsumed = cssVarsConsumed || moduleTokensConsumed || semanticConsumed;
 
-    // ── Section-scoped units (never whole-project token composition). Analyzed comment-free. ──
+    // ── Section-scoped units (never whole-project token composition). Analyzed on RENDER-relevant,
+    //    comment-free evidence, so unused strings/metadata inside a component region cannot pollute. ──
     const units = collectSectionUnits(list, contract.sectionIds);
     const fam = contract.sectionFamilies || {};
-    const cleanUnits = units.map((u) => ({ id: u.id, path: u.path, clean: stripComments(u.content, false) }));
+    const renderUnits = units.map((u) => ({ id: u.id, path: u.path, render: renderEvidence(stripComments(u.content, false)) }));
     const arbitrarySet = new Set<string>();
     let arbSectionCount = 0;
     // Repeated card chrome is grouped by a NORMALIZED COMPOSITE signature (radius+surface+border+shadow),
     // so shared radius alone — or a coherent card system — never groups as identical collapse.
     const sigGroups = new Map<string, { ids: string[]; files: string[] }>();
     let gradientUnits = 0, glassUnits = 0, pillTotal = 0, iconCircle = 0;
-    for (const u of cleanUnits) {
-      const uc = u.clean;
+    for (const u of renderUnits) {
+      const uc = u.render;
       const before = arbitrarySet.size;
       collectArbitrary(uc, arbitrarySet);
       if (arbitrarySet.size > before) arbSectionCount += 1;
@@ -662,17 +684,17 @@ export function analyzeVisualSystem(
       pillTotal += (uc.match(/rounded-full/g) || []).length;
       iconCircle += (uc.match(/rounded-full[^"'`>]{0,40}(?:w-1[0-6]|h-1[0-6]|p-[234])\b/g) || []).length;
     }
-    // Largest identical-composite-chrome group (the collapse candidate).
-    let chromeRepeat = 0; let chromeSigKey = '';
-    for (const [s, g] of sigGroups) if (g.ids.length > chromeRepeat) { chromeRepeat = g.ids.length; chromeSigKey = s; }
-    const chromeGroup = sigGroups.get(chromeSigKey) || { ids: [], files: [] };
+    // Largest identical-composite-chrome group size (diagnostic only; the blocker below evaluates EVERY
+    // qualifying group, not just this one).
+    let chromeRepeat = 0;
+    for (const g of sigGroups.values()) if (g.ids.length > chromeRepeat) chromeRepeat = g.ids.length;
     const radiusShadowArbSet = new Set<string>();
     for (const k of arbitrarySet) if (k.startsWith('r:') || k.startsWith('s:')) radiusShadowArbSet.add(k);
     const radiusShadowArb = radiusShadowArbSet.size;
     const arbitraryValueCount = arbitrarySet.size;
 
-    // ── Global readability (works even if section correlation is thin). Comment-free. ──
-    const readSrc = cleanUnits.length >= 2 ? cleanUnits.map((u) => u.clean).join('\n') : codeSrc;
+    // ── Global readability (works even if section correlation is thin). Render-relevant, comment-free. ──
+    const readSrc = renderUnits.length >= 2 ? renderUnits.map((u) => u.render).join('\n') : codeRender;
     const transparentBody = (readSrc.match(/<(?:p|blockquote)\b[^>]*\b(?:opacity-(?:0|5|10|15|20)|text-transparent)\b[^>]*>/gi) || [])
       .filter((tag) => !/bg-clip-text/.test(tag)).length;
     const sameTokenTextBg = (readSrc.match(/<[a-zA-Z][^>]*\b(?:text-white\b[^>]*\bbg-white|text-black\b[^>]*\bbg-black)\b[^>]*>/gi) || []).length
@@ -701,23 +723,33 @@ export function analyzeVisualSystem(
     //    look different), and every sharing section's family is known. Shared radius, a coherent card
     //    system, one catalog grid, or legitimate card families (feature/catalog/comparison/gallery/proof)
     //    never trip it; ambiguous composition correlation fails open to a warning. ──
-    if (chromeRepeat >= COLLAPSE_MIN) {
-      const sharingIds = chromeGroup.ids;
-      const knownCount = sharingIds.filter((id) => !!fam[id]).length;
-      const familiesKnown = knownCount === sharingIds.length;
-      const nonCardIds = sharingIds.filter((id) => fam[id] && !CARD_JUSTIFIED_FAMILIES.has(fam[id]));
+    //    EVERY qualifying signature group is evaluated (not only the largest), so a real collapse group
+    //    is never missed behind a larger legitimate catalog-card group.
+    const chromeBlocking: Array<{ sig: string; files: string[]; nonCardIds: string[]; families: string[] }> = [];
+    const chromeAmbiguous: Array<{ sig: string; files: string[]; size: number }> = [];
+    for (const [sig, g] of sigGroups) {
+      if (g.ids.length < COLLAPSE_MIN) continue;
+      const familiesKnown = g.ids.every((id) => !!fam[id]);
+      const nonCardIds = g.ids.filter((id) => fam[id] && !CARD_JUSTIFIED_FAMILIES.has(fam[id]));
       const distinctNonCardFamilies = uniq(nonCardIds.map((id) => fam[id]));
-      const sigParts = chromeSigKey.split('|').join(' ');
       if (familiesKnown && nonCardIds.length >= COLLAPSE_MIN && distinctNonCardFamilies.length >= 2) {
-        push({ code: 'visual-system-chrome-collapse', severity: 'major', label: 'identical card chrome across distinct non-card roles', files: chromeGroup.files.slice(0, MAX_ISSUE_FILES),
-          evidence: capEv(`${nonCardIds.length} top-level sections (${nonCardIds.slice(0, 6).join(', ')}) assigned DISTINCT non-card composition families (${distinctNonCardFamilies.slice(0, 6).join(', ')}) all render the identical composite card-grid chrome [${sigParts}] — the repetition contradicts their assigned roles`),
-          repairInstruction: capEv('Give each non-card section (hero/story/steps/CTA/etc.) its assigned composition treatment; reserve the shared card grid for card families (feature/catalog/comparison/gallery/proof).') });
-      } else if (!familiesKnown && chromeRepeat >= Math.ceil(units.length * 0.6)) {
-        push({ code: 'visual-system-slop-pattern', severity: 'minor', label: 'possible repeated card chrome', files: chromeGroup.files.slice(0, MAX_ISSUE_FILES),
-          evidence: capEv(`${chromeRepeat} sections share an identical composite card-grid chrome [${sigParts}] but composition roles could not be correlated — verify this is a coherent card system, not template collapse`),
-          repairInstruction: capEv('Confirm each section’s composition role; vary the card chrome where the assigned roles differ.') });
+        chromeBlocking.push({ sig, files: g.files, nonCardIds, families: distinctNonCardFamilies });
+      } else if (!familiesKnown && g.ids.length >= Math.ceil(units.length * 0.6)) {
+        chromeAmbiguous.push({ sig, files: g.files, size: g.ids.length });
       }
-      // else: coherent shared card design among card-justified families → no finding.
+      // else: a coherent shared card design among card-justified families → no finding.
+    }
+    // Strongest group first; emit a bounded, de-duplicated (per distinct signature) finding per group.
+    chromeBlocking.sort((a, b) => b.nonCardIds.length - a.nonCardIds.length);
+    for (const grp of chromeBlocking.slice(0, 3)) {
+      push({ code: 'visual-system-chrome-collapse', severity: 'major', label: 'identical card chrome across distinct non-card roles', files: grp.files.slice(0, MAX_ISSUE_FILES),
+        evidence: capEv(`${grp.nonCardIds.length} top-level sections (${grp.nonCardIds.slice(0, 6).join(', ')}) assigned DISTINCT non-card composition families (${grp.families.slice(0, 6).join(', ')}) all render the identical composite card-grid chrome [${grp.sig.split('|').join(' ')}] — the repetition contradicts their assigned roles`),
+        repairInstruction: capEv('Give each non-card section (hero/story/steps/CTA/etc.) its assigned composition treatment; reserve the shared card grid for card families (feature/catalog/comparison/gallery/proof).') });
+    }
+    if (!chromeBlocking.length) for (const grp of chromeAmbiguous.slice(0, 1)) {
+      push({ code: 'visual-system-slop-pattern', severity: 'minor', label: 'possible repeated card chrome', files: grp.files.slice(0, MAX_ISSUE_FILES),
+        evidence: capEv(`${grp.size} sections share an identical composite card-grid chrome [${grp.sig.split('|').join(' ')}] but composition roles could not be correlated — verify this is a coherent card system, not template collapse`),
+        repairInstruction: capEv('Confirm each section’s composition role; vary the card chrome where the assigned roles differ.') });
     }
     // ── 4. Literal severe unreadability (blocker). ──
     if (transparentBody >= 2 || sameTokenTextBg >= 1) {
@@ -742,21 +774,21 @@ export function analyzeVisualSystem(
         evidence: capEv(`${iconCircle} icon-in-circle treatments across sections — verify this is not the repeated dominant motif`),
         repairInstruction: capEv('Vary the detail language; icon-in-circle should not be the page-wide dominant motif.') });
     }
-    const interactiveScore = (codeSrc.match(/<button\b|<input\b|<select\b|<textarea\b|onClick=/g) || []).length;
-    if (interactiveScore >= 8 && !/focus-visible:|focus:|:focus\b/.test(codeSrc)) {
+    const interactiveScore = (codeRender.match(/<button\b|<input\b|<select\b|<textarea\b|onClick=/g) || []).length;
+    if (interactiveScore >= 8 && !/focus-visible:|focus:/.test(codeRender) && !/:focus\b/.test(styleSrc)) {
       push({ code: 'visual-system-focus-missing', severity: 'minor', label: 'no focus intent', files: [],
         evidence: capEv('a highly interactive site shows no focus/focus-visible styling — verify keyboard focus is visible'),
         repairInstruction: capEv('Add a visible focus-visible ring to interactive elements.') });
     }
-    if (units.length >= MIN_UNITS && !/(?:sm|md|lg):(?:text-|p[xy]?-|gap-|leading-)/.test(codeSrc)) {
+    if (units.length >= MIN_UNITS && !/(?:sm|md|lg):(?:text-|p[xy]?-|gap-|leading-)/.test(codeRender)) {
       push({ code: 'visual-system-mobile-typography-risk', severity: 'minor', label: 'no responsive typography intent', files: [],
         evidence: capEv('no responsive typography/spacing prefixes detected — verify mobile does not shrink body text or crush spacing'),
         repairInstruction: capEv('Add responsive typography/spacing adjustments per the responsive obligations.') });
     }
     // Text-over-image without a scrim (per unit) → warning.
     let textOverImage = 0;
-    for (const u of cleanUnits) {
-      const uc = u.clean;
+    for (const u of renderUnits) {
+      const uc = u.render;
       const hasImg = /<img\b|<picture\b|background-image|data-korvix-image-slot/i.test(uc);
       const hasOverlayText = /absolute[^>]*(?:<h1|<h2|text-white)/i.test(uc) || (/<img\b/i.test(uc) && /absolute/.test(uc) && /text-white/.test(uc));
       const hasScrim = /bg-black\/|bg-gradient|from-black|backdrop-blur|scrim|overlay|bg-\[rgba/i.test(uc);
