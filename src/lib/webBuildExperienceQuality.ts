@@ -134,6 +134,40 @@ export interface ExperienceQualityInput {
   binding?: FrontendBindingRequirements;
 }
 
+function deriveInteraction(s: FrontendSpecSection, family: string): ExperienceSectionObligation['interaction'] {
+  const hay = `${(s.interactionHints || []).join(' ')} ${s.purpose || ''} ${s.name || ''}`.toLowerCase();
+  let kind: InteractionKind = 'none';
+  if (family === 'focused-tool' || /finder|calculat|configurat|quiz|estimat|planner|builder|\btool\b|selector/.test(hay)) kind = 'tool';
+  else if (/\bform\b|contact|newsletter|subscribe|sign ?up|booking|enquir|\bquote\b|register/.test(hay)) kind = 'form';
+  else if (/\btab\b|accordion|\bfaq\b|toggle|expand|disclosure|collaps/.test(hay)) kind = 'disclosure';
+  else if (/filter|sort|carousel|slider|gallery|lightbox|\bslide\b/.test(hay)) kind = 'gallery';
+  else if (/\bnav\b|menu|hamburger/.test(hay)) kind = 'navigation';
+  else if ((s.interactionHints || []).length > 0) kind = 'tool';
+  if (kind === 'none') return undefined;
+  const states: Record<InteractionKind, string[]> = {
+    none: [],
+    tool: ['default/empty state', 'selection state', 'a derived result that changes with input', 'a reset/change path'],
+    form: ['default state', 'visible submit feedback (frontend-only)', 'a clear success or error message', 'disabled/invalid handling'],
+    disclosure: ['expanded/collapsed state', 'a visible active/selected state', 'keyboard toggle'],
+    gallery: ['selected/active item state', 'clear prev/next affordance', 'an empty/no-results state'],
+    navigation: ['expanded/collapsed state', 'an operable close control', 'keyboard operation', 'responsive visibility'],
+  };
+  const output = kind === 'tool' ? 'the output sits with its controls and updates from them'
+    : kind === 'form' ? 'submission feedback appears at the form (no fabricated network/booking/payment)'
+    : 'the state change is visible in place';
+  return {
+    kind,
+    requiredStates: states[kind].slice(0, MAX_OBLIGATIONS),
+    outputRelationship: output,
+    obligations: uniq([
+      'controls are discoverable and keyboard-operable',
+      'every state change produces visible feedback',
+      output,
+      ...(kind === 'tool' || kind === 'gallery' ? ['handle the empty/no-selection state gracefully'] : []),
+    ]).slice(0, MAX_OBLIGATIONS),
+  };
+}
+
 function focalFor(role: string, family: string, mediaRole: string, ctaRole: string): ExperienceFocal {
   if (/provide-proof|reassure/.test(role)) return 'proof';
   if (/convert/.test(role) || ctaRole === 'primary') return 'cta';
@@ -203,6 +237,9 @@ export function deriveExperienceQualityContract(input: ExperienceQualityInput): 
           ...(contentLayoutFit === 'tight' ? ['let dense content wrap; do not clip it in a fixed-height box'] : []),
         ]).slice(0, MAX_OBLIGATIONS),
       },
+      // Phase 3 — interaction lifecycle, derived from binding/hints/family (states appropriate to the
+      // requested feature only; never fabricate backend/network/loading where frontend-only is asked).
+      interaction: deriveInteraction(s, family),
       ambiguityNote: '',
     };
   });
@@ -210,7 +247,7 @@ export function deriveExperienceQualityContract(input: ExperienceQualityInput): 
   const dominant = sections.filter((s) => s.hierarchyRelation === 'dominant moment').length;
   return {
     version: 'experience-quality-v1', status: 'derived',
-    subPolicies: ['coherence', 'responsive'],
+    subPolicies: ['coherence', 'responsive', 'interaction'],
     rhythmObligation: clip(comp?.globalRhythm || content?.positioningThesis || 'one coherent experience: vary section weight and density, keep 1–2 dominant moments, and make every section point its content, media, hierarchy and CTA the same way', MAX_TEXT),
     globalResponsive: [
       'every multi-column layout collapses to one readable column on mobile',
@@ -437,6 +474,8 @@ export function analyzeExperienceQuality(
     coherenceRhythmCheck(contract, facts, push);
     // ── Phase 2 — responsive layout & content-fit. ──
     responsiveCheck(facts, byId, factById, push);
+    // ── Phase 3 — interaction depth & state-feedback integrity. ──
+    interactionCheck(byId, factById, push);
 
     const coherenceFindingCount = issues.filter((i) => i.subPolicy === 'coherence').length;
     const responsiveFindingCount = issues.filter((i) => i.subPolicy === 'responsive').length;
@@ -511,6 +550,44 @@ function responsiveCheck(
         evidence: capEv(`the primary-CTA section "${id}" uses a base "hidden" utility with no responsive reveal — verify the CTA is visible on mobile`),
         repairInstruction: capEv('Do not hide the primary CTA at the base breakpoint; keep it visible on mobile.') });
       break;
+    }
+  }
+}
+
+/** Phase 3 — interaction: verify the STATE→FEEDBACK loop is wired in the rendered component. #558 owns
+ *  whether the control/outcome must exist; this owns whether declared state actually drives visible
+ *  feedback. Blocks a required tool/form whose own region declares handlers+state but reads none of that
+ *  state back into the JSX (a dead control). Everything else warns; dynamic/child regions fail open. */
+function interactionCheck(
+  byId: Map<string, ExperienceSectionObligation>,
+  factById: Map<string, SectionFacts>,
+  push: (x: ExperienceIssue) => void,
+): void {
+  for (const [id, ob] of byId) {
+    const kind = ob.interaction?.kind;
+    if (!kind || kind === 'none') continue;
+    const f = factById.get(id);
+    if (!f || f.hasDynamic || f.hasChildComponent) continue;   // state may live in a child/prop → fail open
+    const region = f.clean;
+    const hasHandler = /\bon(?:Click|Change|Submit|Input|KeyDown|Toggle)\s*=/.test(region);
+    if (!hasHandler) continue;                                   // no local interactivity to judge
+    const stateVars: string[] = [];
+    const sre = /const\s*\[\s*(\w+)\s*,\s*set\w+\s*\]\s*=\s*(?:React\.)?useState/g;
+    let m: RegExpExecArray | null; let guard = 0;
+    while ((m = sre.exec(region)) && guard < 40) { guard += 1; if (m[1]) stateVars.push(m[1]); }
+    // A state var is "read back" if it appears more than its single destructuring occurrence.
+    const anyStateRead = stateVars.some((v) => (region.match(new RegExp(`\\b${v}\\b`, 'g')) || []).length > 1);
+    // Conditional/feedback signals independent of named state (ternaries in JSX, aria-expanded, data-state).
+    const hasConditionalFeedback = /\?\s*['"`]?[\w-]/.test(f.render) || /aria-(?:expanded|selected|current|pressed)=/.test(region) || /data-state=/.test(region);
+    const noFeedback = (stateVars.length === 0 || !anyStateRead) && !hasConditionalFeedback;
+    if (noFeedback && (kind === 'tool' || kind === 'form')) {
+      push({ code: 'experience-interaction-no-feedback', severity: 'major', subPolicy: 'interaction', label: `${kind} without state feedback`, files: [f.path],
+        evidence: capEv(`the required ${kind} section "${id}" declares interactive handlers but no declared state is read back into the UI and there is no conditional feedback — the control changes nothing visible`),
+        repairInstruction: capEv(`Wire ${kind} state into the rendered UI so interactions produce visible feedback (selection/result/message); do not fabricate network/booking success.`) });
+    } else if (noFeedback) {
+      push({ code: 'experience-interaction-warn', severity: 'minor', subPolicy: 'interaction', label: `${kind} feedback unclear`, files: [f.path],
+        evidence: capEv(`the ${kind} section "${id}" may not show a visible active/selected/expanded state — verify state changes are perceivable`),
+        repairInstruction: capEv('Add a visible state (active/selected/expanded) so the interaction reads clearly.') });
     }
   }
 }
