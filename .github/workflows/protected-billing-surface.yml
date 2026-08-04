@@ -1,0 +1,133 @@
+name: protected-billing-surface
+
+# Fails a pull request that changes a protected billing/payment path unless the
+# PR body carries an explicit, complete billing-surface declaration.
+#
+# This is a guard rail against ACCIDENTAL or UNDOCUMENTED billing changes — it
+# does NOT replace human review (CODEOWNERS routes these paths to the owner) and
+# it grants NO approval by itself. It reads no secrets and calls no external
+# service; it only reads the PR's changed-file list and the PR body.
+#
+# Re-runs on `edited` so adding the declaration to the body clears the check
+# without a new commit.
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  guard:
+    name: Require declaration for protected billing changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout (need the protected-paths list)
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            .github/protected-billing-paths.txt
+          sparse-checkout-cone-mode: false
+
+      - name: Evaluate protected-surface guard
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          # PR body is untrusted external text — passed via env and only ever
+          # grepped for literal declaration lines, never evaluated.
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+
+          PATTERN_FILE=".github/protected-billing-paths.txt"
+          if [ ! -f "$PATTERN_FILE" ]; then
+            echo "::error::$PATTERN_FILE is missing — cannot evaluate the billing guard."
+            exit 1
+          fi
+
+          # ── Changed files in this PR (API, paginated) ────────────────────
+          gh api "repos/$REPO/pulls/$PR_NUMBER/files" --paginate \
+            --jq '.[].filename' > changed_files.txt || true
+          echo "── Changed files ──"
+          cat changed_files.txt || true
+          echo
+
+          # ── Which changed files match a protected pattern? (fnmatch) ─────
+          python3 - "$PATTERN_FILE" changed_files.txt > matched.txt <<'PY'
+          import fnmatch, sys
+          patterns = []
+          with open(sys.argv[1], encoding="utf-8") as fh:
+              for line in fh:
+                  s = line.strip()
+                  if s and not s.startswith("#"):
+                      patterns.append(s)
+          try:
+              with open(sys.argv[2], encoding="utf-8") as fh:
+                  files = [l.strip() for l in fh if l.strip()]
+          except FileNotFoundError:
+              files = []
+          for f in files:
+              for pat in patterns:
+                  # "**" spans directories; a "/**" suffix also matches the dir root.
+                  if fnmatch.fnmatch(f, pat) or (
+                      pat.endswith("/**") and fnmatch.fnmatch(f, pat[:-3] + "/*")
+                  ) or (pat.endswith("/**") and f == pat[:-3]):
+                      print(f)
+                      break
+          PY
+
+          if [ ! -s matched.txt ]; then
+            echo "✅ No protected billing paths changed — guard passes."
+            exit 0
+          fi
+
+          echo "🔒 Protected billing paths changed:"
+          sed 's/^/    - /' matched.txt
+          echo
+
+          # ── Require the declaration block in the PR body ─────────────────
+          printf '%s' "${PR_BODY:-}" > pr_body.txt
+
+          missing=0
+          need_line() {
+            # $1 = grep -E regex, $2 = human description
+            if ! grep -Eiq "$1" pr_body.txt; then
+              echo "::error::PR body is missing or has an invalid line: $2"
+              missing=1
+            fi
+          }
+
+          # Explicit approval token (must be exactly "yes").
+          need_line '^[[:space:]]*BILLING-SURFACE-APPROVED:[[:space:]]*yes[[:space:]]*$' \
+            'BILLING-SURFACE-APPROVED: yes'
+          need_line '^[[:space:]]*Sandbox retest required:[[:space:]]*(yes|no)[[:space:]]*$' \
+            'Sandbox retest required: yes|no'
+          need_line '^[[:space:]]*Environment variables changed:[[:space:]]*(yes|no)[[:space:]]*$' \
+            'Environment variables changed: yes|no'
+          need_line '^[[:space:]]*Webhook behavior changed:[[:space:]]*(yes|no)[[:space:]]*$' \
+            'Webhook behavior changed: yes|no'
+          need_line '^[[:space:]]*Entitlement behavior changed:[[:space:]]*(yes|no)[[:space:]]*$' \
+            'Entitlement behavior changed: yes|no'
+          need_line '^[[:space:]]*Rollback documented:[[:space:]]*yes[[:space:]]*$' \
+            'Rollback documented: yes'
+
+          if [ "$missing" -ne 0 ]; then
+            echo
+            echo "::error::This PR modifies the protected billing/payment surface but its body does not contain a complete billing-surface declaration."
+            echo "Add the following block to the PR description (see the PR template):"
+            echo "    BILLING-SURFACE-APPROVED: yes"
+            echo "    Sandbox retest required: yes|no"
+            echo "    Environment variables changed: yes|no"
+            echo "    Webhook behavior changed: yes|no"
+            echo "    Entitlement behavior changed: yes|no"
+            echo "    Rollback documented: yes"
+            echo
+            echo "This check is a guard rail only — it does not grant approval. Owner review via CODEOWNERS is still required."
+            exit 1
+          fi
+
+          echo "✅ Billing-surface declaration present and complete. Guard passes (human owner review still required)."

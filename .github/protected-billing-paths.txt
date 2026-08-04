@@ -1,0 +1,64 @@
+# Protected billing & payment surface — machine-readable path list.
+#
+# Consumed by .github/workflows/protected-billing-surface.yml. Any pull
+# request that changes a file matching one of the patterns below MUST carry
+# the billing-surface declaration in its PR body (see the workflow and the
+# PR template). This file also documents, for humans and agents, exactly
+# which paths are high-risk.
+#
+# Format:
+#   - one glob pattern per line (fnmatch-style; "*" and "**" match path
+#     segments, "**" spans directories)
+#   - blank lines and lines starting with "#" are ignored
+#
+# Scope discipline: this protects ONLY the high-risk billing surface, never
+# the whole repository. General UI pages that merely render a billing CTA
+# (e.g. PricingPage / UpgradeModal / CreditsPage) are intentionally NOT
+# listed — only the dedicated billing modules are.
+#
+# NEVER put a secret value in this file. It contains path patterns only.
+
+# ── Billing service core: provider selection, event vocabulary, config,
+#    idempotency inbox, webhook signature verification, raw stores, portal,
+#    readiness. The entire package is safety-critical. ────────────────────
+backend/services/billing/**
+
+# ── Billing HTTP routes: Lemon + Polar webhooks, checkout, account
+#    (/me + customer-portal), and owner-only readiness diagnostics. ───────
+backend/routes/v2_billing.py
+backend/routes/v2_billing_polar.py
+backend/routes/v2_billing_checkout.py
+backend/routes/v2_billing_account.py
+backend/routes/v2_admin_billing.py
+
+# ── Shared runtime config that holds provider selection + Polar/Lemon
+#    validation and the Polar production cutover fail-closed logic. This is
+#    a shared file; billing-relevant edits here are high-risk and must be
+#    declared + owner-reviewed. ───────────────────────────────────────────
+backend/core/config.py
+
+# ── Billing behavior tests: they encode webhook / subscription /
+#    entitlement / checkout expectations; a change here can quietly weaken
+#    the safety net. ─────────────────────────────────────────────────────
+backend/tests/test_billing_*.py
+
+# ── Billing frontend: the provider-neutral API client, the checkout hook,
+#    and the checkout return page (which must never grant access from a
+#    redirect alone). ────────────────────────────────────────────────────
+src/lib/billingApi.ts
+src/lib/billingApi.test.ts
+src/hooks/useCheckout.ts
+src/pages/BillingReturn.tsx
+
+# ── Billing environment examples + migration documentation. `.env.example`
+#    holds names + placeholders only; the migration doc encodes the cutover
+#    and webhook/event contract. ────────────────────────────────────────
+docs/billing/**
+
+# ── The protection policy itself. Changing the guard, the path list, the
+#    owners map, or the policy doc weakens the control, so it also requires
+#    the declaration + owner review. ───────────────────────────────────────
+.github/protected-billing-paths.txt
+.github/workflows/protected-billing-surface.yml
+.github/CODEOWNERS
+docs/engineering/PROTECTED_BILLING_SURFACE.md
