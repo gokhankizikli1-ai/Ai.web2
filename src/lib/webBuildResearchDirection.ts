@@ -4,22 +4,25 @@
  * ONE authoritative, additive, JSON-safe layer that turns the evidence the EXISTING research +
  * Vertical Intelligence pipeline already produced into (a) a bounded, normalized sector-evidence
  * contract with honest evidence typing + sufficiency, (b) an evidence-grounded premium art-direction
- * / anti-template contract, and (c) a conservative deterministic acceptance analysis proving the
- * generated project actually consumed that direction. It performs NO network request and NO model
- * call — it consumes what the backend Research Agent + Vertical Intelligence already threaded into
- * the FrontendBuildSpecification inputs, and it never fabricates sources, metrics, or claims.
+ * / anti-template contract, and (c) a conservative, FEATURE/SECTION-SCOPED deterministic acceptance
+ * analysis proving the generated project actually consumed that direction. It performs NO network
+ * request and NO model call — it consumes what the backend Research Agent + Vertical Intelligence
+ * already threaded into the FrontendBuildSpecification inputs, and it never fabricates sources,
+ * metrics, or claims. Research inference is INTERNAL planning guidance only — it never becomes a
+ * public factual claim, and a provider answer is never attributed to a single source URL.
  *
- * Design intent: make real sector evidence MATERIALLY control the final generation (via a compact
- * rendered direction block) and deterministic acceptance (via the existing single repair) — instead
- * of being recorded and ignored. It reuses the deterministic Vertical profiles (section/trust/visual
- * policy) as guardrails and the Research Agent evidence as source-backed signal, distinguishing the
- * two honestly. Everything is bounded and cost-free. Additive & optional for old/reopened builds.
+ * Acceptance uses correlated, per-component/section evidence (never global token composition across
+ * unrelated files — the same defect corrected in PR #558): a forbidden sector module blocks only
+ * when one coherent UI scope names it; a required pattern is satisfied only by a real rendered
+ * section, and a truly-absent required pattern blocks only under real sector authority. Everything
+ * is bounded and fail-open. Additive & optional for old/reopened builds.
  */
 import type {
   FrontendGeneratedFile, FrontendBuilderReviewIssue, FrontendBuilderReviewSeverity, FrontendBuilderReviewCategory,
   FrontendSpecIdentity, FrontendSpecResearchEvidence, VerticalIntelligenceArtifact,
-  ResearchAgentArtifact, ArtDirectionArtifact, StrategicThinkingLedger, WebBuildSource,
+  ResearchAgentArtifact, ArtDirectionArtifact, StrategicThinkingLedger,
 } from '@/lib/webBuildAgents';
+import type { WebBuildSource } from '@/lib/webBuildApi';
 
 /* ── Bounds (named, mandatory) ─────────────────────────────────────────────── */
 const MAX_FINDINGS = 16;
@@ -27,7 +30,9 @@ const MAX_LIST = 8;
 const MAX_SUBJECTS = 6;
 const MAX_PATTERNS = 10;
 const MAX_SOURCES = 8;
-const MAX_SRC_CHARS = 240_000;
+const MAX_CLAIMS = 8;
+const MAX_FILE_CHARS = 80_000;
+const MAX_UNITS = 60;
 const MAX_ISSUES = 24;
 const MAX_ISSUE_FILES = 4;
 const MAX_EVIDENCE = 180;
@@ -51,8 +56,13 @@ export interface NormalizedFinding {
   /** True only when this is safe as a PUBLIC factual claim (user-provided proof); research-derived
    *  guidance is internal-only, never surfaced as a public factual claim. */
   publicSafe: boolean;
-  /** Indices into `sources` (bounded). Empty when the finding is not mapped to a specific source. */
-  sourceRefs: number[];
+}
+
+/** Bounded public-claim policy — the ONLY facts that may appear as public claims are ones the user
+ *  explicitly supplied in authoritative build input; research/provider inference never qualifies. */
+export interface ResearchClaimPolicy {
+  approvedPublicClaims: string[];   // bounded fingerprints of user-supplied public claims
+  forbiddenClaimClasses: string[];  // sector claim classes that must never be fabricated
 }
 
 export interface ResearchArtDirection {
@@ -70,9 +80,7 @@ export interface ResearchArtDirection {
   conversionEmphasis: string;
   trustPresentation: string;
   distinctiveSignature: string;
-  /** Generic generator defaults to avoid UNLESS this build's evidence justifies them. */
   genericPatternsToAvoid: string[];
-  /** Sector-incompatible modules/sections that must not appear (labels). */
   forbiddenModules: string[];
 }
 
@@ -84,7 +92,6 @@ export interface ResearchDirectionContract {
   subsector?: string;
   audience: string;
   conversionModel: string;
-  geography?: string;
   isSoftwareSector: boolean;
   findings: NormalizedFinding[];
   sources: WebBuildSource[];
@@ -98,8 +105,13 @@ export interface ResearchDirectionContract {
   requiredPatterns: string[];
   recommendedPatterns: string[];
   forbiddenClaims: string[];
+  claimPolicy: ResearchClaimPolicy;
   artDirection: ResearchArtDirection;
-  consumedBy: string[];
+  /* ── Truthful consumption trace — never overclaims. ── */
+  upstreamEvidenceUsedToDeriveContract: string[];
+  contractRenderedToFrontendBuilder: boolean;
+  contractUsedByAcceptance: boolean;
+  agentsActuallyConsumingContract: string[];
   reasons: string[];
 }
 
@@ -119,6 +131,17 @@ function present(token: string, src: string): boolean {
   if (t.length < 3) return false;
   return new RegExp(`(?<![\\p{L}\\p{N}])${esc(t)}(?![\\p{L}\\p{N}])`, 'iu').test(src);
 }
+/** Generic words that must NEVER independently prove a forbidden module or required pattern. */
+const GENERIC_TOKENS = new Set([
+  'api', 'data', 'analytics', 'support', 'platform', 'security', 'integration', 'integrations',
+  'directory', 'pricing', 'price', 'plan', 'plans', 'tier', 'tiers', 'documentation', 'docs',
+  'dashboard', 'feature', 'features', 'section', 'page', 'about', 'contact', 'service', 'services',
+]);
+/** Significant tokens of a label (drops short/stop words). */
+function labelTokens(label: string): string[] {
+  return toks(label).filter((w) => w.length >= 4 && !['with', 'that', 'your', 'their', 'from', 'this', 'section', 'page', 'and', 'the'].includes(w));
+}
+const STOP_HEADING = /<h[1-6][^>]*>([\s\S]{0,140}?)<\/h[1-6]>/gi;
 
 const SOFTWARE_SECTORS = new Set(['ai-saas', 'marketplace']);
 
@@ -133,6 +156,8 @@ export interface ResearchDirectionInput {
   research?: ResearchAgentArtifact;
   artDirection?: ArtDirectionArtifact;
   ledger?: StrategicThinkingLedger;
+  /** Raw prompt — used ONLY to extract bounded user-supplied public-claim fingerprints; never persisted. */
+  prompt?: string;
 }
 
 /** Convert an evidence array into normalized findings of one applicability. */
@@ -145,8 +170,36 @@ function foldFindings(
     angle, finding: clip(finding, 160), implication: clip(implication, 120),
     confidence, evidenceType, applicability,
     publicSafe: false,          // research-derived guidance is internal-only, never a public claim
-    sourceRefs: [],
   }));
+}
+
+// Fabrication templates. STRONG = clearly invented public metric → blocks unless user-approved.
+// SOFT  = vaguer unverifiable claim → manual-review warning unless user-approved.
+const FAB_STRONG: Array<{ re: RegExp; what: string }> = [
+  { re: /\btrusted by\s+[\d,]{2,}\+?\s*(?:customers|users|clients|companies|businesses|teams|brands)/i, what: 'trusted-by customer count' },
+  { re: /\b[\d,]{3,}\+?\s*(?:happy\s+)?(?:customers|users|clients|members|downloads|five[- ]star reviews)/i, what: 'invented customer/user count' },
+  { re: /\b\d(?:\.\d)?\s*(?:★|stars?)\b[^<]{0,40}\b(?:from\s+)?[\d,]{2,}\s*reviews/i, what: 'invented star-rating volume' },
+];
+const FAB_SOFT: Array<{ re: RegExp; what: string }> = [
+  { re: /\baward[- ]winning\b|\bvoted\s+#?1\b|\bas seen (?:in|on)\b|\b#1[- ]rated\b/i, what: 'unverifiable award / "as seen in" claim' },
+];
+
+/** Normalize a claim to a comparable fingerprint (digits + significant words). */
+function claimFingerprint(s: string): string {
+  return (s || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
+}
+
+/** Extract bounded user-supplied public-claim fingerprints from the raw prompt (never persisted raw). */
+function extractApprovedClaims(prompt: string | undefined): string[] {
+  const p = clip(prompt, 4000);
+  if (!p) return [];
+  const out: string[] = [];
+  for (const fab of [...FAB_STRONG, ...FAB_SOFT]) {
+    const m = fab.re.exec(p);
+    if (m && m[0]) { const fp = claimFingerprint(m[0]); if (fp && !out.includes(fp)) out.push(fp); }
+    if (out.length >= MAX_CLAIMS) break;
+  }
+  return out.slice(0, MAX_CLAIMS);
 }
 
 export function deriveResearchDirection(input: ResearchDirectionInput): ResearchDirectionContract {
@@ -166,9 +219,7 @@ export function deriveResearchDirection(input: ResearchDirectionInput): Research
   const didUseRealSources = !!re && re.didUseRealSources === true;
   const validSources = (re?.sources || []).filter((s) => !!s && !!s.url).slice(0, MAX_SOURCES);
   const validatedSourceCount = validSources.length;
-  const discardedSourceCount = Math.max(0, (input.research?.sourceCount || 0) - validatedSourceCount);
   const coveredAngles = uniq([...(input.research?.researchAngles || []), ...(vi?.researchPlan?.angles || [])].map((a) => clip(a, 40)).filter(Boolean)).slice(0, MAX_LIST);
-  const conflictingFindingCount = (vi?.conflictingSignals || []).length;
 
   // ── Normalized findings (source-backed when real sources exist, else inferred). ──
   const evType: ResearchEvidenceType = didUseRealSources ? 'source-backed' : 'inferred';
@@ -184,15 +235,20 @@ export function deriveResearchDirection(input: ResearchDirectionInput): Research
     ...foldFindings(cleanList(re?.differentiationOpportunities), 'differentiation', 'sector', 'distinctive signature', evType, conf, seq),
   ].slice(0, MAX_FINDINGS);
 
-  const sourceBackedFindingCount = findings.filter((f) => f.evidenceType === 'source-backed').length;
+  // Source-backed findings are grounded in validated sources ONLY when real sources were used.
+  const sourceBackedFindingCount = didUseRealSources ? findings.filter((f) => f.evidenceType === 'source-backed').length : 0;
   const inferredFindingCount = findings.filter((f) => f.evidenceType === 'inferred').length;
-  const userProvidedFindingCount = findings.filter((f) => f.evidenceType === 'user-provided').length;
 
-  // ── Sufficiency (deterministic; source count alone is never treated as quality). ──
+  // ── Sufficiency (truthful; source count alone is never treated as quality). ──
+  // 'conflicting' is only produced from a GENUINE conflict signal (low classification confidence
+  // AND ≥2 conflicting sector signals) — never from generic uncertainty. `discardedSourceCount`
+  // and `conflictingFindingCount` are 0 here because the upstream evidence does not carry compatible
+  // discard/conflict counts; they are NOT computed from incompatible pre/post-dedupe numbers.
+  const genuineConflict = vi?.confidence === 'low' && (vi?.conflictingSignals || []).length >= 2;
   let status: ResearchSufficiency;
-  if (conflictingFindingCount >= 2) status = 'conflicting';
+  if (genuineConflict) status = 'conflicting';
   else if (didUseRealSources && validatedSourceCount >= 3 && coveredAngles.length >= 3 && sourceBackedFindingCount >= 3) status = 'sufficient-source-backed';
-  else if (didUseRealSources && validatedSourceCount >= 1) status = 'partial-source-backed';
+  else if (didUseRealSources && validatedSourceCount >= 1 && sourceBackedFindingCount >= 1) status = 'partial-source-backed';
   else if (findings.length > 0 || !!vi) status = 'inference-only';
   else status = 'unavailable';
 
@@ -239,27 +295,35 @@ export function deriveResearchDirection(input: ResearchDirectionInput): Research
     forbiddenModules: uniq([...forbiddenSections, ...(isSoftwareSector ? [] : ['pricing tiers', 'API documentation', 'integrations directory', 'analytics dashboard'])]).slice(0, MAX_LIST),
   };
 
-  const consumedBy = uniq([
+  // ── Truthful consumption trace — only the upstream artifacts actually READ to build the contract;
+  //    NO model agent reads the contract before its decision (it is applied at spec/generation/
+  //    acceptance only). ──
+  const upstreamEvidenceUsedToDeriveContract = uniq([
     input.research ? 'research' : '',
-    ledger ? 'thinkingLedger' : '',
     vi ? 'verticalIntelligence' : '',
     ad ? 'artDirection' : '',
-    'frontendBuilder',
+    ledger ? 'thinkingLedger' : '',
+    re ? 'researchEvidence' : '',
   ].filter(Boolean));
 
   const reasons: string[] = [];
   if (!didUseRealSources) reasons.push(clip(re?.status ? `no live sources (${re.status})` : 'inference-only (no research artifact)', 80));
-  if (status === 'conflicting') reasons.push('conflicting sector signals — manual review');
-  if (discardedSourceCount > 0) reasons.push(`${discardedSourceCount} source(s) discarded as irrelevant/duplicate`);
+  if (status === 'conflicting') reasons.push('conflicting sector signals (low-confidence classification) — manual review');
 
   return {
     version: 'research-direction-v1', status,
-    operatorIdentity, sector, subsector, audience, conversionModel,
-    geography: undefined, isSoftwareSector,
-    findings, sources: validSources, validatedSourceCount, discardedSourceCount, conflictingFindingCount,
-    coveredAngles, sourceBackedFindingCount, inferredFindingCount, userProvidedFindingCount,
+    operatorIdentity, sector, subsector, audience, conversionModel, isSoftwareSector,
+    findings, sources: validSources, validatedSourceCount,
+    discardedSourceCount: 0, conflictingFindingCount: 0,
+    coveredAngles, sourceBackedFindingCount, inferredFindingCount, userProvidedFindingCount: 0,
     requiredPatterns, recommendedPatterns, forbiddenClaims,
-    artDirection, consumedBy, reasons,
+    claimPolicy: { approvedPublicClaims: extractApprovedClaims(input.prompt), forbiddenClaimClasses: forbiddenClaims },
+    artDirection,
+    upstreamEvidenceUsedToDeriveContract,
+    contractRenderedToFrontendBuilder: true,
+    contractUsedByAcceptance: true,
+    agentsActuallyConsumingContract: [],
+    reasons,
   };
 }
 
@@ -302,9 +366,10 @@ export function renderResearchDirectionBlock(contract: ResearchDirectionContract
 }
 
 /* ────────────────────────────────────────────────────────────────────────────
- * ACCEPTANCE — conservative deterministic proof the project consumed the direction.
- * Strong correlated evidence only; weak stylistic signals warn (manual-review), never
- * hard-block. Pure; fail-open at the call site.
+ * ACCEPTANCE — conservative, FEATURE/SECTION-SCOPED proof the project consumed the
+ * direction. Correlated per-file evidence only (never global token composition).
+ * Strong evidence blocks; ambiguous warns (manual-review); weak produces no finding.
+ * Pure; fail-open at the call site.
  * ──────────────────────────────────────────────────────────────────────────── */
 export type ResearchGroundingIssueCode =
   | 'research-forbidden-module'
@@ -338,23 +403,15 @@ const LEGACY_GROUNDING: ResearchGroundingResult = {
 };
 
 function capEv(s: string): string { const t = (s || '').replace(/\s+/g, ' ').trim(); return t.length > MAX_EVIDENCE ? t.slice(0, MAX_EVIDENCE) : t; }
-function filesWith(files: FrontendGeneratedFile[], re: RegExp): string[] {
-  const out: string[] = [];
-  for (const f of files) { if (re.test(f.content)) out.push(f.path); if (out.length >= MAX_ISSUE_FILES) break; }
-  return out;
-}
 
-// Clear FABRICATION templates (never legitimate research-backed copy without user proof).
-const FABRICATION_RES: Array<{ re: RegExp; what: string }> = [
-  { re: /\btrusted by\s+[\d,]{2,}\+?\s*(?:customers|users|clients|companies|businesses|teams|brands)/i, what: 'trusted-by customer count' },
-  { re: /\b[\d,]{3,}\+?\s*(?:happy\s+)?(?:customers|users|clients|members|downloads|five[- ]star reviews)/i, what: 'invented customer/user count' },
-  { re: /\b\d(?:\.\d)?\s*(?:★|stars?)\b[^<]{0,40}\b(?:from\s+)?[\d,]{2,}\s*reviews/i, what: 'invented star-rating volume' },
-  { re: /\baward[- ]winning\b|\bvoted\s+#?1\b|\bas seen (?:in|on)\b|\b#1[- ]rated\b/i, what: 'unverifiable award / "as seen in" claim' },
-];
-
-/** Significant tokens of a required/forbidden label (drops short/stop words). */
-function labelTokens(label: string): string[] {
-  return toks(label).filter((w) => w.length >= 4 && !['with', 'that', 'your', 'their', 'from', 'this', 'section', 'page', 'and', 'the'].includes(w));
+/** Rendered "naming" surfaces of a single file: headings, aria-labels, nav/button/link/section text. */
+function namingText(content: string): string {
+  const parts: string[] = [];
+  for (const m of content.matchAll(STOP_HEADING)) parts.push(m[1]);
+  for (const m of content.matchAll(/\baria-label=["']([^"']{0,80})["']/gi)) parts.push(m[1]);
+  for (const m of content.matchAll(/<(?:nav|button|a|figcaption|summary)\b[^>]*>([\s\S]{0,60}?)<\//gi)) parts.push(m[1].replace(/<[^>]*>/g, ' '));
+  for (const m of content.matchAll(/data-korvix-(?:section|id|image-slot)=["']([^"']{0,60})["']/gi)) parts.push(m[1].replace(/[-_.]+/g, ' '));
+  return parts.join(' \n ').toLowerCase();
 }
 
 export function analyzeResearchGrounding(
@@ -365,53 +422,86 @@ export function analyzeResearchGrounding(
     if (!contract) return LEGACY_GROUNDING;
     const list = Array.isArray(files) ? files : [];
     if (!list.length) return { ...LEGACY_GROUNDING, legacy: false };
-    const src = list.map((f) => f.content).join('\n').slice(0, MAX_SRC_CHARS);
-    const srcLower = src.toLowerCase();
+    const units = list.slice(0, MAX_UNITS).map((f) => {
+      const content = (f.content || '').slice(0, MAX_FILE_CHARS);
+      return { path: f.path, content, lower: content.toLowerCase(), naming: namingText(content) };
+    });
     const issues: ResearchGroundingIssue[] = [];
     let requiredMissing = 0; let forbiddenCount = 0; let fabricated = 0; let repetition = 0;
     const push = (i: ResearchGroundingIssue) => { if (issues.length < MAX_ISSUES) issues.push(i); };
+    const approved = new Set(contract.claimPolicy.approvedPublicClaims.map(claimFingerprint));
 
-    // 1) Forbidden sector modules present (strong: full phrase or ≥2 distinctive tokens). Blocking.
+    // 1) Forbidden sector modules — SECTION/COMPONENT-SCOPED correlated evidence (never global
+    //    token composition). One coherent file must name the module: its full phrase in a heading/
+    //    label, OR ≥2 DISTINCTIVE (non-generic) tokens co-occurring in that file with one in a
+    //    naming surface. Generic words (api/data/analytics/pricing/plan/…) never independently prove.
     for (const mod of contract.artDirection.forbiddenModules) {
-      const tk = labelTokens(mod);
-      if (!tk.length) continue;
-      const full = srcLower.includes(mod.toLowerCase());
-      const hits = tk.filter((t) => present(t, src)).length;
-      if (full || hits >= 2) {
+      const phrase = mod.toLowerCase();
+      const distinctive = labelTokens(mod).filter((t) => !GENERIC_TOKENS.has(t));
+      let hitFile = '';
+      for (const u of units) {
+        const fullNamed = u.naming.includes(phrase);
+        const distinctiveInFile = distinctive.filter((t) => present(t, u.content));
+        const distinctiveNamed = distinctive.some((t) => u.naming.includes(t));
+        if (fullNamed || (distinctive.length >= 2 && distinctiveInFile.length >= 2 && distinctiveNamed)) { hitFile = u.path; break; }
+      }
+      if (hitFile) {
         forbiddenCount += 1;
-        push({ code: 'research-forbidden-module', severity: 'major', label: mod, files: filesWith(list, new RegExp(esc(tk[0]), 'i')),
-          evidence: capEv(`sector-incompatible module "${mod}" appears on a ${contract.sector} site — research/sector evidence forbids it`),
+        push({ code: 'research-forbidden-module', severity: 'major', label: mod, files: [hitFile],
+          evidence: capEv(`sector-incompatible module "${mod}" is a named section/component on a ${contract.sector} site — research/sector evidence forbids it`),
           repairInstruction: capEv(`Remove the "${mod}" module (it belongs to a different sector) and replace it with a section appropriate to ${contract.operatorIdentity}.`) });
         if (forbiddenCount >= 4) break;
       }
     }
 
-    // 2) Fabricated public claims (clear templates only). Blocking.
-    for (const fab of FABRICATION_RES) {
-      if (fab.re.test(src)) {
+    // 2) Fabricated public claims — STRONG (invented metrics) block, SOFT (vaguer) warn, UNLESS the
+    //    exact claim was explicitly user-supplied (approved). Research/provider inference is never
+    //    public proof. Claims are matched project-wide (a fabricated number is a problem anywhere).
+    const src = units.map((u) => u.content).join('\n');
+    const claimApproved = (matched: string): boolean => {
+      const fp = claimFingerprint(matched);
+      return [...approved].some((a) => a && (a.includes(fp) || fp.includes(a)));
+    };
+    for (const fab of FAB_STRONG) {
+      const m = fab.re.exec(src);
+      if (m && !claimApproved(m[0])) {
         fabricated += 1;
-        push({ code: 'research-fabricated-claim', severity: 'major', label: fab.what, files: filesWith(list, fab.re),
-          evidence: capEv(`a fabricated ${fab.what} appears in public copy — no real user-supplied proof backs it (research inference must never become a public factual claim)`),
+        push({ code: 'research-fabricated-claim', severity: 'major', label: fab.what, files: [],
+          evidence: capEv(`a fabricated ${fab.what} appears in public copy with no user-supplied proof — research inference must never become a public factual claim`),
           repairInstruction: capEv(`Remove the ${fab.what}; use neutral, non-factual copy unless the user supplied real proof. Never invent metrics, awards, logos or testimonials.`) });
         if (fabricated >= 3) break;
       }
     }
+    for (const fab of FAB_SOFT) {
+      const m = fab.re.exec(src);
+      if (m && !claimApproved(m[0])) {
+        push({ code: 'research-fabricated-claim', severity: 'minor', label: fab.what, files: [],
+          evidence: capEv(`a possibly-unverifiable ${fab.what} appears in public copy — confirm real user-supplied proof exists, else neutralize it`),
+          repairInstruction: capEv(`Confirm the ${fab.what} is a real user-provided claim; if not, replace it with neutral copy. Never fabricate awards/press claims.`) });
+      }
+    }
 
-    // 3) Required sector patterns entirely absent (only when we have real sector authority). Blocking, capped.
+    // 3) Required sector patterns — need REAL rendered section evidence (heading/label/section names
+    //    it), never a mere token anywhere (footer copy / import / comment / metadata don't count).
+    //    Truly-absent (token nowhere) blocks ONLY under real sector authority; weakly-present (token
+    //    exists but not in a section) is manual-review, never a false hard-block. Capped.
     const strongAuthority = contract.status === 'sufficient-source-backed' || contract.status === 'partial-source-backed'
       || (contract.requiredPatterns.length > 0 && contract.sector !== 'general');
-    if (strongAuthority) {
-      for (const req of contract.requiredPatterns) {
-        const tk = labelTokens(req);
-        if (!tk.length) continue;
-        const anyPresent = tk.some((t) => present(t, src));
-        if (!anyPresent) {
-          requiredMissing += 1;
-          push({ code: 'research-required-pattern-missing', severity: 'major', label: req, files: [],
-            evidence: capEv(`required sector pattern "${req}" is absent — the researched ${contract.sector} decision journey expects it`),
-            repairInstruction: capEv(`Add a real "${req}" section appropriate to ${contract.operatorIdentity}; the researched conversion journey depends on it.`) });
-          if (requiredMissing >= 2) break;   // conservative cap — never flood with false blockers
-        }
+    for (const req of contract.requiredPatterns) {
+      const tk = labelTokens(req);
+      if (!tk.length) continue;
+      const named = units.some((u) => tk.some((t) => u.naming.includes(t)));
+      if (named) continue;               // real rendered section evidence → satisfied
+      const anywhere = units.some((u) => tk.some((t) => present(t, u.content)));
+      if (anywhere) {                    // token present but NOT in a section/heading → manual review
+        push({ code: 'research-required-pattern-missing', severity: 'minor', label: req, files: [],
+          evidence: capEv(`required sector pattern "${req}" is mentioned but not clearly a rendered section (footer copy / import / comment does not prove it) — manual review`),
+          repairInstruction: capEv(`Make "${req}" a real, semantic rendered section (heading + content/controls) for ${contract.operatorIdentity}, not just incidental text.`) });
+      } else if (strongAuthority && requiredMissing < 2) {   // token nowhere → clearly absent → block
+        requiredMissing += 1;
+        push({ code: 'research-required-pattern-missing', severity: 'major', label: req, files: [],
+          evidence: capEv(`required sector pattern "${req}" is entirely absent — the researched ${contract.sector} decision journey expects it`),
+          repairInstruction: capEv(`Add a real "${req}" section appropriate to ${contract.operatorIdentity}; the researched conversion journey depends on it.`) });
       }
     }
 
@@ -420,31 +510,31 @@ export function analyzeResearchGrounding(
     const cardHits = (src.match(/\brounded-(?:xl|2xl|3xl)\b[^"]*\b(?:shadow|border)\b/gi) || []).length;
     if (gridCols >= 4 && cardHits >= 9) {
       repetition += 1;
-      push({ code: 'research-template-repetition', severity: 'minor', label: 'repeated identical card grids', files: filesWith(list, /grid-cols-3\b/i),
+      push({ code: 'research-template-repetition', severity: 'minor', label: 'repeated identical card grids', files: units.filter((u) => /grid-cols-3\b/i.test(u.content)).slice(0, MAX_ISSUE_FILES).map((u) => u.path),
         evidence: capEv(`the page repeats identical equal-sized card grids (${gridCols} three-column grids) — a generic template rhythm rather than the researched decision journey`),
         repairInstruction: capEv('Vary section rhythm to match the researched conversion journey; do not reuse the same equal-card grid for every section.') });
     }
 
     // 5) Art-direction contradiction — dark navy/purple AI styling on a non-software business. Warning.
     if (!contract.isSoftwareSector) {
-      const aiGlow = (srcLower.match(/(?:from|via|to)-(?:purple|violet|indigo|fuchsia)-\d{3}/g) || []).length;
+      const aiGlow = (src.match(/(?:from|via|to)-(?:purple|violet|indigo|fuchsia)-\d{3}/gi) || []).length;
       const darkGlass = /backdrop-blur|bg-slate-9\d0\/|bg-black\/[3-8]0/i.test(src);
       if (aiGlow >= 4 && darkGlass) {
-        push({ code: 'research-artdirection-contradiction', severity: 'minor', label: 'AI-gradient styling on a non-software business', files: filesWith(list, /(?:from|via|to)-(?:purple|violet|indigo|fuchsia)-\d{3}/i),
+        push({ code: 'research-artdirection-contradiction', severity: 'minor', label: 'AI-gradient styling on a non-software business', files: [],
           evidence: capEv(`heavy dark-navy/purple AI-gradient + glass styling on a ${contract.sector} site contradicts the researched art direction (${clip(contract.artDirection.emotionalTone, 40)})`),
           repairInstruction: capEv(`Adopt the researched palette/tone for ${contract.operatorIdentity}; reserve dark-purple AI aesthetics for genuine software products.`) });
       }
     }
 
-    // 6) Operator identity not evident anywhere. Warning.
+    // 6) Operator identity not evident in any rendered naming surface. Warning.
     const idTokens = labelTokens(contract.operatorIdentity).concat(labelTokens(contract.subsector || contract.sector));
-    if (idTokens.length && !idTokens.some((t) => present(t, src))) {
+    if (idTokens.length && !units.some((u) => idTokens.some((t) => u.naming.includes(t) || present(t, u.content)))) {
       push({ code: 'research-identity-missing', severity: 'minor', label: contract.operatorIdentity, files: [],
         evidence: capEv(`no evidence of the operator identity/sector ("${contract.operatorIdentity}") in the rendered copy — the site reads generically`),
         repairInstruction: capEv(`Make ${contract.operatorIdentity} and its ${contract.sector} context explicit in the copy and structure.`) });
     }
 
-    const blocking = issues.some((i) => i.code === 'research-forbidden-module' || i.code === 'research-fabricated-claim' || i.code === 'research-required-pattern-missing');
+    const blocking = issues.some((i) => i.severity !== 'minor' && (i.code === 'research-forbidden-module' || i.code === 'research-fabricated-claim' || i.code === 'research-required-pattern-missing'));
     const warned = issues.some((i) => i.severity === 'minor');
     const status: ResearchGroundingResult['status'] = blocking ? 'fail' : warned ? 'warning' : 'pass';
     return { status, legacy: false, requiredPatternMissingCount: requiredMissing, forbiddenModuleCount: forbiddenCount, fabricatedClaimCount: fabricated, templateRepetitionCount: repetition, issues: issues.slice(0, MAX_ISSUES) };
@@ -505,14 +595,17 @@ export interface ResearchDirectionDiagnostics {
   sourceBackedFindingCount: number;
   inferredFindingCount: number;
   userProvidedFindingCount: number;
+  approvedUserClaimCount: number;
   sector: string;
   subsector?: string;
   isSoftwareSector: boolean;
-  consumedBy: string[];
+  upstreamEvidenceUsedToDeriveContract: string[];
+  contractRenderedToFrontendBuilder: boolean;
+  contractUsedByAcceptance: boolean;
+  agentsActuallyConsumingContract: string[];
   requiredPatternCount: number;
   recommendedPatternCount: number;
   forbiddenModuleCount: number;
-  artDirectionStatus: 'derived' | 'legacy';
   researchGroundingStatus?: 'pass' | 'warning' | 'fail';
   researchGroundingIssueCodes?: string[];
   contractCharCount: number;
@@ -534,14 +627,17 @@ export function buildResearchDirectionDiagnostics(
     sourceBackedFindingCount: contract.sourceBackedFindingCount,
     inferredFindingCount: contract.inferredFindingCount,
     userProvidedFindingCount: contract.userProvidedFindingCount,
+    approvedUserClaimCount: contract.claimPolicy.approvedPublicClaims.length,
     sector: contract.sector,
     subsector: contract.subsector,
     isSoftwareSector: contract.isSoftwareSector,
-    consumedBy: contract.consumedBy.slice(0, 8),
+    upstreamEvidenceUsedToDeriveContract: contract.upstreamEvidenceUsedToDeriveContract.slice(0, 8),
+    contractRenderedToFrontendBuilder: contract.contractRenderedToFrontendBuilder,
+    contractUsedByAcceptance: contract.contractUsedByAcceptance,
+    agentsActuallyConsumingContract: contract.agentsActuallyConsumingContract.slice(0, 8),
     requiredPatternCount: contract.requiredPatterns.length,
     recommendedPatternCount: contract.recommendedPatterns.length,
     forbiddenModuleCount: contract.artDirection.forbiddenModules.length,
-    artDirectionStatus: 'derived',
     researchGroundingStatus: grounding && !grounding.legacy ? grounding.status : undefined,
     researchGroundingIssueCodes: grounding ? researchGroundingIssueCodes(grounding) : undefined,
     contractCharCount,

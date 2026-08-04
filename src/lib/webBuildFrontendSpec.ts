@@ -707,6 +707,7 @@ export function deriveFrontendBuildSpecification(input: FrontendBuildSpecInput):
         research: input.research,
         artDirection: input.artDirection,
         ledger: input.thinkingLedger,
+        prompt: built.prompt,
       });
     } catch { /* never block the build on research-direction derivation */ }
 

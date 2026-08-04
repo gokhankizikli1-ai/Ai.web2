@@ -394,10 +394,13 @@ async def run_web_build_research(*, user_id: Optional[str], idea: str) -> tuple[
             t.cancel()
         logger.warning("web_build_research | uid=%s | gather failed: %s", user_id, ex)
 
-    # Collect raw citations (capped), remember provider + failures.
+    # Collect raw citations (capped), remember provider + failures. The per-query provider `answer`
+    # is kept SEPARATELY as bounded, non-source-attributed synthesis (see angle_synthesis) — never
+    # injected into a source object.
     cands: list[dict] = []
     answered_provider: Optional[str] = None
     errors: list[str] = []
+    angle_synthesis: list[tuple[str, str]] = []
     for r in results:
         if not isinstance(r, dict):
             continue
@@ -411,23 +414,25 @@ async def run_web_build_research(*, user_id: Optional[str], idea: str) -> tuple[
         # (url/title/domain/publishedAt); some paths/tests use "citations". Read BOTH so real,
         # license-clear source metadata actually reaches synthesis. Historically only "citations"
         # was read — a key this path never sets — so every live query yielded zero candidates and
-        # the whole research pass silently degraded to no-sources (inference-only). The per-query
-        # provider "answer" seeds the FIRST source's snippet so ranking + the synthesis block have
-        # grounded content (never fabricated — it is the provider's own answer for THIS query).
+        # the whole research pass silently degraded to no-sources (inference-only).
+        #
+        # PROVENANCE: a URL-backed source carries ONLY its own real per-source snippet/content when
+        # the provider returned it (often empty on this path). We NEVER attach the query-level
+        # `answer` to an arbitrary source — a provider answer synthesizes MULTIPLE returned sources
+        # and cannot be represented as one URL's snippet. The answer is preserved separately below as
+        # bounded provider synthesis (internal build context; not attributed to any single source).
         raw_sources = r.get("sources") or r.get("citations") or []
-        answer = (r.get("answer") or "").strip()
-        answer_seeded = False
         for c in raw_sources:
             if not isinstance(c, dict):
                 continue
-            if answer and not answer_seeded and not (c.get("snippet") or c.get("content")):
-                c = {**c, "answer": answer}
-                answer_seeded = True
             nc = _norm_citation(c, angle)
             if nc:
                 cands.append(nc)
             if len(cands) >= budget["max_raw"]:
                 break
+        ans = (r.get("answer") or "").strip()
+        if ans:
+            angle_synthesis.append((angle, ans[:280]))
         if len(cands) >= budget["max_raw"]:
             break
 
@@ -479,6 +484,26 @@ async def run_web_build_research(*, user_id: Optional[str], idea: str) -> tuple[
         lines.append(f"{i}. [{s['angle']}] {s['title']} — {s['url']}")
         if s["snippet"]:
             lines.append(f"   {s['snippet']}")
+
+    # Provider research SYNTHESIS — the per-query provider answer, kept as INTERNAL build context.
+    # It is NOT attributed to any single source URL (it synthesizes the query's results) and must
+    # never be quoted verbatim in public copy. Deduped + bounded.
+    if angle_synthesis:
+        seen_syn: set = set()
+        syn_lines: list[str] = []
+        for ang, syn in angle_synthesis:
+            key = syn[:80].lower()
+            if not syn or key in seen_syn:
+                continue
+            seen_syn.add(key)
+            syn_lines.append(f"- [{ang}] {syn}")
+            if len(syn_lines) >= budget["ui_sources"]:
+                break
+        if syn_lines:
+            lines.append("")
+            lines.append("Provider research synthesis (INTERNAL; not attributed to any single source; never quote verbatim):")
+            lines.extend(syn_lines)
+
     lines.append("")
     lines.append("Fold the synthesis into 'Research insight' in Build Plan, and let it shape")
     lines.append("the sections, copy, CTA hierarchy, trust signals, visual system and motion.")
