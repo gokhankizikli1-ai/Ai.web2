@@ -22,6 +22,12 @@ import type {
   FrontendBuildSpecification, FrontendSpecImageSlot, SourcedImageAsset, ImageAssetManifest,
 } from '@/lib/webBuildAgents';
 import { photographicSlots, type VisualStrategy, type VisualSlotPurpose } from '@/lib/webBuildVisualStrategy';
+import {
+  findSpecSlotForTarget, synthesizeSlotForTarget, diagnoseStrategyForCoverage,
+  planAiFallback, buildImageCoverageDiagnostics,
+  type ImageCoverageRequirement, type ImageCoverageTarget, type ImageCoveragePurpose,
+  type ImageCoverageReasonCode, type ImageCoverageDiagnostics, type AiFallbackContext,
+} from '@/lib/webBuildImageCoverage';
 
 const BUNDLED_BACKEND = 'https://worker-production-1345.up.railway.app';
 export const MAX_SOURCED_IMAGES = 8;
@@ -309,6 +315,195 @@ export function enrichSpecWithSourcedImages(
   return { spec: nextSpec, assets: nextAssets };
 }
 
+/* ── Semantic image-coverage integration (Phase image coverage) ──────────────
+ * When the authoritative coverage requirement is `required`/`image-led`, a valid Visual Strategy
+ * that leaves the mandatory floor uncovered (accidental `none`, zero photo slots, unknown slot
+ * ids, invalid queries) no longer yields zero photos: we deterministically fill ONLY the missing
+ * mandatory coverage from the spec's own image slots (synthesizing the minimum missing slot when
+ * none is suitable), while preserving the strategy's other needs. `none`/`optional`/explicit-no-
+ * photo keep the exact existing behavior. Pure. */
+function coveragePurposeToImagePurpose(p: ImageCoveragePurpose): ImagePurpose {
+  switch (p) {
+    case 'hero': return 'hero';
+    case 'gallery': return 'gallery';
+    case 'product': case 'showcase': return 'product';
+    case 'about': return 'about';
+    default: return 'other';
+  }
+}
+
+function needFromSlotAndTarget(slot: FrontendSpecImageSlot, target: ImageCoverageTarget, spec: FrontendBuildSpecification): ImageNeed {
+  const query = clean(target.query || slot.prompt || slotQuery(slot, spec, 'other'), 120);
+  return {
+    slotId: slot.id,
+    purpose: coveragePurposeToImagePurpose(target.purpose),
+    query,
+    orientation: target.orientation,
+    required: true,
+    altText: clean(target.altText || slot.placeholderLabel || '', 200) || slotAlt(slot, spec, 'other'),
+  };
+}
+
+export interface CoverageAwareNeeds {
+  needs: ImageNeed[];
+  synthesizedSlots: FrontendSpecImageSlot[];
+  reasons: ImageCoverageReasonCode[];
+  fallbackUsed: boolean;
+  targets: ImageCoverageTarget[];   // required-target state with slotId assigned (matchStatus 'pending')
+}
+
+/**
+ * Build the coverage-aware image-needs plan. Pure. For `none`/`optional`/explicit-no-photo this is
+ * exactly `deriveImageNeeds` (existing behavior). For `required`/`image-led` it guarantees each
+ * required coverage target maps to a real, query-valid need in the same spec (reusing a suitable
+ * spec slot, else synthesizing the minimum missing one), preserving the strategy's other needs.
+ */
+export function buildCoverageAwareNeeds(
+  spec: FrontendBuildSpecification,
+  strategy: VisualStrategy | null,
+  coverage: ImageCoverageRequirement | undefined,
+): CoverageAwareNeeds {
+  const base = deriveImageNeeds(spec, strategy);
+  if (!coverage || coverage.mode === 'none' || coverage.mode === 'optional' || coverage.explicitNoPhoto) {
+    return {
+      needs: base, synthesizedSlots: [],
+      reasons: coverage?.explicitNoPhoto ? ['explicit-no-photo'] : [],
+      fallbackUsed: false, targets: coverage?.targets || [],
+    };
+  }
+
+  // required / image-led — enforce the mandatory floor with correlated evidence.
+  const reasons: ImageCoverageReasonCode[] = [...diagnoseStrategyForCoverage(strategy, spec, coverage)];
+  const synthesizedSlots: FrontendSpecImageSlot[] = [];
+  const needBySlot = new Map(base.map((n) => [n.slotId, n]));
+  const extraNeeds: ImageNeed[] = [];
+  const targets = coverage.targets.map((t) => ({ ...t }));
+  const assigned = new Set<string>();
+  let fallbackUsed = false;
+
+  for (const t of targets.filter((x) => x.required)) {
+    const slot = findSpecSlotForTarget(spec, t, assigned);
+    if (slot) {
+      assigned.add(slot.id);
+      t.slotId = slot.id; t.matchStatus = 'pending';
+      const existing = needBySlot.get(slot.id);
+      if (existing) { t.query = existing.query; }
+      else { const n = needFromSlotAndTarget(slot, t, spec); extraNeeds.push(n); needBySlot.set(slot.id, n); t.query = n.query; fallbackUsed = true; }
+      continue;
+    }
+    const s = synthesizeSlotForTarget(spec, t);
+    synthesizedSlots.push(s); assigned.add(s.id);
+    const n = needFromSlotAndTarget(s, t, spec);
+    extraNeeds.push(n); needBySlot.set(s.id, n);
+    t.slotId = s.id; t.query = n.query; t.matchStatus = 'pending';
+    fallbackUsed = true;
+    if (!reasons.includes('deterministic-required-slot-created')) reasons.push('deterministic-required-slot-created');
+  }
+
+  fallbackUsed = fallbackUsed || reasons.length > 0;
+
+  // Required-target needs first (guaranteed within the cap), then the strategy's other needs.
+  const requiredSlotIds = new Set(targets.filter((t) => t.required && t.slotId).map((t) => t.slotId as string));
+  const ordered = [
+    ...extraNeeds,
+    ...base.filter((n) => requiredSlotIds.has(n.slotId)),
+    ...base.filter((n) => !requiredSlotIds.has(n.slotId)),
+  ];
+  const seen = new Set<string>();
+  const needs: ImageNeed[] = [];
+  for (const n of ordered) {
+    if (seen.has(n.slotId)) continue;
+    seen.add(n.slotId);
+    needs.push(n);
+    if (needs.length >= MAX_SOURCED_IMAGES) break;
+  }
+  return { needs, synthesizedSlots, reasons, fallbackUsed, targets };
+}
+
+/** Merge synthesized coverage slots into the spec's image slots (deduped by id). Pure. */
+function mergeSynthesizedSlots(spec: FrontendBuildSpecification, extra: FrontendSpecImageSlot[]): FrontendBuildSpecification {
+  if (!extra.length) return spec;
+  const existing = new Set((spec.assets?.imageSlots || []).map((s) => s.id));
+  const add = extra.filter((s) => !existing.has(s.id));
+  if (!add.length) return spec;
+  return { ...spec, assets: { ...spec.assets, imageSlots: [...(spec.assets?.imageSlots || []), ...add] } };
+}
+
+/** Owner token presence (browser) — used only to classify AI-fallback authorization honestly. */
+function hasOwnerToken(): boolean {
+  try { return !!localStorage.getItem('korvix_owner_token'); } catch { return false; }
+}
+
+/** Map a manifest status to the coverage reason vocabulary. */
+function manifestStatusReasons(status: string, sourced: number, requested: number): ImageCoverageReasonCode[] {
+  const out: ImageCoverageReasonCode[] = [];
+  if (status === 'no-providers') out.push('no-providers');
+  else if (status === 'error' || status === 'failed-open') out.push('provider-error');
+  else if (status === 'no-results') out.push('no-results');
+  else if (sourced > 0 && requested > sourced) out.push('stock-partial');
+  return out;
+}
+
+/**
+ * Finalize coverage after enrichment: mark each required target sourced/uncovered from the enriched
+ * slots, plan the bounded AI fallback for the still-uncovered required targets (stock-first;
+ * non-persistable providers keep the slot honestly uncovered), and assemble bounded diagnostics.
+ * Pure — no network, never injects an AI asset. Returns the updated coverage + diagnostics.
+ */
+export function finalizeCoverage(input: {
+  coverage: ImageCoverageRequirement;
+  targets: ImageCoverageTarget[];
+  enrichedSpec: FrontendBuildSpecification;
+  strategy: VisualStrategy | null;
+  manifest: ImageAssetManifest;
+  fallbackUsed: boolean;
+  reasons: ImageCoverageReasonCode[];
+  aiCtx: AiFallbackContext;
+}): { coverage: ImageCoverageRequirement; diagnostics: ImageCoverageDiagnostics; uncoveredRequired: number } {
+  const slotsById = new Map((input.enrichedSpec.assets?.imageSlots || []).map((s) => [s.id, s]));
+  const targets = input.targets.map((t) => ({ ...t }));
+  for (const t of targets) {
+    if (!t.slotId) continue;
+    const slot = slotsById.get(t.slotId);
+    if (slot && slot.url) {
+      t.matchStatus = 'sourced'; t.domId = slot.domId; t.provider = slot.imageProvider;
+    } else if (t.required) {
+      t.matchStatus = 'uncovered';
+    }
+  }
+  const reasons: ImageCoverageReasonCode[] = [...input.reasons,
+    ...manifestStatusReasons(input.manifest.status, input.manifest.sourced, input.manifest.requested)];
+
+  const uncoveredTargets = targets.filter((t) => t.required && t.matchStatus !== 'sourced');
+  const aiPlan = planAiFallback(uncoveredTargets, input.aiCtx);
+  for (const d of aiPlan.decisions) {
+    const t = targets.find((x) => x.id === d.targetId);
+    if (!t) continue;
+    if (d.outcome === 'ai-usable') { t.matchStatus = 'ai-usable'; }
+    else { t.failureReason = d.reason; }
+  }
+  for (const r of aiPlan.reasons) if (!reasons.includes(r)) reasons.push(r);
+  // Any target still not sourced/ai-usable is genuinely uncovered.
+  for (const t of targets) {
+    if (t.required && t.matchStatus !== 'sourced' && t.matchStatus !== 'ai-usable') {
+      t.matchStatus = 'uncovered';
+      if (!reasons.includes('required-image-uncovered')) reasons.push('required-image-uncovered');
+    }
+  }
+  const uncoveredRequired = targets.filter((t) => t.required && t.matchStatus === 'uncovered').length;
+
+  const nextCoverage: ImageCoverageRequirement = { ...input.coverage, targets, reasons: uniqReasons([...input.coverage.reasons, ...reasons]) };
+  const diagnostics = buildImageCoverageDiagnostics({
+    coverage: nextCoverage, strategy: input.strategy,
+    stockRequested: input.manifest.requested, stockSourced: input.manifest.sourced,
+    aiPlan, uncoveredRequired, fallbackUsed: input.fallbackUsed,
+    manifestStatus: input.manifest.status, providers: input.manifest.providers, reasons,
+  });
+  return { coverage: nextCoverage, diagnostics, uncoveredRequired };
+}
+
+function uniqReasons(r: ImageCoverageReasonCode[]): ImageCoverageReasonCode[] { return [...new Set(r)].slice(0, 20); }
+
 /**
  * Source real stock images for a NEW build's spec and return a NEW payload with
  * the enriched spec + a persisted attribution manifest. FAIL-OPEN: on any problem
@@ -319,43 +514,76 @@ export async function sourceStockImagesForPayload(
   payload: WebBuildPayload, opts?: { signal?: AbortSignal },
 ): Promise<{ payload: WebBuildPayload; manifest: ImageAssetManifest }> {
   const spec = payload?.artifacts?.frontendBuildSpec;
+  const strategy = payload.artifacts?.visualStrategy || null;
   const emptyManifest = (status: ImageAssetManifest['status'], warnings: string[] = []): ImageAssetManifest => ({
     status, assets: [], providers: { pexels: 'unknown', unsplash: 'unknown' },
     warnings, requested: 0, sourced: 0, elapsedMs: 0,
   });
+  if (!spec) return { payload, manifest: emptyManifest('empty', ['no spec']) };
 
-  if (!spec || !spec.assets || !Array.isArray(spec.assets.imageSlots) || spec.assets.imageSlots.length === 0) {
-    return { payload, manifest: emptyManifest('empty', ['no image slots']) };
-  }
+  // ── Coverage authority. Only `required`/`image-led` (and not explicit-no-photo) ENFORCE a floor
+  //    — everything else keeps the exact existing behavior (Visual Strategy precedence, deterministic
+  //    fallback, typography-first when nothing sources). ──
+  const cov = spec.imageCoverage;
+  const enforce = !!cov && (cov.mode === 'required' || cov.mode === 'image-led') && !cov.explicitNoPhoto;
 
-  // A valid Visual Strategy (Phase 14K.7) takes precedence; absent → deterministic.
-  const needs = deriveImageNeeds(spec, payload.artifacts?.visualStrategy || null);
-  if (needs.length === 0) return { payload, manifest: emptyManifest('empty', ['no photographic image needs']) };
+  const built = enforce
+    ? buildCoverageAwareNeeds(spec, strategy, cov)
+    : { needs: deriveImageNeeds(spec, strategy), synthesizedSlots: [] as FrontendSpecImageSlot[], reasons: [] as ImageCoverageReasonCode[], fallbackUsed: false, targets: (cov?.targets || []) };
+  const specForSourcing = mergeSynthesizedSlots(spec, built.synthesizedSlots);
+  const needs = built.needs;
 
-  const res = await fetchSourcedImages(needs, buildDesignContext(spec), opts);
-  if (!res) return { payload, manifest: emptyManifest('failed-open', ['sourcing endpoint unavailable']) };
+  const hasSlots = !!(specForSourcing.assets && Array.isArray(specForSourcing.assets.imageSlots) && specForSourcing.assets.imageSlots.length);
+  if (!enforce && !hasSlots) return { payload, manifest: emptyManifest('empty', ['no image slots']) };
+  // A valid Visual Strategy (Phase 14K.7) takes precedence; absent → deterministic. When coverage
+  // ENFORCES a floor, zero usable needs cannot occur (a required slot is synthesized) — so this
+  // legacy short-circuit only applies to the non-enforcing (`none`/`optional`) modes.
+  if (!enforce && needs.length === 0) return { payload, manifest: emptyManifest('empty', ['no photographic image needs']) };
 
-  const sourcedAssets = Array.isArray(res.assets) ? res.assets.filter((a) => a && a.url) : [];
-  const baseManifest: ImageAssetManifest = {
-    status: (res.status as ImageAssetManifest['status']) || (sourcedAssets.length ? 'ok' : 'no-results'),
-    assets: sourcedAssets,
-    providers: { pexels: res.providers?.pexels || 'unknown', unsplash: res.providers?.unsplash || 'unknown' },
-    warnings: Array.isArray(res.warnings) ? res.warnings.slice(0, 8) : [],
-    requested: res.requested ?? needs.length,
-    sourced: res.sourced ?? sourcedAssets.length,
-    elapsedMs: res.elapsedMs ?? 0,
-  };
+  const res = needs.length > 0 ? await fetchSourcedImages(needs, buildDesignContext(specForSourcing), opts) : null;
 
-  if (sourcedAssets.length === 0) {
-    // No photo could be sourced — proceed typography-first; record honestly.
-    return {
-      payload: { ...payload, artifacts: { ...(payload.artifacts || {}), imageAssetManifest: baseManifest } },
-      manifest: baseManifest,
+  let manifest: ImageAssetManifest;
+  let enrichedSpec: FrontendBuildSpecification = specForSourcing;
+  if (!res) {
+    manifest = emptyManifest(needs.length === 0 ? 'empty' : 'failed-open',
+      needs.length === 0 ? ['no photographic image needs'] : ['sourcing endpoint unavailable']);
+  } else {
+    const sourcedAssets = Array.isArray(res.assets) ? res.assets.filter((a) => a && a.url) : [];
+    const baseManifest: ImageAssetManifest = {
+      status: (res.status as ImageAssetManifest['status']) || (sourcedAssets.length ? 'ok' : 'no-results'),
+      assets: sourcedAssets,
+      providers: { pexels: res.providers?.pexels || 'unknown', unsplash: res.providers?.unsplash || 'unknown' },
+      warnings: Array.isArray(res.warnings) ? res.warnings.slice(0, 8) : [],
+      requested: res.requested ?? needs.length,
+      sourced: res.sourced ?? sourcedAssets.length,
+      elapsedMs: res.elapsedMs ?? 0,
     };
+    if (sourcedAssets.length === 0) {
+      manifest = baseManifest;
+    } else {
+      const { spec: es, assets: ea } = enrichSpecWithSourcedImages(specForSourcing, sourcedAssets);
+      enrichedSpec = es;
+      manifest = { ...baseManifest, assets: ea };
+    }
   }
 
-  const { spec: enrichedSpec, assets: enrichedAssets } = enrichSpecWithSourcedImages(spec, sourcedAssets);
-  const manifest: ImageAssetManifest = { ...baseManifest, assets: enrichedAssets };
+  // ── Coverage finalize — mark required targets sourced/uncovered, plan the bounded, stock-first,
+  //    non-persistable-safe AI fallback, and persist coverage state + bounded diagnostics. ──
+  if (enforce && cov) {
+    try {
+      const fin = finalizeCoverage({
+        coverage: cov, targets: built.targets, enrichedSpec, strategy, manifest,
+        fallbackUsed: built.fallbackUsed, reasons: built.reasons,
+        // Capability probe (no network, no provider call). Every provider's automatic result is a
+        // session-only data URL today → classified non-persistable; enabled/authorized are set to
+        // the best case so the recorded reason is the true root cause (persistence, not gating).
+        aiCtx: { provider: 'openai', enabled: true, authorized: true } satisfies AiFallbackContext,
+      });
+      enrichedSpec = { ...enrichedSpec, imageCoverage: fin.coverage };
+      manifest = { ...manifest, coverage: fin.diagnostics };
+    } catch { /* fail-open: coverage finalize must never break a build */ }
+  }
+
   const nextPayload: WebBuildPayload = {
     ...payload,
     artifacts: {

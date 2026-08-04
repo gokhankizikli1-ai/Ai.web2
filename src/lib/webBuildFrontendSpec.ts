@@ -29,6 +29,7 @@ import { resolveProductIntent } from '@/lib/webBuildProductIntent';
 // only this assembled spec + the prompt, so it introduces no runtime import cycle).
 import { deriveExperienceArchitecturePlan } from '@/lib/webBuildExperienceArchitecture';
 import { deriveBindingRequirements } from '@/lib/webBuildBindingRequirements';
+import { deriveImageCoverageRequirement } from '@/lib/webBuildImageCoverage';
 import type {
   FrontendBuildSpecification, FrontendSpecSection, FrontendSpecImageSlot, FrontendSpecMotionLayer,
   FrontendSpecIdentity, FrontendSpecDesignSystem, FrontendSpecArchitecture, FrontendSpecAssetPlan,
@@ -684,6 +685,15 @@ export function deriveFrontendBuildSpecification(input: FrontendBuildSpecInput):
       const bindingRequirements = deriveBindingRequirements(str(input.prompt), input.brief);
       if (bindingRequirements) built.bindingRequirements = bindingRequirements;
     } catch { /* never block the build on requirement extraction */ }
+
+    // Phase (image coverage) — attach the authoritative semantic image-coverage requirement
+    // (deterministic; no model call; fail-open). Derived from binding media, sector/vertical,
+    // image-led direction and explicit no-photo signals. FRESH build only — reopened builds keep
+    // whatever they were saved with. Absent/permissive ⇒ legacy behavior.
+    try {
+      const imageCoverage = deriveImageCoverageRequirement(built);
+      if (imageCoverage) built.imageCoverage = imageCoverage;
+    } catch { /* never block the build on coverage derivation */ }
 
     return built;
   } catch {

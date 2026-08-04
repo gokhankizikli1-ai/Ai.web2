@@ -722,13 +722,15 @@ export async function runFrontendBuilderQualityPipeline(
     //    that ride the EXISTING single repair (no new model call). Drift is sector-generic (software
     //    modules blocked only for a non-software operator sector). Fully fail-open. ──
     const bindingReqs = spec?.bindingRequirements;
+    const imageCoverage = spec?.imageCoverage;
+    const coverageDiag = basePayload.artifacts?.imageAssetManifest?.coverage;
     const driftPolicy: DriftPolicy = {
       isSoftwareSector: spec?.identity?.sector === 'ai-saas' || spec?.identity?.sector === 'marketplace'
         || spec?.identity?.classificationBasis === 'product-concept',
     };
     let initialBinding: BindingAcceptanceResult | undefined;
     try {
-      initialBinding = analyzeBindingAcceptance(validation?.files, bindingReqs, driftPolicy);
+      initialBinding = analyzeBindingAcceptance(validation?.files, bindingReqs, driftPolicy, imageCoverage);
       if (initialBinding && initialBinding.issues.length && initialReview.status === 'completed') {
         const bIssues = bindingIssuesToReviewIssues(initialBinding);
         if (bIssues.length) {
@@ -745,7 +747,8 @@ export async function runFrontendBuilderQualityPipeline(
     let repairBinding: BindingAcceptanceResult | undefined;
     // Bounded, non-sensitive binding/drift diagnostics for the acceptance artifact.
     const bindingExtra = (): Partial<FrontendBuilderAcceptanceArtifact> => {
-      const hasAny = !!bindingReqs || !!(initialBinding && initialBinding.driftIssueCount) || !!(repairBinding && repairBinding.driftIssueCount);
+      const hasAny = !!bindingReqs || !!(initialBinding && initialBinding.driftIssueCount) || !!(repairBinding && repairBinding.driftIssueCount)
+        || !!imageCoverage || !!coverageDiag;
       if (!hasAny) return {};
       const b = repairBinding || initialBinding;
       const c = bindingReqs?.counts;
@@ -763,6 +766,29 @@ export async function runFrontendBuilderQualityPipeline(
         } : {}),
         ...(initialBinding ? { bindingInitialAnalysisStatus: initialBinding.status } : {}),
         ...(repairBinding ? { bindingPostRepairAnalysisStatus: repairBinding.status } : {}),
+        // ── Phase (image coverage) — separate, truthful stock / AI / coverage diagnostics. ──
+        ...(imageCoverage ? { imageCoverageMode: imageCoverage.mode } : (coverageDiag ? { imageCoverageMode: coverageDiag.coverageMode } : {})),
+        ...(b && b.requiredImageCount != null ? {
+          requiredSemanticImageCount: b.requiredImageCount,
+          renderedRequiredImageCount: b.renderedRequiredImageCount,
+          uncoveredRequiredImageCount: b.uncoveredRequiredImageCount,
+          imageCoverageAcceptanceStatus: b.imageCoverageStatus,
+        } : {}),
+        ...(coverageDiag ? {
+          stockRequestedCount: coverageDiag.stockRequestedCount,
+          stockSourcedCount: coverageDiag.stockSourcedCount,
+          automaticAiFallbackAttemptCount: coverageDiag.automaticAiFallbackAttemptCount,
+          automaticAiFallbackUsableCount: coverageDiag.automaticAiFallbackUsableCount,
+          deterministicCoverageFallbackUsed: coverageDiag.deterministicCoverageFallbackUsed,
+          visualStrategyPhotographyMode: coverageDiag.visualStrategyPhotographyMode,
+          visualStrategyPhotoSlotCount: coverageDiag.visualStrategyPhotoSlotCount,
+          imageAssetManifestStatus: coverageDiag.imageAssetManifestStatus,
+          pexelsStatus: coverageDiag.pexelsStatus,
+          unsplashStatus: coverageDiag.unsplashStatus,
+          imageCoverageReasonCodes: coverageDiag.reasonCodes,
+          ...(coverageDiag.requiredSemanticImageCount && b?.requiredImageCount == null ? { requiredSemanticImageCount: coverageDiag.requiredSemanticImageCount } : {}),
+          ...(coverageDiag.uncoveredRequiredImageCount != null && b?.uncoveredRequiredImageCount == null ? { uncoveredRequiredImageCount: coverageDiag.uncoveredRequiredImageCount } : {}),
+        } : {}),
       };
     };
 
@@ -1044,7 +1070,7 @@ export async function runFrontendBuilderQualityPipeline(
     //    so there is NO analysis gap). A repaired project can NEVER be accepted merely because the
     //    review score improved: a blocking binding requirement or cross-sector drift still blocks. ──
     try {
-      repairBinding = analyzeBindingAcceptance(repairValidation.files, bindingReqs, driftPolicy);
+      repairBinding = analyzeBindingAcceptance(repairValidation.files, bindingReqs, driftPolicy, imageCoverage);
       if (repairBinding && repairBinding.issues.length && finalReview.status === 'completed') {
         const bIssues = bindingIssuesToReviewIssues(repairBinding);
         if (bIssues.length) {
