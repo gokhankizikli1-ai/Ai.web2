@@ -240,6 +240,16 @@ export function deriveExperienceQualityContract(input: ExperienceQualityInput): 
       // Phase 3 — interaction lifecycle, derived from binding/hints/family (states appropriate to the
       // requested feature only; never fabricate backend/network/loading where frontend-only is asked).
       interaction: deriveInteraction(s, family),
+      // Phase 4 — accessibility obligations (context-aware; native semantics preferred over ARIA).
+      accessibility: {
+        landmark: i === 0 ? 'page header / hero region' : /footer|contact/.test(lc(s.purpose || s.name)) ? 'contentinfo/footer' : 'labelled section with a heading',
+        obligations: uniq([
+          'give this section a real heading in correct order',
+          ...((s.interactionHints || []).length > 0 ? ['controls are real <button>/<a>, keyboard-operable, with a visible focus ring'] : []),
+          ...(mediaRole !== 'none' ? ['images carry meaningful alt or are marked decorative (alt="")'] : []),
+          ...(ctaRole !== 'none' ? ['the CTA is a real link/button with a clear accessible name'] : []),
+        ]).slice(0, MAX_OBLIGATIONS),
+      },
       ambiguityNote: '',
     };
   });
@@ -247,7 +257,7 @@ export function deriveExperienceQualityContract(input: ExperienceQualityInput): 
   const dominant = sections.filter((s) => s.hierarchyRelation === 'dominant moment').length;
   return {
     version: 'experience-quality-v1', status: 'derived',
-    subPolicies: ['coherence', 'responsive', 'interaction'],
+    subPolicies: ['coherence', 'responsive', 'interaction', 'accessibility'],
     rhythmObligation: clip(comp?.globalRhythm || content?.positioningThesis || 'one coherent experience: vary section weight and density, keep 1–2 dominant moments, and make every section point its content, media, hierarchy and CTA the same way', MAX_TEXT),
     globalResponsive: [
       'every multi-column layout collapses to one readable column on mobile',
@@ -256,7 +266,14 @@ export function deriveExperienceQualityContract(input: ExperienceQualityInput): 
       'the primary CTA and any required control/output stay visible and reachable on mobile',
       'reserve media aspect ratio to prevent layout shift; text over media keeps its scrim',
     ],
-    globalAccessibility: [],
+    globalAccessibility: [
+      'use semantic landmarks (header/nav/main/footer) and headings in order',
+      'interactive elements are real <button>/<a>, keyboard-operable, with a visible focus ring',
+      'every form control has an accessible name (label / aria-label)',
+      'images carry meaningful alt or are marked decorative; do not label decorative images as content',
+      'respect prefers-reduced-motion; never communicate state by colour alone',
+      'prefer native semantics over redundant/invalid ARIA',
+    ],
     globalPerformance: [],
     sections,
     reasons: [`connected ${sections.length} sections across composition/content/visual/media with ${dominant} dominant moment(s)`].slice(0, MAX_LIST),
@@ -476,6 +493,8 @@ export function analyzeExperienceQuality(
     responsiveCheck(facts, byId, factById, push);
     // ── Phase 3 — interaction depth & state-feedback integrity. ──
     interactionCheck(byId, factById, push);
+    // ── Phase 4 — accessibility & keyboard usability. ──
+    accessibilityCheck(byId, factById, push);
 
     const coherenceFindingCount = issues.filter((i) => i.subPolicy === 'coherence').length;
     const responsiveFindingCount = issues.filter((i) => i.subPolicy === 'responsive').length;
@@ -588,6 +607,55 @@ function interactionCheck(
       push({ code: 'experience-interaction-warn', severity: 'minor', subPolicy: 'interaction', label: `${kind} feedback unclear`, files: [f.path],
         evidence: capEv(`the ${kind} section "${id}" may not show a visible active/selected/expanded state — verify state changes are perceivable`),
         repairInstruction: capEv('Add a visible state (active/selected/expanded) so the interaction reads clearly.') });
+    }
+  }
+}
+
+/** Phase 4 — accessibility: block only strong, keyboard/name failures (#559 owns image existence,
+ *  #562 owns contrast). Native semantics satisfy requirements; absent-keyword alone never blocks. */
+function accessibilityCheck(
+  byId: Map<string, ExperienceSectionObligation>,
+  factById: Map<string, SectionFacts>,
+  push: (x: ExperienceIssue) => void,
+): void {
+  for (const [id, ob] of byId) {
+    const f = factById.get(id);
+    if (!f || f.hasDynamic || f.hasChildComponent) continue;   // fail open on ambiguous structure
+    const r = f.clean;
+    // 1. Interactive control implemented ONLY as a non-focusable clickable div/span (no real button/
+    //    link, no role=button, no tabIndex, no key handler) → not keyboard-operable.
+    const divClick = /<(?:div|span)\b[^>]{0,300}\bon(?:Click|MouseDown)\s*=/.test(r);
+    const hasRealControl = /<button\b/.test(r) || /<a\b[^>]*\bhref=/.test(r);
+    const hasKeyAffordance = /role=["']button["']/.test(r) || /\btabIndex\b/.test(r) || /\bonKeyDown\s*=/.test(r) || /\bonKeyPress\s*=/.test(r);
+    if (divClick && !hasRealControl && !hasKeyAffordance && ob.interaction && ob.interaction.kind !== 'none') {
+      push({ code: 'experience-clickable-div', severity: 'major', subPolicy: 'accessibility', label: 'clickable div control', files: [f.path],
+        evidence: capEv(`the interactive section "${id}" implements its control as a clickable <div>/<span> with no real button/link, role or keyboard handler — it is not keyboard-operable`),
+        repairInstruction: capEv('Use a real <button>/<a> for the control (or add role="button", tabIndex and a key handler) so it is keyboard-operable.') });
+    }
+    // 2. Form control with NO accessible name at all (no <label>, no aria-label/labelledby, no placeholder).
+    const hasField = /<(?:input|textarea|select)\b/.test(r) && !/type=["'](?:hidden|submit|button)["']/.test(r);
+    if (hasField) {
+      const hasName = /<label\b/.test(r) || /aria-label(?:ledby)?=/.test(r);
+      const hasPlaceholder = /\bplaceholder=/.test(r);
+      if (!hasName && !hasPlaceholder) {
+        push({ code: 'experience-input-unlabeled', severity: 'major', subPolicy: 'accessibility', label: 'unlabeled form field', files: [f.path],
+          evidence: capEv(`section "${id}" renders a form control with no accessible name (no <label>, aria-label/labelledby or placeholder) — it cannot be identified by assistive tech`),
+          repairInstruction: capEv('Give every form control an accessible name via a <label> (preferred) or aria-label.') });
+      } else if (!hasName && hasPlaceholder) {
+        push({ code: 'experience-a11y-warn', severity: 'minor', subPolicy: 'accessibility', label: 'placeholder-only field', files: [f.path],
+          evidence: capEv(`section "${id}" labels a field with a placeholder only — verify it has a real <label> for assistive tech`),
+          repairInstruction: capEv('Add a real <label> in addition to the placeholder.') });
+      }
+    }
+    // 3. Mobile menu / disclosure that toggles but exposes no disclosure state / operable control (warning).
+    if (ob.interaction && (ob.interaction.kind === 'navigation' || ob.interaction.kind === 'disclosure')) {
+      const toggles = /\bon(?:Click|Toggle)\s*=/.test(r) || /useState/.test(r);
+      const exposes = /aria-(?:expanded|controls|hidden)=/.test(r) || /<button\b/.test(r);
+      if (toggles && !exposes) {
+        push({ code: 'experience-menu-no-control', severity: 'minor', subPolicy: 'accessibility', label: 'disclosure state not exposed', files: [f.path],
+          evidence: capEv(`the ${ob.interaction.kind} in "${id}" toggles but exposes no aria-expanded/controls or button control — verify it is operable and announced`),
+          repairInstruction: capEv('Use a <button> with aria-expanded/aria-controls for the disclosure/menu toggle and an operable close.') });
+      }
     }
   }
 }
