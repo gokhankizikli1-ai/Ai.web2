@@ -429,11 +429,6 @@ function mergeSynthesizedSlots(spec: FrontendBuildSpecification, extra: Frontend
   return { ...spec, assets: { ...spec.assets, imageSlots: [...(spec.assets?.imageSlots || []), ...add] } };
 }
 
-/** Owner token presence (browser) — used only to classify AI-fallback authorization honestly. */
-function hasOwnerToken(): boolean {
-  try { return !!localStorage.getItem('korvix_owner_token'); } catch { return false; }
-}
-
 /** Map a manifest status to the coverage reason vocabulary. */
 function manifestStatusReasons(status: string, sourced: number, requested: number): ImageCoverageReasonCode[] {
   const out: ImageCoverageReasonCode[] = [];

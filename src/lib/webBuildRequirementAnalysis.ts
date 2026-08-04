@@ -521,7 +521,12 @@ function analyzeImageCoverage(
     uncovered += 1;
     const approved = t.matchStatus === 'sourced';
     const label = t.label || t.purpose;
-    if (approved && !anyContentImages) {
+    // The approved slot id / dom id appears somewhere in source (e.g. hidden in a constant or an
+    // unused manifest entry) but no rendered semantic image consumed it → "not rendered".
+    const slotTok = (t.slotId || '').toLowerCase();
+    const domTok = (t.domId || '').toLowerCase();
+    const slotInSrc = (slotTok.length >= 3 && srcLower.includes(slotTok)) || (domTok.length >= 3 && srcLower.includes(domTok));
+    if (approved && (slotInSrc || !anyContentImages)) {
       issues.push({ code: 'required-image-not-rendered', severity: 'major', requirementId: t.id, label,
         files: filesMatching(list, ['img', 'image', 'picture']),
         evidence: cap(`required image "${label}" has an approved sourced asset but no rendered semantic <img>/picture consumes it — a URL hidden in a constant or unused manifest asset does not count`),
