@@ -184,19 +184,65 @@ const FAB_SOFT: Array<{ re: RegExp; what: string }> = [
   { re: /\baward[- ]winning\b|\bvoted\s+#?1\b|\bas seen (?:in|on)\b|\b#1[- ]rated\b/i, what: 'unverifiable award / "as seen in" claim' },
 ];
 
-/** Normalize a claim to a comparable fingerprint (digits + significant words). */
-function claimFingerprint(s: string): string {
-  return (s || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
+// Claim nouns that carry the semantic identity of a public claim (so a materially different
+// number/entity never structurally matches an approved one).
+const CLAIM_NOUNS = new Set([
+  'customers', 'users', 'clients', 'members', 'companies', 'businesses', 'teams', 'brands',
+  'downloads', 'reviews', 'stars', 'star', 'award', 'awards', 'awarded', 'winning', 'rated', 'seen', 'five',
+]);
+interface ClaimFp { nums: string; nouns: string[]; }
+/** Structured claim fingerprint = normalized number multiset + claim nouns. Numbers are normalized
+ *  (commas/trailing-zeros stripped) so equivalence is exact, never a broad substring. */
+function claimFp(s: string): ClaimFp {
+  const lower = (s || '').toLowerCase();
+  const nums = uniq((lower.match(/\d[\d.,]*\d|\d/g) || []).map((n) => n.replace(/,/g, '')).map((n) => n.replace(/\.0+$/, ''))).sort();
+  const nouns = uniq((lower.match(/[a-z]{3,}/g) || []).filter((w) => CLAIM_NOUNS.has(w))).sort();
+  return { nums: nums.join(','), nouns };
+}
+function claimFpString(f: ClaimFp): string { return `${f.nums}|${f.nouns.join(',')}`.slice(0, 80); }
+function parseClaimFp(s: string): ClaimFp {
+  const i = s.indexOf('|');
+  const nums = i >= 0 ? s.slice(0, i) : s;
+  const w = i >= 0 ? s.slice(i + 1) : '';
+  return { nums, nouns: w ? w.split(',').filter(Boolean) : [] };
+}
+/** Exact/structurally-equivalent match: identical number multiset AND (no nouns on both, or a shared
+ *  claim noun). Never approves a materially different number, rating, review count, award or entity. */
+function claimsEquivalent(a: ClaimFp, b: ClaimFp): boolean {
+  if (a.nums !== b.nums) return false;
+  if (a.nouns.length === 0 && b.nouns.length === 0) return a.nums.length > 0;   // both numberless+nounless is not a claim
+  return a.nouns.some((n) => b.nouns.includes(n));
 }
 
-/** Extract bounded user-supplied public-claim fingerprints from the raw prompt (never persisted raw). */
+// Bounded EN/TR negation / cautionary signals — a claim inside such a context is NEVER approved,
+// even though its text occurs in the prompt (e.g. "do not say trusted by 10,000 customers").
+const CLAIM_NEG_RE = /\b(?:no|not|never|don'?t|do not|without|avoid|avoiding|fake|fabricat\w*|invent\w*|placeholder|dummy|example only|examples? of)\b|\b(?:yok|değil|asla|kullanma|yazma|ekleme|uydurma|sahte|örnek|temsili)\b/i;
+// Clear first-person/possessive affirmative ownership — REQUIRED for approval (positive intent).
+const CLAIM_AFF_RE = /\b(?:we|we'?re|we'?ve|we have|our|ours|us|my)\b|\buse the fact\b|\bproudly\b|\b(?:biz|bizim|sahibiz|ödüllü|müşterimiz)\b/i;
+
+/** Bounded local-context test: affirmative user intent present AND no negation/caution nearby. */
+function claimHasAffirmativeIntent(before: string, after: string): boolean {
+  if (CLAIM_NEG_RE.test(before) || CLAIM_NEG_RE.test(after)) return false;   // negative/cautionary context
+  return CLAIM_AFF_RE.test(before);                                          // require positive ownership
+}
+
+/** Extract bounded user-supplied public-claim fingerprints from the raw prompt (never persisted raw).
+ *  Textual occurrence ALONE is never approval — only affirmative local context qualifies. */
 function extractApprovedClaims(prompt: string | undefined): string[] {
   const p = clip(prompt, 4000);
   if (!p) return [];
   const out: string[] = [];
   for (const fab of [...FAB_STRONG, ...FAB_SOFT]) {
-    const m = fab.re.exec(p);
-    if (m && m[0]) { const fp = claimFingerprint(m[0]); if (fp && !out.includes(fp)) out.push(fp); }
+    const g = new RegExp(fab.re.source, 'gi');
+    for (const m of p.matchAll(g)) {
+      const idx = m.index ?? 0;
+      const before = p.slice(Math.max(0, idx - 48), idx);
+      const after = p.slice(idx + m[0].length, idx + m[0].length + 16);
+      if (!claimHasAffirmativeIntent(before, after)) continue;   // negation/example/no-ownership → reject
+      const fp = claimFpString(claimFp(m[0]));
+      if (fp && !out.includes(fp)) out.push(fp);
+      if (out.length >= MAX_CLAIMS) break;
+    }
     if (out.length >= MAX_CLAIMS) break;
   }
   return out.slice(0, MAX_CLAIMS);
@@ -414,6 +460,31 @@ function namingText(content: string): string {
   return parts.join(' \n ').toLowerCase();
 }
 
+// A required pattern is FUNCTIONAL (interactive) when its label implies an action/experience —
+// its real proof (control/state/output) belongs to the EXISTING PR #558 binding analyzer, which
+// runs on the same files and blocks independently. Research grounding never re-checks functionality.
+const FUNCTIONAL_RE = /\b(?:book|booking|reserv\w*|search|searching|filter\w*|finder|calculat\w*|configur\w*|quote|enquir\w*|inquir\w*|checkout|cart|sign[- ]?up|signup|register|schedule|appointment|form|builder|planner|selector|comparison|compare|interactive)\b/i;
+
+/** Whether a rendered unit has REAL supporting content beyond a bare heading/nav (a genuine section). */
+function unitHasSupportingContent(content: string): boolean {
+  return /<p\b|<li\b|<img\b|<form\b|<input\b|<textarea\b|<select\b|<table\b|<article\b|\.map\s*\(/i.test(content) || content.length > 800;
+}
+
+/** Real interactive evidence in a unit (used only as a manual-review gate — depth is proven by #558). */
+function unitHasInteractiveEvidence(content: string): boolean {
+  return /<form\b|<input\b|<select\b|<textarea\b|onClick=|onChange=|onSubmit=|use(?:State|Reducer)\b/i.test(content);
+}
+
+/** SECTION-level naming only — headings + section aria-labels + section ids. EXCLUDES nav/button/link
+ *  text so a "Menu" nav link never counts as a real "menu" section. */
+function headingText(content: string): string {
+  const parts: string[] = [];
+  for (const m of content.matchAll(STOP_HEADING)) parts.push(m[1]);
+  for (const m of content.matchAll(/<section\b[^>]*aria-label=["']([^"']{0,80})["']/gi)) parts.push(m[1]);
+  for (const m of content.matchAll(/data-korvix-section=["']([^"']{0,60})["']/gi)) parts.push(m[1].replace(/[-_.]+/g, ' '));
+  return parts.join(' \n ').toLowerCase();
+}
+
 export function analyzeResearchGrounding(
   files: FrontendGeneratedFile[] | undefined,
   contract: ResearchDirectionContract | undefined,
@@ -424,12 +495,12 @@ export function analyzeResearchGrounding(
     if (!list.length) return { ...LEGACY_GROUNDING, legacy: false };
     const units = list.slice(0, MAX_UNITS).map((f) => {
       const content = (f.content || '').slice(0, MAX_FILE_CHARS);
-      return { path: f.path, content, lower: content.toLowerCase(), naming: namingText(content) };
+      return { path: f.path, content, naming: namingText(content), heading: headingText(content) };
     });
     const issues: ResearchGroundingIssue[] = [];
     let requiredMissing = 0; let forbiddenCount = 0; let fabricated = 0; let repetition = 0;
     const push = (i: ResearchGroundingIssue) => { if (issues.length < MAX_ISSUES) issues.push(i); };
-    const approved = new Set(contract.claimPolicy.approvedPublicClaims.map(claimFingerprint));
+    const approvedFps = contract.claimPolicy.approvedPublicClaims.map(parseClaimFp);
 
     // 1) Forbidden sector modules — SECTION/COMPONENT-SCOPED correlated evidence (never global
     //    token composition). One coherent file must name the module: its full phrase in a heading/
@@ -458,9 +529,11 @@ export function analyzeResearchGrounding(
     //    exact claim was explicitly user-supplied (approved). Research/provider inference is never
     //    public proof. Claims are matched project-wide (a fabricated number is a problem anywhere).
     const src = units.map((u) => u.content).join('\n');
+    // Exact/structural match ONLY — a materially different number/rating/review-count/award is never
+    // authorized by a broad substring.
     const claimApproved = (matched: string): boolean => {
-      const fp = claimFingerprint(matched);
-      return [...approved].some((a) => a && (a.includes(fp) || fp.includes(a)));
+      const g = claimFp(matched);
+      return approvedFps.some((a) => claimsEquivalent(a, g));
     };
     for (const fab of FAB_STRONG) {
       const m = fab.re.exec(src);
@@ -481,23 +554,46 @@ export function analyzeResearchGrounding(
       }
     }
 
-    // 3) Required sector patterns — need REAL rendered section evidence (heading/label/section names
-    //    it), never a mere token anywhere (footer copy / import / comment / metadata don't count).
-    //    Truly-absent (token nowhere) blocks ONLY under real sector authority; weakly-present (token
-    //    exists but not in a section) is manual-review, never a false hard-block. Capped.
+    // 3) Required sector patterns — SECTION/COMPONENT-SCOPED correlated evidence. A pattern is
+    //    SATISFIED only when ONE coherent rendered unit NAMES it (exact phrase, or ≥2 distinctive
+    //    tokens, or an exact single-label heading) AND that same unit has real supporting content.
+    //    A functional pattern's actual interactivity is proven by the EXISTING PR #558 binding
+    //    analyzer (reused, not duplicated) — research grounding never re-checks or blocks functionality.
+    //    Named-but-structurally-weak / mentioned-only → manual-review; entirely absent under real
+    //    sector authority → blocking (capped); one generic token never satisfies a multi-token pattern.
     const strongAuthority = contract.status === 'sufficient-source-backed' || contract.status === 'partial-source-backed'
       || (contract.requiredPatterns.length > 0 && contract.sector !== 'general');
     for (const req of contract.requiredPatterns) {
       const tk = labelTokens(req);
       if (!tk.length) continue;
-      const named = units.some((u) => tk.some((t) => u.naming.includes(t)));
-      if (named) continue;               // real rendered section evidence → satisfied
+      const distinctive = tk.filter((t) => !GENERIC_TOKENS.has(t));
+      const phrase = req.toLowerCase();
+      const functional = FUNCTIONAL_RE.test(req);
+      // A bearer NAMES the pattern at SECTION level (heading / section-label), not in nav/button text:
+      // exact phrase, ≥2 distinctive tokens, or an exact single distinctive-label heading.
+      const bearer = units.find((u) => u.heading.includes(phrase)
+        || (distinctive.length >= 2 && distinctive.filter((t) => u.heading.includes(t)).length >= 2)
+        || (distinctive.length === 1 && u.heading.includes(distinctive[0])));
       const anywhere = units.some((u) => tk.some((t) => present(t, u.content)));
-      if (anywhere) {                    // token present but NOT in a section/heading → manual review
-        push({ code: 'research-required-pattern-missing', severity: 'minor', label: req, files: [],
-          evidence: capEv(`required sector pattern "${req}" is mentioned but not clearly a rendered section (footer copy / import / comment does not prove it) — manual review`),
-          repairInstruction: capEv(`Make "${req}" a real, semantic rendered section (heading + content/controls) for ${contract.operatorIdentity}, not just incidental text.`) });
-      } else if (strongAuthority && requiredMissing < 2) {   // token nowhere → clearly absent → block
+
+      if (functional) {
+        // Interactivity DEPTH is proven/blocked by PR #558's correlated control/state/output analysis
+        // (reused, not duplicated). Here we only require the named section to carry real interactive
+        // evidence; a mention or a non-interactive heading is manual-review, never a false pass/block.
+        if (bearer && unitHasInteractiveEvidence(bearer.content)) continue;
+        push({ code: 'research-required-pattern-missing', severity: 'minor', label: req, files: bearer ? [bearer.path] : [],
+          evidence: capEv(`functional pattern "${req}" is ${bearer ? 'a named section but shows no interactive controls/state' : 'not evidently a rendered interactive section'} — verify via the binding-requirement analysis`),
+          repairInstruction: capEv(`Implement "${req}" as a real interactive section (controls + state + visible output) for ${contract.operatorIdentity}; a mention or bare heading is not enough.`) });
+        continue;
+      }
+
+      // Informational pattern.
+      if (bearer && unitHasSupportingContent(bearer.content)) continue;   // strong: named + real content
+      if (bearer || anywhere) {                                          // named-but-weak, or mention-only → manual review
+        push({ code: 'research-required-pattern-missing', severity: 'minor', label: req, files: bearer ? [bearer.path] : [],
+          evidence: capEv(`required sector pattern "${req}" is ${bearer ? 'named but lacks supporting rendered content (an empty/decorative heading is ambiguous)' : 'only mentioned incidentally (footer copy / import / comment does not prove a section)'} — manual review`),
+          repairInstruction: capEv(`Make "${req}" a real, semantic rendered section (heading + meaningful content) for ${contract.operatorIdentity}, not just a heading or incidental text.`) });
+      } else if (strongAuthority && requiredMissing < 2) {                // token nowhere → clearly absent → block
         requiredMissing += 1;
         push({ code: 'research-required-pattern-missing', severity: 'major', label: req, files: [],
           evidence: capEv(`required sector pattern "${req}" is entirely absent — the researched ${contract.sector} decision journey expects it`),
