@@ -33,6 +33,7 @@ import { deriveImageCoverageRequirement } from '@/lib/webBuildImageCoverage';
 import { deriveResearchDirection } from '@/lib/webBuildResearchDirection';
 import { deriveCompositionContract } from '@/lib/webBuildComposition';
 import { deriveVisualSystemContract } from '@/lib/webBuildVisualSystem';
+import { deriveContentNarrativeContract } from '@/lib/webBuildContentNarrative';
 import type {
   FrontendBuildSpecification, FrontendSpecSection, FrontendSpecImageSlot, FrontendSpecMotionLayer,
   FrontendSpecIdentity, FrontendSpecDesignSystem, FrontendSpecArchitecture, FrontendSpecAssetPlan,
@@ -750,6 +751,28 @@ export function deriveFrontendBuildSpecification(input: FrontendBuildSpecInput):
       });
       if (visualSystem) built.visualSystem = visualSystem;
     } catch { /* never block the build on visual-system derivation */ }
+
+    // Phase (content narrative) — derive the BINDING content/conversion-narrative contract (per-section
+    // message roles, concrete specificity anchors, brand voice, CTA hierarchy, truthful proof) from the
+    // EXISTING identity + conversion model + research/approved-claim policy + composition + binding +
+    // the SANITIZED section public copy (deterministic; no model/network call; fail-open). Runs last so
+    // it can read every derived contract. Absent ⇒ legacy behavior.
+    try {
+      const contentNarrative = deriveContentNarrativeContract({
+        identity: built.identity,
+        language: built.language,
+        sections: built.architecture?.sections || [],
+        primaryCta: built.architecture?.primaryCTA,
+        secondaryCta: built.architecture?.secondaryCTA,
+        conversionModel: built.architecture?.conversionJourneyModel,
+        research: built.researchDirection,
+        composition: built.composition,
+        binding: built.bindingRequirements,
+        artDirection: input.artDirection,
+        prompt: built.prompt,
+      });
+      if (contentNarrative) built.contentNarrative = contentNarrative;
+    } catch { /* never block the build on content-narrative derivation */ }
 
     return built;
   } catch {

@@ -2075,6 +2075,12 @@ export interface FrontendBuildSpecification {
    *  builds; absent ⇒ legacy behavior. Derived deterministically from the EXISTING design-system +
    *  art-direction + research + composition + binding + image-coverage artifacts (no new call). */
   visualSystem?: import('@/lib/webBuildVisualSystem').VisualSystemContract;
+  /** Phase (content narrative) — the BINDING content/conversion-narrative contract: per-section
+   *  message roles, concrete specificity anchors, brand voice, CTA hierarchy and truthful proof
+   *  policy. Additive: present only on fresh builds; absent ⇒ legacy behavior. Derived deterministically
+   *  from the EXISTING identity + conversion model + research/approved-claim policy + composition +
+   *  binding + sanitized section public copy (no new model/network call). */
+  contentNarrative?: import('@/lib/webBuildContentNarrative').ContentNarrativeContract;
 
   honestyRules: string[];
   sourceTrace: string[];
@@ -2717,6 +2723,11 @@ export interface FrontendBuilderAcceptanceArtifact {
    *    token source + consumption, arbitrary-value/chrome/readability evidence counts and issue codes
    *    only; never source, prompts, URLs or secrets). All OPTIONAL/additive. ── */
   visualSystem?: import('@/lib/webBuildVisualSystem').VisualSystemDiagnostics;
+
+  /* ── Phase (content narrative) — bounded owner diagnostics (role/anchor/leak/duplication counts +
+   *    issue codes only; never raw prompts, research, provider answers, full copy or secrets).
+   *    All OPTIONAL/additive. ── */
+  contentNarrative?: import('@/lib/webBuildContentNarrative').ContentNarrativeDiagnostics;
 
   reason: string;
 }
