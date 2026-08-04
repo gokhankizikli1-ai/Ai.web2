@@ -114,6 +114,9 @@ export interface VisualSystemContract {
   antiSlop: VisualAntiSlopPolicy;
   tokenStrategy: string;
   sectionIds: string[];
+  /** PR #561 composition family per section id (drives the chrome-collapse role-contradiction check;
+   *  empty when no composition contract is available ⇒ chrome-collapse fails open to a warning). */
+  sectionFamilies: Record<string, string>;
   /* ── Truthful consumption trace. ── */
   derivationBasis: string[];
   contractPersistedInSpecification: boolean;
@@ -340,6 +343,10 @@ export function deriveVisualSystemContract(input: VisualSystemInput): VisualSyst
   const research = input.research;
   const comp = input.composition;
   const sectionIds = uniq((comp?.sections?.map((s) => s.id) || (input.sections || []).map((s) => s.id)).filter(Boolean)).slice(0, MAX_SECTION_IDS);
+  // Composition family per section (from PR #561), used only to judge whether repeated card chrome
+  // contradicts DISTINCT non-card roles. Empty when no composition contract ⇒ chrome-collapse warns.
+  const sectionFamilies: Record<string, string> = {};
+  for (const s of (comp?.sections || []).slice(0, MAX_SECTION_IDS)) if (s.id) sectionFamilies[s.id] = s.family;
   // Require at least one design source; otherwise stay legacy (absent ⇒ legacy behavior downstream).
   if (!ds && !ad && !research && sectionIds.length === 0) return undefined;
 
@@ -403,7 +410,7 @@ export function deriveVisualSystemContract(input: VisualSystemInput): VisualSyst
     version: 'visual-system-v1', status: 'derived',
     systemThesis: clip(ds?.designThesis || ds?.visualSignature || research?.artDirection?.visualThesis || ad?.visualMetaphor || `${clip(identity.primaryConcept || identity.siteType || sector, 60)}: a coherent, sector-true visual system`, MAX_TEXT),
     colorMode, typography, colorRoles, contrastObligations, surfaces, components, detailLanguage, responsiveObligations, antiSlop, tokenStrategy,
-    sectionIds,
+    sectionIds, sectionFamilies,
     derivationBasis,
     contractPersistedInSpecification: true,
     contractRenderedToFrontendBuilder: true,
@@ -511,6 +518,85 @@ function collectArbitrary(content: string, into: Set<string>): number {
   return n;
 }
 
+// PR #561 composition families that LEGITIMATELY use repeated card chrome (never a collapse when shared).
+const CARD_JUSTIFIED_FAMILIES = new Set(['feature-mosaic', 'catalog-index', 'comparison-band', 'gallery-strip', 'proof-ledger']);
+
+/** Remove comments so example/documentation text can never pollute token or arbitrary-value counts,
+ *  while preserving real strings, template literals, JSX className/style and stylesheet declarations.
+ *  Deterministic, bounded, single-pass, fails open (returns the input on any anomaly). In CSS mode
+ *  only block comments are stripped (CSS has no `//`, and `url(https://…)` must survive); in code mode
+ *  a `//` is a line comment only when it is not part of `://` (so URLs in JSX text/attributes survive).
+ *  Regex literals containing `//`/`/*` are a rare, bounded edge accepted under the fail-open policy. */
+function stripComments(src: string, cssMode: boolean): string {
+  try {
+    const s = src || '';
+    const n = s.length;
+    let out = '';
+    let state: 'normal' | 'sq' | 'dq' | 'tpl' | 'line' | 'block' = 'normal';
+    let i = 0;
+    while (i < n) {
+      const c = s[i];
+      const c2 = i + 1 < n ? s[i + 1] : '';
+      if (state === 'normal') {
+        if (c === '/' && c2 === '*') { state = 'block'; i += 2; continue; }
+        if (!cssMode && c === '/' && c2 === '/' && s[i - 1] !== ':') { state = 'line'; i += 2; continue; }
+        if (c === "'") { state = 'sq'; out += c; i += 1; continue; }
+        if (c === '"') { state = 'dq'; out += c; i += 1; continue; }
+        if (c === '`') { state = 'tpl'; out += c; i += 1; continue; }
+        out += c; i += 1; continue;
+      }
+      if (state === 'line') { if (c === '\n') { state = 'normal'; out += c; } i += 1; continue; }
+      if (state === 'block') { if (c === '*' && c2 === '/') { state = 'normal'; i += 2; } else { if (c === '\n') out += c; i += 1; } continue; }
+      // string / template states — keep contents verbatim, honour escapes.
+      out += c;
+      if (c === '\\' && i + 1 < n) { out += s[i + 1]; i += 2; continue; }
+      if ((state === 'sq' && c === "'") || (state === 'dq' && c === '"') || (state === 'tpl' && c === '`')) state = 'normal';
+      i += 1;
+    }
+    return out;
+  } catch { return src || ''; }
+}
+
+/** Identifiers imported from a theme/tokens/design-system module (namespace, named, aliased, default).
+ *  Their MERE import proves nothing; consumption is proven only if they are then referenced in code. */
+function importedThemeIdentifiers(cleanCode: string): string[] {
+  const ids: string[] = [];
+  const re = /import\s+([^;'"]+?)\s+from\s+['"][^'"]*(?:designSystem|\/theme|\/tokens|\/design-system|\/styles\/theme)['"]/gi;
+  let m: RegExpExecArray | null; let guard = 0;
+  while ((m = re.exec(cleanCode)) && guard < 40) {
+    guard += 1;
+    const clause = m[1] || '';
+    const ns = /\*\s+as\s+(\w+)/.exec(clause); if (ns) ids.push(ns[1]);
+    const named = /\{([^}]*)\}/.exec(clause);
+    if (named) for (const part of named[1].split(',')) {
+      const seg = part.trim(); if (!seg) continue;
+      const asM = /(\w+)\s+as\s+(\w+)/.exec(seg);
+      ids.push(asM ? asM[2] : seg.replace(/\s.*/, '').trim());
+    }
+    const head = clause.replace(/\{[^}]*\}/g, '').replace(/\*\s+as\s+\w+/g, '');
+    const def = /(^|,)\s*(\w+)\s*(,|$)/.exec(head); if (def) ids.push(def[2]);
+  }
+  return uniq(ids.filter((x) => x && /^[A-Za-z_$][\w$]*$/.test(x))).slice(0, 20);
+}
+
+/** A NORMALIZED composite card-grid chrome signature: radius + surface + border + shadow together.
+ *  Two sections match only when ALL components are identical — shared radius alone is NOT a match, so a
+ *  coherent design system (same tokens, different surfaces/borders/shadows) never reads as collapse.
+ *  Returns '' when the section is not a repeated card grid. Operates on comment-stripped source. */
+function chromeSignature(uc: string): string {
+  if (!/grid-cols-\d/.test(uc)) return '';
+  const cards = (uc.match(/rounded-(?:sm|md|lg|xl|2xl|3xl|full)[^"'`]{0,140}?(?:border|shadow|ring|bg-)/gi) || []).length;
+  if (cards < 3) return '';
+  const radius = (uc.match(/rounded-(3xl|2xl|xl|lg|md|sm|full)\b/) || [])[1] || (/rounded-\[/.test(uc) ? 'arb' : 'none');
+  const surfaceM = uc.match(/bg-(white|black|slate-\d{2,3}|gray-\d{2,3}|neutral-\d{2,3}|zinc-\d{2,3}|stone-\d{2,3}|card|background|surface|muted|popover|\[[^\]]{1,24}\])/);
+  const surface = surfaceM ? surfaceM[1] : 'none';
+  const borderM = uc.match(/\bborder(?:-(\w+|\[[^\]]{1,24}\]))?\b/);
+  const border = borderM ? (borderM[1] || 'plain') : 'none';
+  const shadowM = uc.match(/\bshadow(?:-(sm|md|lg|xl|2xl|inner|none|\[[^\]]{1,24}\]))?\b/);
+  const shadow = shadowM ? (shadowM[1] || 'base') : 'none';
+  return `r:${radius}|s:${surface}|b:${border}|sh:${shadow}`;
+}
+
 export function analyzeVisualSystem(
   files: FrontendGeneratedFile[] | undefined,
   contract: VisualSystemContract | undefined,
@@ -524,59 +610,69 @@ export function analyzeVisualSystem(
 
     const codeFiles = list.filter((f) => isCode(f.path));
     const styleFiles = list.filter((f) => isStyle(f.path));
-    const codeSrc = codeFiles.map((f) => (f.content || '').slice(0, MAX_FILE_SCAN)).join('\n');
-    const styleSrc = styleFiles.map((f) => (f.content || '').slice(0, MAX_FILE_SCAN)).join('\n');
+    // Comment/example-free EXECUTABLE source only (defect 2): comments and doc examples can never
+    // register fake CSS-variable definitions/usages, semantic classes or arbitrary values.
+    const codeSrc = codeFiles.map((f) => stripComments((f.content || '').slice(0, MAX_FILE_SCAN), false)).join('\n');
+    const styleSrc = styleFiles.map((f) => stripComments((f.content || '').slice(0, MAX_FILE_SCAN), true)).join('\n');
 
-    // ── Global token-source detection: definition vs actual consumption. ──
+    // ── Token SOURCE is DECLARED/IMPORTED vs actually CONSUMED — never conflated (defect 1). ──
     const cssVarDefs = (styleSrc.match(/--[a-z][\w-]*\s*:/gi) || []).length + (codeSrc.match(/--[a-z][\w-]*\s*:/gi) || []).length;
     const varUsages = (codeSrc.match(/var\(--[a-z][\w-]*/gi) || []).length + (styleSrc.match(/var\(--[a-z][\w-]*/gi) || []).length;
-    const themeModule = /from\s+['"][^'"]*(?:designSystem|\/theme|\/tokens|\/design-system)['"]/i.test(codeSrc)
-      || list.some((f) => /(?:designSystem|theme|tokens)\.(?:t|j)s$/i.test(f.path) && /--[a-z]|export const|:\s*['"]#/.test(f.content || ''));
     const semanticTailwind = (codeSrc.match(/(?:bg|text|border|ring|from|via|to|fill|stroke|divide|placeholder|caret|outline|decoration)-(?:primary|secondary|background|foreground|surface|card|muted|accent|border|ring|destructive|popover|input|brand)(?:-foreground)?\b/g) || []).length;
-    const tokenSource: VisualSystemAcceptanceResult['tokenSource'] = themeModule ? 'theme-module'
+    // A theme/tokens/design-system module being IMPORTED or merely EXISTING proves declaration only.
+    const themeModuleImported = /import\b[^;]*\bfrom\s+['"][^'"]*(?:designSystem|\/theme|\/tokens|\/design-system|\/styles\/theme)['"]/i.test(codeSrc);
+    const themeModuleDeclared = themeModuleImported
+      || list.some((f) => /(?:designSystem|theme|tokens)\.(?:t|j)sx?$/i.test(f.path)
+        && /export\s+(?:const|default|function|let|var)|--[a-z]/.test(stripComments(f.content || '', isStyle(f.path))));
+    // CONSUMPTION must be PROVEN from rendered code — declaration/import/unused constants never suffice.
+    const themeIds = importedThemeIdentifiers(codeSrc);
+    const moduleTokensConsumed = themeIds.some((id) => (codeSrc.match(new RegExp(`\\b${id}\\b`, 'g')) || []).length >= 2);
+    const cssVarsConsumed = cssVarDefs >= 1 && varUsages >= 3;
+    const semanticConsumed = semanticTailwind >= 8;
+    const tokenSource: VisualSystemAcceptanceResult['tokenSource'] = themeModuleDeclared ? 'theme-module'
       : cssVarDefs >= 3 ? 'css-vars'
       : semanticTailwind >= 8 ? 'semantic-tailwind' : 'none';
-    const tokenConsumed = varUsages >= 3 || semanticTailwind >= 8 || themeModule;
+    // themeModule existence/import ALONE never sets this — only proven consumption does.
+    const tokenConsumed = cssVarsConsumed || moduleTokensConsumed || semanticConsumed;
 
-    // ── Section-scoped units (never whole-project token composition). ──
+    // ── Section-scoped units (never whole-project token composition). Analyzed comment-free. ──
     const units = collectSectionUnits(list, contract.sectionIds);
+    const fam = contract.sectionFamilies || {};
+    const cleanUnits = units.map((u) => ({ id: u.id, path: u.path, clean: stripComments(u.content, false) }));
     const arbitrarySet = new Set<string>();
     let arbSectionCount = 0;
-    // Repeated generic card chrome is keyed on the IDENTICAL card radius (not merely "has cards"), so a
-    // coherent card system or a legitimate features/pricing/testimonials trio never trips a hard block.
-    const chromeSigCount = new Map<string, number>();
-    const chromeSigFiles = new Map<string, string[]>();
+    // Repeated card chrome is grouped by a NORMALIZED COMPOSITE signature (radius+surface+border+shadow),
+    // so shared radius alone — or a coherent card system — never groups as identical collapse.
+    const sigGroups = new Map<string, { ids: string[]; files: string[] }>();
     let gradientUnits = 0, glassUnits = 0, pillTotal = 0, iconCircle = 0;
-    for (const u of units) {
+    for (const u of cleanUnits) {
+      const uc = u.clean;
       const before = arbitrarySet.size;
-      collectArbitrary(u.content, arbitrarySet);
+      collectArbitrary(uc, arbitrarySet);
       if (arbitrarySet.size > before) arbSectionCount += 1;
-      if (/grid-cols-\d/.test(u.content)) {
-        let sig = '';
-        for (const size of ['3xl', '2xl', 'xl']) {
-          if ((u.content.match(new RegExp(`rounded-${size}[^"'\`]{0,100}(?:border|shadow|ring)`, 'gi')) || []).length >= 3) { sig = size; break; }
-        }
-        if (sig) {
-          chromeSigCount.set(sig, (chromeSigCount.get(sig) || 0) + 1);
-          const arr = chromeSigFiles.get(sig) || []; if (!arr.includes(u.path)) arr.push(u.path); chromeSigFiles.set(sig, arr);
-        }
+      const sig = chromeSignature(uc);
+      if (sig) {
+        const g = sigGroups.get(sig) || { ids: [], files: [] };
+        if (!g.ids.includes(u.id)) g.ids.push(u.id);
+        if (!g.files.includes(u.path)) g.files.push(u.path);
+        sigGroups.set(sig, g);
       }
-      if (/bg-gradient|from-[a-z[]/.test(u.content) && /\bto-[a-z[]/.test(u.content)) gradientUnits += 1;
-      if (/backdrop-blur/.test(u.content)) glassUnits += 1;
-      pillTotal += (u.content.match(/rounded-full/g) || []).length;
-      iconCircle += (u.content.match(/rounded-full[^"'`>]{0,40}(?:w-1[0-6]|h-1[0-6]|p-[234])\b/g) || []).length;
+      if (/bg-gradient|from-[a-z[]/.test(uc) && /\bto-[a-z[]/.test(uc)) gradientUnits += 1;
+      if (/backdrop-blur/.test(uc)) glassUnits += 1;
+      pillTotal += (uc.match(/rounded-full/g) || []).length;
+      iconCircle += (uc.match(/rounded-full[^"'`>]{0,40}(?:w-1[0-6]|h-1[0-6]|p-[234])\b/g) || []).length;
     }
-    // Dominant identical-chrome signature (the collapse candidate).
-    let chromeRepeat = 0; let chromeSig = '';
-    for (const [s, c] of chromeSigCount) if (c > chromeRepeat) { chromeRepeat = c; chromeSig = s; }
-    const chromeFiles = chromeSigFiles.get(chromeSig) || [];
+    // Largest identical-composite-chrome group (the collapse candidate).
+    let chromeRepeat = 0; let chromeSigKey = '';
+    for (const [s, g] of sigGroups) if (g.ids.length > chromeRepeat) { chromeRepeat = g.ids.length; chromeSigKey = s; }
+    const chromeGroup = sigGroups.get(chromeSigKey) || { ids: [], files: [] };
     const radiusShadowArbSet = new Set<string>();
     for (const k of arbitrarySet) if (k.startsWith('r:') || k.startsWith('s:')) radiusShadowArbSet.add(k);
     const radiusShadowArb = radiusShadowArbSet.size;
     const arbitraryValueCount = arbitrarySet.size;
 
-    // ── Global readability (works even if section correlation is thin). ──
-    const readSrc = units.length >= 2 ? units.map((u) => u.content).join('\n') : codeSrc;
+    // ── Global readability (works even if section correlation is thin). Comment-free. ──
+    const readSrc = cleanUnits.length >= 2 ? cleanUnits.map((u) => u.clean).join('\n') : codeSrc;
     const transparentBody = (readSrc.match(/<(?:p|blockquote)\b[^>]*\b(?:opacity-(?:0|5|10|15|20)|text-transparent)\b[^>]*>/gi) || [])
       .filter((tag) => !/bg-clip-text/.test(tag)).length;
     const sameTokenTextBg = (readSrc.match(/<[a-zA-Z][^>]*\b(?:text-white\b[^>]*\bbg-white|text-black\b[^>]*\bbg-black)\b[^>]*>/gi) || []).length
@@ -599,13 +695,29 @@ export function analyzeVisualSystem(
         evidence: capEv(`a ${tokenSource} token source is present${tokenConsumed ? '' : ' but barely consumed'}, yet components bypass it with ${arbitraryValueCount} distinct arbitrary colour/radius/shadow values across ${arbSectionCount} sections`),
         repairInstruction: capEv('Consume the declared visual tokens across all components; remove the arbitrary hex/radius/shadow values and map them to the semantic token roles.') });
     }
-    // ── 3. Repeated generic card chrome across unrelated sections (blocker). Requires an OVERWHELMING
-    //    majority (≥60%) of sections to share the IDENTICAL rounded card chrome — a coherent card system
-    //    or a normal features/pricing/testimonials trio never trips this. ──
-    if (chromeRepeat >= COLLAPSE_MIN && chromeRepeat >= Math.ceil(units.length * 0.6)) {
-      push({ code: 'visual-system-chrome-collapse', severity: 'major', label: `repeated rounded-${chromeSig} card chrome`, files: chromeFiles.slice(0, MAX_ISSUE_FILES),
-        evidence: capEv(`${chromeRepeat} of ${units.length} unrelated top-level sections repeat the same generic rounded-${chromeSig} bordered/shadowed card-grid chrome, contradicting their assigned composition roles`),
-        repairInstruction: capEv('Give each top-level section its assigned composition surface/chrome; a repeated card grid may live inside ONE catalog section, not across unrelated sections.') });
+    // ── 3. Repeated IDENTICAL card chrome collapsing DISTINCT non-card composition roles (blocker).
+    //    Fires ONLY when ≥4 sections share a materially identical composite signature (radius+surface+
+    //    border+shadow), those sections were assigned DISTINCT non-card PR #561 families (so they should
+    //    look different), and every sharing section's family is known. Shared radius, a coherent card
+    //    system, one catalog grid, or legitimate card families (feature/catalog/comparison/gallery/proof)
+    //    never trip it; ambiguous composition correlation fails open to a warning. ──
+    if (chromeRepeat >= COLLAPSE_MIN) {
+      const sharingIds = chromeGroup.ids;
+      const knownCount = sharingIds.filter((id) => !!fam[id]).length;
+      const familiesKnown = knownCount === sharingIds.length;
+      const nonCardIds = sharingIds.filter((id) => fam[id] && !CARD_JUSTIFIED_FAMILIES.has(fam[id]));
+      const distinctNonCardFamilies = uniq(nonCardIds.map((id) => fam[id]));
+      const sigParts = chromeSigKey.split('|').join(' ');
+      if (familiesKnown && nonCardIds.length >= COLLAPSE_MIN && distinctNonCardFamilies.length >= 2) {
+        push({ code: 'visual-system-chrome-collapse', severity: 'major', label: 'identical card chrome across distinct non-card roles', files: chromeGroup.files.slice(0, MAX_ISSUE_FILES),
+          evidence: capEv(`${nonCardIds.length} top-level sections (${nonCardIds.slice(0, 6).join(', ')}) assigned DISTINCT non-card composition families (${distinctNonCardFamilies.slice(0, 6).join(', ')}) all render the identical composite card-grid chrome [${sigParts}] — the repetition contradicts their assigned roles`),
+          repairInstruction: capEv('Give each non-card section (hero/story/steps/CTA/etc.) its assigned composition treatment; reserve the shared card grid for card families (feature/catalog/comparison/gallery/proof).') });
+      } else if (!familiesKnown && chromeRepeat >= Math.ceil(units.length * 0.6)) {
+        push({ code: 'visual-system-slop-pattern', severity: 'minor', label: 'possible repeated card chrome', files: chromeGroup.files.slice(0, MAX_ISSUE_FILES),
+          evidence: capEv(`${chromeRepeat} sections share an identical composite card-grid chrome [${sigParts}] but composition roles could not be correlated — verify this is a coherent card system, not template collapse`),
+          repairInstruction: capEv('Confirm each section’s composition role; vary the card chrome where the assigned roles differ.') });
+      }
+      // else: coherent shared card design among card-justified families → no finding.
     }
     // ── 4. Literal severe unreadability (blocker). ──
     if (transparentBody >= 2 || sameTokenTextBg >= 1) {
@@ -643,10 +755,11 @@ export function analyzeVisualSystem(
     }
     // Text-over-image without a scrim (per unit) → warning.
     let textOverImage = 0;
-    for (const u of units) {
-      const hasImg = /<img\b|<picture\b|background-image|data-korvix-image-slot/i.test(u.content);
-      const hasOverlayText = /absolute[^>]*(?:<h1|<h2|text-white)/i.test(u.content) || (/<img\b/i.test(u.content) && /absolute/.test(u.content) && /text-white/.test(u.content));
-      const hasScrim = /bg-black\/|bg-gradient|from-black|backdrop-blur|scrim|overlay|bg-\[rgba/i.test(u.content);
+    for (const u of cleanUnits) {
+      const uc = u.clean;
+      const hasImg = /<img\b|<picture\b|background-image|data-korvix-image-slot/i.test(uc);
+      const hasOverlayText = /absolute[^>]*(?:<h1|<h2|text-white)/i.test(uc) || (/<img\b/i.test(uc) && /absolute/.test(uc) && /text-white/.test(uc));
+      const hasScrim = /bg-black\/|bg-gradient|from-black|backdrop-blur|scrim|overlay|bg-\[rgba/i.test(uc);
       if (hasImg && hasOverlayText && !hasScrim) textOverImage += 1;
     }
     if (textOverImage >= 1) {
