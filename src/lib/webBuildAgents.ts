@@ -2057,6 +2057,12 @@ export interface FrontendBuildSpecification {
    *  from binding media, sector/vertical, image-led direction and explicit no-photo instructions. */
   imageCoverage?: import('@/lib/webBuildImageCoverage').ImageCoverageRequirement;
 
+  /** Phase (research-grounded direction) — the authoritative research/sector-evidence direction +
+   *  premium art-direction / anti-template contract. OPTIONAL and additive: present only on fresh
+   *  builds; absent ⇒ legacy behavior (no direction block, no research-grounding acceptance). Derived
+   *  deterministically from the EXISTING research + Vertical Intelligence artifacts (no new call). */
+  researchDirection?: import('@/lib/webBuildResearchDirection').ResearchDirectionContract;
+
   honestyRules: string[];
   sourceTrace: string[];
   missingInputs: string[];
@@ -2685,6 +2691,10 @@ export interface FrontendBuilderAcceptanceArtifact {
   unsplashStatus?: string;
   imageCoverageReasonCodes?: string[];
   imageCoverageAcceptanceStatus?: 'pass' | 'warning' | 'fail';
+
+  /* ── Phase (research-grounded direction) — bounded owner diagnostics (counts + codes only;
+   *    never raw sources, prompts, URLs or secrets). All OPTIONAL/additive. ── */
+  researchDirection?: import('@/lib/webBuildResearchDirection').ResearchDirectionDiagnostics;
 
   reason: string;
 }

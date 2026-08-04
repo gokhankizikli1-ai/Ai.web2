@@ -30,6 +30,7 @@ import { resolveProductIntent } from '@/lib/webBuildProductIntent';
 import { deriveExperienceArchitecturePlan } from '@/lib/webBuildExperienceArchitecture';
 import { deriveBindingRequirements } from '@/lib/webBuildBindingRequirements';
 import { deriveImageCoverageRequirement } from '@/lib/webBuildImageCoverage';
+import { deriveResearchDirection } from '@/lib/webBuildResearchDirection';
 import type {
   FrontendBuildSpecification, FrontendSpecSection, FrontendSpecImageSlot, FrontendSpecMotionLayer,
   FrontendSpecIdentity, FrontendSpecDesignSystem, FrontendSpecArchitecture, FrontendSpecAssetPlan,
@@ -694,6 +695,21 @@ export function deriveFrontendBuildSpecification(input: FrontendBuildSpecInput):
       const imageCoverage = deriveImageCoverageRequirement(built);
       if (imageCoverage) built.imageCoverage = imageCoverage;
     } catch { /* never block the build on coverage derivation */ }
+
+    // Phase (research-grounded direction) — normalize the EXISTING research + Vertical Intelligence
+    // evidence into an authoritative sector-direction + premium art-direction / anti-template
+    // contract (deterministic; no model/network call; fail-open). Absent ⇒ legacy behavior.
+    try {
+      built.researchDirection = deriveResearchDirection({
+        identity: built.identity,
+        vertical: input.verticalIntelligence,
+        researchEvidence,
+        research: input.research,
+        artDirection: input.artDirection,
+        ledger: input.thinkingLedger,
+        prompt: built.prompt,
+      });
+    } catch { /* never block the build on research-direction derivation */ }
 
     return built;
   } catch {

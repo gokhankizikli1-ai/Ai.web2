@@ -73,6 +73,11 @@ import {
   analyzeBindingAcceptance, bindingIssuesToReviewIssues, hasBlockingBindingFindings, bindingIssueCodes,
   type BindingAcceptanceResult, type DriftPolicy,
 } from '@/lib/webBuildRequirementAnalysis';
+import {
+  analyzeResearchGrounding, researchGroundingToReviewIssues, hasBlockingResearchFindings,
+  researchGroundingIssueCodes, buildResearchDirectionDiagnostics, renderResearchDirectionBlock,
+  type ResearchGroundingResult,
+} from '@/lib/webBuildResearchDirection';
 // PR #521 — CONDITIONAL rendered VISION review (fresh-build only, at most one screenshot + one
 // vision call). Its major/blocker findings ride the SAME existing merge → single bounded repair.
 import {
@@ -724,31 +729,42 @@ export async function runFrontendBuilderQualityPipeline(
     const bindingReqs = spec?.bindingRequirements;
     const imageCoverage = spec?.imageCoverage;
     const coverageDiag = basePayload.artifacts?.imageAssetManifest?.coverage;
+    // Phase (research-grounded direction) — the sector/research direction contract drives BOTH the
+    // sector-aware drift policy (forbidden modules) AND research-grounding acceptance.
+    const researchDirection = spec?.researchDirection;
     const driftPolicy: DriftPolicy = {
       isSoftwareSector: spec?.identity?.sector === 'ai-saas' || spec?.identity?.sector === 'marketplace'
         || spec?.identity?.classificationBasis === 'product-concept',
+      // Sector-incompatible modules become explicit drift labels (research/Vertical Intelligence
+      // evidence now materially controls the EXISTING cross-sector drift analyzer).
+      forbiddenModuleLabels: researchDirection?.artDirection?.forbiddenModules,
     };
+    const researchDirectionChars = renderResearchDirectionBlock(researchDirection).join('\n').length;
     let initialBinding: BindingAcceptanceResult | undefined;
+    let initialResearch: ResearchGroundingResult | undefined;
     try {
       initialBinding = analyzeBindingAcceptance(validation?.files, bindingReqs, driftPolicy, imageCoverage);
-      if (initialBinding && initialBinding.issues.length && initialReview.status === 'completed') {
-        const bIssues = bindingIssuesToReviewIssues(initialBinding);
-        if (bIssues.length) {
-          const { issues: mergedB, added: addedB } = mergeDeterministicIssues(initialReview.issues, bIssues);
-          if (addedB > 0) {
-            initialReview = recomputeReviewWithMergedIssues(initialReview, mergedB, addedB);
-            repairTriggeredByShallowQuality = repairTriggeredByShallowQuality || !initialReview.passed;
-          }
+      initialResearch = analyzeResearchGrounding(validation?.files, researchDirection);
+      const detIssues = [
+        ...(initialBinding ? bindingIssuesToReviewIssues(initialBinding) : []),
+        ...(initialResearch ? researchGroundingToReviewIssues(initialResearch) : []),
+      ];
+      if (detIssues.length && initialReview.status === 'completed') {
+        const { issues: mergedB, added: addedB } = mergeDeterministicIssues(initialReview.issues, detIssues);
+        if (addedB > 0) {
+          initialReview = recomputeReviewWithMergedIssues(initialReview, mergedB, addedB);
+          repairTriggeredByShallowQuality = repairTriggeredByShallowQuality || !initialReview.passed;
         }
       }
-    } catch { /* fail-open: binding analysis must never break a build */ }
+    } catch { /* fail-open: deterministic analysis must never break a build */ }
     // Post-repair binding analysis is computed later over the RECONSTRUCTED complete project
     // (full or owner-delta — both revalidate a complete project, so there is no analysis gap).
     let repairBinding: BindingAcceptanceResult | undefined;
+    let repairResearch: ResearchGroundingResult | undefined;
     // Bounded, non-sensitive binding/drift diagnostics for the acceptance artifact.
     const bindingExtra = (): Partial<FrontendBuilderAcceptanceArtifact> => {
       const hasAny = !!bindingReqs || !!(initialBinding && initialBinding.driftIssueCount) || !!(repairBinding && repairBinding.driftIssueCount)
-        || !!imageCoverage || !!coverageDiag;
+        || !!imageCoverage || !!coverageDiag || !!researchDirection;
       if (!hasAny) return {};
       const b = repairBinding || initialBinding;
       const c = bindingReqs?.counts;
@@ -789,6 +805,8 @@ export async function runFrontendBuilderQualityPipeline(
           ...(coverageDiag.requiredSemanticImageCount && b?.requiredImageCount == null ? { requiredSemanticImageCount: coverageDiag.requiredSemanticImageCount } : {}),
           ...(coverageDiag.uncoveredRequiredImageCount != null && b?.uncoveredRequiredImageCount == null ? { uncoveredRequiredImageCount: coverageDiag.uncoveredRequiredImageCount } : {}),
         } : {}),
+        // ── Phase (research-grounded direction) — bounded, secret-free diagnostics. ──
+        ...(researchDirection ? { researchDirection: buildResearchDirectionDiagnostics(researchDirection, repairResearch || initialResearch, researchDirectionChars) } : {}),
       };
     };
 
@@ -908,7 +926,7 @@ export async function runFrontendBuilderQualityPipeline(
     // Phase 13C — a model "pass" can NEVER approve while severe deterministic warnings remain.
     //    Phase 12G — a blocking binding-requirement or cross-sector-drift finding can NEVER be
     //    fast-approved (the merge above already flips passed=false, but this is an explicit guard).
-    if (initialReview.passed && severeWarningGatePassed(validation) && !hasBlockingBindingFindings(initialBinding)) {
+    if (initialReview.passed && severeWarningGatePassed(validation) && !hasBlockingBindingFindings(initialBinding) && !hasBlockingResearchFindings(initialResearch)) {
       const acceptance = acceptanceArtifact('approved', initialProjectName, {
         initialReviewPassed: true, repairAttempted: false, repairAccepted: false, finalReviewPassed: false,
         reason: `Initial static design review passed (score ${initialReview.score ?? '?'}); no severe quality warnings. Rendered visual test pending.`,
@@ -1071,14 +1089,16 @@ export async function runFrontendBuilderQualityPipeline(
     //    review score improved: a blocking binding requirement or cross-sector drift still blocks. ──
     try {
       repairBinding = analyzeBindingAcceptance(repairValidation.files, bindingReqs, driftPolicy, imageCoverage);
-      if (repairBinding && repairBinding.issues.length && finalReview.status === 'completed') {
-        const bIssues = bindingIssuesToReviewIssues(repairBinding);
-        if (bIssues.length) {
-          const { issues: mergedFB, added: addedFB } = mergeDeterministicIssues(finalReview.issues, bIssues);
-          if (addedFB > 0) finalReview = recomputeReviewWithMergedIssues(finalReview, mergedFB, addedFB);
-        }
+      repairResearch = analyzeResearchGrounding(repairValidation.files, researchDirection);
+      const detIssuesFB = [
+        ...(repairBinding ? bindingIssuesToReviewIssues(repairBinding) : []),
+        ...(repairResearch ? researchGroundingToReviewIssues(repairResearch) : []),
+      ];
+      if (detIssuesFB.length && finalReview.status === 'completed') {
+        const { issues: mergedFB, added: addedFB } = mergeDeterministicIssues(finalReview.issues, detIssuesFB);
+        if (addedFB > 0) finalReview = recomputeReviewWithMergedIssues(finalReview, mergedFB, addedFB);
       }
-    } catch { /* fail-open: post-repair binding analysis must never break a build */ }
+    } catch { /* fail-open: post-repair deterministic analysis must never break a build */ }
 
     // ── Step 8 — repair acceptance gate: valid + final pass + strict score improvement +
     //    Phase 13C severe-warning gate (a model "pass" cannot approve a still-shallow repair) +
@@ -1093,7 +1113,8 @@ export async function runFrontendBuilderQualityPipeline(
       finalReview.majorCount === 0 &&
       finalScore > initialScore &&
       repairSevereGatePassed &&
-      !hasBlockingBindingFindings(repairBinding);
+      !hasBlockingBindingFindings(repairBinding) &&
+      !hasBlockingResearchFindings(repairResearch);
 
     if (accept) {
       const repair = repairArtifact('accepted', `Repair accepted: score improved ${initialScore} → ${finalScore} and the post-repair review passed with no blocker/major issues and no severe quality warnings.`, {
@@ -1121,7 +1142,9 @@ export async function runFrontendBuilderQualityPipeline(
     // Repair validated but was not accepted (final review failed / malformed / no improvement /
     // severe warnings still remain). Phase 13C — a repair that stays shallow is rejected by the
     // deterministic severe-warning gate even if the model reviewer "passed" it.
-    const rejectReason = hasBlockingBindingFindings(repairBinding)
+    const rejectReason = hasBlockingResearchFindings(repairResearch)
+      ? `The repaired project still contradicts the researched sector direction (${researchGroundingIssueCodes(repairResearch).slice(0, 4).join(', ')} — e.g. a sector-incompatible module, a fabricated public claim, or a missing required sector pattern); the repair was not accepted.`
+      : hasBlockingBindingFindings(repairBinding)
       ? `The repaired project still fails a binding user-requirement or shows cross-sector drift (${bindingIssueCodes(repairBinding).slice(0, 4).join(', ')}); the repair was not accepted.`
       : !repairSevereGatePassed
       ? `The repaired project still shows severe quality warnings (${severeWarningsAfterRepair.slice(0, 4).join(', ')}); the repair was not accepted.`
