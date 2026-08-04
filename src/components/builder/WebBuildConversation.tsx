@@ -842,6 +842,17 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
         ownerRows.push(['contentNarrativeContractApplied', `spec ${String(!!cn.contractPersistedInSpecification)} · builder ${String(!!cn.contractRenderedToFrontendBuilder)} · acceptance ${String(!!cn.contractUsedByAcceptance)} · agents ${cn.agentsActuallyConsumingContract?.length ? cn.agentsActuallyConsumingContract.slice(0, 4).join('/') : 'none'}`]);
         if (cn.contentAcceptanceStatus) ownerRows.push(['contentNarrativeAcceptanceStatus', `${cn.contentAcceptanceStatus}${cn.contentIssueCodes?.length ? ` · ${cn.contentIssueCodes.slice(0, 6).join(', ')}` : ''}`]);
       }
+      // Phase (integrated experience quality) — bounded cross-system experience diagnostics (owner-only).
+      // ONE unified surface with clearly-owned sub-policies; consumption is truthful (rendered into the
+      // builder request + read by acceptance; no planning/model agent consumes it before its decision).
+      const eq = fac.experienceQuality;
+      if (eq) {
+        ownerRows.push(['experienceContract', `${eq.experienceVersion} · ${eq.experienceStatus} · ${eq.sectionObligationCount} sections · contract ${eq.experienceCharCount} chars · sub-policies ${eq.subPolicies.slice(0, 6).join('/')}`]);
+        if (eq.derivationBasis?.length) ownerRows.push(['experienceDerivation', eq.derivationBasis.slice(0, 6).join(', ')]);
+        if (eq.analyzedSectionCount != null) ownerRows.push(['experienceFindings', `analyzed ${eq.analyzedSectionCount} · ambiguous ${eq.ambiguousSectionCount ?? 0} · coherence ${eq.coherenceFindingCount ?? 0} · responsive ${eq.responsiveFindingCount ?? 0} · interaction ${eq.interactionFindingCount ?? 0} · a11y ${eq.accessibilityFindingCount ?? 0} · perf ${eq.performanceFindingCount ?? 0}`]);
+        ownerRows.push(['experienceContractApplied', `spec ${String(!!eq.contractPersistedInSpecification)} · builder ${String(!!eq.contractRenderedToFrontendBuilder)} · acceptance ${String(!!eq.contractUsedByAcceptance)} · agents ${eq.agentsActuallyConsumingContract?.length ? eq.agentsActuallyConsumingContract.slice(0, 4).join('/') : 'none'}`]);
+        if (eq.experienceAcceptanceStatus) ownerRows.push(['experienceAcceptanceStatus', `${eq.experienceAcceptanceStatus}${eq.experienceIssueCodes?.length ? ` · ${eq.experienceIssueCodes.slice(0, 6).join(', ')}` : ''}`]);
+      }
     }
 
     // Phase 13D — model-native REVISION diagnostics (owner-only). Present only on an
