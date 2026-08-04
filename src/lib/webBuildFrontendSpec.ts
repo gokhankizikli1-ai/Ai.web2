@@ -32,6 +32,7 @@ import { deriveBindingRequirements } from '@/lib/webBuildBindingRequirements';
 import { deriveImageCoverageRequirement } from '@/lib/webBuildImageCoverage';
 import { deriveResearchDirection } from '@/lib/webBuildResearchDirection';
 import { deriveCompositionContract } from '@/lib/webBuildComposition';
+import { deriveVisualSystemContract } from '@/lib/webBuildVisualSystem';
 import type {
   FrontendBuildSpecification, FrontendSpecSection, FrontendSpecImageSlot, FrontendSpecMotionLayer,
   FrontendSpecIdentity, FrontendSpecDesignSystem, FrontendSpecArchitecture, FrontendSpecAssetPlan,
@@ -729,6 +730,26 @@ export function deriveFrontendBuildSpecification(input: FrontendBuildSpecInput):
       });
       if (composition) built.composition = composition;
     } catch { /* never block the build on composition derivation */ }
+
+    // Phase (premium visual system) — derive the BINDING visual-system contract (typography roles,
+    // semantic colour roles, surface/component/detail language, readability + responsive obligations,
+    // anti-slop policy) from the EXISTING design-system + art-direction + research + composition +
+    // binding + image-coverage artifacts (deterministic; no model/network call; fail-open). Runs
+    // after composition so it can read the section families. Absent ⇒ legacy behavior.
+    try {
+      const visualSystem = deriveVisualSystemContract({
+        identity: built.identity,
+        designSystem: built.designSystem,
+        artDirection: input.artDirection,
+        research: built.researchDirection,
+        composition: built.composition,
+        binding: built.bindingRequirements,
+        imageCoverage: built.imageCoverage,
+        sections: built.architecture?.sections || [],
+        prompt: built.prompt,
+      });
+      if (visualSystem) built.visualSystem = visualSystem;
+    } catch { /* never block the build on visual-system derivation */ }
 
     return built;
   } catch {

@@ -816,6 +816,20 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
         ownerRows.push(['compositionContractApplied', `spec ${String(!!cp.contractPersistedInSpecification)} · builder ${String(!!cp.contractRenderedToFrontendBuilder)} · acceptance ${String(!!cp.contractUsedByAcceptance)} · agents ${cp.agentsActuallyConsumingContract?.length ? cp.agentsActuallyConsumingContract.slice(0, 4).join('/') : 'none'}`]);
         if (cp.compositionAcceptanceStatus) ownerRows.push(['compositionAcceptanceStatus', `${cp.compositionAcceptanceStatus}${cp.compositionIssueCodes?.length ? ` · ${cp.compositionIssueCodes.slice(0, 6).join(', ')}` : ''}`]);
       }
+      // Phase (premium visual system) — bounded visual-system diagnostics (owner-only). The contract
+      // is an executable token/typography/surface/component system, NOT a fixed style; consumption is
+      // truthful (rendered into the builder request + read by acceptance; no model agent reads it first).
+      const vs = fac.visualSystem;
+      if (vs) {
+        ownerRows.push(['visualSystemContract', `${vs.visualSystemVersion} · ${vs.visualSystemStatus} · ${vs.colorMode} · contract ${vs.visualSystemCharCount} chars`]);
+        ownerRows.push(['visualSystemThesis', shortStr(vs.systemThesis, 120)]);
+        ownerRows.push(['visualSystemRoles', `typography ${vs.typographyRoleCount} · colour ${vs.colorRoleCount} · surface ${vs.surfaceRoleCount} · components ${vs.componentRuleCount} · prohibited ${vs.prohibitedPatternCount}`]);
+        ownerRows.push(['visualSystemPolicy', `gradients ${vs.gradientPolicy} · glass ${vs.glassPolicy}`]);
+        if (vs.derivationBasis?.length) ownerRows.push(['visualSystemDerivation', vs.derivationBasis.slice(0, 6).join(', ')]);
+        ownerRows.push(['visualSystemContractApplied', `spec ${String(!!vs.contractPersistedInSpecification)} · builder ${String(!!vs.contractRenderedToFrontendBuilder)} · acceptance ${String(!!vs.contractUsedByAcceptance)} · agents ${vs.agentsActuallyConsumingContract?.length ? vs.agentsActuallyConsumingContract.slice(0, 4).join('/') : 'none'}`]);
+        if (vs.tokenSourceDetected) ownerRows.push(['visualSystemTokens', `source ${vs.tokenSourceDetected} · consumed ${String(!!vs.tokenConsumptionDetected)} · sections ${vs.analyzedSectionCount ?? 0} · arbitrary ${vs.arbitraryValueCount ?? 0} · repeatedChrome ${vs.chromeRepeatSectionCount ?? 0} · readability ${vs.readabilityFindingCount ?? 0}`]);
+        if (vs.visualSystemAcceptanceStatus) ownerRows.push(['visualSystemAcceptanceStatus', `${vs.visualSystemAcceptanceStatus}${vs.visualSystemIssueCodes?.length ? ` · ${vs.visualSystemIssueCodes.slice(0, 6).join(', ')}` : ''}`]);
+      }
     }
 
     // Phase 13D — model-native REVISION diagnostics (owner-only). Present only on an

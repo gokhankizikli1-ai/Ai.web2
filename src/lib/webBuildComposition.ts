@@ -29,21 +29,19 @@ import type {
 } from '@/lib/webBuildAgents';
 import type { ResearchDirectionContract } from '@/lib/webBuildResearchDirection';
 import type { ImageCoverageRequirement } from '@/lib/webBuildImageCoverage';
+// Shared, authoritative section-source correlation/extraction (single source of truth; see PR #561).
+import { collectSectionUnits } from '@/lib/webBuildSectionSource';
 
 /* ── Bounds (named, mandatory) ─────────────────────────────────────────────── */
 const MAX_SECTIONS = 24;
 const MAX_LIST = 8;
 const MAX_TEXT = 160;
 const MAX_SLOT_IDS = 6;
-const MAX_FILE_CHARS = 80_000;
 const MAX_ISSUES = 24;
 const MAX_ISSUE_FILES = 4;
 const MAX_EVIDENCE = 180;
 const COLLAPSE_MIN = 4;            // ≥ this many DISTINCT top-level sections identical → collapse
 const CONSECUTIVE_COLLAPSE = 3;    // ≥ this many CONSECUTIVE identical top-level sections → collapse
-const MIN_UNIT_CHARS = 24;         // a correlated section region must carry real markup to be judged
-const MAX_MARKERS = MAX_SECTIONS * 3;   // per-file scan guard
-const MAX_BACKSCAN = 2000;         // how far back to walk for a tagged element's opening '<'
 
 /* ── Public contract types (persisted, all additive/optional for old builds) ── */
 export type CompositionFamily =
@@ -143,15 +141,7 @@ export interface CompositionContract {
 /* ── Small pure helpers ────────────────────────────────────────────────────── */
 function clip(s: unknown, n = MAX_TEXT): string { return (typeof s === 'string' ? s : '').replace(/\s+/g, ' ').trim().slice(0, n); }
 function uniq<T>(a: T[]): T[] { return [...new Set(a)]; }
-function normId(s: string): string { return (s || '').toLowerCase().replace(/[^a-z0-9]+/g, ''); }
-function anchorId(s: string): string { return (s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'section'; }
-function baseName(p: string): string { const b = (p || '').split(/[\\/]/).pop() || ''; return b.replace(/\.[jt]sx?$/i, ''); }
 function has(hay: string, re: RegExp): boolean { return re.test(hay); }
-/** Walk back from an attribute match to the '<' that opens its JSX element (bounded). */
-function backToTag(s: string, i: number): number {
-  for (let j = i; j >= 0 && i - j < MAX_BACKSCAN; j -= 1) { if (s.charCodeAt(j) === 60 /* '<' */) return j; }
-  return i;
-}
 
 /* ── Composition family specs (executable defaults per primitive). EXHAUSTIVE. ── */
 interface FamilySpec { alignment: CompositionAlignment; container: CompositionContainer; textMedia: TextMediaRelation; density: CompositionDensity; surface: CompositionSurface; primitives: string[]; }
@@ -506,98 +496,6 @@ function compositionSignature(content: string): string {
   return 'other';
 }
 
-interface RawRegion { kind: 'korvix' | 'sectionId'; token: string; path: string; start: number; content: string; }
-
-/** Extract per-SECTION source regions from ONE file. A monolithic page (many tagged section roots
- *  in one App.tsx) yields several regions; a single-section component yields one. Region boundaries
- *  are the top-level section markers themselves, so a region is sliced to the START of the NEXT
- *  top-level section — never to a brace/quote/JSX boundary — so nested arrow functions, JSX, braces
- *  and template literals are NOT truncated. Only markers that correlate to a real contract section
- *  act as boundaries, so an unrelated nested <section id> can never fragment a region. */
-function fileRegions(file: FrontendGeneratedFile, contractIdSet: Set<string>, anchorSet: Set<string>): RawRegion[] {
-  const c = (file && file.content) || '';
-  if (!c) return [];
-  const bounds: Array<{ kind: 'korvix' | 'sectionId'; token: string; start: number }> = [];
-  let m: RegExpExecArray | null;
-  let guard = 0;
-  const kre = /data-korvix-section=["']([^"']+)["']/gi;
-  while ((m = kre.exec(c)) && guard < MAX_MARKERS) {
-    guard += 1;
-    const norm = normId(m[1] || '');
-    if (norm && contractIdSet.has(norm)) bounds.push({ kind: 'korvix', token: norm, start: backToTag(c, m.index) });
-  }
-  const sre = /<section\b[^>]*\bid=["']([^"']+)["']/gi;
-  guard = 0;
-  while ((m = sre.exec(c)) && guard < MAX_MARKERS) {
-    guard += 1;
-    const anch = (m[1] || '').toLowerCase();
-    if (anch && anchorSet.has(anch)) bounds.push({ kind: 'sectionId', token: anch, start: m.index });
-  }
-  if (!bounds.length) return [];
-  bounds.sort((a, b) => a.start - b.start);
-  // A <section id data-korvix-section> matches BOTH scans at the same tag start — keep the korvix one.
-  const dedup: typeof bounds = [];
-  for (const b of bounds) {
-    const prev = dedup[dedup.length - 1];
-    if (prev && b.start === prev.start) { if (prev.kind !== 'korvix' && b.kind === 'korvix') dedup[dedup.length - 1] = b; continue; }
-    dedup.push(b);
-  }
-  return dedup.map((b, i) => {
-    const rawEnd = i + 1 < dedup.length ? dedup[i + 1].start : c.length;
-    const end = Math.min(rawEnd, b.start + MAX_FILE_CHARS);
-    return { kind: b.kind, token: b.token, path: file.path, start: b.start, content: c.slice(b.start, end) };
-  });
-}
-
-/** Correlate each contract section to its OWN rendered source region. Supports many tagged sections
- *  in one file, one tagged section per component, filename-correlated components and the deterministic
- *  <section id> fallback. Deduplicates by (file path + section id + matched source range) — never by
- *  file path alone — so distinct sections from one App.tsx are all collected. Ambiguous/missing
- *  extraction fails open for THAT section only. Units are returned in contract order. */
-function collectSectionUnits(files: FrontendGeneratedFile[], contract: CompositionContract): Array<{ id: string; content: string; path: string }> {
-  const secs = contract.sections.slice(0, MAX_SECTIONS);
-  const contractIdSet = new Set(secs.map((s) => normId(s.id)));
-  const anchorSet = new Set(secs.map((s) => anchorId(s.id)));
-  const korvixMap = new Map<string, RawRegion>();
-  const sectionIdMap = new Map<string, RawRegion>();
-  const filesWithBounds = new Set<string>();
-  for (const f of files) {
-    const regions = fileRegions(f, contractIdSet, anchorSet);
-    if (regions.length) filesWithBounds.add(f.path);
-    for (const r of regions) {
-      if (r.kind === 'korvix') { if (!korvixMap.has(r.token)) korvixMap.set(r.token, r); }
-      else if (!sectionIdMap.has(r.token)) sectionIdMap.set(r.token, r);
-    }
-  }
-  const valid = (s: string): boolean => { const t = (s || '').trim(); return t.length >= MIN_UNIT_CHARS && t.includes('<'); };
-  const units: Array<{ id: string; content: string; path: string }> = [];
-  const claimedRegions = new Set<string>();     // `${path}@${start}` — a region is one section only
-  const claimedFilenamePaths = new Set<string>();
-  for (const sc of secs) {
-    // 1. data-korvix-section region · 2. deterministic <section id> region · 3. filename component.
-    let region = korvixMap.get(normId(sc.id));
-    if (!region || !valid(region.content)) region = sectionIdMap.get(anchorId(sc.id));
-    if (region && valid(region.content)) {
-      const key = `${region.path}@${region.start}`;
-      if (!claimedRegions.has(key)) {
-        claimedRegions.add(key);
-        units.push({ id: sc.id, content: region.content.slice(0, MAX_FILE_CHARS), path: region.path });
-      }
-      continue;   // correlated (or its region already claimed) — do not also grab a whole file
-    }
-    const nid = normId(sc.id);
-    // Filename-correlated PLAIN component only — never a multi-section page (it has its own markers).
-    const file = files.find((f) => !claimedFilenamePaths.has(f.path) && !filesWithBounds.has(f.path)
-      && normId(baseName(f.path)) === nid && valid(f.content || ''));
-    if (file) {
-      claimedFilenamePaths.add(file.path);
-      units.push({ id: sc.id, content: (file.content || '').slice(0, MAX_FILE_CHARS), path: file.path });
-    }
-    // else: fail open for THIS section — other correlated sections are still analyzed.
-  }
-  return units;
-}
-
 export function analyzeComposition(
   files: FrontendGeneratedFile[] | undefined,
   contract: CompositionContract | undefined,
@@ -606,7 +504,7 @@ export function analyzeComposition(
     if (!contract || contract.status !== 'derived') return LEGACY_COMPOSITION;
     const list = Array.isArray(files) ? files : [];
     if (!list.length) return { ...LEGACY_COMPOSITION, legacy: false };
-    const units = collectSectionUnits(list, contract);
+    const units = collectSectionUnits(list, contract.sections.map((s) => s.id));
     const issues: CompositionIssue[] = [];
     const push = (i: CompositionIssue) => { if (issues.length < MAX_ISSUES) issues.push(i); };
     if (units.length < 2) {
