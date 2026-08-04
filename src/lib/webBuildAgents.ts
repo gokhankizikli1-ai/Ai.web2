@@ -2063,6 +2063,13 @@ export interface FrontendBuildSpecification {
    *  deterministically from the EXISTING research + Vertical Intelligence artifacts (no new call). */
   researchDirection?: import('@/lib/webBuildResearchDirection').ResearchDirectionContract;
 
+  /** Phase (composition) — the BINDING page-composition contract: per-section composition family,
+   *  hierarchy, alignment, media role, adjacency rhythm and desktop/mobile order. OPTIONAL and
+   *  additive: present only on fresh builds; absent ⇒ legacy behavior (no composition block, no
+   *  composition acceptance). Derived deterministically from the EXISTING layout/blueprint/section +
+   *  art-direction + research + binding + image-coverage artifacts (no new model/network call). */
+  composition?: import('@/lib/webBuildComposition').CompositionContract;
+
   honestyRules: string[];
   sourceTrace: string[];
   missingInputs: string[];
@@ -2695,6 +2702,10 @@ export interface FrontendBuilderAcceptanceArtifact {
   /* ── Phase (research-grounded direction) — bounded owner diagnostics (counts + codes only;
    *    never raw sources, prompts, URLs or secrets). All OPTIONAL/additive. ── */
   researchDirection?: import('@/lib/webBuildResearchDirection').ResearchDirectionDiagnostics;
+
+  /* ── Phase (composition) — bounded owner diagnostics (counts + family distribution + codes only;
+   *    never source, prompts, URLs or secrets). All OPTIONAL/additive. ── */
+  composition?: import('@/lib/webBuildComposition').CompositionDiagnostics;
 
   reason: string;
 }

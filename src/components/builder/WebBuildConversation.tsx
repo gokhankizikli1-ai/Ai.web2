@@ -801,6 +801,21 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
         ownerRows.push(['researchContractApplied', `builder ${String(!!rd.contractRenderedToFrontendBuilder)} · acceptance ${String(!!rd.contractUsedByAcceptance)} · agents ${rd.agentsActuallyConsumingContract?.length ? rd.agentsActuallyConsumingContract.slice(0, 4).join('/') : 'none'}`]);
         if (rd.researchGroundingStatus) ownerRows.push(['researchGroundingStatus', `${rd.researchGroundingStatus}${rd.researchGroundingIssueCodes?.length ? ` · ${rd.researchGroundingIssueCodes.slice(0, 6).join(', ')}` : ''}`]);
       }
+      // Phase (composition) — bounded page-composition contract diagnostics (owner-only). The
+      // contract is a spatial/hierarchy primitive set, NOT a template; consumption is truthful
+      // (rendered into the builder request + read by acceptance; no model agent reads it first).
+      const cp = fac.composition;
+      if (cp) {
+        ownerRows.push(['compositionContract', `${cp.compositionVersion} · ${cp.compositionStatus} · ${cp.plannedSectionCount} sections · contract ${cp.compositionCharCount} chars`]);
+        ownerRows.push(['compositionThesis', shortStr(cp.compositionThesis, 120)]);
+        const fam = Object.entries(cp.familyDistribution).map(([k, v]) => `${k} ${v}`);
+        if (fam.length) ownerRows.push(['compositionFamilies', fam.slice(0, 8).join(' · ')]);
+        ownerRows.push(['compositionHierarchy', `dominant ${cp.dominantSectionCount} · functional ${cp.functionalSectionCount} · media ${cp.mediaRoleCount} · responsive ${cp.responsiveSectionCount} · heroAnchor ${cp.heroVisualAnchor}`]);
+        ownerRows.push(['compositionRhythm', `maxConsecutiveSimilar ${cp.maxConsecutiveSimilarSections} · repeatResolutions ${cp.consecutiveRepeatResolutions}`]);
+        if (cp.upstreamEvidenceUsedToDeriveContract?.length) ownerRows.push(['compositionUpstreamEvidence', cp.upstreamEvidenceUsedToDeriveContract.slice(0, 6).join(', ')]);
+        ownerRows.push(['compositionContractApplied', `spec ${String(!!cp.contractPersistedInSpecification)} · builder ${String(!!cp.contractRenderedToFrontendBuilder)} · acceptance ${String(!!cp.contractUsedByAcceptance)} · agents ${cp.agentsActuallyConsumingContract?.length ? cp.agentsActuallyConsumingContract.slice(0, 4).join('/') : 'none'}`]);
+        if (cp.compositionAcceptanceStatus) ownerRows.push(['compositionAcceptanceStatus', `${cp.compositionAcceptanceStatus}${cp.compositionIssueCodes?.length ? ` · ${cp.compositionIssueCodes.slice(0, 6).join(', ')}` : ''}`]);
+      }
     }
 
     // Phase 13D — model-native REVISION diagnostics (owner-only). Present only on an

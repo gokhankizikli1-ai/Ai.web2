@@ -31,6 +31,7 @@ import { deriveExperienceArchitecturePlan } from '@/lib/webBuildExperienceArchit
 import { deriveBindingRequirements } from '@/lib/webBuildBindingRequirements';
 import { deriveImageCoverageRequirement } from '@/lib/webBuildImageCoverage';
 import { deriveResearchDirection } from '@/lib/webBuildResearchDirection';
+import { deriveCompositionContract } from '@/lib/webBuildComposition';
 import type {
   FrontendBuildSpecification, FrontendSpecSection, FrontendSpecImageSlot, FrontendSpecMotionLayer,
   FrontendSpecIdentity, FrontendSpecDesignSystem, FrontendSpecArchitecture, FrontendSpecAssetPlan,
@@ -710,6 +711,24 @@ export function deriveFrontendBuildSpecification(input: FrontendBuildSpecInput):
         prompt: built.prompt,
       });
     } catch { /* never block the build on research-direction derivation */ }
+
+    // Phase (composition) — derive the BINDING page-composition contract from the EXISTING layout/
+    // section/blueprint + art-direction + research + binding + image-coverage artifacts (deterministic;
+    // no model/network call; fail-open). Absent ⇒ legacy behavior.
+    try {
+      const composition = deriveCompositionContract({
+        identity: built.identity,
+        sections: built.architecture?.sections || [],
+        blueprint: input.blueprint,
+        research: built.researchDirection,
+        artDirection: input.artDirection,
+        binding: built.bindingRequirements,
+        imageCoverage: built.imageCoverage,
+        imageSlots: built.assets?.imageSlots,
+        ledger: input.thinkingLedger,
+      });
+      if (composition) built.composition = composition;
+    } catch { /* never block the build on composition derivation */ }
 
     return built;
   } catch {
