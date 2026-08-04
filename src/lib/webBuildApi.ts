@@ -26,6 +26,7 @@ import type {
 import { hasAffirmedIntent } from '@/lib/webBuildProductIntent';
 import type { WebBuildFile } from '@/lib/webBuildPayload';
 import type { CompactSourceContext } from '@/lib/webBuildQualityContext';
+import { renderBindingRequirementsBlock } from '@/lib/webBuildBindingRequirements';
 // PR #510 — the Experience Architecture enforcement block (a leaf; pure; returns "" when no
 // plan is attached, so the frontend_builder request is unchanged with the flag off).
 import { buildExperienceEnforcementBlock } from '@/lib/webBuildExperienceArchitecture';
@@ -2055,6 +2056,11 @@ export function buildFrontendBuilderRequest(spec: FrontendBuildSpecification): s
     'typography exactly as before. Keep the provider/photographer fields intact for attribution.',
     '',
   ] : [];
+  // Phase 12G — the BINDING user-requirements block (acceptance conditions the generated project
+  // MUST implement as real frontend behavior). Present only when explicit requirements were
+  // extracted; absent ⇒ byte-for-byte the pre-#12G request. Composes with the motion contract.
+  const bindingBlock = renderBindingRequirementsBlock(spec.bindingRequirements);
+  const bindingLines = bindingBlock.length ? [...bindingBlock, ''] : [];
   return [
     '[FRONTEND BUILDER REQUEST]',
     'Contract version: frontend-spec-v1',
@@ -2068,6 +2074,7 @@ export function buildFrontendBuilderRequest(spec: FrontendBuildSpecification): s
     ...contractLines,
     ...experienceBlock,
     ...imageBlock,
+    ...bindingLines,
     // Phase 13F.2 — eliminate REDUNDANT tokens (not design quality). Fully implement the spec —
     // required sections, motion/composition and the quality bar are UNCHANGED — but do not waste
     // the output budget on non-source noise or duplicated copy.

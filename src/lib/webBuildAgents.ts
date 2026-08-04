@@ -1962,6 +1962,68 @@ export interface ExperienceArchitecturePlan {
   layoutStrategy?: LayoutStrategy;
 }
 
+/* ── Binding User Requirements (Phase 12G) ────────────────────────────────────
+ * A compact, additive, JSON-serializable contract of the EXPLICIT functional requirements the
+ * user asked for (a named interactive tool, its controls, the visible outcome that must change,
+ * required sections, media, navigation/responsive behavior, explicit prohibitions, frontend-only
+ * constraints). It is the SINGLE authoritative representation that drives BOTH the initial
+ * generation contract AND the deterministic acceptance analyzer — the same normalized data, never
+ * reconstructed later from model output. Types are enums + short sanitized labels/evidence only
+ * (never a full prompt copy). Present ONLY when explicit requirements were extracted; absent ⇒
+ * legacy behavior. Bounds are enforced by the deriver (see webBuildBindingRequirements.ts). */
+export type BindingRequirementKind =
+  | 'section'                 // an explicitly requested content section/module
+  | 'interactive-experience'  // an explicitly named interactive tool (finder/calculator/…)
+  | 'control'                 // a named input/control dimension of an interactive experience
+  | 'dynamic-outcome'         // a visible output/summary/result that must change from input
+  | 'behavior-navigation'     // working navigation behavior (e.g. mobile menu toggle)
+  | 'behavior-responsive'     // responsive / mobile-friendly behavior
+  | 'media'                   // explicit imagery/photography/media requirement
+  | 'motion'                  // explicit motion/animation requirement (enforced by the motion contract)
+  | 'frontend-only'           // must work client-side with no invented backend
+  | 'prohibition';            // an explicit "do not / avoid / no X" concept
+
+export type BindingRequirementStrength = 'explicit' | 'strong' | 'implied';
+
+/** A named control/input dimension belonging to an interactive experience. */
+export interface BindingControl {
+  id: string;            // stable sanitized id
+  label: string;         // bounded semantic label ('destination' | 'budget' | 'loan amount' …)
+  aliases: string[];     // bounded detection synonyms (never source/prompt copy)
+}
+
+export interface BindingRequirement {
+  id: string;                          // stable sanitized id
+  kind: BindingRequirementKind;
+  label: string;                       // bounded semantic label
+  detail?: string;                     // bounded extra semantic label (never full prompt)
+  required: boolean;
+  strength: BindingRequirementStrength;
+  evidence: string;                    // bounded, sanitized reason phrase (capped; never full prompt)
+  /** interactive-experience only: its required controls + the visible outcome that must change. */
+  controls?: BindingControl[];
+  dynamicOutcome?: string;
+  frontendOnly?: boolean;
+  /** section/media/prohibition detection aliases (bounded). */
+  aliases?: string[];
+}
+
+export interface FrontendBindingRequirements {
+  version: 'binding-requirements-v1';
+  requirements: BindingRequirement[];
+  counts: {
+    total: number;
+    section: number;
+    interaction: number;
+    control: number;
+    dynamicOutcome: number;
+    behavior: number;
+    media: number;
+    motion: number;
+    prohibition: number;
+  };
+}
+
 export interface FrontendBuildSpecification {
   version: 'frontend-spec-v1';
   status: FrontendBuildSpecStatus;
@@ -1979,6 +2041,12 @@ export interface FrontendBuildSpecification {
    *  present only when VITE_ENABLE_EXPERIENCE_ARCHITECTURE is on; absent ⇒ the spec is
    *  byte-for-byte the pre-#510 contract and generation is unchanged. */
   experienceArchitecture?: ExperienceArchitecturePlan;
+
+  /** Phase 12G — the binding user-requirements contract. OPTIONAL and additive: present only when
+   *  explicit functional requirements were deterministically extracted from the prompt/brief;
+   *  absent ⇒ legacy behavior (no binding generation block, no binding acceptance analysis). Drives
+   *  BOTH generation and acceptance from the SAME normalized data. */
+  bindingRequirements?: FrontendBindingRequirements;
 
   honestyRules: string[];
   sourceTrace: string[];
@@ -2561,6 +2629,32 @@ export interface FrontendBuilderAcceptanceArtifact {
    *  the honest per-review fact lives on `renderedVisionReview.screenshotReviewed`. Old artifacts
    *  simply lack it. Carries no image / prompt / raw response. */
   renderedVisionReview?: RenderedVisionReviewArtifact;
+
+  /* ── Phase 12G — bounded, non-sensitive binding-requirements + semantic-drift acceptance
+   *  diagnostics. Present only when a binding-requirements contract existed for this build
+   *  (`legacyContractUsed` records the no-contract legacy path). Numbers / bounded issue codes /
+   *  statuses only — never source, prompt, provider output, ids, secrets or PII. Old artifacts
+   *  omit them entirely. These do NOT change `renderedVisualTestStatus` (static analysis is not a
+   *  rendered/runtime certification). */
+  bindingContractVersion?: string;
+  bindingRequirementCount?: number;
+  bindingSectionCount?: number;
+  bindingInteractionCount?: number;
+  bindingControlCount?: number;
+  bindingDynamicOutcomeCount?: number;
+  bindingBehaviorCount?: number;
+  bindingMediaCount?: number;
+  bindingProhibitionCount?: number;
+  bindingSatisfiedCount?: number;
+  bindingMissingCount?: number;
+  bindingAmbiguousCount?: number;
+  bindingSatisfiedControlCount?: number;
+  semanticDriftIssueCount?: number;
+  semanticAcceptanceStatus?: 'pass' | 'warning' | 'fail';
+  bindingIssueCodes?: string[];
+  legacyContractUsed?: boolean;
+  bindingInitialAnalysisStatus?: 'pass' | 'warning' | 'fail';
+  bindingPostRepairAnalysisStatus?: 'pass' | 'warning' | 'fail';
 
   reason: string;
 }

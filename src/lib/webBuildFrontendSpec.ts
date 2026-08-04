@@ -28,6 +28,7 @@ import { resolveProductIntent } from '@/lib/webBuildProductIntent';
 // PR #510 — deterministic Experience Architecture planner (a leaf; pure + fail-open; reads
 // only this assembled spec + the prompt, so it introduces no runtime import cycle).
 import { deriveExperienceArchitecturePlan } from '@/lib/webBuildExperienceArchitecture';
+import { deriveBindingRequirements } from '@/lib/webBuildBindingRequirements';
 import type {
   FrontendBuildSpecification, FrontendSpecSection, FrontendSpecImageSlot, FrontendSpecMotionLayer,
   FrontendSpecIdentity, FrontendSpecDesignSystem, FrontendSpecArchitecture, FrontendSpecAssetPlan,
@@ -676,6 +677,13 @@ export function deriveFrontendBuildSpecification(input: FrontendBuildSpecInput):
       const experienceArchitecture = deriveExperienceArchitecturePlan(built, str(input.prompt));
       if (experienceArchitecture) built.experienceArchitecture = experienceArchitecture;
     } catch { /* never block the build on the planner */ }
+
+    // Phase 12G — attach the binding user-requirements contract (deterministic; no model call;
+    // fail-open). Derived from the raw prompt (primary) + brief fields. Absent ⇒ legacy behavior.
+    try {
+      const bindingRequirements = deriveBindingRequirements(str(input.prompt), input.brief);
+      if (bindingRequirements) built.bindingRequirements = bindingRequirements;
+    } catch { /* never block the build on requirement extraction */ }
 
     return built;
   } catch {
