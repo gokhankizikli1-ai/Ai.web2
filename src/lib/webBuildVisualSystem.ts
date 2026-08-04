@@ -605,10 +605,10 @@ function chromeSignature(uc: string): string {
  *  because they carry real var(--token) and colour values used by rendered output. Fails open. */
 function renderEvidence(cleanSrc: string): string {
   try {
-    const tags = cleanSrc.match(/<\/?[A-Za-z][^>]{0,600}>/g) || [];
-    const classVals = cleanSrc.match(/\b(?:class|className)\s*=\s*(?:"[^"]*"|'[^']*'|\{[^}]{0,600}\})/g) || [];
-    const styleVals = cleanSrc.match(/\bstyle\s*=\s*(?:\{\{[^}]{0,600}\}\}|"[^"]*"|'[^']*')/g) || [];
-    return tags.concat(classVals, styleVals).join('\n');
+    const tags: string[] = cleanSrc.match(/<\/?[A-Za-z][^>]{0,600}>/g) || [];
+    const classVals: string[] = cleanSrc.match(/\b(?:class|className)\s*=\s*(?:"[^"]*"|'[^']*'|\{[^}]{0,600}\})/g) || [];
+    const styleVals: string[] = cleanSrc.match(/\bstyle\s*=\s*(?:\{\{[^}]{0,600}\}\}|"[^"]*"|'[^']*')/g) || [];
+    return [...tags, ...classVals, ...styleVals].join('\n');
   } catch { return cleanSrc || ''; }
 }
 
