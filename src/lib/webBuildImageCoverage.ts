@@ -208,7 +208,7 @@ export function deriveImageCoverageRequirement(spec: FrontendBuildSpecification 
   // Software/product concepts prefer UI mockups; do NOT force stock unless media was explicit.
   if (softwareSector && mediaTargets.length === 0 && !imageLedDirection) mode = 'optional';
 
-  if (mode === 'optional' || mode === 'none') {
+  if (mode === 'optional') {
     return { ...base, mode, reasons };
   }
 
@@ -292,7 +292,7 @@ export function findSpecSlotForTarget(
 }
 
 /** Deterministically synthesize the MINIMUM missing spec image slot for a required target. */
-export function synthesizeSlotForTarget(spec: FrontendBuildSpecification, target: ImageCoverageTarget): FrontendSpecImageSlot {
+export function synthesizeSlotForTarget(target: ImageCoverageTarget): FrontendSpecImageSlot {
   const kind = target.hero ? 'hero-image' : (target.aiAllowed ? 'hero-background' : 'gallery-photo');
   return {
     id: target.id,

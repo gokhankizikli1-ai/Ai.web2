@@ -391,7 +391,7 @@ export function buildCoverageAwareNeeds(
       else { const n = needFromSlotAndTarget(slot, t, spec); extraNeeds.push(n); needBySlot.set(slot.id, n); t.query = n.query; fallbackUsed = true; }
       continue;
     }
-    const s = synthesizeSlotForTarget(spec, t);
+    const s = synthesizeSlotForTarget(t);
     synthesizedSlots.push(s); assigned.add(s.id);
     const n = needFromSlotAndTarget(s, t, spec);
     extraNeeds.push(n); needBySlot.set(s.id, n);
