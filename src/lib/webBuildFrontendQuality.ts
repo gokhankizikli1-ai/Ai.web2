@@ -66,6 +66,13 @@ import {
 import {
   isHardGenerationContractEnabled, evaluateContractCompliance, contractFindingsToReviewIssues,
 } from '@/lib/webBuildGenerationContract';
+// Phase 12G — binding user-requirements satisfaction + cross-sector drift (pure, network-free).
+// The SAME authoritative contract drives generation and this acceptance analysis; findings ride
+// the EXISTING deterministic-issue merge → the EXISTING single repair. No new model call.
+import {
+  analyzeBindingAcceptance, bindingIssuesToReviewIssues, hasBlockingBindingFindings, bindingIssueCodes,
+  type BindingAcceptanceResult, type DriftPolicy,
+} from '@/lib/webBuildRequirementAnalysis';
 // PR #521 — CONDITIONAL rendered VISION review (fresh-build only, at most one screenshot + one
 // vision call). Its major/blocker findings ride the SAME existing merge → single bounded repair.
 import {
@@ -448,10 +455,10 @@ function acceptanceArtifact(
     finalReviewPassed: boolean;
     reason: string;
   },
-  extra?: Partial<Pick<FrontendBuilderAcceptanceArtifact,
-    'usedDeterministicFallback' | 'repairTriggeredByShallowQuality'
-    | 'severeWarningsBeforeRepair' | 'severeWarningsAfterRepair' | 'renderedVisualEvaluation'
-    | 'renderedVisionReview'>>,
+  // Widened (Phase 12G) to the full acceptance shape so the bounded binding/drift diagnostics can
+  // ride alongside the existing severe-warning/rendered-review fields. Positional fields
+  // (version/status/activeProject/…/reason) are set explicitly and are not overridden by callers.
+  extra?: Partial<FrontendBuilderAcceptanceArtifact>,
 ): FrontendBuilderAcceptanceArtifact {
   return {
     version: 'frontend-acceptance-v1',
@@ -709,6 +716,56 @@ export async function runFrontendBuilderQualityPipeline(
       } catch { /* fail-open: contract enforcement must never break a build */ }
     }
 
+    // ── Phase 12G — BINDING user-requirements satisfaction + cross-sector semantic drift on the
+    //    COMPLETE initial project. The SAME authoritative contract (spec.bindingRequirements) that
+    //    drove generation is analyzed here; blocking findings become deterministic review issues
+    //    that ride the EXISTING single repair (no new model call). Drift is sector-generic (software
+    //    modules blocked only for a non-software operator sector). Fully fail-open. ──
+    const bindingReqs = spec?.bindingRequirements;
+    const driftPolicy: DriftPolicy = {
+      isSoftwareSector: spec?.identity?.sector === 'ai-saas' || spec?.identity?.sector === 'marketplace'
+        || spec?.identity?.classificationBasis === 'product-concept',
+    };
+    let initialBinding: BindingAcceptanceResult | undefined;
+    try {
+      initialBinding = analyzeBindingAcceptance(validation?.files, bindingReqs, driftPolicy);
+      if (initialBinding && initialBinding.issues.length && initialReview.status === 'completed') {
+        const bIssues = bindingIssuesToReviewIssues(initialBinding);
+        if (bIssues.length) {
+          const { issues: mergedB, added: addedB } = mergeDeterministicIssues(initialReview.issues, bIssues);
+          if (addedB > 0) {
+            initialReview = recomputeReviewWithMergedIssues(initialReview, mergedB, addedB);
+            repairTriggeredByShallowQuality = repairTriggeredByShallowQuality || !initialReview.passed;
+          }
+        }
+      }
+    } catch { /* fail-open: binding analysis must never break a build */ }
+    // Post-repair binding analysis is computed later over the RECONSTRUCTED complete project
+    // (full or owner-delta — both revalidate a complete project, so there is no analysis gap).
+    let repairBinding: BindingAcceptanceResult | undefined;
+    // Bounded, non-sensitive binding/drift diagnostics for the acceptance artifact.
+    const bindingExtra = (): Partial<FrontendBuilderAcceptanceArtifact> => {
+      const hasAny = !!bindingReqs || !!(initialBinding && initialBinding.driftIssueCount) || !!(repairBinding && repairBinding.driftIssueCount);
+      if (!hasAny) return {};
+      const b = repairBinding || initialBinding;
+      const c = bindingReqs?.counts;
+      return {
+        ...(bindingReqs ? { bindingContractVersion: bindingReqs.version } : {}),
+        ...(c ? {
+          bindingRequirementCount: c.total, bindingSectionCount: c.section, bindingInteractionCount: c.interaction,
+          bindingControlCount: c.control, bindingDynamicOutcomeCount: c.dynamicOutcome, bindingBehaviorCount: c.behavior,
+          bindingMediaCount: c.media, bindingProhibitionCount: c.prohibition,
+        } : {}),
+        ...(b ? {
+          bindingSatisfiedCount: b.satisfiedCount, bindingMissingCount: b.missingCount, bindingAmbiguousCount: b.ambiguousCount,
+          bindingSatisfiedControlCount: b.satisfiedControlCount, semanticDriftIssueCount: b.driftIssueCount,
+          semanticAcceptanceStatus: b.status, bindingIssueCodes: bindingIssueCodes(b), legacyContractUsed: b.legacyContractUsed,
+        } : {}),
+        ...(initialBinding ? { bindingInitialAnalysisStatus: initialBinding.status } : {}),
+        ...(repairBinding ? { bindingPostRepairAnalysisStatus: repairBinding.status } : {}),
+      };
+    };
+
     // ── PR #516 — OPTIONAL advisory rendered visual evaluation. Runs ONLY when the flag is on
     //    AND the caller supplied a rendered input (screenshot metadata). It NEVER replaces
     //    validation and creates NO new repair: its HIGH findings are mapped to review issues and
@@ -823,11 +880,13 @@ export async function runFrontendBuilderQualityPipeline(
 
     // Fast path — a passing initial review keeps the initial project; no repair/final call.
     // Phase 13C — a model "pass" can NEVER approve while severe deterministic warnings remain.
-    if (initialReview.passed && severeWarningGatePassed(validation)) {
+    //    Phase 12G — a blocking binding-requirement or cross-sector-drift finding can NEVER be
+    //    fast-approved (the merge above already flips passed=false, but this is an explicit guard).
+    if (initialReview.passed && severeWarningGatePassed(validation) && !hasBlockingBindingFindings(initialBinding)) {
       const acceptance = acceptanceArtifact('approved', initialProjectName, {
         initialReviewPassed: true, repairAttempted: false, repairAccepted: false, finalReviewPassed: false,
         reason: `Initial static design review passed (score ${initialReview.score ?? '?'}); no severe quality warnings. Rendered visual test pending.`,
-      }, { usedDeterministicFallback, repairTriggeredByShallowQuality: false, severeWarningsBeforeRepair, renderedVisualEvaluation, renderedVisionReview: renderedVisionReviewArtifact });
+      }, { usedDeterministicFallback, repairTriggeredByShallowQuality: false, severeWarningsBeforeRepair, renderedVisualEvaluation, renderedVisionReview: renderedVisionReviewArtifact, ...bindingExtra() });
       emit('quality-repair', 'skipped');
       emit('acceptance', 'completed', acceptanceRows('approved', initialProjectName));
       return attachFrontendBuilderQualityResult(working, {
@@ -847,7 +906,7 @@ export async function runFrontendBuilderQualityPipeline(
       const acceptance = acceptanceArtifact('manual-review-required', initialProjectName, {
         initialReviewPassed: false, repairAttempted: false, repairAccepted: false, finalReviewPassed: false,
         reason: `${reason} The validated project stays active; manual rendered review required.`,
-      }, { usedDeterministicFallback, repairTriggeredByShallowQuality: false, severeWarningsBeforeRepair });
+      }, { usedDeterministicFallback, repairTriggeredByShallowQuality: false, severeWarningsBeforeRepair, ...bindingExtra() });
       emit('quality-repair', 'skipped');
       emit('acceptance', 'completed', acceptanceRows('manual-review-required', initialProjectName));
       return attachFrontendBuilderQualityResult(working, {
@@ -929,7 +988,7 @@ export async function runFrontendBuilderQualityPipeline(
       const acceptance = acceptanceArtifact('manual-review-required', initialProjectName, {
         initialReviewPassed: false, repairAttempted: true, repairAccepted: false, finalReviewPassed: false,
         reason: 'The bounded repair call did not complete; the initial validated project stays active. Manual rendered review required.',
-      }, { usedDeterministicFallback, repairTriggeredByShallowQuality, severeWarningsBeforeRepair });
+      }, { usedDeterministicFallback, repairTriggeredByShallowQuality, severeWarningsBeforeRepair, ...bindingExtra() });
       emit('quality-repair', 'completed', [{ label: 'result', value: 'not applied' }]);
       emit('acceptance', 'completed', acceptanceRows('manual-review-required', initialProjectName));
       return attachFrontendBuilderQualityResult(working, { ran: true, initialReview, repair, acceptance });
@@ -954,7 +1013,7 @@ export async function runFrontendBuilderQualityPipeline(
       const acceptance = acceptanceArtifact('manual-review-required', initialProjectName, {
         initialReviewPassed: false, repairAttempted: true, repairAccepted: false, finalReviewPassed: false,
         reason: 'The repaired project did not pass static validation; the initial validated project stays active. No post-repair review ran. Manual rendered review required.',
-      }, { usedDeterministicFallback, repairTriggeredByShallowQuality, severeWarningsBeforeRepair });
+      }, { usedDeterministicFallback, repairTriggeredByShallowQuality, severeWarningsBeforeRepair, ...bindingExtra() });
       emit('quality-repair', 'completed', [{ label: 'result', value: 'rejected' }]);
       emit('acceptance', 'completed', acceptanceRows('manual-review-required', initialProjectName));
       return attachFrontendBuilderQualityResult(working, { ran: true, initialReview, repair, acceptance });
@@ -978,10 +1037,26 @@ export async function runFrontendBuilderQualityPipeline(
       qualityContextPostDiag = sel.diagnostics;
     }
     const finalReviewRaw = await generateFrontendBuilderReviewRaw(spec, repairedActiveFiles, 'post-repair', initialReview, { signal: opts?.signal, deterministicWarnings: warningSummaries(repairValidation), compact: compactPost });
-    const finalReview = parseFrontendBuilderReview(finalReviewRaw, 'post-repair', repairedActiveFiles, { heroComponentPath: repairValidation.heroComponentPath });
+    let finalReview = parseFrontendBuilderReview(finalReviewRaw, 'post-repair', repairedActiveFiles, { heroComponentPath: repairValidation.heroComponentPath });
+
+    // ── Phase 12G — re-run the SAME authoritative binding/drift analyzer on the COMPLETE
+    //    reconstructed repaired project (full OR owner-delta — both revalidate a complete project,
+    //    so there is NO analysis gap). A repaired project can NEVER be accepted merely because the
+    //    review score improved: a blocking binding requirement or cross-sector drift still blocks. ──
+    try {
+      repairBinding = analyzeBindingAcceptance(repairValidation.files, bindingReqs, driftPolicy);
+      if (repairBinding && repairBinding.issues.length && finalReview.status === 'completed') {
+        const bIssues = bindingIssuesToReviewIssues(repairBinding);
+        if (bIssues.length) {
+          const { issues: mergedFB, added: addedFB } = mergeDeterministicIssues(finalReview.issues, bIssues);
+          if (addedFB > 0) finalReview = recomputeReviewWithMergedIssues(finalReview, mergedFB, addedFB);
+        }
+      }
+    } catch { /* fail-open: post-repair binding analysis must never break a build */ }
 
     // ── Step 8 — repair acceptance gate: valid + final pass + strict score improvement +
-    //    Phase 13C severe-warning gate (a model "pass" cannot approve a still-shallow repair). ──
+    //    Phase 13C severe-warning gate (a model "pass" cannot approve a still-shallow repair) +
+    //    Phase 12G binding/drift gate (blocking binding or cross-sector-drift findings block). ──
     const initialScore = initialReview.score ?? 0;
     const finalScore = finalReview.score ?? 0;
     const accept =
@@ -991,7 +1066,8 @@ export async function runFrontendBuilderQualityPipeline(
       finalReview.blockerCount === 0 &&
       finalReview.majorCount === 0 &&
       finalScore > initialScore &&
-      repairSevereGatePassed;
+      repairSevereGatePassed &&
+      !hasBlockingBindingFindings(repairBinding);
 
     if (accept) {
       const repair = repairArtifact('accepted', `Repair accepted: score improved ${initialScore} → ${finalScore} and the post-repair review passed with no blocker/major issues and no severe quality warnings.`, {
@@ -1005,8 +1081,8 @@ export async function runFrontendBuilderQualityPipeline(
       });
       const acceptance = acceptanceArtifact('repaired-approved', 'repaired-model-native', {
         initialReviewPassed: false, repairAttempted: true, repairAccepted: true, finalReviewPassed: true,
-        reason: `One bounded repair accepted after static validation, a passing post-repair review (score ${initialScore} → ${finalScore}) and a clear severe-warning gate. Rendered visual test pending.`,
-      }, { usedDeterministicFallback, repairTriggeredByShallowQuality, severeWarningsBeforeRepair, severeWarningsAfterRepair, renderedVisualEvaluation, renderedVisionReview: renderedVisionReviewArtifact });
+        reason: `One bounded repair accepted after static validation, a passing post-repair review (score ${initialScore} → ${finalScore}), a clear severe-warning gate and a clear binding/drift gate. Rendered visual test pending.`,
+      }, { usedDeterministicFallback, repairTriggeredByShallowQuality, severeWarningsBeforeRepair, severeWarningsAfterRepair, renderedVisualEvaluation, renderedVisionReview: renderedVisionReviewArtifact, ...bindingExtra() });
       emit('quality-repair', 'completed', [{ label: 'result', value: 'accepted' }, { label: 'score', value: `${initialScore} → ${finalScore}` }]);
       emit('acceptance', 'completed', acceptanceRows('repaired-approved', 'repaired-model-native'));
       return attachFrontendBuilderQualityResult(working, {
@@ -1019,7 +1095,9 @@ export async function runFrontendBuilderQualityPipeline(
     // Repair validated but was not accepted (final review failed / malformed / no improvement /
     // severe warnings still remain). Phase 13C — a repair that stays shallow is rejected by the
     // deterministic severe-warning gate even if the model reviewer "passed" it.
-    const rejectReason = !repairSevereGatePassed
+    const rejectReason = hasBlockingBindingFindings(repairBinding)
+      ? `The repaired project still fails a binding user-requirement or shows cross-sector drift (${bindingIssueCodes(repairBinding).slice(0, 4).join(', ')}); the repair was not accepted.`
+      : !repairSevereGatePassed
       ? `The repaired project still shows severe quality warnings (${severeWarningsAfterRepair.slice(0, 4).join(', ')}); the repair was not accepted.`
       : finalReview.status !== 'completed'
         ? 'The post-repair static review did not complete; the repair was not accepted.'
@@ -1039,7 +1117,7 @@ export async function runFrontendBuilderQualityPipeline(
       initialReviewPassed: false, repairAttempted: true, repairAccepted: false,
       finalReviewPassed: finalReview.passed,
       reason: `${rejectReason} The initial validated project stays active for owner inspection; normal users continue to see Safe Preview. Manual rendered review required.`,
-    }, { usedDeterministicFallback, repairTriggeredByShallowQuality, severeWarningsBeforeRepair, severeWarningsAfterRepair, renderedVisualEvaluation, renderedVisionReview: renderedVisionReviewArtifact });
+    }, { usedDeterministicFallback, repairTriggeredByShallowQuality, severeWarningsBeforeRepair, severeWarningsAfterRepair, renderedVisualEvaluation, renderedVisionReview: renderedVisionReviewArtifact, ...bindingExtra() });
     emit('quality-repair', 'completed', [{ label: 'result', value: 'rejected' }]);
     emit('acceptance', 'completed', acceptanceRows('manual-review-required', initialProjectName));
     return attachFrontendBuilderQualityResult(working, { ran: true, initialReview, repair, finalReview, acceptance });
