@@ -2988,7 +2988,7 @@ const ANGLE_LABELS = (lang: Lang): Record<string, string> => ({
  *  different ideas resolve to different categories — the anchor for concept-
  *  specific pages, components, trust proof and the anti-generic guard. */
 export type ConceptCategory =
-  | 'archive' | 'hospitality' | 'landscaping' | 'local_service' | 'legal'
+  | 'archive' | 'hospitality' | 'travel' | 'landscaping' | 'local_service' | 'legal'
   | 'medical' | 'ai' | 'saas' | 'marketplace' | 'education' | 'nonprofit'
   | 'portfolio' | 'industrial' | 'event' | 'real_estate' | 'finance' | 'general';
 
@@ -2998,6 +2998,12 @@ export type ConceptCategory =
 const CONCEPT_KEYWORDS: Array<{ cat: ConceptCategory; weight: number; words: string[] }> = [
   { cat: 'archive', weight: 3, words: ['archive', 'museum', 'catalogue', 'catalog', 'collection', 'library', 'exhibit', 'manuscript', 'heritage', 'provenance', 'artifact', 'ottoman', 'historical', 'digital archive', 'arşiv', 'müze', 'koleksiyon', 'kütüphane', 'elyazma', 'osmanlı', 'tarihî', 'tarihi eser'] },
   { cat: 'hospitality', weight: 3, words: ['restaurant', 'restoran', 'cafe', 'kafe', 'menu', 'menü', 'reservation', 'rezervasyon', 'dining', 'bistro', 'brasserie', 'bakery', 'fırın', 'catering', 'hotel', 'otel', 'coffee shop', 'lokanta', 'brunch', 'patisserie'] },
+  // Travel/tourism OPERATOR businesses (a travel company/agency/tour operator/journey
+  // designer selling trips & itineraries) — NOT a hotel/restaurant venue (hospitality) and
+  // NOT travel software. Strong, unambiguous travel nouns + phrases only; deliberately no
+  // bare 'journey'/'experience' (both are common metaphors in SaaS marketing) so a software
+  // prompt is never pulled into travel by a weak word.
+  { cat: 'travel', weight: 3, words: ['travel agency', 'travel agencies', 'travel company', 'tour operator', 'tour operators', 'tour company', 'travel advisor', 'travel advisors', 'travel concierge', 'bespoke travel', 'luxury travel', 'personalized journeys', 'personalised journeys', 'tailor-made trips', 'tailored itineraries', 'itinerary', 'itineraries', 'itinerary planner', 'destination specialist', 'guided tour', 'guided tours', 'tour package', 'tour packages', 'sightseeing', 'excursion', 'excursions', 'safari', 'cruise', 'vacation', 'holiday package', 'getaway', 'honeymoon', 'tourism', 'seyahat', 'seyahat acentesi', 'seyahat acentası', 'tur operatörü', 'tur paketi', 'gezi turu', 'tatil paketi', 'seyahat danışmanı', 'turizm', 'rota planı'] },
   { cat: 'landscaping', weight: 3, words: ['landscap', 'peyzaj', 'garden', 'bahçe', 'lawn', 'nursery', 'horticultur', 'terrace', 'teras', 'hardscape', 'çevre düzenleme', 'yeşil alan'] },
   { cat: 'legal', weight: 3, words: ['law firm', 'lawyer', 'attorney', 'legal', 'solicitor', 'notary', 'litigation', 'avukat', 'hukuk', 'noter', 'dava', 'hukuki'] },
   { cat: 'medical', weight: 3, words: ['medical', 'clinic', 'doctor', 'dental', 'dentist', 'health', 'therapy', 'patient', 'klinik', 'doktor', 'diş', 'sağlık', 'hasta', 'terapi', 'psikolog', 'fizyoterapi', 'poliklinik'] },
@@ -3100,6 +3106,7 @@ function splitConceptAuthority(prompt: string, fullText: string): ConceptAuthori
 const VERTICAL_LABEL: Record<string, [string, string]> = {
   marketplace: ['ecommerce/marketplace', 'e-ticaret/pazaryeri'],
   hospitality: ['restaurants/hospitality', 'restoran/konaklama'],
+  travel: ['travel/tourism', 'seyahat/turizm'],
   medical: ['healthcare', 'sağlık'],
   legal: ['legal', 'hukuk'],
   finance: ['finance', 'finans'],
@@ -3124,6 +3131,7 @@ const PRODUCT_MODEL_BY_CONCEPT: Record<string, [string, string]> = {
   legal: ['credibility lead-gen site', 'itibar/talep sitesi'],
   medical: ['credibility lead-gen site', 'itibar/talep sitesi'],
   hospitality: ['atmosphere + reservation site', 'atmosfer + rezervasyon sitesi'],
+  travel: ['destination + itinerary enquiry site', 'destinasyon + rota talep sitesi'],
   education: ['course / enrollment site', 'kurs / kayıt sitesi'],
   real_estate: ['listing / detail site', 'ilan / detay sitesi'],
   event: ['event / registration site', 'etkinlik / kayıt sitesi'],
@@ -3137,6 +3145,7 @@ const CONTENT_MODEL_BY_CONCEPT: Record<string, [string, string]> = {
   ai: ['product marketing + front-end demo', 'ürün pazarlama + ön-yüz demo'],
   saas: ['product marketing + front-end demo', 'ürün pazarlama + ön-yüz demo'],
   marketplace: ['inventory/listing/detail preview', 'envanter/liste/detay önizleme'],
+  travel: ['destination + itinerary editorial', 'destinasyon + rota editoryali'],
   archive: ['editorial archive / collection browsing', 'editoryal arşiv / koleksiyon gezinme'],
   landscaping: ['portfolio / before-after / service', 'portfolyo / önce-sonra / hizmet'],
   portfolio: ['selected work / case detail', 'seçili işler / vaka detayı'],
@@ -3923,6 +3932,7 @@ export type VerticalSector =
   | 'automotive-dealership'
   | 'furniture-interiors'
   | 'restaurant-hospitality'
+  | 'travel-tourism'
   | 'real-estate'
   | 'clinic-healthcare'
   | 'ai-saas'
@@ -4176,6 +4186,10 @@ const VERTICAL_KEYWORDS: Record<IndustrySector, readonly string[]> = {
   // subsector once furniture is already the sector.
   'furniture-interiors': ['furniture', 'furnishings', 'sofa', 'couch', 'armchair', 'cabinet', 'wardrobe', 'kitchen', 'interior', 'interiors', 'interior design', 'interior designer', 'decor', 'decoration', 'upholstery', 'joinery', 'carpentry', 'mobilya', 'mobilyacı*', 'koltuk', 'kanepe', 'dolap', 'mutfak', 'iç mimar', 'iç mimari', 'dekorasyon', 'ahşap', 'marangoz*', 'döşeme'],
   'restaurant-hospitality': ['restaurant*', 'cafe*', 'café', 'bistro', 'brasserie', 'diner', 'eatery', 'menu', 'dining', 'cuisine', 'bakery', 'patisserie', 'pastry', 'catering', 'coffee shop', 'chef', 'fine dining', 'restoran*', 'lokanta', 'kafe*', 'menü', 'mutfak', 'pastane', 'fırın', 'yemek', 'şef', 'kahve'],
+  // Travel/tourism OPERATOR businesses. Strong, specific travel nouns/phrases + stems; NO bare
+  // 'journey'/'experience' (metaphor-prone in SaaS). 'travel' as a stem covers travel/traveller/
+  // travelling; short/ambiguous words stay exact.
+  'travel-tourism': ['travel*', 'traveler*', 'traveller*', 'tourism', 'tourist*', 'tour operator*', 'tour', 'tours', 'itinerary', 'itineraries', 'itinerary planner', 'destination', 'destinations', 'destination specialist', 'vacation', 'vacations', 'holiday', 'holidays', 'holiday package', 'getaway', 'getaways', 'excursion*', 'safari*', 'cruise', 'cruises', 'sightseeing', 'travel agency', 'travel agencies', 'travel agent*', 'travel advisor*', 'travel concierge', 'bespoke travel', 'luxury travel', 'guided tour*', 'tour package*', 'trip', 'trips', 'trip planner', 'journey designer', 'personalized journeys', 'personalised journeys', 'honeymoon*', 'expedition*', 'seyahat', 'tur', 'turlar', 'tur operatörü*', 'seyahat acentesi', 'seyahat acentası', 'seyahat danışman*', 'gezi', 'gezi turu', 'tatil', 'tatil paketi', 'tur paketi', 'turizm', 'tur rehber*', 'rota planı'],
   'real-estate': ['real estate', 'real-estate', 'realtor*', 'realty', 'property', 'properties', 'listing', 'listings', 'apartment', 'apartments', 'condo', 'housing', 'rental', 'rentals', 'lease', 'broker*', 'estate agent*', 'floor plan', 'emlak', 'emlakçı*', 'gayrimenkul', 'konut', 'daire', 'satılık', 'kiralık', 'arsa', 'müteahhit', 'kat planı'],
   'clinic-healthcare': ['clinic*', 'dental', 'dentist*', 'dentistry', 'orthodontic', 'doctor*', 'physician*', 'medical', 'healthcare', 'aesthetic', 'dermatolog*', 'physiotherapy', 'physio', 'therapy', 'therapist*', 'psychology', 'psychologist*', 'psychiatry', 'treatment', 'patient', 'polyclinic', 'klinik*', 'diş', 'diş hekimi', 'doktor*', 'tıp', 'sağlık', 'estetik', 'dermatoloji', 'fizyoterapi', 'terapi', 'psikolog', 'tedavi', 'hasta', 'poliklinik', 'muayenehane'],
   'ai-saas': ['ai', 'artificial intelligence', 'machine learning', 'llm', 'gpt', 'chatbot', 'chat bot', 'copilot', 'saas', 'software', 'platform', 'dashboard', 'crm', 'erp', 'api', 'sdk', 'automation', 'workflow', 'no-code', 'low-code', 'yapay zeka', 'yapay zekâ', 'yazılım', 'otomasyon', 'analitik'],
@@ -4224,7 +4238,14 @@ const SECTOR_FROM_INFERRED: Record<string, VerticalSector> = {
   ecommerce: 'marketplace',
   generic: 'general',
 };
-/** Direct sector votes from the Experience Blueprint site experience type. */
+/** Direct sector votes from the Experience Blueprint site experience type.
+ *  NOTE: `consumer-product-landing` is deliberately NOT mapped to `ai-saas` (Phase 11C.2). It is
+ *  a PRESENTATION FORMAT, not a business sector, and a generic consumer landing page must never
+ *  become software merely because no better sector is known — a travel operator, service or
+ *  editorial brand can present as a consumer landing without selling software. Genuine software
+ *  identity still comes from affirmed product evidence (concept/ledger/inferred = ai_saas, real
+ *  software keywords, or the developer-tool / dashboard-preview / b2b-product-landing formats,
+ *  which are only produced from actual product/enterprise signals). */
 const SECTOR_FROM_EXPERIENCE: Partial<Record<SiteExperienceType, VerticalSector>> = {
   restaurant: 'restaurant-hospitality',
   'local-business': 'local-service',
@@ -4234,7 +4255,6 @@ const SECTOR_FROM_EXPERIENCE: Partial<Record<SiteExperienceType, VerticalSector>
   'developer-tool': 'ai-saas',
   'dashboard-preview': 'ai-saas',
   'b2b-product-landing': 'ai-saas',
-  'consumer-product-landing': 'ai-saas',
 };
 /** Map the Concept Authority / ledger primary concept category → a sector vote. */
 const SECTOR_FROM_CONCEPT: Record<string, VerticalSector> = {
@@ -4242,6 +4262,7 @@ const SECTOR_FROM_CONCEPT: Record<string, VerticalSector> = {
   saas: 'ai-saas',
   marketplace: 'marketplace',
   hospitality: 'restaurant-hospitality',
+  travel: 'travel-tourism',
   landscaping: 'landscaping',
   medical: 'clinic-healthcare',
   real_estate: 'real-estate',
@@ -4816,6 +4837,58 @@ const VERTICAL_PROFILES: Record<VerticalSector, VerticalProfileDefinition> = {
     warnings: ['Reviews, team, licenses and counts require real material — never fabricate them; avoid SaaS-style assumptions.'],
   },
 
+  'travel-tourism': {
+    businessModel: 'catalog-consultation',
+    subsectorDefault: 'travel-agency',
+    subsectors: [
+      { label: 'luxury-bespoke-travel', keywords: ['luxury', 'bespoke', 'tailor-made', 'tailor made', 'private', 'premium', 'lüks', 'butik'] },
+      { label: 'tour-operator', keywords: ['tour operator', 'tour operators', 'guided tour', 'group tour', 'tur operatörü'] },
+      { label: 'travel-agency', keywords: ['travel agency', 'travel agent', 'seyahat acentesi', 'acente'] },
+      { label: 'adventure-experience-travel', keywords: ['adventure', 'expedition', 'safari', 'trekking', 'macera'] },
+      { label: 'destination-specialist', keywords: ['destination specialist', 'specialist in', 'uzman'] },
+      { label: 'corporate-travel', keywords: ['corporate travel', 'business travel', 'mice', 'kurumsal seyahat'] },
+    ],
+    conversion: {
+      goal: 'Inspire travelers and convert them into itinerary/consultation enquiries around real destinations and journeys',
+      primaryAction: 'Start planning a journey or request a tailored itinerary',
+      primaryCTA: 'Start Planning', secondaryCTA: 'Speak to an Advisor',
+      funnel: ['Land on destination inspiration', 'Explore destinations & featured journeys', 'Use the journey finder / planner', 'Request a tailored itinerary / consultation', 'Speak to an advisor'],
+    },
+    trust: {
+      drivers: ['Destination expertise', 'Tailored itineraries', 'Transparent inclusions', 'On-trip support', 'Secure booking/payment process', 'Real advisor/guide identity', 'Genuine reviews when supplied'],
+      sourceRequiredProof: ['Real destination/trip photography', 'Real itineraries', 'Advisor/guide bios & credentials', 'Partner accreditations/affiliations', 'Traveler reviews', 'Pricing/inclusions when supplied'],
+      forbiddenClaims: ['Fabricated awards / certifications', 'Fabricated traveler / review counts', 'Fabricated partner or hotel logos', 'Fabricated availability / prices', 'Fabricated "as featured in" press', 'Generated destination photos presented as documentary proof of a specific real trip'],
+    },
+    sections: {
+      required: ['Hero', 'Destinations', 'Featured Journeys / Itineraries', 'How It Works / Planning Process', 'Why Travel With Us', 'Start Planning / Enquiry / Contact'],
+      recommended: ['Travel Styles', 'Journey Finder / Trip Planner (front-end)', 'Stories / Editorial', 'About / Team', 'Testimonials (only if provided)', 'FAQ'],
+      forbidden: [
+        { section: 'SaaS Pricing Tiers', reason: 'A travel operator sells trips/itineraries, not a software subscription.' },
+        { section: 'Dashboard / Analytics', reason: 'A product analytics dashboard is a software module, not a travel operator section.' },
+        { section: 'Software Integrations / Integration Map', reason: 'App integrations / channel maps belong to a software product, not a travel brand.' },
+        { section: 'API Documentation / Developer Docs', reason: 'A travel operator does not ship a developer API product.' },
+        { section: 'CRM / Answer Routing / Support Handoff / Knowledge Base Demo', reason: 'These are customer-support SaaS product modules, not travel content.' },
+        { section: 'Security & Compliance Product Section', reason: 'A SaaS security/compliance product section does not fit a travel brand (real secure-payment/traveler-safety info is fine as normal copy).' },
+        { section: 'Fake customer-logo strip', reason: 'No real partner/customer logos to show.' },
+        { section: 'Fabricated live booking / inventory numbers', reason: 'Live availability/inventory would be fabricated.' },
+      ],
+    },
+    visual: {
+      realSourceRequired: ['Real destination/trip photography', 'Real itineraries', 'Advisor/guide photos', 'Partner accreditations', 'Traveler reviews'],
+      aiIllustrativeAllowed: ['Evocative destination mood/atmosphere', 'Editorial landscape texture', 'Map / route motifs', 'Non-literal travel ambience'],
+      cssSvgPreferred: ['Journey finder / trip planner UI (front-end)', 'Itinerary timeline', 'Destination map / route motif', 'Enquiry / planning form (front-end)'],
+      motionSuitable: ['Cinematic hero drift', 'Destination reveal on scroll', 'Gentle map/route animation', 'Itinerary step transitions'],
+      forbiddenGenerated: ['Generated destination photos presented as documentary proof of a specific real trip', 'Fabricated awards/reviews/traveler counts', 'Fake partner/hotel logos', 'Fabricated prices/availability'],
+      heroRecommendation: 'Cinematic editorial destination hero — real destination/trip photography when provided, otherwise an evocative AI-illustrative destination mood + map/route motif — never a generated image presented as documentary proof of a specific real trip.',
+    },
+    research: {
+      recommended: true,
+      angles: ['Category expectations for travel/tour operators', 'Itinerary & destination presentation norms', 'Enquiry/consultation conversion patterns', 'Trust & anti-fabrication (reviews/awards/partners)', 'Common CTA language'],
+      reason: 'A live sector scan would validate itinerary presentation norms and travel enquiry conversion patterns.',
+    },
+    warnings: ['Destination imagery is evocative/illustrative — never present a generated image as documentary proof of a specific real trip; itineraries, prices, availability, reviews, awards and partner logos require real material. A travel operator must not adopt SaaS product modules (pricing tiers, dashboards, integrations, API docs, support-routing) unless the prompt explicitly asks for a software product.'],
+  },
+
   general: {
     businessModel: 'unknown',
     subsectorDefault: 'unknown',
@@ -4863,7 +4936,7 @@ const VERTICAL_PROFILES: Record<VerticalSector, VerticalProfileDefinition> = {
  *  excluded from the industry-scoring candidate set. */
 const INDUSTRY_ONLY_SECTORS: readonly IndustrySector[] = [
   'jewelry', 'landscaping', 'automotive-dealership', 'furniture-interiors',
-  'restaurant-hospitality', 'real-estate', 'clinic-healthcare', 'portfolio-agency', 'local-service',
+  'restaurant-hospitality', 'travel-tourism', 'real-estate', 'clinic-healthcare', 'portfolio-agency', 'local-service',
 ];
 
 /* ── Vertical research evidence (Phase 11B) ───────────────────────────────────
@@ -7442,6 +7515,9 @@ function deriveVisualAssetPlan(
       case 'marketplace':
         return L(lang, 'Premium product-card grid with showroom lighting and a listing/detail visual. Clear price/proof clarity.',
           'Showroom aydınlatmalı premium ürün-kart gridi ve liste/detay görseli. Net fiyat/kanıt.');
+      case 'travel':
+        return L(lang, 'Cinematic editorial destination hero: layered landscape/route atmosphere with a map/itinerary motif and a real-photography slot. Evocative destination mood, never a generated photo presented as a specific real trip.',
+          'Sinematik editoryal destinasyon hero: harita/rota motifli katmanlı manzara/atmosfer ve gerçek fotoğraf alanı. Çağrıştırıcı destinasyon havası; üretilmiş görsel asla belirli gerçek bir gezi gibi sunulmaz.');
       default:
         return L(lang, `Composed CSS/SVG hero visual tied to the concept on a ${bg} surface with a single ${accent} focal accent. No stock photos, no blank boxes.`,
           `Konsepte bağlı, ${bg} yüzeyde tek ${accent} odak vurgulu, CSS/SVG ile kompoze hero görseli. Stok fotoğraf yok, boş kutu yok.`);
