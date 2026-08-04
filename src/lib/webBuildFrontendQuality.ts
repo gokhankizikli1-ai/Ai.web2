@@ -94,6 +94,14 @@ import {
   visualSystemIssueCodes, buildVisualSystemDiagnostics, renderVisualSystemBlock,
   type VisualSystemAcceptanceResult,
 } from '@/lib/webBuildVisualSystem';
+// Phase (content narrative) — BINDING content/conversion-narrative acceptance (pure, network-free).
+// The SAME contract rendered into the builder request is analyzed here; only strongly-proven failures
+// block and ride the EXISTING deterministic-issue merge → the EXISTING single repair. No new model call.
+import {
+  analyzeContentNarrative, contentNarrativeToReviewIssues, hasBlockingContentFindings,
+  contentNarrativeIssueCodes, buildContentNarrativeDiagnostics, renderContentNarrativeBlock,
+  type ContentAcceptanceResult,
+} from '@/lib/webBuildContentNarrative';
 // PR #521 — CONDITIONAL rendered VISION review (fresh-build only, at most one screenshot + one
 // vision call). Its major/blocker findings ride the SAME existing merge → single bounded repair.
 import {
@@ -762,20 +770,26 @@ export async function runFrontendBuilderQualityPipeline(
     // Phase (premium visual system) — the BINDING visual-system contract drives visual-system acceptance.
     const visualSystem = spec?.visualSystem;
     const visualSystemChars = renderVisualSystemBlock(visualSystem).join('\n').length;
+    // Phase (content narrative) — the BINDING content/conversion-narrative contract drives content acceptance.
+    const contentNarrative = spec?.contentNarrative;
+    const contentNarrativeChars = renderContentNarrativeBlock(contentNarrative).join('\n').length;
     let initialBinding: BindingAcceptanceResult | undefined;
     let initialResearch: ResearchGroundingResult | undefined;
     let initialComposition: CompositionAcceptanceResult | undefined;
     let initialVisualSystem: VisualSystemAcceptanceResult | undefined;
+    let initialContent: ContentAcceptanceResult | undefined;
     try {
       initialBinding = analyzeBindingAcceptance(validation?.files, bindingReqs, driftPolicy, imageCoverage);
       initialResearch = analyzeResearchGrounding(validation?.files, researchDirection);
       initialComposition = analyzeComposition(validation?.files, composition);
       initialVisualSystem = analyzeVisualSystem(validation?.files, visualSystem);
+      initialContent = analyzeContentNarrative(validation?.files, contentNarrative);
       const detIssues = [
         ...(initialBinding ? bindingIssuesToReviewIssues(initialBinding) : []),
         ...(initialResearch ? researchGroundingToReviewIssues(initialResearch) : []),
         ...(initialComposition ? compositionToReviewIssues(initialComposition) : []),
         ...(initialVisualSystem ? visualSystemToReviewIssues(initialVisualSystem) : []),
+        ...(initialContent ? contentNarrativeToReviewIssues(initialContent) : []),
       ];
       if (detIssues.length && initialReview.status === 'completed') {
         const { issues: mergedB, added: addedB } = mergeDeterministicIssues(initialReview.issues, detIssues);
@@ -791,10 +805,11 @@ export async function runFrontendBuilderQualityPipeline(
     let repairResearch: ResearchGroundingResult | undefined;
     let repairComposition: CompositionAcceptanceResult | undefined;
     let repairVisualSystem: VisualSystemAcceptanceResult | undefined;
+    let repairContent: ContentAcceptanceResult | undefined;
     // Bounded, non-sensitive binding/drift diagnostics for the acceptance artifact.
     const bindingExtra = (): Partial<FrontendBuilderAcceptanceArtifact> => {
       const hasAny = !!bindingReqs || !!(initialBinding && initialBinding.driftIssueCount) || !!(repairBinding && repairBinding.driftIssueCount)
-        || !!imageCoverage || !!coverageDiag || !!researchDirection || !!composition || !!visualSystem;
+        || !!imageCoverage || !!coverageDiag || !!researchDirection || !!composition || !!visualSystem || !!contentNarrative;
       if (!hasAny) return {};
       const b = repairBinding || initialBinding;
       const c = bindingReqs?.counts;
@@ -841,6 +856,8 @@ export async function runFrontendBuilderQualityPipeline(
         ...(composition ? { composition: buildCompositionDiagnostics(composition, repairComposition || initialComposition, compositionChars) } : {}),
         // ── Phase (premium visual system) — bounded, secret-free visual-system diagnostics (truthful consumption). ──
         ...(visualSystem ? { visualSystem: buildVisualSystemDiagnostics(visualSystem, repairVisualSystem || initialVisualSystem, visualSystemChars) } : {}),
+        // ── Phase (content narrative) — bounded, secret-free content diagnostics (truthful consumption). ──
+        ...(contentNarrative ? { contentNarrative: buildContentNarrativeDiagnostics(contentNarrative, repairContent || initialContent, contentNarrativeChars) } : {}),
       };
     };
 
@@ -960,7 +977,7 @@ export async function runFrontendBuilderQualityPipeline(
     // Phase 13C — a model "pass" can NEVER approve while severe deterministic warnings remain.
     //    Phase 12G — a blocking binding-requirement or cross-sector-drift finding can NEVER be
     //    fast-approved (the merge above already flips passed=false, but this is an explicit guard).
-    if (initialReview.passed && severeWarningGatePassed(validation) && !hasBlockingBindingFindings(initialBinding) && !hasBlockingResearchFindings(initialResearch) && !hasBlockingCompositionFindings(initialComposition) && !hasBlockingVisualSystemFindings(initialVisualSystem)) {
+    if (initialReview.passed && severeWarningGatePassed(validation) && !hasBlockingBindingFindings(initialBinding) && !hasBlockingResearchFindings(initialResearch) && !hasBlockingCompositionFindings(initialComposition) && !hasBlockingVisualSystemFindings(initialVisualSystem) && !hasBlockingContentFindings(initialContent)) {
       const acceptance = acceptanceArtifact('approved', initialProjectName, {
         initialReviewPassed: true, repairAttempted: false, repairAccepted: false, finalReviewPassed: false,
         reason: `Initial static design review passed (score ${initialReview.score ?? '?'}); no severe quality warnings. Rendered visual test pending.`,
@@ -1126,11 +1143,13 @@ export async function runFrontendBuilderQualityPipeline(
       repairResearch = analyzeResearchGrounding(repairValidation.files, researchDirection);
       repairComposition = analyzeComposition(repairValidation.files, composition);
       repairVisualSystem = analyzeVisualSystem(repairValidation.files, visualSystem);
+      repairContent = analyzeContentNarrative(repairValidation.files, contentNarrative);
       const detIssuesFB = [
         ...(repairBinding ? bindingIssuesToReviewIssues(repairBinding) : []),
         ...(repairResearch ? researchGroundingToReviewIssues(repairResearch) : []),
         ...(repairComposition ? compositionToReviewIssues(repairComposition) : []),
         ...(repairVisualSystem ? visualSystemToReviewIssues(repairVisualSystem) : []),
+        ...(repairContent ? contentNarrativeToReviewIssues(repairContent) : []),
       ];
       if (detIssuesFB.length && finalReview.status === 'completed') {
         const { issues: mergedFB, added: addedFB } = mergeDeterministicIssues(finalReview.issues, detIssuesFB);
@@ -1154,7 +1173,8 @@ export async function runFrontendBuilderQualityPipeline(
       !hasBlockingBindingFindings(repairBinding) &&
       !hasBlockingResearchFindings(repairResearch) &&
       !hasBlockingCompositionFindings(repairComposition) &&
-      !hasBlockingVisualSystemFindings(repairVisualSystem);
+      !hasBlockingVisualSystemFindings(repairVisualSystem) &&
+      !hasBlockingContentFindings(repairContent);
 
     if (accept) {
       const repair = repairArtifact('accepted', `Repair accepted: score improved ${initialScore} → ${finalScore} and the post-repair review passed with no blocker/major issues and no severe quality warnings.`, {
@@ -1182,7 +1202,9 @@ export async function runFrontendBuilderQualityPipeline(
     // Repair validated but was not accepted (final review failed / malformed / no improvement /
     // severe warnings still remain). Phase 13C — a repair that stays shallow is rejected by the
     // deterministic severe-warning gate even if the model reviewer "passed" it.
-    const rejectReason = hasBlockingVisualSystemFindings(repairVisualSystem)
+    const rejectReason = hasBlockingContentFindings(repairContent)
+      ? `The repaired project still fails the binding content narrative (${contentNarrativeIssueCodes(repairContent).slice(0, 4).join(', ')} — e.g. a required section with no substantive public copy, generic/duplicated propositions across sections, leaked internal planning copy, or no actionable CTA); the repair was not accepted.`
+      : hasBlockingVisualSystemFindings(repairVisualSystem)
       ? `The repaired project still fails the binding visual system (${visualSystemIssueCodes(repairVisualSystem).slice(0, 4).join(', ')} — e.g. no coherent token source, declared tokens bypassed, repeated generic card chrome, or unreadable body text); the repair was not accepted.`
       : hasBlockingCompositionFindings(repairComposition)
       ? `The repaired project still collapses into a repeated template composition (${compositionIssueCodes(repairComposition).slice(0, 4).join(', ')} — distinct sections rendered as the same generic grid); the repair was not accepted.`

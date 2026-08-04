@@ -830,6 +830,18 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
         if (vs.tokenSourceDetected) ownerRows.push(['visualSystemTokens', `source ${vs.tokenSourceDetected} · consumed ${String(!!vs.tokenConsumptionDetected)} · sections ${vs.analyzedSectionCount ?? 0} · arbitrary ${vs.arbitraryValueCount ?? 0} · repeatedChrome ${vs.chromeRepeatSectionCount ?? 0} · readability ${vs.readabilityFindingCount ?? 0}`]);
         if (vs.visualSystemAcceptanceStatus) ownerRows.push(['visualSystemAcceptanceStatus', `${vs.visualSystemAcceptanceStatus}${vs.visualSystemIssueCodes?.length ? ` · ${vs.visualSystemIssueCodes.slice(0, 6).join(', ')}` : ''}`]);
       }
+      // Phase (content narrative) — bounded content/conversion-narrative diagnostics (owner-only). The
+      // contract assigns each section a distinct message role; consumption is truthful (rendered into the
+      // builder request + read by acceptance; no planning/model agent consumes it before its own decision).
+      const cn = fac.contentNarrative;
+      if (cn) {
+        ownerRows.push(['contentNarrativeContract', `${cn.contentNarrativeVersion} · ${cn.contentNarrativeStatus} · ${cn.language} · ${cn.sectionAssignmentCount} sections · contract ${cn.contentNarrativeCharCount} chars`]);
+        ownerRows.push(['contentNarrativeRoles', `roles ${cn.narrativeRoleCount} · anchors ${cn.specificityAnchorCount} · approvedProof ${cn.approvedProofCount}`]);
+        if (cn.analyzedSectionCount != null) ownerRows.push(['contentNarrativeSatisfaction', `analyzed ${cn.analyzedSectionCount} · satisfied ${cn.satisfiedRoleCount ?? 0} · missing ${cn.missingRoleCount ?? 0} · ambiguous ${cn.ambiguousRoleCount ?? 0} · dupGroups ${cn.duplicatePropositionGroupCount ?? 0} · ctaActionable ${String(!!cn.ctaActionable)} · internalLeaks ${cn.internalCopyLeakCount ?? 0}`]);
+        if (cn.derivationBasis?.length) ownerRows.push(['contentNarrativeDerivation', cn.derivationBasis.slice(0, 6).join(', ')]);
+        ownerRows.push(['contentNarrativeContractApplied', `spec ${String(!!cn.contractPersistedInSpecification)} · builder ${String(!!cn.contractRenderedToFrontendBuilder)} · acceptance ${String(!!cn.contractUsedByAcceptance)} · agents ${cn.agentsActuallyConsumingContract?.length ? cn.agentsActuallyConsumingContract.slice(0, 4).join('/') : 'none'}`]);
+        if (cn.contentAcceptanceStatus) ownerRows.push(['contentNarrativeAcceptanceStatus', `${cn.contentAcceptanceStatus}${cn.contentIssueCodes?.length ? ` · ${cn.contentIssueCodes.slice(0, 6).join(', ')}` : ''}`]);
+      }
     }
 
     // Phase 13D — model-native REVISION diagnostics (owner-only). Present only on an
