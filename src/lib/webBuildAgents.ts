@@ -2069,6 +2069,12 @@ export interface FrontendBuildSpecification {
    *  composition acceptance). Derived deterministically from the EXISTING layout/blueprint/section +
    *  art-direction + research + binding + image-coverage artifacts (no new model/network call). */
   composition?: import('@/lib/webBuildComposition').CompositionContract;
+  /** Phase (premium visual system) — the BINDING visual-system contract: semantic colour roles,
+   *  typographic roles, surface/elevation vocabulary, component chrome, detail language, readability
+   *  + responsive obligations and a sector-aware anti-slop policy. Additive: present only on fresh
+   *  builds; absent ⇒ legacy behavior. Derived deterministically from the EXISTING design-system +
+   *  art-direction + research + composition + binding + image-coverage artifacts (no new call). */
+  visualSystem?: import('@/lib/webBuildVisualSystem').VisualSystemContract;
 
   honestyRules: string[];
   sourceTrace: string[];
@@ -2706,6 +2712,11 @@ export interface FrontendBuilderAcceptanceArtifact {
   /* ── Phase (composition) — bounded owner diagnostics (counts + family distribution + codes only;
    *    never source, prompts, URLs or secrets). All OPTIONAL/additive. ── */
   composition?: import('@/lib/webBuildComposition').CompositionDiagnostics;
+
+  /* ── Phase (premium visual system) — bounded owner diagnostics (role/prohibition counts, detected
+   *    token source + consumption, arbitrary-value/chrome/readability evidence counts and issue codes
+   *    only; never source, prompts, URLs or secrets). All OPTIONAL/additive. ── */
+  visualSystem?: import('@/lib/webBuildVisualSystem').VisualSystemDiagnostics;
 
   reason: string;
 }

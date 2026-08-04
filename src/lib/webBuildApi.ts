@@ -29,6 +29,7 @@ import type { CompactSourceContext } from '@/lib/webBuildQualityContext';
 import { renderBindingRequirementsBlock } from '@/lib/webBuildBindingRequirements';
 import { renderResearchDirectionBlock } from '@/lib/webBuildResearchDirection';
 import { renderCompositionBlock } from '@/lib/webBuildComposition';
+import { renderVisualSystemBlock } from '@/lib/webBuildVisualSystem';
 // PR #510 — the Experience Architecture enforcement block (a leaf; pure; returns "" when no
 // plan is attached, so the frontend_builder request is unchanged with the flag off).
 import { buildExperienceEnforcementBlock } from '@/lib/webBuildExperienceArchitecture';
@@ -2065,6 +2066,10 @@ export function buildFrontendBuilderRequest(spec: FrontendBuildSpecification): s
   // Phase (composition) — the BINDING per-section page-composition contract (family/hierarchy/
   // alignment/media role/adjacency rhythm/responsive). Absent ⇒ unchanged request.
   const compositionBlock = renderCompositionBlock(spec.composition);
+  // Phase (premium visual system) — the BINDING visual system (typography roles, semantic colour
+  // roles, surface/component/detail language, readability + responsive obligations, anti-slop policy
+  // + token strategy). Hard-bounded block; absent ⇒ unchanged request.
+  const visualSystemBlock = renderVisualSystemBlock(spec.visualSystem);
 
   // Phase (image coverage) — MANDATORY semantic coverage for required/image-led sites. Names each
   // required image purpose + approved slot so the model renders a real, relevant <img> in its
@@ -2104,6 +2109,7 @@ export function buildFrontendBuilderRequest(spec: FrontendBuildSpecification): s
     ...experienceBlock,
     ...researchDirectionBlock,
     ...compositionBlock,
+    ...visualSystemBlock,
     ...imageBlock,
     ...coverageBlock,
     ...bindingLines,
