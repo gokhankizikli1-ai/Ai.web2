@@ -38,6 +38,7 @@ import { deriveExperienceQualityContract } from '@/lib/webBuildExperienceQuality
 import { deriveVisualConceptContract } from '@/lib/webBuildVisualConcept';
 import { deriveExperienceIdentityContract } from '@/lib/webBuildExperienceIdentity';
 import { deriveMotionExecutionContract } from '@/lib/webBuildMotionExecution';
+import { deriveExecutionObligationRegistry } from '@/lib/webBuildExecutionObligations';
 import type {
   FrontendBuildSpecification, FrontendSpecSection, FrontendSpecImageSlot, FrontendSpecMotionLayer,
   FrontendSpecIdentity, FrontendSpecDesignSystem, FrontendSpecArchitecture, FrontendSpecAssetPlan,
@@ -857,6 +858,23 @@ export function deriveFrontendBuildSpecification(input: FrontendBuildSpecInput):
       });
       if (motionExecution) built.motionExecution = motionExecution;
     } catch { /* never block the build on motion-execution derivation */ }
+
+    // Phase (execution obligations) — collect the high-value, verifiable obligations from EVERY derived
+    // contract into one accountability registry with stable ids (composes; never re-decides). Runs last so
+    // all contracts are available (deterministic; no model/network call; fail-open). Absent ⇒ legacy.
+    try {
+      const executionObligations = deriveExecutionObligationRegistry({
+        composition: built.composition,
+        contentNarrative: built.contentNarrative,
+        imageCoverage: built.imageCoverage,
+        visualConcept: built.visualConcept,
+        experienceIdentity: built.experienceIdentity,
+        motionExecution: built.motionExecution,
+        binding: built.bindingRequirements,
+        heroSectionId: built.visualConcept?.rhythm?.peakSectionId,
+      });
+      if (executionObligations) built.executionObligations = executionObligations;
+    } catch { /* never block the build on obligation-registry derivation */ }
 
     return built;
   } catch {
