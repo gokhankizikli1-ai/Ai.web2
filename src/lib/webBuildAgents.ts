@@ -2098,6 +2098,13 @@ export interface FrontendBuildSpecification {
    *  signature behavior, emotional + functional progression and story-level exclusions. Composes the
    *  EXISTING contracts (no new call). Additive: fresh builds only; absent ⇒ legacy. */
   experienceIdentity?: import('@/lib/webBuildExperienceIdentity').ExperienceIdentityContract;
+  /** Phase (motion visual execution) — translates the visual concept + experience identity motion/
+   *  demonstration INTENT into a technically-achievable IMPLEMENTATION plan: technique family,
+   *  implementation medium (CSS/SVG/SVG+state/framer-motion/chart), scene layers, choreography, state
+   *  linkage, responsive simplification, a reduced-motion equivalent, performance budget, fallback, a hero
+   *  execution blueprint and an animated-demo plan. Composes the EXISTING contracts (no new call).
+   *  Additive: fresh builds only; absent ⇒ legacy. */
+  motionExecution?: import('@/lib/webBuildMotionExecution').MotionExecutionContract;
 
   honestyRules: string[];
   sourceTrace: string[];
@@ -2762,6 +2769,12 @@ export interface FrontendBuilderAcceptanceArtifact {
    *    count, prompt-char contribution, acceptance status + issue codes + real consumers; never raw source,
    *    prompts, URLs or secrets). All OPTIONAL/additive. ── */
   experienceIdentity?: import('@/lib/webBuildExperienceIdentity').ExperienceIdentityDiagnostics;
+
+  /* ── Phase (motion visual execution) — bounded owner diagnostics (category, technique family, hero
+   *    blueprint, implementation medium, state linkage, scene-layer/animated-element budgets, prompt-char
+   *    contribution, acceptance status + hero-animated/fade-up/infinite counts + issue codes + real
+   *    consumers; never raw source, prompts, URLs or secrets). All OPTIONAL/additive. ── */
+  motionExecution?: import('@/lib/webBuildMotionExecution').MotionExecutionDiagnostics;
 
   reason: string;
 }
