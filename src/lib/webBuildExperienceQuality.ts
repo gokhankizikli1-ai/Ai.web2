@@ -533,8 +533,10 @@ function classOf(attr: string): { classes: string; dynamic: boolean } {
   const dyn = /\b(?:class|className)\s*=\s*\{/.test(attr);
   return { classes: '', dynamic: dyn };
 }
-/** Bounded single-pass element scanner. Fails open (returns what it parsed) on any anomaly. */
-function scanElements(clean: string): ElementRef[] {
+/** Bounded single-pass element scanner. Fails open (returns what it parsed) on any anomaly.
+ *  Exported so peer contract analyzers (e.g. webBuildVisualConcept) reuse ONE JSX scanner
+ *  authority instead of re-implementing a second regex scanner. */
+export function scanElements(clean: string): ElementRef[] {
   const els: ElementRef[] = [];
   try {
     const n = clean.length; let i = 0; let labelDepth = 0; let guard = 0;
@@ -573,7 +575,9 @@ export interface SectionFacts {
   hasChildComponent: boolean;
   elements: ElementRef[];
 }
-function factsFor(id: string, path: string, content: string): SectionFacts {
+/** Build bounded per-section facts (cleaned source, scanned elements, render evidence, visible text).
+ *  Exported so peer contract analyzers reuse this one section-facts builder rather than duplicate it. */
+export function factsFor(id: string, path: string, content: string): SectionFacts {
   const clean = stripComments((content || '').slice(0, MAX_SCAN));
   const elements = scanElements(clean);
   const render = renderEvidence(elements);

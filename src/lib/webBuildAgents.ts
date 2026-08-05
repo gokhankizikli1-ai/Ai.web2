@@ -2086,6 +2086,12 @@ export interface FrontendBuildSpecification {
    *  #558–#563 decisions into one implementable experience. Additive: present only on fresh builds;
    *  absent ⇒ legacy behavior. Derived deterministically from the EXISTING contracts (no new call). */
   experienceQuality?: import('@/lib/webBuildExperienceQuality').ExperienceQualityContract;
+  /** Phase (visual concept & art direction) — the AUTHORITATIVE dominant-visual-idea contract: the visual
+   *  thesis, one signature hero visual, intentional media selection, per-image art direction, a designed
+   *  motion vocabulary, visual rhythm, real-image strategy and forbidden generic patterns. Composes the
+   *  EXISTING contracts (composition hero anchor, visualSystem, imageCoverage, research art direction) into
+   *  premium first-glance direction. Additive: fresh builds only; absent ⇒ legacy. No new model/network call. */
+  visualConcept?: import('@/lib/webBuildVisualConcept').VisualConceptContract;
 
   honestyRules: string[];
   sourceTrace: string[];
@@ -2738,6 +2744,12 @@ export interface FrontendBuilderAcceptanceArtifact {
    *    per-dimension finding counts + issue codes only; never raw source, prompts or secrets).
    *    All OPTIONAL/additive. ── */
   experienceQuality?: import('@/lib/webBuildExperienceQuality').ExperienceQualityDiagnostics;
+
+  /* ── Phase (visual concept & art direction) — bounded owner diagnostics (category, signature family/
+   *    medium, selected media, required photo/animated counts, rendered/repeated image counts, hero-located,
+   *    acceptance status, issue codes, prompt-char contribution + real consumers; never raw source, prompts,
+   *    URLs or secrets). All OPTIONAL/additive. ── */
+  visualConcept?: import('@/lib/webBuildVisualConcept').VisualConceptDiagnostics;
 
   reason: string;
 }
