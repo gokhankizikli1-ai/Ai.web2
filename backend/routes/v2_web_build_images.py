@@ -295,6 +295,10 @@ class StockNeedItem(BaseModel):
     purpose: str = Field(default="", max_length=40)
     required: bool = Field(default=False)
     altText: str = Field(default="", max_length=200)
+    # Optional, bounded fallback query variants (Phase 1). Old clients omit this and behave
+    # exactly as before; the service sanitizes/dedupes and uses at most 3 as a bounded
+    # fallback for a REQUIRED slot whose primary query found nothing.
+    queryVariants: List[str] = Field(default_factory=list, max_length=6)
 
 
 class StockDesignContext(BaseModel):
@@ -340,6 +344,8 @@ async def stock_source(
             # deterministic path, so passing them through is always safe.
             "purpose": n.purpose,
             "required": n.required,
+            # Optional bounded fallback variants (sanitized/deduped/capped in the service).
+            "queryVariants": list(n.queryVariants or []),
         }
         for n in (body.needs or [])
     ][:cap]
