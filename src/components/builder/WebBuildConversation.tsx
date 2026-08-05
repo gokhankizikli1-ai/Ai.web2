@@ -866,6 +866,18 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
         ownerRows.push(['visualConceptApplied', `builder ${String(!!vc.contractRenderedToFrontendBuilder)} · acceptance ${String(!!vc.contractUsedByAcceptance)} · agents ${vc.agentsActuallyConsumingContract?.length ? vc.agentsActuallyConsumingContract.slice(0, 4).join('/') : 'none'}`]);
         ownerRows.push(['visualConceptAcceptanceStatus', `${vc.acceptanceStatus}${vc.issueCodes?.length ? ` · ${vc.issueCodes.slice(0, 6).join(', ')}` : ''}`]);
       }
+      // ── Phase (experience identity & product storytelling) — the product-specific experience: personality,
+      //    narrative architecture, trust model, product demonstration. Consumption is truthful (rendered
+      //    into the builder request + read by acceptance). ──
+      const ei = fac.experienceIdentity;
+      if (ei) {
+        ownerRows.push(['experienceIdentity', `${ei.version} · ${ei.category}/${ei.businessModelClass} · ${ei.personality} · narrative ${ei.narrativeArchitecture} · block ${ei.promptCharCount} chars`]);
+        ownerRows.push(['experienceIdentityStory', `trust ${ei.trustStakes} · demo ${ei.demonstrationPattern}${ei.demonstrationRequired ? ' (required)' : ''} · disclaimers ${ei.disclaimersRequiredCount} · motifs ${ei.microMotifCount}`]);
+        if (ei.upstreamEvidenceUsedToDeriveContract?.length) ownerRows.push(['experienceIdentityDerivation', ei.upstreamEvidenceUsedToDeriveContract.slice(0, 6).join(', ')]);
+        ownerRows.push(['experienceIdentityFindings', `disclaimer-found ${String(ei.disclaimerFound)} · demo-evidence ${String(ei.demonstrationEvidence)}`]);
+        ownerRows.push(['experienceIdentityApplied', `builder ${String(!!ei.contractRenderedToFrontendBuilder)} · acceptance ${String(!!ei.contractUsedByAcceptance)} · agents ${ei.agentsActuallyConsumingContract?.length ? ei.agentsActuallyConsumingContract.slice(0, 4).join('/') : 'none'}`]);
+        ownerRows.push(['experienceIdentityAcceptanceStatus', `${ei.acceptanceStatus}${ei.issueCodes?.length ? ` · ${ei.issueCodes.slice(0, 6).join(', ')}` : ''}`]);
+      }
     }
 
     // Phase 13D — model-native REVISION diagnostics (owner-only). Present only on an

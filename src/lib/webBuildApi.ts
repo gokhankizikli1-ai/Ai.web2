@@ -33,6 +33,7 @@ import { renderVisualSystemBlock } from '@/lib/webBuildVisualSystem';
 import { renderContentNarrativeBlock } from '@/lib/webBuildContentNarrative';
 import { renderExperienceQualityBlock } from '@/lib/webBuildExperienceQuality';
 import { renderVisualConceptBlock } from '@/lib/webBuildVisualConcept';
+import { renderExperienceIdentityBlock } from '@/lib/webBuildExperienceIdentity';
 // PR #510 — the Experience Architecture enforcement block (a leaf; pure; returns "" when no
 // plan is attached, so the frontend_builder request is unchanged with the flag off).
 import { buildExperienceEnforcementBlock } from '@/lib/webBuildExperienceArchitecture';
@@ -2084,6 +2085,11 @@ export function buildFrontendBuilderRequest(spec: FrontendBuildSpecification): s
   // generic patterns. Placed EARLY (below) so first-glance visual priority is not buried. Hard-bounded
   // (≤ RENDER_CHAR_CEILING); absent ⇒ unchanged request.
   const visualConceptBlock = renderVisualConceptBlock(spec.visualConcept);
+  // Phase (experience identity & product storytelling) — the product-specific experience: thesis, audience
+  // transformation, narrative architecture, product demonstration, trust model + high-stakes disclaimers,
+  // signature behavior. Leads the design blocks (below) so product/experience direction is not buried.
+  // Hard-bounded (≤ RENDER_CHAR_CEILING); absent ⇒ unchanged request.
+  const experienceIdentityBlock = renderExperienceIdentityBlock(spec.experienceIdentity);
 
   // Phase (image coverage) — MANDATORY semantic coverage for required/image-led sites. Names each
   // required image purpose + approved slot so the model renders a real, relevant <img> in its
@@ -2121,6 +2127,7 @@ export function buildFrontendBuilderRequest(spec: FrontendBuildSpecification): s
     '',
     ...contractLines,
     ...experienceBlock,
+    ...experienceIdentityBlock,
     ...visualConceptBlock,
     ...researchDirectionBlock,
     ...compositionBlock,
