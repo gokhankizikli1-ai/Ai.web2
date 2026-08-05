@@ -37,6 +37,7 @@ import { deriveContentNarrativeContract } from '@/lib/webBuildContentNarrative';
 import { deriveExperienceQualityContract } from '@/lib/webBuildExperienceQuality';
 import { deriveVisualConceptContract } from '@/lib/webBuildVisualConcept';
 import { deriveExperienceIdentityContract } from '@/lib/webBuildExperienceIdentity';
+import { deriveMotionExecutionContract } from '@/lib/webBuildMotionExecution';
 import type {
   FrontendBuildSpecification, FrontendSpecSection, FrontendSpecImageSlot, FrontendSpecMotionLayer,
   FrontendSpecIdentity, FrontendSpecDesignSystem, FrontendSpecArchitecture, FrontendSpecAssetPlan,
@@ -839,6 +840,23 @@ export function deriveFrontendBuildSpecification(input: FrontendBuildSpecInput):
       });
       if (experienceIdentity) built.experienceIdentity = experienceIdentity;
     } catch { /* never block the build on experience-identity derivation */ }
+
+    // Phase (motion visual execution) — translate the visual-concept motion vocabulary + signature visual
+    // and the experience-identity demonstration/signature behavior into a technically-achievable
+    // IMPLEMENTATION plan (technique family, medium, scene layers, choreography, state linkage, responsive
+    // simplification, reduced-motion equivalent, performance budget, fallback, hero blueprint, animated
+    // demo). Runs last so both upstream contracts are available (deterministic; no model/network call;
+    // fail-open). Absent ⇒ legacy behavior.
+    try {
+      const motionExecution = deriveMotionExecutionContract({
+        visualConcept: built.visualConcept,
+        experienceIdentity: built.experienceIdentity,
+        identity: built.identity,
+        heroSectionId: built.visualConcept?.rhythm?.peakSectionId,
+        prompt: built.prompt,
+      });
+      if (motionExecution) built.motionExecution = motionExecution;
+    } catch { /* never block the build on motion-execution derivation */ }
 
     return built;
   } catch {

@@ -878,6 +878,17 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
         ownerRows.push(['experienceIdentityApplied', `builder ${String(!!ei.contractRenderedToFrontendBuilder)} · acceptance ${String(!!ei.contractUsedByAcceptance)} · agents ${ei.agentsActuallyConsumingContract?.length ? ei.agentsActuallyConsumingContract.slice(0, 4).join('/') : 'none'}`]);
         ownerRows.push(['experienceIdentityAcceptanceStatus', `${ei.acceptanceStatus}${ei.issueCodes?.length ? ` · ${ei.issueCodes.slice(0, 6).join(', ')}` : ''}`]);
       }
+      // ── Phase (motion visual execution) — how the signature animation is actually built: technique
+      //    family, medium, choreography, state linkage. Consumption is truthful (builder + acceptance). ──
+      const me = fac.motionExecution;
+      if (me) {
+        ownerRows.push(['motionExecution', `${me.version} · ${me.category} · ${me.techniqueFamily} → ${me.implementationMedium} · hero ${me.heroBlueprint} · block ${me.promptCharCount} chars`]);
+        ownerRows.push(['motionExecutionPlan', `signature-scene ${me.signatureSceneRequired ? 'required' : 'optional'} · state ${me.stateLinkage} · demo ${String(me.demoRequired)} · layers ${me.sceneLayerCount} · max-anim ${me.maxContinuousAnimatedElements}`]);
+        if (me.upstreamEvidenceUsedToDeriveContract?.length) ownerRows.push(['motionExecutionDerivation', me.upstreamEvidenceUsedToDeriveContract.slice(0, 6).join(', ')]);
+        ownerRows.push(['motionExecutionFindings', `hero-located ${String(me.heroLocated)} · hero-animated ${String(me.heroAnimated)} · fade-up ${me.fadeUpCount} · infinite ${me.infiniteCount}`]);
+        ownerRows.push(['motionExecutionApplied', `builder ${String(!!me.contractRenderedToFrontendBuilder)} · acceptance ${String(!!me.contractUsedByAcceptance)} · agents ${me.agentsActuallyConsumingContract?.length ? me.agentsActuallyConsumingContract.slice(0, 4).join('/') : 'none'}`]);
+        ownerRows.push(['motionExecutionAcceptanceStatus', `${me.acceptanceStatus}${me.issueCodes?.length ? ` · ${me.issueCodes.slice(0, 6).join(', ')}` : ''}`]);
+      }
     }
 
     // Phase 13D — model-native REVISION diagnostics (owner-only). Present only on an

@@ -34,6 +34,7 @@ import { renderContentNarrativeBlock } from '@/lib/webBuildContentNarrative';
 import { renderExperienceQualityBlock } from '@/lib/webBuildExperienceQuality';
 import { renderVisualConceptBlock } from '@/lib/webBuildVisualConcept';
 import { renderExperienceIdentityBlock } from '@/lib/webBuildExperienceIdentity';
+import { renderMotionExecutionBlock } from '@/lib/webBuildMotionExecution';
 // PR #510 — the Experience Architecture enforcement block (a leaf; pure; returns "" when no
 // plan is attached, so the frontend_builder request is unchanged with the flag off).
 import { buildExperienceEnforcementBlock } from '@/lib/webBuildExperienceArchitecture';
@@ -2090,6 +2091,11 @@ export function buildFrontendBuilderRequest(spec: FrontendBuildSpecification): s
   // signature behavior. Leads the design blocks (below) so product/experience direction is not buried.
   // Hard-bounded (≤ RENDER_CHAR_CEILING); absent ⇒ unchanged request.
   const experienceIdentityBlock = renderExperienceIdentityBlock(spec.experienceIdentity);
+  // Phase (motion visual execution) — how to BUILD the signature animation as real, product-meaningful
+  // code (technique family, medium, choreography, state linkage, responsive/reduced-motion/fallback,
+  // performance budget). Sits with the visual/experience blocks as implementation guidance. Hard-bounded
+  // (≤ RENDER_CHAR_CEILING); references peer authorities instead of repeating them; absent ⇒ unchanged.
+  const motionExecutionBlock = renderMotionExecutionBlock(spec.motionExecution);
 
   // Phase (image coverage) — MANDATORY semantic coverage for required/image-led sites. Names each
   // required image purpose + approved slot so the model renders a real, relevant <img> in its
@@ -2129,6 +2135,7 @@ export function buildFrontendBuilderRequest(spec: FrontendBuildSpecification): s
     ...experienceBlock,
     ...experienceIdentityBlock,
     ...visualConceptBlock,
+    ...motionExecutionBlock,
     ...researchDirectionBlock,
     ...compositionBlock,
     ...visualSystemBlock,

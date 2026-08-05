@@ -126,6 +126,14 @@ import {
   experienceIdentityIssueCodes, buildExperienceIdentityDiagnostics, renderExperienceIdentityBlock,
   type ExperienceIdentityAcceptanceResult,
 } from '@/lib/webBuildExperienceIdentity';
+// Phase (motion visual execution) — the SAME implementation contract rendered into the builder request is
+// analyzed here; only a required signature scene rendered provably STATIC blocks. Rides the EXISTING
+// deterministic-issue merge → single repair. Non-duplicative with visualConcept/experienceQuality.
+import {
+  analyzeMotionExecution, motionExecutionToReviewIssues, hasBlockingMotionExecutionFindings,
+  motionExecutionIssueCodes, buildMotionExecutionDiagnostics, renderMotionExecutionBlock,
+  type MotionExecutionAcceptanceResult,
+} from '@/lib/webBuildMotionExecution';
 // PR #521 — CONDITIONAL rendered VISION review (fresh-build only, at most one screenshot + one
 // vision call). Its major/blocker findings ride the SAME existing merge → single bounded repair.
 import {
@@ -806,6 +814,11 @@ export async function runFrontendBuilderQualityPipeline(
     // Phase (experience identity & product storytelling) — the AUTHORITATIVE product-experience contract.
     const experienceIdentity = spec?.experienceIdentity;
     const experienceIdentityChars = renderExperienceIdentityBlock(experienceIdentity).join('\n').length;
+    // Phase (motion visual execution) — the implementation contract; hero region located via the visual
+    // concept's peak (rhythm) section id.
+    const motionExecution = spec?.motionExecution;
+    const motionExecutionChars = renderMotionExecutionBlock(motionExecution).join('\n').length;
+    const motionHeroSectionId = visualConcept?.rhythm?.peakSectionId;
     let initialBinding: BindingAcceptanceResult | undefined;
     let initialResearch: ResearchGroundingResult | undefined;
     let initialComposition: CompositionAcceptanceResult | undefined;
@@ -814,6 +827,7 @@ export async function runFrontendBuilderQualityPipeline(
     let initialExperience: ExperienceAcceptanceResult | undefined;
     let initialVisual: VisualAcceptanceResult | undefined;
     let initialExperienceIdentity: ExperienceIdentityAcceptanceResult | undefined;
+    let initialMotion: MotionExecutionAcceptanceResult | undefined;
     try {
       initialBinding = analyzeBindingAcceptance(validation?.files, bindingReqs, driftPolicy, imageCoverage);
       initialResearch = analyzeResearchGrounding(validation?.files, researchDirection);
@@ -823,6 +837,7 @@ export async function runFrontendBuilderQualityPipeline(
       initialExperience = analyzeExperienceQuality(validation?.files, experienceQuality);
       initialVisual = analyzeVisualContribution(validation?.files, visualConcept);
       initialExperienceIdentity = analyzeExperienceIdentity(validation?.files, experienceIdentity);
+      initialMotion = analyzeMotionExecution(validation?.files, motionExecution, motionHeroSectionId);
       const detIssues = [
         ...(initialBinding ? bindingIssuesToReviewIssues(initialBinding) : []),
         ...(initialResearch ? researchGroundingToReviewIssues(initialResearch) : []),
@@ -832,6 +847,7 @@ export async function runFrontendBuilderQualityPipeline(
         ...(initialExperience ? experienceToReviewIssues(initialExperience) : []),
         ...(initialVisual ? visualToReviewIssues(initialVisual) : []),
         ...(initialExperienceIdentity ? experienceIdentityToReviewIssues(initialExperienceIdentity) : []),
+        ...(initialMotion ? motionExecutionToReviewIssues(initialMotion) : []),
       ];
       if (detIssues.length && initialReview.status === 'completed') {
         const { issues: mergedB, added: addedB } = mergeDeterministicIssues(initialReview.issues, detIssues);
@@ -851,10 +867,11 @@ export async function runFrontendBuilderQualityPipeline(
     let repairExperience: ExperienceAcceptanceResult | undefined;
     let repairVisual: VisualAcceptanceResult | undefined;
     let repairExperienceIdentity: ExperienceIdentityAcceptanceResult | undefined;
+    let repairMotion: MotionExecutionAcceptanceResult | undefined;
     // Bounded, non-sensitive binding/drift diagnostics for the acceptance artifact.
     const bindingExtra = (): Partial<FrontendBuilderAcceptanceArtifact> => {
       const hasAny = !!bindingReqs || !!(initialBinding && initialBinding.driftIssueCount) || !!(repairBinding && repairBinding.driftIssueCount)
-        || !!imageCoverage || !!coverageDiag || !!researchDirection || !!composition || !!visualSystem || !!contentNarrative || !!experienceQuality || !!visualConcept || !!experienceIdentity;
+        || !!imageCoverage || !!coverageDiag || !!researchDirection || !!composition || !!visualSystem || !!contentNarrative || !!experienceQuality || !!visualConcept || !!experienceIdentity || !!motionExecution;
       if (!hasAny) return {};
       const b = repairBinding || initialBinding;
       const c = bindingReqs?.counts;
@@ -909,6 +926,8 @@ export async function runFrontendBuilderQualityPipeline(
         ...(visualConcept ? { visualConcept: buildVisualConceptDiagnostics(visualConcept, repairVisual || initialVisual, visualConceptChars) } : {}),
         // ── Phase (experience identity & product storytelling) — bounded, secret-free diagnostics. ──
         ...(experienceIdentity ? { experienceIdentity: buildExperienceIdentityDiagnostics(experienceIdentity, repairExperienceIdentity || initialExperienceIdentity, experienceIdentityChars) } : {}),
+        // ── Phase (motion visual execution) — bounded, secret-free diagnostics (truthful consumption). ──
+        ...(motionExecution ? { motionExecution: buildMotionExecutionDiagnostics(motionExecution, repairMotion || initialMotion, motionExecutionChars) } : {}),
       };
     };
 
@@ -1028,7 +1047,7 @@ export async function runFrontendBuilderQualityPipeline(
     // Phase 13C — a model "pass" can NEVER approve while severe deterministic warnings remain.
     //    Phase 12G — a blocking binding-requirement or cross-sector-drift finding can NEVER be
     //    fast-approved (the merge above already flips passed=false, but this is an explicit guard).
-    if (initialReview.passed && severeWarningGatePassed(validation) && !hasBlockingBindingFindings(initialBinding) && !hasBlockingResearchFindings(initialResearch) && !hasBlockingCompositionFindings(initialComposition) && !hasBlockingVisualSystemFindings(initialVisualSystem) && !hasBlockingContentFindings(initialContent) && !hasBlockingExperienceFindings(initialExperience) && !hasBlockingVisualFindings(initialVisual) && !hasBlockingExperienceIdentityFindings(initialExperienceIdentity)) {
+    if (initialReview.passed && severeWarningGatePassed(validation) && !hasBlockingBindingFindings(initialBinding) && !hasBlockingResearchFindings(initialResearch) && !hasBlockingCompositionFindings(initialComposition) && !hasBlockingVisualSystemFindings(initialVisualSystem) && !hasBlockingContentFindings(initialContent) && !hasBlockingExperienceFindings(initialExperience) && !hasBlockingVisualFindings(initialVisual) && !hasBlockingExperienceIdentityFindings(initialExperienceIdentity) && !hasBlockingMotionExecutionFindings(initialMotion)) {
       const acceptance = acceptanceArtifact('approved', initialProjectName, {
         initialReviewPassed: true, repairAttempted: false, repairAccepted: false, finalReviewPassed: false,
         reason: `Initial static design review passed (score ${initialReview.score ?? '?'}); no severe quality warnings. Rendered visual test pending.`,
@@ -1198,6 +1217,7 @@ export async function runFrontendBuilderQualityPipeline(
       repairExperience = analyzeExperienceQuality(repairValidation.files, experienceQuality);
       repairVisual = analyzeVisualContribution(repairValidation.files, visualConcept);
       repairExperienceIdentity = analyzeExperienceIdentity(repairValidation.files, experienceIdentity);
+      repairMotion = analyzeMotionExecution(repairValidation.files, motionExecution, motionHeroSectionId);
       const detIssuesFB = [
         ...(repairBinding ? bindingIssuesToReviewIssues(repairBinding) : []),
         ...(repairResearch ? researchGroundingToReviewIssues(repairResearch) : []),
@@ -1207,6 +1227,7 @@ export async function runFrontendBuilderQualityPipeline(
         ...(repairExperience ? experienceToReviewIssues(repairExperience) : []),
         ...(repairVisual ? visualToReviewIssues(repairVisual) : []),
         ...(repairExperienceIdentity ? experienceIdentityToReviewIssues(repairExperienceIdentity) : []),
+        ...(repairMotion ? motionExecutionToReviewIssues(repairMotion) : []),
       ];
       if (detIssuesFB.length && finalReview.status === 'completed') {
         const { issues: mergedFB, added: addedFB } = mergeDeterministicIssues(finalReview.issues, detIssuesFB);
@@ -1234,7 +1255,8 @@ export async function runFrontendBuilderQualityPipeline(
       !hasBlockingContentFindings(repairContent) &&
       !hasBlockingExperienceFindings(repairExperience) &&
       !hasBlockingVisualFindings(repairVisual) &&
-      !hasBlockingExperienceIdentityFindings(repairExperienceIdentity);
+      !hasBlockingExperienceIdentityFindings(repairExperienceIdentity) &&
+      !hasBlockingMotionExecutionFindings(repairMotion);
 
     if (accept) {
       const repair = repairArtifact('accepted', `Repair accepted: score improved ${initialScore} → ${finalScore} and the post-repair review passed with no blocker/major issues and no severe quality warnings.`, {
@@ -1272,6 +1294,8 @@ export async function runFrontendBuilderQualityPipeline(
       ? `The repaired project still fails the binding visual concept (${visualIssueCodes(repairVisual).slice(0, 4).join(', ')} — e.g. the signature hero visual is absent or a placeholder, or one image is reused across distinct required roles); the repair was not accepted.`
       : hasBlockingExperienceIdentityFindings(repairExperienceIdentity)
       ? `The repaired project still fails the binding experience identity (${experienceIdentityIssueCodes(repairExperienceIdentity).slice(0, 4).join(', ')} — e.g. a regulated/high-stakes experience with no visible limitation/disclaimer language); the repair was not accepted.`
+      : hasBlockingMotionExecutionFindings(repairMotion)
+      ? `The repaired project still fails the binding motion execution (${motionExecutionIssueCodes(repairMotion).slice(0, 4).join(', ')} — e.g. a required signature animated scene rendered as a static visual with no animation); the repair was not accepted.`
       : hasBlockingCompositionFindings(repairComposition)
       ? `The repaired project still collapses into a repeated template composition (${compositionIssueCodes(repairComposition).slice(0, 4).join(', ')} — distinct sections rendered as the same generic grid); the repair was not accepted.`
       : hasBlockingResearchFindings(repairResearch)
