@@ -28,7 +28,7 @@ import asyncio
 import logging
 import re
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from backend.services import image_intelligence
 from backend.services.web_build_images import stock
@@ -59,6 +59,31 @@ def sanitize_query(raw: Optional[str]) -> str:
     if len(cleaned) < 2:
         return ""
     return cleaned[:MAX_NEED_QUERY]
+
+
+_MAX_VARIANTS = 3
+_URL_HEX = re.compile(r"https?://\S+|#[0-9A-Fa-f]{3,8}\b")
+
+
+def _clean_variants(raw: Any, primary: str) -> List[str]:
+    """Sanitize + dedupe up to _MAX_VARIANTS fallback query variants. Drops empties,
+    anything equal to the primary, and duplicates. Ignores malformed input (fail-safe)."""
+    if not isinstance(raw, (list, tuple)):
+        return []
+    out: List[str] = []
+    seen = {primary.strip().lower()}
+    for item in raw:
+        if len(out) >= _MAX_VARIANTS:
+            break
+        # Defense-in-depth: drop any URL/hex tokens before the shared query sanitizer
+        # (the frontend already sanitizes, but variants are external input).
+        pre = _URL_HEX.sub(" ", item) if isinstance(item, str) else ""
+        v = sanitize_query(pre)
+        low = v.lower()
+        if v and low not in seen:
+            seen.add(low)
+            out.append(v)
+    return out
 
 
 def _orientation(value: Optional[str]) -> Optional[str]:
@@ -153,34 +178,155 @@ def _smart_assets(
     return picked
 
 
+# ── Deterministic metadata ranking (DEFAULT path; ZERO extra provider calls) ──────
+# The legacy path already fetches _PER_NEED_RESULTS candidates per slot but previously
+# took the first-unused one. This ranks those SAME candidates using only truthful,
+# already-captured metadata (orientation, resolution, aspect, description token overlap,
+# provider order) so each slot gets the most suitable of the images we already fetched.
+# It is NOT the flag-gated Image-Intelligence engine (that stays as-is); it is a small,
+# always-on, deterministic tie-breaker inside the existing legacy selection. No new
+# provider calls, no new flag, no vision/model call.
+_HERO_MIN_MP = 1.4          # hero/background want ≥ ~1.4 megapixels
+_MIN_MP = 0.4               # other slots want ≥ ~0.4 megapixels
+_WEAK_FLOOR = 6.0           # below this, an OPTIONAL slot is left empty rather than shipping junk
+_PHOTOG_MARGIN = 8.0        # prefer an unused photographer within this score margin (diversity)
+_MAX_VARIANT_SEARCHES = 4   # hard cap on fallback-variant provider searches per build
+_JUNK_RE = re.compile(r"placeholder|/logo|logo\.|\bicon\b|sprite|watermark|favicon", re.I)
+_TOKEN_RE = re.compile(r"[a-z0-9]+")
+
+
+def _tokens(text: Optional[str]) -> set:
+    return {t for t in _TOKEN_RE.findall((text or "").lower()) if len(t) > 2}
+
+
+def _cand_orientation(w: Any, h: Any) -> Optional[str]:
+    try:
+        w = int(w or 0); h = int(h or 0)
+    except (TypeError, ValueError):
+        return None
+    if w <= 0 or h <= 0:
+        return None
+    if w >= h * 1.15:
+        return "landscape"
+    if h >= w * 1.15:
+        return "portrait"
+    return "square"
+
+
+def _score_candidate(need: Dict[str, Any], row: Dict[str, Any], idx: int) -> float:
+    """Deterministic suitability score from AVAILABLE metadata only. Higher = better.
+    Never claims visual understanding — only orientation, resolution, aspect, description
+    token overlap and provider result order (all truthful/derivable)."""
+    score = 0.0
+    try:
+        w = int(row.get("width") or 0); h = int(row.get("height") or 0)
+    except (TypeError, ValueError):
+        w = h = 0
+    alt = str(row.get("alt") or row.get("altText") or "")
+    url = stock._https_only(row.get("previewUrl") or row.get("fullUrl")) or ""
+    purpose = need.get("purpose") or ""
+    want = need.get("orientation")
+    hero = purpose in ("hero", "background")
+    if _JUNK_RE.search(url) or _JUNK_RE.search(alt):
+        score -= 50.0
+    ori = _cand_orientation(w, h)
+    if want and ori:
+        if ori == want:
+            score += 25.0
+        elif want == "landscape" and ori == "portrait":
+            score -= 30.0            # unusable crop for a wide hero
+        elif want == "portrait" and ori == "landscape":
+            score -= 20.0
+        else:
+            score -= 6.0
+    if w and h:
+        ar = w / h
+        if want == "landscape" and ar >= 1.4:
+            score += 10.0
+        elif want == "landscape" and ar < 1.1:
+            score -= 10.0
+    mp = (w * h) / 1_000_000.0 if (w and h) else 0.0
+    floor = _HERO_MIN_MP if hero else _MIN_MP
+    if mp:
+        score += (min(10.0, 4.0 + (mp - floor)) if mp >= floor else -min(18.0, (floor - mp) * 12.0))
+    overlap = len(( _tokens(need.get("query")) | _tokens(need.get("altText")) ) & _tokens(alt))
+    score += min(24.0, overlap * 6.0)
+    score += max(0.0, 8.0 - idx * 0.5)   # provider relevance order (earlier ⇒ more relevant)
+    return score
+
+
+def _confidence(score: float) -> str:
+    return "high" if score >= 55.0 else ("medium" if score >= 30.0 else "low")
+
+
+def _pick_best(
+    need: Dict[str, Any], rows: List[Dict[str, Any]],
+    used_ids: set, used_photographers: set, stats: Dict[str, int],
+) -> Tuple[Optional[Dict[str, Any]], float]:
+    """Rank the already-fetched candidates and return the best unused, suitable one.
+    Preserves cross-slot uniqueness + photographer diversity. Leaves an OPTIONAL slot
+    empty when every candidate is weak (Phase 4); a REQUIRED slot always keeps its best."""
+    scored: List[Tuple[float, int, Dict[str, Any]]] = []
+    for idx, row in enumerate(rows):
+        rkey = _row_key(row)
+        if not rkey or rkey in used_ids:
+            continue
+        if not stock._https_only(row.get("previewUrl") or row.get("fullUrl")):
+            continue
+        scored.append((_score_candidate(need, row, idx), idx, row))
+        stats["candidatesEvaluated"] = stats.get("candidatesEvaluated", 0) + 1
+    if not scored:
+        return None, 0.0
+    scored.sort(key=lambda t: (-t[0], t[1]))
+    top_score = scored[0][0]
+    if not need.get("required") and top_score < _WEAK_FLOOR:
+        stats["weakDropped"] = stats.get("weakDropped", 0) + 1
+        return None, top_score
+    chosen, chosen_score = scored[0][2], top_score
+    for s, _idx, row in scored:        # photographer diversity within the margin
+        if top_score - s > _PHOTOG_MARGIN:
+            break
+        ph = (row.get("photographerName") or "").strip().lower()
+        if not ph or ph not in used_photographers:
+            chosen, chosen_score = row, s
+            break
+    return chosen, chosen_score
+
+
 async def _select_deterministic(
     needs: List[Dict[str, Any]],
     used_ids: set,
     used_photographers: set,
     provider_status: Dict[str, str],
     cache: Optional[Dict[str, List[Dict[str, Any]]]] = None,
+    stats: Optional[Dict[str, int]] = None,
 ) -> Dict[str, Dict[str, Any]]:
-    """Legacy search + first-unused selection for a SUBSET of needs.
+    """Legacy search + METADATA-RANKED selection for a SUBSET of needs.
 
     Shares the caller's `used_ids` / `used_photographers` (so it never re-picks a photo
     or photographer the smart pass already used) and updates `provider_status` with the
     real per-provider outcome. Uses a request-local search cache so identical queries hit
-    the network once. Returns {slotId: asset}. Never raises."""
+    the network once. Ranks the fetched candidates deterministically (no extra calls). A
+    REQUIRED slot whose PRIMARY query returned nothing may try ONE bounded fallback
+    variant. Returns {slotId: asset}. Never raises."""
     if not needs:
         return {}
     if cache is None:
         cache = {}
+    if stats is None:
+        stats = {}
     cache_lock = asyncio.Lock()
     sem = asyncio.Semaphore(_CONCURRENCY)
+    variant_budget = {"left": _MAX_VARIANT_SEARCHES}
 
-    async def search_need(need: Dict[str, Any]) -> List[Dict[str, Any]]:
-        key = f"{need['query']}|{need.get('orientation') or ''}"
+    async def _one_search(query: str, orientation: Optional[str]) -> List[Dict[str, Any]]:
+        key = f"{query}|{orientation or ''}"
         async with cache_lock:
             if key in cache:
                 return cache[key]
         async with sem:
             try:
-                payload = await stock.search(need["query"], "all", 1, _PER_NEED_RESULTS, need.get("orientation"))
+                payload = await stock.search(query, "all", 1, _PER_NEED_RESULTS, orientation)
             except Exception as exc:  # noqa: BLE001 — never leak provider internals
                 logger.warning("[STOCK_SRC] search failed: %s", type(exc).__name__)
                 return []
@@ -194,35 +340,41 @@ async def _select_deterministic(
             cache[key] = rows
         return rows
 
+    async def search_need(need: Dict[str, Any]) -> List[Dict[str, Any]]:
+        rows = await _one_search(need["query"], need.get("orientation"))
+        # Bounded fallback: only when a REQUIRED slot's primary query found nothing, try ONE
+        # sanitized variant. Hard-capped per build so variants never multiply provider calls.
+        if not rows and need.get("required"):
+            for variant in (need.get("variants") or []):
+                async with cache_lock:
+                    if variant_budget["left"] <= 0:
+                        break
+                    variant_budget["left"] -= 1
+                stats["variantSearches"] = stats.get("variantSearches", 0) + 1
+                rows = await _one_search(variant, need.get("orientation"))
+                if rows:
+                    break
+        return rows
+
     results = await asyncio.gather(*(search_need(n) for n in needs), return_exceptions=True)
 
     picked: Dict[str, Dict[str, Any]] = {}
     for need, rows in zip(needs, results):
         if isinstance(rows, Exception) or not rows:
             continue
-        chosen = None
-        fallback = None
-        for row in rows:
-            rkey = _row_key(row)
-            if not rkey or rkey in used_ids or not stock._https_only(row.get("previewUrl") or row.get("fullUrl")):
-                continue
-            if fallback is None:
-                fallback = row
-            photographer = (row.get("photographerName") or "").strip().lower()
-            if photographer and photographer in used_photographers:
-                continue
-            chosen = row
-            break
-        chosen = chosen or fallback
+        chosen, chosen_score = _pick_best(need, rows, used_ids, used_photographers, stats)
         if not chosen:
             continue
         asset = _asset_from_row(need["slotId"], need.get("altText", ""), chosen)
         if not asset["url"]:
             continue
+        asset["selectionScore"] = round(chosen_score, 1)
+        asset["selectionConfidence"] = _confidence(chosen_score)
         used_ids.add(_row_key(chosen))
         ph = asset["photographerName"].strip().lower()
         if ph:
             used_photographers.add(ph)
+        stats["rankedSelected"] = stats.get("rankedSelected", 0) + 1
         picked[need["slotId"]] = asset
     return picked
 
@@ -266,6 +418,9 @@ async def source_images(
             # search actually receives each slot's real role.
             "purpose": str(n.get("purpose") or "").strip().lower()[:40],
             "required": bool(n.get("required")),
+            # Optional, bounded, sanitized fallback query variants (Phase 1). Deduped, ≤3,
+            # never equal to the primary query. Old clients omit this ⇒ empty ⇒ unchanged.
+            "variants": _clean_variants(n.get("queryVariants"), q),
         })
         if len(clean_needs) >= MAX_IMAGES:
             break
@@ -314,9 +469,12 @@ async def source_images(
     # ── Deterministic pass — ONLY for slots the smart pass did not fill. ───────────
     missing_needs = [n for n in clean_needs if n["slotId"] not in by_slot]
     fallback_picked: Dict[str, Dict[str, Any]] = {}
+    det_stats: Dict[str, int] = {
+        "candidatesEvaluated": 0, "rankedSelected": 0, "variantSearches": 0, "weakDropped": 0,
+    }
     if missing_needs:
         fallback_picked = await _select_deterministic(
-            missing_needs, used_ids, used_photographers, provider_status,
+            missing_needs, used_ids, used_photographers, provider_status, stats=det_stats,
         )
         by_slot.update(fallback_picked)
 
@@ -360,6 +518,16 @@ async def source_images(
         "sourced": len(assets),
         "elapsedMs": elapsed,
         "engine": engine,
+        # Bounded, secret-free sourcing diagnostics (optional; frontend works without it).
+        "intelligence": {
+            "smartImagesEnabled": image_intelligence.is_enabled(),
+            "deterministicRanked": det_stats["rankedSelected"],
+            "candidatesEvaluated": det_stats["candidatesEvaluated"],
+            "variantSearches": det_stats["variantSearches"],
+            "weakDropped": det_stats["weakDropped"],
+            "variantSearchBudget": _MAX_VARIANT_SEARCHES,
+            "resultsPerNeed": _PER_NEED_RESULTS,
+        },
     }
 
 

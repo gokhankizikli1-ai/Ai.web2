@@ -367,13 +367,14 @@ async function fetchSourcedImages(
   opts?.signal?.addEventListener('abort', onAbort);
   const timer = setTimeout(() => ctrl.abort(), 25000);
   try {
-    // Wire the EXACT known-good need shape only. The art-direction improvement is already baked into
-    // `query`; the extra client-side fields (subject/lighting/tone/queryVariants/…) are intentionally NOT
-    // sent, so a strict backend schema can never reject the request (which would fail-open to zero images
-    // for every build). Backward-compatible byte-for-byte with the pre-existing request when no art exists.
+    // Wire the known-good need shape plus the OPTIONAL, bounded queryVariants (now consumed by the backend
+    // as a bounded fallback for a required slot whose primary query finds nothing). The backend sanitizes/
+    // dedupes/caps them and its schema is lenient, so old backends simply ignore the field — no request can
+    // be rejected. The heavier art-direction fields stay client-side (already baked into `query`).
     const wireNeeds = needs.map((n) => ({
       slotId: n.slotId, purpose: n.purpose, query: n.query, orientation: n.orientation,
       required: n.required, altText: n.altText,
+      ...(n.queryVariants && n.queryVariants.length ? { queryVariants: n.queryVariants.slice(0, 3) } : {}),
     }));
     const resp = await fetch(`${apiBase()}/v2/web-build/images/stock/source`, {
       method: 'POST',
