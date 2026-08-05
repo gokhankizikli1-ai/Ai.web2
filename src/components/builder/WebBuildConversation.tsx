@@ -788,6 +788,14 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
         if (fac.visualStrategyPhotographyMode) ownerRows.push(['visualStrategyPhotography', `${fac.visualStrategyPhotographyMode} · photoSlots ${fac.visualStrategyPhotoSlotCount ?? 0} · deterministicFallback ${String(!!fac.deterministicCoverageFallbackUsed)}`]);
         if (fac.imageCoverageReasonCodes?.length) ownerRows.push(['imageCoverageReasons', fac.imageCoverageReasonCodes.slice(0, 8).join(', ')]);
       }
+      // Phase (image intelligence) — art-direction-aware sourcing + client-side quality filter/dedup.
+      const ii = fac.imageIntelligence;
+      if (ii) {
+        ownerRows.push(['imageIntelligence', `${ii.version} · needs ${ii.needs} (art-directed ${ii.needsWithArtDirection}) · query-variants ${ii.queryVariantsTotal} · smart-ctx ${String(ii.smartImageContextSent)} · new-calls ${ii.newProviderCalls}`]);
+        ownerRows.push(['imageIntelligenceFilter', `candidates ${ii.candidatesReceived} · kept ${ii.keptAssets} · dup(url ${ii.exactUrlDuplicatesPrevented}/norm ${ii.normalizedUrlDuplicatesPrevented}/id ${ii.providerIdDuplicatesPrevented}/role ${ii.roleReuseDuplicatesPrevented}) · junk ${ii.malformedRejected + ii.placeholderOrLogoRejected} · orient-note ${ii.orientationMismatchNoted} · lowres-note ${ii.lowResolutionNoted}`]);
+        if (Object.keys(ii.providerDistribution || {}).length) ownerRows.push(['imageIntelligenceProviders', Object.entries(ii.providerDistribution).map(([k, v]) => `${k}:${v}`).join(' · ')]);
+        ownerRows.push(['imageIntelligenceLimits', `dominant-color ${String(ii.dominantColorMetadataAvailable)} · perceptual-dedup ${String(ii.perceptualDedupAvailable)} · elapsed ${ii.elapsedMs}ms`]);
+      }
       // Phase (research-grounded direction) — bounded research/sector-direction diagnostics.
       const rd = fac.researchDirection;
       if (rd) {

@@ -794,6 +794,7 @@ export async function runFrontendBuilderQualityPipeline(
     const bindingReqs = spec?.bindingRequirements;
     const imageCoverage = spec?.imageCoverage;
     const coverageDiag = basePayload.artifacts?.imageAssetManifest?.coverage;
+    const imageIntelDiag = basePayload.artifacts?.imageAssetManifest?.imageIntelligence;
     // Phase (research-grounded direction) — the sector/research direction contract drives BOTH the
     // sector-aware drift policy (forbidden modules) AND research-grounding acceptance.
     const researchDirection = spec?.researchDirection;
@@ -887,7 +888,7 @@ export async function runFrontendBuilderQualityPipeline(
     // Bounded, non-sensitive binding/drift diagnostics for the acceptance artifact.
     const bindingExtra = (): Partial<FrontendBuilderAcceptanceArtifact> => {
       const hasAny = !!bindingReqs || !!(initialBinding && initialBinding.driftIssueCount) || !!(repairBinding && repairBinding.driftIssueCount)
-        || !!imageCoverage || !!coverageDiag || !!researchDirection || !!composition || !!visualSystem || !!contentNarrative || !!experienceQuality || !!visualConcept || !!experienceIdentity || !!motionExecution || !!executionObligations;
+        || !!imageCoverage || !!coverageDiag || !!researchDirection || !!composition || !!visualSystem || !!contentNarrative || !!experienceQuality || !!visualConcept || !!experienceIdentity || !!motionExecution || !!executionObligations || !!imageIntelDiag;
       if (!hasAny) return {};
       const b = repairBinding || initialBinding;
       const c = bindingReqs?.counts;
@@ -946,6 +947,8 @@ export async function runFrontendBuilderQualityPipeline(
         ...(motionExecution ? { motionExecution: buildMotionExecutionDiagnostics(motionExecution, repairMotion || initialMotion, motionExecutionChars) } : {}),
         // ── Phase (execution obligations) — bounded, secret-free obligation-lifecycle diagnostics. ──
         ...(executionObligations ? { executionObligations: buildObligationDiagnostics(executionObligations, initialObligations, repairObligations, obligationComparison, obligationManifestChars) } : {}),
+        // ── Phase (image intelligence) — bounded, secret-free sourcing-intelligence diagnostics (from manifest). ──
+        ...(imageIntelDiag ? { imageIntelligence: imageIntelDiag } : {}),
       };
     };
 
