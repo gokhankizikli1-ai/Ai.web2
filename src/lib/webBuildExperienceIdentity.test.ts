@@ -76,6 +76,82 @@ describe('webBuildExperienceIdentity — category differentiation matrix (Phase 
   });
 });
 
+describe('webBuildExperienceIdentity — demonstration blueprint (Phases 1–4)', () => {
+  it('attaches a concrete, buildable blueprint when a demonstration is required', () => {
+    const c = deriveExperienceIdentityContract(input({ prompt: 'an AI SaaS automation platform', businessModel: 'subscription-product' }))!;
+    expect(c.demonstration.required).toBe(true);
+    const bp = c.demonstration.blueprint!;
+    expect(bp).toBeTruthy();
+    expect(bp.controls.length).toBeGreaterThanOrEqual(1);
+    expect(bp.controls.length).toBeLessThanOrEqual(3);
+    expect(bp.outputs.length).toBeGreaterThanOrEqual(1);
+    // every output derives from a real control
+    for (const o of bp.outputs) expect(o.derivedFrom.length).toBeGreaterThan(0);
+    // a state machine with a real progression + reset
+    expect(bp.stateMachine.states.map((s) => s.name)).toContain('result');
+    expect(bp.stateMachine.resetBehavior.length).toBeGreaterThan(0);
+    // calculation fidelity rules are always present and honest
+    expect(bp.computation.fidelityRules.length).toBeGreaterThanOrEqual(3);
+    expect(bp.computation.fidelityRules.join(' ')).toMatch(/illustrative|clamp|NaN|empty|live data/i);
+  });
+
+  it('gives a numeric calculator category real numeric bounds + divide-by-zero fidelity', () => {
+    const fin = deriveExperienceIdentityContract(input({ prompt: 'a personal finance loan and budgeting calculator app', businessModel: 'subscription-product' }))!;
+    expect(fin.demonstration.required).toBe(true);
+    const bp = fin.demonstration.blueprint!;
+    const numeric = bp.controls.filter((ctl) => ctl.kind === 'slider' || ctl.kind === 'number' || ctl.kind === 'stepper');
+    expect(numeric.length).toBeGreaterThanOrEqual(1);
+    for (const n of numeric) { expect(typeof n.min).toBe('number'); expect(typeof n.max).toBe('number'); expect(n.max!).toBeGreaterThan(n.min!); }
+    expect(bp.computation.fidelityRules.join(' ')).toMatch(/divide-by-zero|clamp|NaN/i);
+  });
+
+  it('folds real binding control labels into the blueprint (reuses the binding contract)', () => {
+    const binding = {
+      version: 'binding-requirements-v1',
+      requirements: [{
+        id: 'r1', kind: 'interactive-experience', label: 'mortgage estimator', required: true, strength: 'explicit', evidence: 'x',
+        controls: [{ id: 'c1', label: 'home price', aliases: [] }, { id: 'c2', label: 'down payment', aliases: [] }],
+        dynamicOutcome: 'monthly payment',
+      }],
+      counts: { total: 1, section: 0, interaction: 1, control: 2, dynamicOutcome: 1, behavior: 0, media: 0 },
+    } as unknown as ExperienceIdentityInput['binding'];
+    const c = deriveExperienceIdentityContract(input({ prompt: 'a mortgage estimator finance app', binding }))!;
+    const labels = c.demonstration.blueprint!.controls.map((ctl) => ctl.label.toLowerCase());
+    expect(labels).toContain('home price');
+    expect(labels).toContain('down payment');
+  });
+
+  it('does NOT attach a blueprint for a photography-led category with no demonstration', () => {
+    const hotel = deriveExperienceIdentityContract(input({ prompt: 'a luxury boutique hotel and spa resort' }))!;
+    expect(hotel.demonstration.required).toBe(false);
+    expect(hotel.demonstration.blueprint).toBeUndefined();
+  });
+
+  it('is deterministic and JSON-safe including the blueprint', () => {
+    const a = deriveExperienceIdentityContract(input({ prompt: 'a developer API SDK tool', businessModel: 'subscription-product' }))!;
+    const b = deriveExperienceIdentityContract(input({ prompt: 'a developer API SDK tool', businessModel: 'subscription-product' }))!;
+    expect(JSON.stringify(a.demonstration.blueprint)).toBe(JSON.stringify(b.demonstration.blueprint));
+    expect(a.demonstration.blueprint).toBeTruthy();
+  });
+
+  it('renders the concrete blueprint (controls + computation + fidelity) into the builder block', () => {
+    const c = deriveExperienceIdentityContract(input({ prompt: 'an AI SaaS analytics automation product', businessModel: 'subscription-product' }))!;
+    const text = renderExperienceIdentityBlock(c).join('\n');
+    expect(text).toMatch(/BUILD THIS — controls:/);
+    expect(text).toMatch(/computation \(/);
+    expect(text).toMatch(/calculation fidelity/i);
+    expect(text).toMatch(/states:/);
+  });
+
+  it('surfaces blueprint counts in diagnostics', () => {
+    const c = deriveExperienceIdentityContract(input({ prompt: 'an AI SaaS analytics product', businessModel: 'subscription-product' }))!;
+    const d = buildExperienceIdentityDiagnostics(c, analyzeExperienceIdentity([file('a.tsx', '<div/>')], c), 10)!;
+    expect(d.demonstrationControlCount).toBeGreaterThanOrEqual(1);
+    expect(d.demonstrationOutputCount).toBeGreaterThanOrEqual(1);
+    expect(d.demonstrationComputationKind).not.toBe('none');
+  });
+});
+
 describe('webBuildExperienceIdentity — render block', () => {
   it('renders a hard-bounded block leading with the experience thesis', () => {
     const c = deriveExperienceIdentityContract(input({ prompt: 'an AI SaaS automation platform', businessModel: 'subscription-product' }))!;
@@ -83,7 +159,7 @@ describe('webBuildExperienceIdentity — render block', () => {
     expect(lines[0]).toMatch(/^BINDING EXPERIENCE IDENTITY/);
     expect(lines.some((l) => /Experience thesis/.test(l))).toBe(true);
     expect(lines.some((l) => /Narrative architecture/.test(l))).toBe(true);
-    expect(lines.join('\n').length).toBeLessThanOrEqual(2600);
+    expect(lines.join('\n').length).toBeLessThanOrEqual(3200);
   });
   it('renders nothing for a legacy/absent contract', () => {
     expect(renderExperienceIdentityBlock(undefined)).toEqual([]);

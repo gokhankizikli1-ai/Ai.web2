@@ -156,7 +156,11 @@ interface ImageInfo {
   decorative: boolean;         // empty alt, role=presentation, or logo/icon/avatar/favicon/decoration
   content: boolean;            // a real content image (has src / slot / picture), not a pure shape
 }
-interface DerivedVar { name: string; refs: string[]; }
+interface DerivedVar {
+  name: string;
+  refs: string[];   // state vars referenced directly in the rhs
+  deps: string[];   // OTHER derived vars referenced in the rhs (for transitive calculation chains)
+}
 interface FileUnit {
   path: string;
   content: string;
@@ -311,13 +315,26 @@ function buildUnit(f: FrontendGeneratedFile): FileUnit {
   const stateVars = uniq([...content.matchAll(/const\s*\[\s*([A-Za-z_$][\w$]*)\s*,\s*set[A-Z][\w$]*\s*\]\s*=\s*use(?:State|Reducer)\b/g)].map((m) => m[1])).slice(0, MAX_STATE_VARS);
   const hasState = /\buse(?:State|Reducer|Memo)\s*\(/.test(content);
   const stateSet = new Set(stateVars);
-  // Derived vars: `const X = <rhs referencing a state var>` or `const X = useMemo(...)`.
-  const derivedVars: DerivedVar[] = [];
+  // Derived vars: `const X = <rhs referencing a state var>` or `const X = useMemo(...)`. A calculator
+  // often chains them (const monthly = principal / months; const total = monthly * months), so we also
+  // record dependencies on OTHER derived vars and resolve the chain transitively in scopeEvidence.
+  // Case-preserving identifiers (consistent with renderedTokens/controlDriven, so camelCase names like
+  // `loanAmount` match state vars and other derived vars — a lowercased token would miss them).
+  const derivedRaw: Array<{ name: string; idents: string[]; refs: string[]; memo: boolean }> = [];
   for (const m of content.matchAll(/(?:const|let)\s+([A-Za-z_$][\w$]*)\s*=\s*([^;\n]{0,240})/g)) {
     const name = m[1]; const rhs = m[2] || '';
     if (stateSet.has(name)) continue;
-    const refs = tokenize(rhs, 1).filter((t) => stateSet.has(t));
-    if (/\buseMemo\s*\(/.test(rhs) || refs.length) derivedVars.push({ name, refs: uniq(refs) });
+    const idents = uniq([...rhs.matchAll(/[A-Za-z_$][\w$]*/g)].map((x) => x[0]));
+    const refs = idents.filter((t) => stateSet.has(t));
+    derivedRaw.push({ name, idents, refs, memo: /\buseMemo\s*\(/.test(rhs) });
+    if (derivedRaw.length >= MAX_STATE_VARS * 2) break;
+  }
+  const derivedNameSet = new Set(derivedRaw.map((d) => d.name));
+  const derivedVars: DerivedVar[] = [];
+  for (const d of derivedRaw) {
+    const deps = d.idents.filter((t) => t !== d.name && derivedNameSet.has(t));
+    // Keep only genuinely-derived vars: a useMemo, a direct state ref, or a dependency on another derived var.
+    if (d.memo || d.refs.length || deps.length) derivedVars.push({ name: d.name, refs: uniq(d.refs), deps: uniq(deps) });
     if (derivedVars.length >= MAX_STATE_VARS) break;
   }
   // Rendered identifiers inside JSX `{…}` interpolations.
@@ -431,14 +448,26 @@ function scopeEvidence(units: FileUnit[]): ScopeEvidence {
     u.derivedVars.forEach((d) => derived.push(d));
     u.controlDrivenStateVars.forEach((v) => controlDriven.add(v));
   }
-  // Any state-derived visible output: a state var rendered, or a derived-of-state var rendered.
+  // Transitive chain resolution: a rendered derived var counts as state-derived (or control-tied) when it
+  // reaches a qualifying state var through any bounded chain of derived-var dependencies. This credits real
+  // multi-step calculators (control → state → derivedA → derivedB → rendered) that a single-hop check misses.
+  const byName = new Map(derived.map((d) => [d.name, d]));
+  const reaches = (name: string, pred: (r: string) => boolean, seen: Set<string>): boolean => {
+    if (seen.has(name) || seen.size > 6) return false;   // bounded hops + cycle guard
+    seen.add(name);
+    const d = byName.get(name);
+    if (!d) return false;
+    if (d.refs.some(pred)) return true;
+    return d.deps.some((dep) => reaches(dep, pred, seen));
+  };
+  // Any state-derived visible output: a state var rendered, or a derived var that reaches ANY state var.
   const stateRendered = [...stateVars].some((v) => rendered.has(v));
-  const derivedRendered = derived.some((d) => rendered.has(d.name) && d.refs.length > 0);
+  const derivedRendered = derived.some((d) => rendered.has(d.name) && reaches(d.name, () => true, new Set()));
   const hasDerivedOutput = stateRendered || derivedRendered;
-  // Output TIED TO THE CONTROLS: a control-driven state var rendered, or a derived var of one rendered.
+  // Output TIED TO THE CONTROLS: a control-driven state var rendered, or a derived var that reaches one.
   const cd = new Set(controlDriven);
   const controlStateRendered = [...cd].some((v) => rendered.has(v));
-  const controlDerivedRendered = derived.some((d) => rendered.has(d.name) && d.refs.some((r) => cd.has(r)));
+  const controlDerivedRendered = derived.some((d) => rendered.has(d.name) && reaches(d.name, (r) => cd.has(r), new Set()));
   return { hasState, hasHandler, hasControl: controls > 0, hasDerivedOutput, controlDriven: [...cd], outputTiedToControls: controlStateRendered || controlDerivedRendered };
 }
 

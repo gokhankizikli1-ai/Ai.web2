@@ -214,17 +214,24 @@ export function deriveExecutionObligationRegistry(input: ObligationRegistryInput
     // 3. PRODUCT DEMONSTRATION (owner: experienceIdentity; interaction blocked by experienceQuality).
     const demo = input.experienceIdentity?.demonstration;
     if (demo?.required) {
+      const bp = demo.blueprint;
+      const ctlLabels = bp ? bp.controls.map((c) => clip(c.label, 24)).slice(0, 3).join(', ') : '';
+      const outLabels = bp ? bp.outputs.map((o) => clip(o.label, 24)).slice(0, 2).join(' + ') : '';
       add({
         ownerContract: 'experienceIdentity', ownerVersion: input.experienceIdentity!.version, type: 'product-demonstration', category: 'component-composition',
         sectionId: '', targetScope: 'primary demonstration section', priority: 'required',
-        requirement: clip(`a working ${demo.pattern} demo: ${clip(demo.userInput, 40)} → ${clip(demo.visibleResponse, 50)} via real state`, MAX_TEXT),
-        evidenceExpected: 'a control + handler + React state whose change is rendered as a visible result',
+        requirement: clip(bp
+          ? `a working ${demo.pattern} demo: controls [${ctlLabels}] drive a computed output [${outLabels}] via real React state (${bp.computation.kind}), recomputed on change`
+          : `a working ${demo.pattern} demo: ${clip(demo.userInput, 40)} → ${clip(demo.visibleResponse, 50)} via real state`, MAX_TEXT),
+        evidenceExpected: bp
+          ? clip(`the named controls (${ctlLabels}) + a handler + React state whose change recomputes ${outLabels || 'the visible result'} (clamped, no NaN/∞, illustrative-labelled)`, MAX_TEXT)
+          : 'a control + handler + React state whose change is rendered as a visible result',
         implementationMedium: 'react-state', interactionRequired: true, visibleStateChangeRequired: true, realImageRequired: false,
         animationRequired: false, mobileAdaptationRequired: true, disclaimerRequired: false,
         frontendSimulationOk: demo.frontendSimOk ?? true, repairAllowed: true, safeRepairScope: 'multi-section', blockerEligible: true, ownerAnalyzerBlocks: true,
         ambiguityPolicy: 'fail-open', notApplicableWhen: 'no demonstration is required (visual/editorial-led category)',
         sourceTrace: ['experienceIdentity', ...(input.binding ? ['bindingRequirements'] : []), ...(input.motionExecution ? ['motionExecution'] : [])],
-        forbiddenShortcut: 'static copy or an empty click handler instead of a real state-linked demo',
+        forbiddenShortcut: 'a decorative control that never recomputes the output, static copy, or an empty click handler',
         allowedFreedom: 'exact control style and layout; frontend-only simulation with labeled illustrative data',
       });
     }
