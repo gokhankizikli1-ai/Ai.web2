@@ -2081,6 +2081,11 @@ export interface FrontendBuildSpecification {
    *  from the EXISTING identity + conversion model + research/approved-claim policy + composition +
    *  binding + sanitized section public copy (no new model/network call). */
   contentNarrative?: import('@/lib/webBuildContentNarrative').ContentNarrativeContract;
+  /** Phase (integrated experience quality) — the BINDING cross-system experience contract: per-section
+   *  coherence + responsive + interaction + accessibility + performance obligations that connect the
+   *  #558–#563 decisions into one implementable experience. Additive: present only on fresh builds;
+   *  absent ⇒ legacy behavior. Derived deterministically from the EXISTING contracts (no new call). */
+  experienceQuality?: import('@/lib/webBuildExperienceQuality').ExperienceQualityContract;
 
   honestyRules: string[];
   sourceTrace: string[];
@@ -2728,6 +2733,11 @@ export interface FrontendBuilderAcceptanceArtifact {
    *    issue codes only; never raw prompts, research, provider answers, full copy or secrets).
    *    All OPTIONAL/additive. ── */
   contentNarrative?: import('@/lib/webBuildContentNarrative').ContentNarrativeDiagnostics;
+
+  /* ── Phase (integrated experience quality) — bounded owner diagnostics (sub-policy presence +
+   *    per-dimension finding counts + issue codes only; never raw source, prompts or secrets).
+   *    All OPTIONAL/additive. ── */
+  experienceQuality?: import('@/lib/webBuildExperienceQuality').ExperienceQualityDiagnostics;
 
   reason: string;
 }

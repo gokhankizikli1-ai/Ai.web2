@@ -31,6 +31,7 @@ import { renderResearchDirectionBlock } from '@/lib/webBuildResearchDirection';
 import { renderCompositionBlock } from '@/lib/webBuildComposition';
 import { renderVisualSystemBlock } from '@/lib/webBuildVisualSystem';
 import { renderContentNarrativeBlock } from '@/lib/webBuildContentNarrative';
+import { renderExperienceQualityBlock } from '@/lib/webBuildExperienceQuality';
 // PR #510 — the Experience Architecture enforcement block (a leaf; pure; returns "" when no
 // plan is attached, so the frontend_builder request is unchanged with the flag off).
 import { buildExperienceEnforcementBlock } from '@/lib/webBuildExperienceArchitecture';
@@ -2074,6 +2075,9 @@ export function buildFrontendBuilderRequest(spec: FrontendBuildSpecification): s
   // Phase (content narrative) — the BINDING public content & conversion narrative (per-section message
   // jobs, concrete specificity, CTA hierarchy, truthful proof). Hard-bounded; absent ⇒ unchanged request.
   const contentNarrativeBlock = renderContentNarrativeBlock(spec.contentNarrative);
+  // Phase (integrated experience quality) — the BINDING cross-system experience obligations
+  // (coherence + responsive + interaction + a11y + performance). Hard-bounded; absent ⇒ unchanged.
+  const experienceBlock2 = renderExperienceQualityBlock(spec.experienceQuality);
 
   // Phase (image coverage) — MANDATORY semantic coverage for required/image-led sites. Names each
   // required image purpose + approved slot so the model renders a real, relevant <img> in its
@@ -2115,6 +2119,7 @@ export function buildFrontendBuilderRequest(spec: FrontendBuildSpecification): s
     ...compositionBlock,
     ...visualSystemBlock,
     ...contentNarrativeBlock,
+    ...experienceBlock2,
     ...imageBlock,
     ...coverageBlock,
     ...bindingLines,

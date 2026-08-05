@@ -34,6 +34,7 @@ import { deriveResearchDirection } from '@/lib/webBuildResearchDirection';
 import { deriveCompositionContract } from '@/lib/webBuildComposition';
 import { deriveVisualSystemContract } from '@/lib/webBuildVisualSystem';
 import { deriveContentNarrativeContract } from '@/lib/webBuildContentNarrative';
+import { deriveExperienceQualityContract } from '@/lib/webBuildExperienceQuality';
 import type {
   FrontendBuildSpecification, FrontendSpecSection, FrontendSpecImageSlot, FrontendSpecMotionLayer,
   FrontendSpecIdentity, FrontendSpecDesignSystem, FrontendSpecArchitecture, FrontendSpecAssetPlan,
@@ -773,6 +774,24 @@ export function deriveFrontendBuildSpecification(input: FrontendBuildSpecInput):
       });
       if (contentNarrative) built.contentNarrative = contentNarrative;
     } catch { /* never block the build on content-narrative derivation */ }
+
+    // Phase (integrated experience quality) — connect the derived contracts (composition, content,
+    // visual system, imagery, binding) into per-section cross-system experience obligations
+    // (coherence + responsive + interaction + accessibility + performance). Runs last so every
+    // upstream contract is available (deterministic; no model/network call; fail-open). Absent ⇒ legacy.
+    try {
+      const experienceQuality = deriveExperienceQualityContract({
+        identity: built.identity,
+        sections: built.architecture?.sections || [],
+        composition: built.composition,
+        contentNarrative: built.contentNarrative,
+        visualSystem: built.visualSystem,
+        imageCoverage: built.imageCoverage,
+        imageSlots: built.assets?.imageSlots,
+        binding: built.bindingRequirements,
+      });
+      if (experienceQuality) built.experienceQuality = experienceQuality;
+    } catch { /* never block the build on experience-quality derivation */ }
 
     return built;
   } catch {
