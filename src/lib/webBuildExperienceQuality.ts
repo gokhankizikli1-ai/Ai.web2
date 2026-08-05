@@ -857,20 +857,18 @@ function correlateControls(f: SectionFacts): { controlWithHandler: boolean; cont
   const writtenVars = uniq([...setterToVar.entries()].filter(([setter]) => new RegExp(`\\b${setter}\\s*\\(`).test(reachable)).map(([, v]) => v));
   return { controlWithHandler, controlCount, writtenVars };
 }
-/** Is state var `v` read back into a RENDERED outcome (controlled value/checked, className/style, or a JSX
- *  output expression that is not a setter call or a handler arrow)? f.render already carries every tag +
- *  class/style value, so value=/checked=/className referencing v shows up there. */
+/** Is the WRITTEN state var `v` consumed anywhere beyond its single `useState` destructuring token — i.e.
+ *  read back into a controlled value/attr, a conditional/mapped render, or a derived value that is itself
+ *  rendered? We count `\bv\b` occurrences in the cleaned source: the destructuring `const [v, setV]`
+ *  contributes exactly one (the setter `setV` is a distinct token and never matches `\bv\b`). A count of 1
+ *  means the state is declared and written but never read anywhere — the definitive dead-control signal.
+ *  Any further reference (even nested inside a `{list.map(r => …)}` callback that a brace-balanced regex
+ *  could not span) counts as consumed, so we fail OPEN toward "wired" and only the unambiguous dead case
+ *  can contribute to a block. Bounded scan. */
 function readBackIntoRender(v: string, f: SectionFacts): boolean {
-  const word = new RegExp(`\\b${v}\\b`);
-  if (word.test(f.render)) return true;                        // value=/checked=/className/style attr
-  const re = new RegExp(`\\{[^{}]{0,260}\\b${v}\\b[^{}]{0,260}\\}`, 'g');
-  let m: RegExpExecArray | null; let guard = 0;
-  while ((m = re.exec(f.clean)) && guard < 40) {
-    guard += 1; const seg = m[0];
-    if (/=>/.test(seg)) continue;                              // a handler/arrow, not output
-    if (/\bset[A-Z]\w*\s*\(/.test(seg)) continue;              // a setter call, not output
-    return true;                                               // {open && …} / {items.map} / {result}
-  }
+  const re = new RegExp(`\\b${v}\\b`, 'g');
+  let count = 0; let guard = 0;
+  while (re.exec(f.clean) && guard < 2000) { guard += 1; count += 1; if (count > 1) return true; }
   return false;
 }
 /** Phase 3 — interaction: for every BINDING-REQUIRED interaction (#558 owns the requirement), correlate a
