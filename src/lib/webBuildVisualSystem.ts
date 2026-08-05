@@ -48,7 +48,7 @@ const MAX_EVIDENCE = 180;
 const MAX_ISSUES = 24;
 const MAX_ISSUE_FILES = 4;
 const MAX_FILE_SCAN = 120_000;   // per-file scan cap for global token/readability signals
-const RENDER_CHAR_CEILING = 3000; // documented hard ceiling for the rendered builder block
+const RENDER_CHAR_CEILING = 4700; // documented hard ceiling for the rendered builder block (raised to fit the bounded whole-page continuity + final-polish lines)
 // Acceptance thresholds — deliberately conservative so legitimate sites never trip a hard block.
 const MIN_UNITS = 4;                 // need this many correlated sections to prove a SYSTEMIC defect
 const COLLAPSE_MIN = 4;              // ≥ this many unrelated sections sharing generic card chrome
@@ -99,6 +99,28 @@ export interface VisualSurfaceSystem {
 
 export interface VisualAntiSlopPolicy { prohibited: string[]; justified: string[]; }
 
+/* ── Whole-page visual CONTINUITY (Phase — makes the page read as ONE art-directed product).
+ *  All fields are optional/bounded/deterministic and DERIVED from the same signals already used
+ *  above (colour mode, typography, surfaces, components, sector). They describe what stays CONSTANT
+ *  from hero to footer so sections stay diverse without becoming unrelated templates. Never a second
+ *  token system — these are role/usage descriptions that reference the existing surface/type bands. */
+export interface VisualRoleUsage { role: string; usage: string; }
+export interface VisualContinuity {
+  thesis: string;                 // one sentence: what visually remains constant across the whole page
+  anchors: string[];              // the small set of recurring visual anchors that create recognition
+  surfaceHierarchy: VisualRoleUsage[];   // base → quiet → elevated → interactive → emphasis → climax
+  radiusRoles: VisualRoleUsage[];        // control / card / image-frame / feature-surface / pill
+  shadowRoles: VisualRoleUsage[];        // none / separation / interactive-elevation / emphasis
+  borderLogic: string;            // where borders separate vs where spacing alone does
+  typographyContinuity: string[]; // heading transitions, one display treatment, numeric, eyebrow, measure, mobile
+  imageTreatment: string[];       // crop family, mask/corner language, overlay, caption, full-bleed vs framed
+  iconContinuity: string[];       // family, stroke/fill, size scale, container, when to omit
+  ctaContinuity: string[];        // primary/secondary appearance, compact vs major, hover/focus, repeated-label avoidance
+  motionContinuity: string[];     // shared easing character + timing band, what may loop, which sections host major motion
+  footerResolution: string;       // how the footer completes the visual story (not a generic dark block)
+  finalPolish: string[];          // concise, high-priority optical/rhythm/alignment polish obligations
+}
+
 export interface VisualSystemContract {
   version: 'visual-system-v1';
   status: 'derived' | 'legacy';
@@ -113,6 +135,8 @@ export interface VisualSystemContract {
   responsiveObligations: string[];
   antiSlop: VisualAntiSlopPolicy;
   tokenStrategy: string;
+  /** Whole-page continuity (optional; absent for legacy contracts). */
+  continuity?: VisualContinuity;
   sectionIds: string[];
   /** PR #561 composition family per section id (drives the chrome-collapse role-contradiction check;
    *  empty when no composition contract is available ⇒ chrome-collapse fails open to a warning). */
@@ -336,6 +360,118 @@ function deriveAntiSlop(identity: FrontendSpecIdentity, ds: FrontendSpecDesignSy
   return { prohibited: uniq(prohibited).slice(0, MAX_PROHIBITED), justified: uniq(justified).slice(0, MAX_LIST) };
 }
 
+/* ── Whole-page continuity derivation. Category-aware (so coherence ≠ uniformity): the anchor,
+ *  image, motion and footer language diverge by sector bucket + colour mode + type strategy, all
+ *  reusing signals already derived above. Bounded + deterministic; no new tokens invented. ── */
+type VisualBucket = 'software' | 'image-led' | 'editorial-neutral';
+function visualBucket(sector: string, isSoftware: boolean): VisualBucket {
+  if (isSoftware) return 'software';
+  if (IMAGE_SECTORS.has(sector)) return 'image-led';
+  return 'editorial-neutral';
+}
+
+function deriveContinuity(
+  sector: string, isSoftware: boolean, colorMode: VisualColorMode,
+  typography: VisualTypographySystem, surfaces: VisualSurfaceSystem,
+): VisualContinuity {
+  const bucket = visualBucket(sector, isSoftware);
+  const serifDisplay = typography.displayStack === SYSTEM_SERIF;
+  const radiusBand = surfaces.radiusRange;
+  const sharp = /sharp|0–4px/.test(radiusBand);
+  const pill = /pill/.test(radiusBand);
+
+  // Sector-bucket presets keep coherence category-true instead of universal.
+  const accent = bucket === 'software' ? 'one connective line/node motif (the product logic made visible)'
+    : bucket === 'image-led' ? 'one thin editorial rule + a consistent full-bleed image frame'
+    : 'one restrained accent bar/underline used only to mark emphasis';
+  const imageLang = bucket === 'image-led'
+    ? ['full-bleed or large framed photography with ONE consistent soft-corner mask', 'editorial crop that keeps the subject; no random per-section aspect ratios', 'a single caption style (small label token), same placement each time', 'consistent photographic colour treatment (one grade across the page)']
+    : bucket === 'software'
+    ? ['framed product/UI surfaces with ONE consistent inset + corner radius', 'screens/diagrams share one device/frame treatment', 'imagery is functional, not decorative stock; one consistent aspect family', 'overlays/annotations use the accent role, not new colours']
+    : ['framed imagery with ONE consistent corner radius from the surface band', 'one crop family; keep the subject; avoid mixed circular/rounded/hard masks', 'a single caption style, same placement', 'one photographic treatment; no per-section filters'];
+  const motionChar = bucket === 'software' ? 'swift, precise easing (ease-out, ~150–260ms) shared by all micro-interactions'
+    : bucket === 'image-led' ? 'slow, cinematic easing (~360–680ms) for reveals; restrained micro-interactions'
+    : 'calm, confident easing (ease-out, ~200–360ms) shared across the page';
+  const footer = colorMode === 'dark'
+    ? `the footer resolves to a QUIET variant of the canvas (not a new pure-black block), echoes ${bucket === 'image-led' ? 'the hero image treatment' : 'the hero accent'}, keeps the muted text token, groups links, and ends with one restrained final CTA`
+    : `the footer resolves to a quiet tinted surface that echoes ${bucket === 'image-led' ? 'the hero image treatment' : 'the hero accent'} rather than a generic dark block, keeps the muted text token, groups links, and ends with one restrained final CTA`;
+
+  const surfaceHierarchy: VisualRoleUsage[] = [
+    { role: 'base canvas', usage: 'the page background; most sections sit directly on it' },
+    { role: 'quiet section', usage: 'a subtle tint for rhythm — used sparingly, not every other section' },
+    { role: 'elevated content', usage: 'grouped cards/panels; ONE shared chrome; not every section' },
+    { role: 'interactive surface', usage: 'controls/inputs/demos; one consistent field treatment' },
+    { role: 'emphasis surface', usage: 'a single focal moment (the visual climax) — used once' },
+  ];
+  const radiusRoles: VisualRoleUsage[] = [
+    { role: 'control', usage: pill ? 'pill for buttons/inputs' : `tight end of the ${radiusBand} band` },
+    { role: 'card', usage: sharp ? 'near-square, matching the editorial band' : `mid of the ${radiusBand} band, shared by all cards` },
+    { role: 'image-frame', usage: sharp ? '0–2px' : `matches card radius so imagery and panels agree` },
+    { role: 'feature-surface', usage: `upper end of the ${radiusBand} band, for the one focal surface only` },
+    { role: 'pill/badge', usage: 'fully rounded, reserved for small status labels' },
+  ];
+  const shadowRoles: VisualRoleUsage[] = [
+    { role: 'none', usage: 'default; flat sections rely on spacing, not shadow' },
+    { role: 'separation', usage: 'a single soft ambient shadow to lift grouped content' },
+    { role: 'interactive-elevation', usage: 'one slightly stronger shadow for hover/menus/popovers' },
+    { role: 'emphasis', usage: 'the strongest shadow, reserved for the one focal surface' },
+  ];
+  const typographyContinuity = [
+    'display type appears ONCE (the hero); section titles all use the h2 role at one size',
+    'at most one display treatment page-wide; do not reinvent heading style per section',
+    `${typography.numeric}; eyebrow/label text shares one style token everywhere`,
+    `body keeps a ${typography.measure.replace(/^body measure /, '')} measure and left alignment by default (centre only hero/CTA)`,
+    'mobile: reduce display one step, keep body ≥16px and the same hierarchy',
+  ];
+  const iconContinuity = [
+    'ONE icon library and one stroke/fill style across the whole page',
+    'a small consistent size scale (e.g. 16/20/24); icons baseline-align with their text',
+    'icons sit in consistent containers or none — not circle-badged in one section and bare in another',
+    'omit icons where a number, image or the accent motif communicates better',
+  ];
+  const ctaContinuity = [
+    'ONE primary button appearance (colour/height/radius) from hero to footer; never a second competing solid CTA in a section',
+    'secondary CTA is the same height/radius, outline or tinted',
+    'a compact nav CTA uses the same colour at a smaller size — not a different style',
+    'consistent hover/focus response; avoid repeating the identical CTA label in adjacent sections',
+  ];
+  const finalPolish = [
+    'consistent container max-width and page gutters across every section (incl. the footer)',
+    'a shared vertical rhythm: comparable section padding; headings spaced from body, not glued to it',
+    'card padding follows a hierarchy (denser utility, roomier feature) — not one identical pad everywhere',
+    'buttons share one height/padding; inputs share one height; borders share one 1px token',
+    'consistent focus-ring; numeric columns align (tabular where shown); image aspect/crop consistent',
+    'no random 1px/2px borders or mixed radii; decorations must not clip on mobile; avoid oversized empty mobile gaps',
+  ];
+
+  return {
+    thesis: clip(`${colorMode} canvas, ${serifDisplay ? 'editorial-serif display over ' : ''}one type system, ${accent}, and one shared surface/radius/shadow language hold every section together from hero to footer.`, MAX_TEXT),
+    anchors: uniq([
+      accent,
+      `one line/border treatment: ${surfaces.borderBehavior.replace(/^one /, '')}`,
+      bucket === 'image-led' ? 'one image-mask family' : 'one card chrome (radius+border+shadow)',
+      'one eyebrow/label style',
+      'one signature section-padding rhythm',
+    ]).slice(0, MAX_LIST),
+    surfaceHierarchy: surfaceHierarchy.slice(0, MAX_SURFACE_ROLES),
+    radiusRoles: radiusRoles.slice(0, MAX_LIST),
+    shadowRoles: shadowRoles.slice(0, MAX_LIST),
+    borderLogic: clip(`use borders for grouped/interactive content and dividers; separate major sections with spacing and surface tint, not stacked borders; ${surfaces.borderBehavior}`, MAX_TEXT),
+    typographyContinuity: typographyContinuity.slice(0, MAX_LIST),
+    imageTreatment: imageLang.slice(0, MAX_LIST),
+    iconContinuity: iconContinuity.slice(0, MAX_LIST),
+    ctaContinuity: ctaContinuity.slice(0, MAX_LIST),
+    motionContinuity: [
+      `shared easing character: ${motionChar}`,
+      'reserve MAJOR motion for the hero and one demonstration; other sections use quiet entrance/hover only',
+      'only ambient hero/background motion may loop; never loop body content; respect prefers-reduced-motion (see motion-execution)',
+      'interaction feedback (hover/press/focus) is identical across all controls',
+    ].slice(0, MAX_LIST),
+    footerResolution: clip(footer, MAX_TEXT),
+    finalPolish: finalPolish.slice(0, MAX_LIST),
+  };
+}
+
 export function deriveVisualSystemContract(input: VisualSystemInput): VisualSystemContract | undefined {
   const identity = input.identity || ({} as FrontendSpecIdentity);
   const ds = input.designSystem;
@@ -359,6 +495,7 @@ export function deriveVisualSystemContract(input: VisualSystemInput): VisualSyst
   const surfaces = deriveSurfaces(ds, ad, research, isSoftware, prompt);
   const components = deriveComponents(comp, colorMode);
   const antiSlop = deriveAntiSlop(identity, ds, ad, isSoftware, surfaces, colorMode);
+  const continuity = deriveContinuity(sector, isSoftware, colorMode, typography, surfaces);
 
   const contrastObligations = [
     'strong, body and muted text must each stay readable on their assigned surface',
@@ -410,6 +547,7 @@ export function deriveVisualSystemContract(input: VisualSystemInput): VisualSyst
     version: 'visual-system-v1', status: 'derived',
     systemThesis: clip(ds?.designThesis || ds?.visualSignature || research?.artDirection?.visualThesis || ad?.visualMetaphor || `${clip(identity.primaryConcept || identity.siteType || sector, 60)}: a coherent, sector-true visual system`, MAX_TEXT),
     colorMode, typography, colorRoles, contrastObligations, surfaces, components, detailLanguage, responsiveObligations, antiSlop, tokenStrategy,
+    continuity,
     sectionIds, sectionFamilies,
     derivationBasis,
     contractPersistedInSpecification: true,
@@ -423,17 +561,36 @@ export function deriveVisualSystemContract(input: VisualSystemInput): VisualSyst
 /* ────────────────────────────────────────────────────────────────────────────
  * RENDER — one compact BINDING PREMIUM VISUAL SYSTEM block. Hard-bounded.
  * ──────────────────────────────────────────────────────────────────────────── */
+/** Compact whole-page continuity + final-polish lines (bounded; folded into the visual-system block
+ *  so the builder gets coherence direction without a second 2–3 KB block). Empty for legacy. */
+function renderContinuityLines(c: VisualContinuity | undefined): string[] {
+  if (!c) return [];
+  const roles = (arr: VisualRoleUsage[], n: number) => arr.slice(0, n).map((x) => x.role).join(' → ');
+  return [
+    `WHOLE-PAGE CONTINUITY (ONE art-directed product hero→footer; keep sections diverse but unmistakably one design): ${clip(c.thesis, 150)}`,
+    `  Anchors: ${c.anchors.slice(0, 4).map((a) => clip(a, 60)).join('; ')}.`,
+    `  Surface hierarchy (do NOT elevate every section): ${roles(c.surfaceHierarchy, 5)}. Radius roles: ${roles(c.radiusRoles, 5)}. Shadows: ${roles(c.shadowRoles, 4)}.`,
+    `  Type: ${c.typographyContinuity.slice(0, 2).map((x) => clip(x, 90)).join('; ')}. Icons/CTAs: ${clip(c.iconContinuity[0] || '', 60)}; ${clip(c.ctaContinuity[0] || '', 80)}.`,
+    `  Images: ${c.imageTreatment.slice(0, 2).map((x) => clip(x, 70)).join('; ')}. Motion: ${clip(c.motionContinuity[0] || '', 90)}.`,
+    `  Footer: ${clip(c.footerResolution, 140)}.`,
+    `  FINAL POLISH: ${c.finalPolish.slice(0, 5).map((x) => clip(x, 80)).join('; ')}.`,
+  ];
+}
+
 export function renderVisualSystemBlock(contract: VisualSystemContract | undefined): string[] {
   if (!contract || contract.status !== 'derived') return [];
   const t = contract.typography;
   const s = contract.surfaces;
   const roleLine = contract.colorRoles.map((r) => `${r.role}${r.token ? `=${r.token}` : ''}`).slice(0, MAX_COLOR_ROLES).join(', ');
   const typoRoles = t.roles.map((r) => `${r.name}(${r.sizeHint}/${r.weightHint})`).slice(0, MAX_TYPO_ROLES).join(' · ');
-  const comps = contract.components.map((c) => `${c.element}: ${c.rule}`).slice(0, MAX_COMPONENT_RULES);
+  // Continuity now carries icon/CTA/typography/detail direction, so the base block renders a tighter
+  // component set + shorter token strategy and drops the standalone detail-language line (Phase 8 —
+  // shorten/dedupe rather than blindly append). Continuity supplies the rest without duplication.
+  const comps = contract.components.map((c) => `${c.element}: ${c.rule}`).slice(0, 5);
   const out = [
     'BINDING PREMIUM VISUAL SYSTEM:',
     `Visual thesis: ${clip(contract.systemThesis, MAX_TEXT)} · colour mode: ${contract.colorMode}`,
-    `TOKEN STRATEGY: ${clip(contract.tokenStrategy, 320)}`,
+    `TOKEN STRATEGY: ${clip(contract.tokenStrategy, 220)}`,
     `Typography (${t.strategy}): display-stack "${t.displayStack}"; body-stack "${t.bodyStack}". Roles: ${typoRoles}.`,
     `  ${t.weightBoundary}; ${t.bodyScale}; ${t.lineHeight}; ${t.measure}; ${t.capitalization}; mobile: ${t.mobileAdjust}.`,
     `  Typography prohibits: ${t.prohibited.slice(0, 5).join('; ')}.`,
@@ -441,11 +598,13 @@ export function renderVisualSystemBlock(contract: VisualSystemContract | undefin
     `Contrast/readability: ${contract.contrastObligations.slice(0, 5).join('; ')}.`,
     `Surfaces: ${s.vocabulary.slice(0, 6).join(' · ')}. Radius ${s.radiusRange}. Shadows: ${s.shadowRoles.slice(0, 3).join('; ')}. Borders: ${s.borderBehavior}. Overlay: ${s.overlayBehavior}.`,
     `  Gradients: ${s.gradients}. Glass: ${s.glass}. Max distinct surface treatments: ${s.maxSurfaceVariety}.`,
+    // Continuity is the primary coherence payload — render it BEFORE the verbose component/anti-slop tail
+    // so it always survives the character ceiling (the tail truncates as it did before this sprint).
+    ...renderContinuityLines(contract.continuity),
     'Component chrome:',
     ...comps.map((c) => `  - ${c}`),
-    `Detail language: ${contract.detailLanguage.slice(0, 6).join('; ')}.`,
     `Responsive: ${contract.responsiveObligations.slice(0, 5).join('; ')}.`,
-    `ANTI-SLOP — do NOT: ${contract.antiSlop.prohibited.slice(0, 10).join('; ')}.`,
+    `ANTI-SLOP — do NOT: ${contract.antiSlop.prohibited.slice(0, 8).join('; ')}.`,
     ...(contract.antiSlop.justified.length ? [`Allowed where justified: ${contract.antiSlop.justified.slice(0, 6).join('; ')}.`] : []),
     'Implement ONE coherent visual system across every section; vary rhythm without inventing a new visual language per section. Keep semantic DOM order and accessibility.',
     '',
@@ -476,6 +635,8 @@ export type VisualSystemIssueCode =
   | 'visual-system-gradient-glass-pill-repetition'
   | 'visual-system-focus-missing'
   | 'visual-system-mobile-typography-risk'
+  | 'visual-system-cta-inconsistent'
+  | 'visual-system-footer-discontinuity'
   | 'visual-system-slop-pattern';
 
 export interface VisualSystemIssue {
@@ -496,11 +657,14 @@ export interface VisualSystemAcceptanceResult {
   chromeRepeatSectionCount: number;
   readabilityFindingCount: number;
   responsiveFindingCount: number;
+  distinctPrimaryButtonStyleCount: number;
+  footerContinuity: 'ok' | 'missing' | 'disconnected' | 'unknown';
   issues: VisualSystemIssue[];
 }
 const LEGACY_VISUAL: VisualSystemAcceptanceResult = {
   status: 'pass', legacy: true, analyzedSectionCount: 0, tokenSource: 'none', tokenConsumed: false,
-  arbitraryValueCount: 0, chromeRepeatSectionCount: 0, readabilityFindingCount: 0, responsiveFindingCount: 0, issues: [],
+  arbitraryValueCount: 0, chromeRepeatSectionCount: 0, readabilityFindingCount: 0, responsiveFindingCount: 0,
+  distinctPrimaryButtonStyleCount: 0, footerContinuity: 'unknown', issues: [],
 };
 
 function capEv(s: string): string { const t = (s || '').replace(/\s+/g, ' ').trim(); return t.length > MAX_EVIDENCE ? t.slice(0, MAX_EVIDENCE) : t; }
@@ -800,6 +964,48 @@ export function analyzeVisualSystem(
         repairInstruction: capEv('Add a scrim/gradient overlay or a protected panel behind text placed over imagery.') });
     }
 
+    // ── CTA-system continuity (warning): count DISTINCT solid primary-button background tokens on real
+    //    <button>/<a role=button> elements. One coherent system uses 1–2; ≥4 distinct solid colours across
+    //    ≥3 sections signals several unrelated button systems. Heuristic → warning only, fails open. ──
+    const buttonBgTokens = new Set<string>();
+    let buttonSectionsWithSolid = 0;
+    for (const u of renderUnits) {
+      let sawSolid = false;
+      for (const m of u.render.matchAll(/<(?:button|a)\b[^>]*\b(?:bg-(gradient-[a-z-]+|[a-z]+-\d{2,3}|primary|accent|brand|secondary|\[#[0-9a-fA-F]{3,8}\]))/gi)) {
+        const tok = (m[1] || '').toLowerCase();
+        if (!tok || /white|transparent|none|black/.test(tok)) continue;
+        buttonBgTokens.add(tok); sawSolid = true;
+      }
+      if (sawSolid) buttonSectionsWithSolid += 1;
+    }
+    const distinctPrimaryButtonStyleCount = buttonBgTokens.size;
+    if (distinctPrimaryButtonStyleCount >= 4 && buttonSectionsWithSolid >= 3) {
+      push({ code: 'visual-system-cta-inconsistent', severity: 'minor', label: 'inconsistent CTA/button system', files: [],
+        evidence: capEv(`${distinctPrimaryButtonStyleCount} distinct solid button background tokens (${[...buttonBgTokens].slice(0, 5).join(', ')}) across ${buttonSectionsWithSolid} sections — verify ONE primary CTA appearance is reused, not several competing button styles`),
+        repairInstruction: capEv('Use one primary button appearance (colour/height/radius) reused across all sections per the CTA continuity; reserve a single tinted/outline secondary; do not introduce a new solid button colour per section.') });
+    }
+
+    // ── Footer continuity (warning): a footer should complete the page, not fall back to a generic
+    //    disconnected block. Missing footer across a multi-section page, or a hard black footer on a
+    //    light page, is a coherence warning only. Fails open when ambiguous. ──
+    let footerContinuity: VisualSystemAcceptanceResult['footerContinuity'] = 'unknown';
+    const footerTag = /<footer\b[^>]{0,400}>/i.exec(codeRender);
+    if (!footerTag) {
+      if (units.length >= MIN_UNITS) {
+        footerContinuity = 'missing';
+        push({ code: 'visual-system-footer-discontinuity', severity: 'minor', label: 'no footer element', files: [],
+          evidence: capEv('no <footer> element was found on a multi-section page — the page may end abruptly without a resolving footer'),
+          repairInstruction: capEv('Add a footer that completes the visual story (quiet surface echoing the hero, consistent muted token, grouped links, one restrained final CTA) per the footer continuity.') });
+      }
+    } else if (contract.colorMode === 'light' && /bg-(?:black|zinc-950|neutral-950|slate-950|gray-950|stone-950|\[#0{3,6}\b|\[#0{3}\])/i.test(footerTag[0])) {
+      footerContinuity = 'disconnected';
+      push({ code: 'visual-system-footer-discontinuity', severity: 'minor', label: 'footer visually disconnected', files: [],
+        evidence: capEv('a light-themed page renders a hard pure-black footer — verify the footer resolves the page palette (a quiet tinted surface) rather than a generic dark block disconnected from the design'),
+        repairInstruction: capEv('Resolve the footer into a quiet variant of the page canvas that echoes the hero, keeping the muted text token and grouped links, instead of a generic pure-black block.') });
+    } else {
+      footerContinuity = 'ok';
+    }
+
     const readabilityFindingCount = (transparentBody >= 2 || sameTokenTextBg >= 1 ? 1 : 0) + textOverImage;
     const responsiveFindingCount = issues.filter((i) => i.code === 'visual-system-mobile-typography-risk').length;
     const blocking = issues.some((i) => i.severity !== 'minor');
@@ -808,6 +1014,7 @@ export function analyzeVisualSystem(
     return {
       status, legacy: false, analyzedSectionCount: units.length, tokenSource, tokenConsumed,
       arbitraryValueCount, chromeRepeatSectionCount: chromeRepeat, readabilityFindingCount, responsiveFindingCount,
+      distinctPrimaryButtonStyleCount, footerContinuity,
       issues: issues.slice(0, MAX_ISSUES),
     };
   } catch {
@@ -830,6 +1037,8 @@ const VISUAL_CATEGORY: Record<VisualSystemIssueCode, FrontendBuilderReviewCatego
   'visual-system-gradient-glass-pill-repetition': 'palette-and-surfaces',
   'visual-system-focus-missing': 'accessibility-intent',
   'visual-system-mobile-typography-risk': 'responsive-intent',
+  'visual-system-cta-inconsistent': 'component-composition',
+  'visual-system-footer-discontinuity': 'component-composition',
   'visual-system-slop-pattern': 'generic-template',
 };
 
@@ -871,6 +1080,8 @@ export interface VisualSystemDiagnostics {
   visualSystemCharCount: number;
   gradientPolicy: GradientPolicy;
   glassPolicy: GlassPolicy;
+  continuityPresent: boolean;
+  continuityAnchorCount: number;
   derivationBasis: string[];
   contractPersistedInSpecification: boolean;
   contractRenderedToFrontendBuilder: boolean;
@@ -883,6 +1094,8 @@ export interface VisualSystemDiagnostics {
   chromeRepeatSectionCount?: number;
   readabilityFindingCount?: number;
   responsiveFindingCount?: number;
+  distinctPrimaryButtonStyleCount?: number;
+  footerContinuity?: VisualSystemAcceptanceResult['footerContinuity'];
   visualSystemAcceptanceStatus?: 'pass' | 'warning' | 'fail';
   visualSystemIssueCodes?: string[];
 }
@@ -907,6 +1120,8 @@ export function buildVisualSystemDiagnostics(
     visualSystemCharCount,
     gradientPolicy: contract.surfaces.gradients,
     glassPolicy: contract.surfaces.glass,
+    continuityPresent: !!contract.continuity,
+    continuityAnchorCount: contract.continuity?.anchors.length ?? 0,
     derivationBasis: contract.derivationBasis.slice(0, 8),
     contractPersistedInSpecification: contract.contractPersistedInSpecification,
     contractRenderedToFrontendBuilder: contract.contractRenderedToFrontendBuilder,
@@ -920,6 +1135,8 @@ export function buildVisualSystemDiagnostics(
       chromeRepeatSectionCount: live.chromeRepeatSectionCount,
       readabilityFindingCount: live.readabilityFindingCount,
       responsiveFindingCount: live.responsiveFindingCount,
+      distinctPrimaryButtonStyleCount: live.distinctPrimaryButtonStyleCount,
+      footerContinuity: live.footerContinuity,
       visualSystemAcceptanceStatus: live.status,
       visualSystemIssueCodes: visualSystemIssueCodes(live),
     } : {}),

@@ -113,6 +113,28 @@ export interface ResponsiveContract {
 
 export interface CompositionTransition { fromId: string; toId: string; relationship: string; }
 
+/* ── Whole-page RHYTHM (Phase — the deliberate intensity/contrast sequence across the page so the
+ *  page has one climax and a real build-up/release, not a flat run of equally-loud sections). Derived
+ *  from the SAME per-section signals already computed (hierarchyLevel, density, surface, family,
+ *  interactionEmphasis) — never a new narrative architecture. Optional/bounded/deterministic. */
+export type PageBeatRole =
+  | 'opening' | 'build-up' | 'demonstration' | 'reveal' | 'proof' | 'pause'
+  | 'secondary-peak' | 'conversion' | 'resolution';
+export type BeatIntensity = 'low' | 'medium' | 'high' | 'peak';
+export type BeatBackground = 'canvas' | 'tinted' | 'inverted' | 'media';
+export interface PageRhythmBeat {
+  sectionId: string;
+  role: PageBeatRole;
+  intensity: BeatIntensity;
+  background: BeatBackground;
+  contrastWithPrev: 'same' | 'step-up' | 'step-down' | 'flip';
+}
+export interface PageRhythm {
+  beats: PageRhythmBeat[];
+  peakSectionId: string;     // the single visual climax (never two adjacent peaks)
+  summary: string;
+}
+
 export interface CompositionContract {
   version: 'composition-v1';
   status: 'derived' | 'legacy';
@@ -124,6 +146,8 @@ export interface CompositionContract {
   hero: HeroCompositionContract;
   sections: SectionCompositionContract[];
   transitions: CompositionTransition[];
+  /** Whole-page intensity/contrast rhythm (optional; absent for legacy contracts). */
+  pageRhythm?: PageRhythm;
   responsive: ResponsiveContract;
   diversityConstraints: string[];
   dominantSectionCount: number;
@@ -237,6 +261,59 @@ function pickDensity(s: FrontendSpecSection, fam: CompositionFamily): Compositio
   if (/dense|high|compact/.test(d)) return 'dense';
   if (/rich|editorial|immersive/.test(d)) return 'rich';
   return FAMILY_SPEC[fam].density;
+}
+
+/* ── Whole-page rhythm derivation. Reuses per-section hierarchy/density/surface/family already
+ *  computed; picks exactly ONE climax (the dominant non-hero section, else the hero) so the page has a
+ *  single peak with deliberate build-up and release. Bounded + deterministic. ── */
+const INTENSITY_RANK: Record<BeatIntensity, number> = { low: 0, medium: 1, high: 2, peak: 3 };
+function beatBackground(s: SectionCompositionContract): BeatBackground {
+  if (s.mediaRole === 'background') return 'media';
+  if (s.surface === 'glass' || s.surface === 'gradient') return 'inverted';
+  if (s.surface === 'raised' || s.surface === 'bordered') return 'tinted';
+  return 'canvas';
+}
+function beatRole(s: SectionCompositionContract, i: number, last: number, isSecondDominant: boolean): PageBeatRole {
+  if (i === 0) return 'opening';
+  if (s.family === 'conversion-finale') return 'conversion';
+  if (s.interactionEmphasis === 'primary' || s.family === 'focused-tool') return 'demonstration';
+  if (s.family === 'proof-ledger' || /proof|testimonial|trust|review|result|case/i.test(s.narrativeRole)) return 'proof';
+  if (s.family === 'gallery-strip' || s.family === 'full-bleed-transition') return 'reveal';
+  if (isSecondDominant) return 'secondary-peak';
+  if (i === last) return 'resolution';
+  if (s.density === 'sparse' && s.hierarchyLevel === 3) return 'pause';
+  return 'build-up';
+}
+function derivePageRhythm(sections: SectionCompositionContract[]): PageRhythm | undefined {
+  if (!sections.length) return undefined;
+  const last = sections.length - 1;
+  const climaxIdx = sections.findIndex((s, i) => i > 0 && s.hierarchyLevel === 1);
+  const peakIdx = climaxIdx >= 0 ? climaxIdx : 0;
+  const beats: PageRhythmBeat[] = [];
+  for (let i = 0; i < sections.length; i += 1) {
+    const s = sections[i];
+    const isSecondDominant = s.hierarchyLevel === 1 && i > 0 && i !== peakIdx;
+    const intensity: BeatIntensity = i === peakIdx ? 'peak'
+      : s.hierarchyLevel === 1 ? 'high' : s.hierarchyLevel === 2 ? 'medium' : 'low';
+    const background = beatBackground(s);
+    const prev = beats[beats.length - 1];
+    let contrastWithPrev: PageRhythmBeat['contrastWithPrev'] = 'same';
+    if (prev) {
+      const prevDark = prev.background === 'inverted' || prev.background === 'media';
+      const curDark = background === 'inverted' || background === 'media';
+      if (prevDark !== curDark) contrastWithPrev = 'flip';
+      else if (INTENSITY_RANK[intensity] > INTENSITY_RANK[prev.intensity]) contrastWithPrev = 'step-up';
+      else if (INTENSITY_RANK[intensity] < INTENSITY_RANK[prev.intensity]) contrastWithPrev = 'step-down';
+    }
+    beats.push({ sectionId: s.id, role: beatRole(s, i, last, isSecondDominant), intensity, background, contrastWithPrev });
+    if (beats.length >= MAX_SECTIONS) break;
+  }
+  const seq = beats.slice(0, 8).map((b) => `${b.role}(${b.intensity})`).join(' → ');
+  return {
+    beats,
+    peakSectionId: sections[peakIdx]?.id || sections[0].id,
+    summary: clip(`${seq}${beats.length > 8 ? ' → …' : ''}; single visual climax at "${sections[peakIdx]?.id || sections[0].id}", release toward the footer`, MAX_TEXT),
+  };
 }
 
 export function deriveCompositionContract(input: CompositionInput): CompositionContract | undefined {
@@ -403,7 +480,7 @@ export function deriveCompositionContract(input: CompositionInput): CompositionC
     densityProfile: clip(research?.artDirection?.contentDensity || String(ad?.density || 'balanced'), 40),
     globalRhythm: clip(ad?.sectionRhythmDirection || 'intentional density/whitespace variation across the page', 120),
     maxConsecutiveSimilarSections: 1,
-    hero, sections, transitions, responsive, diversityConstraints,
+    hero, sections, transitions, pageRhythm: derivePageRhythm(sections), responsive, diversityConstraints,
     dominantSectionCount, familyDistribution, consecutiveRepeatResolutions, reasons,
     upstreamEvidenceUsedToDeriveContract: upstream,
     contractPersistedInSpecification: true,
@@ -419,15 +496,22 @@ export function deriveCompositionContract(input: CompositionInput): CompositionC
 export function renderCompositionBlock(contract: CompositionContract | undefined): string[] {
   if (!contract || !contract.sections.length) return [];
   const h = contract.hero;
+  const beatById = new Map((contract.pageRhythm?.beats || []).map((b) => [b.sectionId, b]));
   const secLines = contract.sections.slice(0, MAX_SECTIONS).map((s) => {
     const media = s.mediaRole === 'none' ? 'no-media' : `${s.mediaRole}${s.approvedSlotIds.length ? ` [${s.approvedSlotIds.slice(0, 3).join(',')}]` : ''}`;
     const fn = s.bindingRequirementId ? ` · functional(${s.bindingRequirementId})` : '';
-    return `- ${s.id} · ${s.family} · ${s.priority}/h${s.hierarchyLevel} · ${s.alignment}/${s.container} · ${s.textMedia} · media:${media} · density:${s.density} · mobile:${s.mobileStack}${fn}`;
+    const b = beatById.get(s.id);
+    const beat = b ? ` · beat:${b.role}/${b.intensity}/${b.background}` : '';
+    return `- ${s.id} · ${s.family} · ${s.priority}/h${s.hierarchyLevel} · ${s.alignment}/${s.container} · ${s.textMedia} · media:${media} · density:${s.density} · mobile:${s.mobileStack}${beat}${fn}`;
   });
   const out = [
     'BINDING PAGE COMPOSITION:',
     `Composition thesis: ${clip(contract.compositionThesis, MAX_TEXT)}`,
     `Narrative arc: ${clip(contract.narrativeArc, MAX_TEXT)} · rhythm: ${clip(contract.globalRhythm, 100)}`,
+    ...(contract.pageRhythm ? [
+      `WHOLE-PAGE RHYTHM (deliberate build-up/release, ONE climax — not a flat run of equally-loud sections): ${clip(contract.pageRhythm.summary, MAX_TEXT)}`,
+      `  Use contrast between adjacent sections (dense↔quiet, dark↔light, wide↔contained). Only "${contract.pageRhythm.peakSectionId}" is the visual peak; the footer resolves/releases. Do not stack two maximal sections back-to-back.`,
+    ] : []),
     'Implement EACH section below with its assigned composition family, priority/hierarchy, alignment,',
     'container width, text↔media relationship, media role and density. Do NOT collapse the page into a',
     'repeated hero→three-cards→grid→testimonials→CTA template. Tag each top-level section root with',
@@ -653,6 +737,8 @@ export interface CompositionDiagnostics {
   mediaRoleCount: number;
   responsiveSectionCount: number;
   maxConsecutiveSimilarSections: number;
+  pageRhythmBeatCount: number;
+  pageRhythmPeakSectionId: string;
   compositionCharCount: number;
   upstreamEvidenceUsedToDeriveContract: string[];
   contractPersistedInSpecification: boolean;
@@ -682,6 +768,8 @@ export function buildCompositionDiagnostics(
     mediaRoleCount: contract.sections.filter((s) => s.mediaRole !== 'none').length,
     responsiveSectionCount: contract.responsive.sections.length,
     maxConsecutiveSimilarSections: contract.maxConsecutiveSimilarSections,
+    pageRhythmBeatCount: contract.pageRhythm?.beats.length ?? 0,
+    pageRhythmPeakSectionId: contract.pageRhythm?.peakSectionId ?? '',
     compositionCharCount,
     upstreamEvidenceUsedToDeriveContract: contract.upstreamEvidenceUsedToDeriveContract.slice(0, 8),
     contractPersistedInSpecification: contract.contractPersistedInSpecification,
