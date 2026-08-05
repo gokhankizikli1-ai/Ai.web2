@@ -22,6 +22,7 @@ import type {
   FrontendBuildSpecification, FrontendSpecImageSlot, SourcedImageAsset, ImageAssetManifest,
 } from '@/lib/webBuildAgents';
 import { photographicSlots, type VisualStrategy, type VisualSlotPurpose } from '@/lib/webBuildVisualStrategy';
+import type { ImageRoleDirection } from '@/lib/webBuildVisualConcept';
 import {
   findSpecSlotForTarget, synthesizeSlotForTarget, diagnoseStrategyForCoverage,
   planAiFallback, buildImageCoverageDiagnostics,
@@ -59,6 +60,56 @@ export interface ImageNeed {
   orientation: ImageOrientation;
   required: boolean;
   altText: string;
+  /* ── Phase (image intelligence) — bounded, sanitized art-direction + a small query plan, extracted from
+   *    the ALREADY-derived visualConcept image roles. All optional & additive: forwarded inside each need
+   *    to the SAME backend endpoint (which ignores unknown fields), so old clients/backends keep working
+   *    and the smart-image layer gets richer, role-appropriate search signal. Never carries hex colours,
+   *    marketing copy, private research or secrets. ── */
+  role?: string;
+  subject?: string;
+  people?: 'required' | 'optional' | 'avoid';
+  framing?: string;
+  lighting?: string;
+  tone?: string;
+  authenticity?: 'authentic-photo-required' | 'illustrative-ok' | 'generatable';
+  aspectRatio?: string;
+  focalPoint?: string;
+  negativeSpace?: boolean;
+  loadingPriority?: 'eager' | 'lazy';
+  noRepeat?: boolean;
+  /** A tightly-bounded query plan (primary + up to 3 role-aware variations + a safe fallback). */
+  queryVariants?: string[];
+}
+
+/* ── Query intelligence — sanitation + a bounded, role-aware query plan ──────────
+ * We NEVER dump every field into one long string. We compose a concrete primary query
+ * (subject → action/environment → role framing → orientation wording) plus a few bounded
+ * variations, all sanitized (no hex, urls, marketing copy, secrets, fake identities). */
+const HEX_TOKEN = /#[0-9a-fA-F]{3,8}\b/g;
+const URL_TOKEN = /\bhttps?:\/\/\S+/gi;
+const NOISE_TOKEN = /[<>{}[\]|]+/g;
+const MARKETING = /\b(revolutioni[sz]e|cutting[- ]edge|world[- ]class|best[- ]in[- ]class|next[- ]gen(?:eration)?|unlock|empower|seamless(?:ly)?|leverage|synerg\w*|game[- ]chang\w*|disrupt\w*)\b/gi;
+export function sanitizeImageQuery(s: string | undefined, max = 140): string {
+  return (s || '')
+    .replace(URL_TOKEN, ' ').replace(HEX_TOKEN, ' ').replace(NOISE_TOKEN, ' ').replace(MARKETING, ' ')
+    .replace(/[^\p{L}\p{N}\s,'-]/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
+}
+const ORIENTATION_WORD: Record<ImageOrientation, string> = {
+  landscape: 'wide horizontal composition', portrait: 'vertical composition', square: 'square composition',
+};
+/** Role/purpose-specific framing wording (Phase 3) — different search behaviour per image role. */
+function roleFraming(purpose: ImagePurpose, people: ImageNeed['people'], negativeSpace: boolean): string {
+  switch (purpose) {
+    case 'hero': case 'background': return `strong single subject, clear focal point${negativeSpace ? ', generous negative space for overlaid text' : ''}`;
+    case 'team': return people === 'avoid' ? 'workspace detail, no faces' : 'authentic candid people at work, natural expressions, no staged handshake';
+    case 'about': return 'believable real environment, natural light, sense of place';
+    case 'product': return 'product shown in meaningful context, clean composition';
+    case 'gallery': case 'project': return 'well-composed detail, material and texture, consistent styling';
+    default: return 'well-composed, authentic';
+  }
+}
+function peopleWord(people: ImageNeed['people']): string {
+  return people === 'required' ? 'featuring real people' : people === 'avoid' ? 'no people' : '';
 }
 
 interface SourceResponse {
@@ -117,6 +168,69 @@ function slotAlt(slot: FrontendSpecImageSlot, spec: FrontendBuildSpecification, 
   return clean(`${purpose} photograph for a ${subject} website`, 200);
 }
 
+function normSlot(s: string | undefined): string { return (s || '').toLowerCase().replace(/[^a-z0-9]+/g, ''); }
+const PURPOSE_TO_ROLE: Record<ImagePurpose, string> = {
+  hero: 'hero-signature', background: 'background-atmosphere', team: 'social-proof-portrait',
+  about: 'trust-lifestyle', product: 'product-context', gallery: 'editorial-break',
+  project: 'editorial-break', other: 'feature-explanation',
+};
+/** Find the already-derived visualConcept image-role art direction for a need (exact slot id, else the
+ *  role that maps to the need's purpose). Returns undefined when visualConcept/imageRoles are absent. */
+function artRoleForNeed(spec: FrontendBuildSpecification, slotId: string, purpose: ImagePurpose): ImageRoleDirection | undefined {
+  const roles = spec.visualConcept?.imageRoles;
+  if (!Array.isArray(roles) || !roles.length) return undefined;
+  const nid = normSlot(slotId);
+  const exact = roles.find((r) => normSlot(r.slotId) === nid && nid.length > 0);
+  if (exact) return exact;
+  const wanted = PURPOSE_TO_ROLE[purpose];
+  return roles.find((r) => r.role === wanted) || (purpose === 'hero' ? roles.find((r) => r.role === 'hero-signature') : undefined);
+}
+/** Compose a bounded, sanitized query plan: a concrete primary query + up to 3 role-aware variations. */
+function buildQueryPlan(seed: string, art: ImageRoleDirection | undefined, purpose: ImagePurpose, orientation: ImageOrientation): { query: string; variants: string[] } {
+  const subject = sanitizeImageQuery(art?.subject, 80) || sanitizeImageQuery(seed, 80);
+  if (!subject) return { query: sanitizeImageQuery(seed, 140), variants: [] };
+  const people = art?.peoplePresent;
+  const negSpace = purpose === 'hero' || purpose === 'background';
+  const framing = roleFraming(purpose, people, negSpace);
+  const orient = ORIENTATION_WORD[orientation];
+  const ppl = peopleWord(people);
+  const lighting = sanitizeImageQuery(art?.lighting, 40);
+  const tone = sanitizeImageQuery(art?.tone, 40);
+  const primary = sanitizeImageQuery([subject, ppl, framing, lighting, orient].filter(Boolean).join(', '), 160);
+  const variants = [...new Set([
+    primary,
+    sanitizeImageQuery([subject, framing, orient].filter(Boolean).join(', '), 140),            // composition variation
+    sanitizeImageQuery([subject, tone || 'authentic, natural', ppl].filter(Boolean).join(', '), 140), // authenticity/lifestyle
+    subject,                                                                                    // safe fallback
+  ].filter(Boolean))].slice(0, 4);
+  return { query: primary || subject, variants };
+}
+/** Attach the bounded art-direction + query plan to a need. Idempotent-safe; pure.
+ *  The descriptive primary query REPLACES the seed only when real art direction exists (a concrete,
+ *  intentional subject) — so builds without visualConcept keep their proven terse keyword query and cannot
+ *  regress their result rate. Variants are always computed for client diagnostics/refinement. */
+function enrichNeedWithArt(need: ImageNeed, spec: FrontendBuildSpecification): ImageNeed {
+  const art = artRoleForNeed(spec, need.slotId, need.purpose);
+  const plan = buildQueryPlan(need.query, art, need.purpose, need.orientation);
+  return {
+    ...need,
+    query: art ? (plan.query || need.query) : need.query,
+    queryVariants: plan.variants.length ? plan.variants : undefined,
+    role: art?.role,
+    subject: sanitizeImageQuery(art?.subject, 80) || undefined,
+    people: art?.peoplePresent,
+    framing: sanitizeImageQuery(roleFraming(need.purpose, art?.peoplePresent, need.purpose === 'hero' || need.purpose === 'background'), 80) || undefined,
+    lighting: sanitizeImageQuery(art?.lighting, 60) || undefined,
+    tone: sanitizeImageQuery(art?.tone, 60) || undefined,
+    authenticity: art?.authenticity,
+    aspectRatio: art?.aspectRatio,
+    focalPoint: sanitizeImageQuery(art?.focalPoint, 60) || undefined,
+    negativeSpace: need.purpose === 'hero' || need.purpose === 'background',
+    loadingPriority: art?.loadingPriority || (need.purpose === 'hero' ? 'eager' : 'lazy'),
+    noRepeat: art?.noRepeat ?? true,
+  };
+}
+
 /** Map a Visual-Strategy purpose onto the sourcing purpose (broader → known). */
 function toImagePurpose(p: VisualSlotPurpose): ImagePurpose {
   switch (p) {
@@ -150,7 +264,8 @@ export function deriveImageNeeds(spec: FrontendBuildSpecification, strategy?: Vi
         required: s.required,
         altText: (s.altText || '').slice(0, 200),
       }))
-      .filter((n) => !!n.query);
+      .filter((n) => !!n.query)
+      .map((n) => enrichNeedWithArt(n, spec));   // art-direction-aware query plan (fail-open, additive)
   }
 
   const slots = spec?.assets?.imageSlots || [];
@@ -170,14 +285,14 @@ export function deriveImageNeeds(spec: FrontendBuildSpecification, strategy?: Vi
     const query = slotQuery(slot, spec, plan.purpose);
     if (!query) continue;
     perPurpose[plan.purpose] = used + 1;
-    needs.push({
+    needs.push(enrichNeedWithArt({
       slotId: slot.id,
       purpose: plan.purpose,
       query,
       orientation: plan.orientation,
       required: plan.purpose === 'hero',
       altText: slotAlt(slot, spec, plan.purpose),
-    });
+    }, spec));
   }
   return needs;
 }
@@ -252,10 +367,18 @@ async function fetchSourcedImages(
   opts?.signal?.addEventListener('abort', onAbort);
   const timer = setTimeout(() => ctrl.abort(), 25000);
   try {
+    // Wire the EXACT known-good need shape only. The art-direction improvement is already baked into
+    // `query`; the extra client-side fields (subject/lighting/tone/queryVariants/…) are intentionally NOT
+    // sent, so a strict backend schema can never reject the request (which would fail-open to zero images
+    // for every build). Backward-compatible byte-for-byte with the pre-existing request when no art exists.
+    const wireNeeds = needs.map((n) => ({
+      slotId: n.slotId, purpose: n.purpose, query: n.query, orientation: n.orientation,
+      required: n.required, altText: n.altText,
+    }));
     const resp = await fetch(`${apiBase()}/v2/web-build/images/stock/source`, {
       method: 'POST',
       headers: authHeaders(),
-      body: JSON.stringify({ needs, maxImages: MAX_SOURCED_IMAGES, ...(context ? { context } : {}) }),
+      body: JSON.stringify({ needs: wireNeeds, maxImages: MAX_SOURCED_IMAGES, ...(context ? { context } : {}) }),
       signal: ctrl.signal,
     });
     if (!resp.ok) return null;
@@ -266,6 +389,99 @@ async function fetchSourcedImages(
     clearTimeout(timer);
     opts?.signal?.removeEventListener('abort', onAbort);
   }
+}
+
+/* ── Client-side asset refinement (Phase 5/6) — the backend selects the candidate; here we conservatively
+ *    reject only STRONGLY-evidenced junk and prevent the SAME asset from filling two distinct roles. We do
+ *    NOT re-rank candidates (the backend owns selection) and never drop on subjective grounds. Dropping a
+ *    slot's asset leaves it unsourced → the existing coverage/fallback path handles it truthfully. ── */
+export interface ImageSourcingIntelligenceDiagnostics {
+  version: 'image-intelligence-v1';
+  needs: number;
+  needsWithArtDirection: number;
+  queryVariantsTotal: number;
+  smartImageContextSent: boolean;
+  designContextConsumed: boolean;
+  candidatesReceived: number;
+  keptAssets: number;
+  malformedRejected: number;
+  placeholderOrLogoRejected: number;
+  exactUrlDuplicatesPrevented: number;
+  normalizedUrlDuplicatesPrevented: number;
+  providerIdDuplicatesPrevented: number;
+  roleReuseDuplicatesPrevented: number;
+  orientationMismatchNoted: number;
+  lowResolutionNoted: number;
+  providerDistribution: Record<string, number>;
+  dominantColorMetadataAvailable: boolean;   // honest limitation: the endpoint returns none
+  perceptualDedupAvailable: boolean;         // honest limitation: no embeddings/pHash client-side
+  newProviderCalls: number;                  // always 0 — no extra calls added
+  elapsedMs: number;
+}
+const PLACEHOLDER_URL = /placeholder|placehold\.co|via\.placeholder|dummyimage|example\.com\/(?:image|img)|1x1|spacer/i;
+const LOGO_URL = /\blogo\b|\bicon\b|favicon|sprite|\.svg(?:$|\?)/i;
+function isHttpUrl(u: string | undefined): boolean { return !!u && /^https?:\/\/[^\s]+$/i.test(u); }
+/** Normalize a URL for dedup: drop the query string + trailing slash, lowercase host+path. */
+function normalizeUrl(u: string): string { try { const q = u.split('?')[0].replace(/\/+$/, ''); return q.toLowerCase(); } catch { return u; } }
+function providerKey(a: SourcedImageAsset): string { return a.provider && a.providerImageId ? `${a.provider}:${a.providerImageId}` : ''; }
+function assetOrientation(a: SourcedImageAsset): ImageOrientation | null {
+  const w = a.width || 0; const h = a.height || 0;
+  if (!w || !h) return null;
+  if (w >= h * 1.15) return 'landscape';
+  if (h >= w * 1.15) return 'portrait';
+  return 'square';
+}
+const HERO_MIN_WIDTH = 1200;
+const NONHERO_MIN_WIDTH = 640;
+
+export interface RefinedAssets { assets: SourcedImageAsset[]; diagnostics: Omit<ImageSourcingIntelligenceDiagnostics, 'version' | 'needs' | 'needsWithArtDirection' | 'queryVariantsTotal' | 'smartImageContextSent' | 'designContextConsumed' | 'providerDistribution' | 'dominantColorMetadataAvailable' | 'perceptualDedupAvailable' | 'newProviderCalls' | 'elapsedMs'> & { providerDistribution: Record<string, number> }; }
+
+/** Deterministically filter + dedupe the backend-selected assets. Bounded, pure, fail-open. Needs are
+ *  processed in order (required/hero first via caller ordering) so the first claimant of a duplicate wins. */
+export function refineSourcedAssets(needs: ImageNeed[], assets: SourcedImageAsset[]): RefinedAssets {
+  const needBySlot = new Map(needs.map((n) => [n.slotId, n]));
+  const seenExact = new Set<string>();
+  const seenNorm = new Set<string>();
+  const seenProvider = new Set<string>();
+  const kept: SourcedImageAsset[] = [];
+  const d = {
+    candidatesReceived: assets.length, keptAssets: 0, malformedRejected: 0, placeholderOrLogoRejected: 0,
+    exactUrlDuplicatesPrevented: 0, normalizedUrlDuplicatesPrevented: 0, providerIdDuplicatesPrevented: 0,
+    roleReuseDuplicatesPrevented: 0, orientationMismatchNoted: 0, lowResolutionNoted: 0,
+    providerDistribution: {} as Record<string, number>,
+  };
+  try {
+    // Process in need-priority order (required + hero first) so the most important slot claims a shared
+    // asset; a lower-value slot loses the duplicate and falls through to coverage/fallback.
+    const rank = (a: SourcedImageAsset): number => {
+      const n = needBySlot.get(a?.slotId || '');
+      return (n?.required ? 0 : 2) + (n?.purpose === 'hero' ? 0 : 1);
+    };
+    const ordered = [...assets].map((a, i) => ({ a, i })).sort((x, y) => (rank(x.a) - rank(y.a)) || (x.i - y.i)).map((x) => x.a);
+    for (const a of ordered) {
+      if (!a || !a.slotId) continue;
+      const url = a.url || '';
+      if (!isHttpUrl(url)) { d.malformedRejected += 1; continue; }
+      if (PLACEHOLDER_URL.test(url) || LOGO_URL.test(url)) { d.placeholderOrLogoRejected += 1; continue; }
+      const norm = normalizeUrl(url);
+      const pk = providerKey(a);
+      // Cross-slot dedup: the SAME asset must not fill two distinct roles (Phase 6, role-aware).
+      if (seenExact.has(url)) { d.exactUrlDuplicatesPrevented += 1; d.roleReuseDuplicatesPrevented += 1; continue; }
+      if (seenNorm.has(norm)) { d.normalizedUrlDuplicatesPrevented += 1; d.roleReuseDuplicatesPrevented += 1; continue; }
+      if (pk && seenProvider.has(pk)) { d.providerIdDuplicatesPrevented += 1; d.roleReuseDuplicatesPrevented += 1; continue; }
+      // Quality NOTES (never a drop — the builder can object-fit-crop; coverage owns the hard block).
+      const need = needBySlot.get(a.slotId);
+      const ori = assetOrientation(a);
+      if (need && ori && need.orientation !== ori) d.orientationMismatchNoted += 1;
+      const w = a.width || 0;
+      if (w && ((need?.purpose === 'hero' && w < HERO_MIN_WIDTH) || (need && need.purpose !== 'hero' && w < NONHERO_MIN_WIDTH))) d.lowResolutionNoted += 1;
+      seenExact.add(url); seenNorm.add(norm); if (pk) seenProvider.add(pk);
+      if (a.provider) d.providerDistribution[a.provider] = (d.providerDistribution[a.provider] || 0) + 1;
+      kept.push(a);
+    }
+  } catch { return { assets, diagnostics: { ...d, keptAssets: assets.length } }; }
+  d.keptAssets = kept.length;
+  return { assets: kept, diagnostics: d };
 }
 
 /** Stable, predictable Visual-Select id for a section's Nth sourced image. */
@@ -333,15 +549,16 @@ function coveragePurposeToImagePurpose(p: ImageCoveragePurpose): ImagePurpose {
 }
 
 function needFromSlotAndTarget(slot: FrontendSpecImageSlot, target: ImageCoverageTarget, spec: FrontendBuildSpecification): ImageNeed {
+  const purpose = coveragePurposeToImagePurpose(target.purpose);
   const query = clean(target.query || slot.prompt || slotQuery(slot, spec, 'other'), 120);
-  return {
+  return enrichNeedWithArt({
     slotId: slot.id,
-    purpose: coveragePurposeToImagePurpose(target.purpose),
+    purpose,
     query,
     orientation: target.orientation,
     required: true,
     altText: clean(target.altText || slot.placeholderLabel || '', 200) || slotAlt(slot, spec, 'other'),
-  };
+  }, spec);
 }
 
 export interface CoverageAwareNeeds {
@@ -535,23 +752,49 @@ export async function sourceStockImagesForPayload(
   // legacy short-circuit only applies to the non-enforcing (`none`/`optional`) modes.
   if (!enforce && needs.length === 0) return { payload, manifest: emptyManifest('empty', ['no photographic image needs']) };
 
-  const res = needs.length > 0 ? await fetchSourcedImages(needs, buildDesignContext(specForSourcing), opts) : null;
+  const designContext = buildDesignContext(specForSourcing);
+  const res = needs.length > 0 ? await fetchSourcedImages(needs, designContext, opts) : null;
+
+  // Sourcing-intelligence diagnostics — the need-level signal is known even when the endpoint fails.
+  const needsWithArt = needs.filter((n) => !!n.subject || !!n.role || !!(n.queryVariants && n.queryVariants.length)).length;
+  const queryVariantsTotal = needs.reduce((s, n) => s + (n.queryVariants?.length || 0), 0);
+  const intelBase = {
+    version: 'image-intelligence-v1' as const,
+    needs: needs.length, needsWithArtDirection: needsWithArt, queryVariantsTotal,
+    smartImageContextSent: !!designContext, designContextConsumed: !!designContext,
+    dominantColorMetadataAvailable: false, perceptualDedupAvailable: false, newProviderCalls: 0,
+  };
 
   let manifest: ImageAssetManifest;
   let enrichedSpec: FrontendBuildSpecification = specForSourcing;
   if (!res) {
-    manifest = emptyManifest(needs.length === 0 ? 'empty' : 'failed-open',
-      needs.length === 0 ? ['no photographic image needs'] : ['sourcing endpoint unavailable']);
+    manifest = {
+      ...emptyManifest(needs.length === 0 ? 'empty' : 'failed-open',
+        needs.length === 0 ? ['no photographic image needs'] : ['sourcing endpoint unavailable']),
+      imageIntelligence: {
+        ...intelBase, candidatesReceived: 0, keptAssets: 0, malformedRejected: 0, placeholderOrLogoRejected: 0,
+        exactUrlDuplicatesPrevented: 0, normalizedUrlDuplicatesPrevented: 0, providerIdDuplicatesPrevented: 0,
+        roleReuseDuplicatesPrevented: 0, orientationMismatchNoted: 0, lowResolutionNoted: 0,
+        providerDistribution: {}, elapsedMs: 0,
+      },
+    };
   } else {
-    const sourcedAssets = Array.isArray(res.assets) ? res.assets.filter((a) => a && a.url) : [];
+    const rawAssets = Array.isArray(res.assets) ? res.assets.filter((a) => a && a.url) : [];
+    // Client-side filter + cross-slot/role dedup (deterministic; zero new provider calls).
+    const refined = refineSourcedAssets(needs, rawAssets);
+    const sourcedAssets = refined.assets;
+    const imageIntelligence: ImageSourcingIntelligenceDiagnostics = {
+      ...intelBase, ...refined.diagnostics, elapsedMs: res.elapsedMs ?? 0,
+    };
     const baseManifest: ImageAssetManifest = {
       status: (res.status as ImageAssetManifest['status']) || (sourcedAssets.length ? 'ok' : 'no-results'),
       assets: sourcedAssets,
       providers: { pexels: res.providers?.pexels || 'unknown', unsplash: res.providers?.unsplash || 'unknown' },
       warnings: Array.isArray(res.warnings) ? res.warnings.slice(0, 8) : [],
       requested: res.requested ?? needs.length,
-      sourced: res.sourced ?? sourcedAssets.length,
+      sourced: sourcedAssets.length,
       elapsedMs: res.elapsedMs ?? 0,
+      imageIntelligence,
     };
     if (sourcedAssets.length === 0) {
       manifest = baseManifest;

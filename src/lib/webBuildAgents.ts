@@ -1155,6 +1155,11 @@ export interface ImageAssetManifest {
   /** Phase (image coverage) — bounded coverage diagnostics (counts + reason codes only; no URLs
    *  or secrets). Additive/optional; absent on old builds. */
   coverage?: import('@/lib/webBuildImageCoverage').ImageCoverageDiagnostics;
+  /** Phase (image intelligence) — bounded sourcing-intelligence diagnostics (art-direction consumed,
+   *  query-plan size, candidates kept/filtered, exact/normalized/provider-id/role dedup counts,
+   *  orientation/resolution notes, provider distribution, honest metadata limitations, new-call count =
+   *  0). Counts only; never URLs, keys or secrets. Additive/optional; absent on old builds. */
+  imageIntelligence?: import('@/lib/webBuildImageSourcing').ImageSourcingIntelligenceDiagnostics;
 }
 
 export type AgentId = 'research' | 'ui_art_director' | 'strategy' | 'vertical_intelligence' | 'layout_architect' | 'component_engineer' | 'reviewer' | 'quality_director' | 'asset_director' | 'motion_composer' | 'image_pipeline' | 'fixer';
@@ -2788,6 +2793,11 @@ export interface FrontendBuilderAcceptanceArtifact {
    *    regression counts, owner/section distribution, status-by-id, prompt-char contribution + real
    *    consumers; never raw source, prompts, URLs or secrets). All OPTIONAL/additive. ── */
   executionObligations?: import('@/lib/webBuildExecutionObligations').ObligationDiagnostics;
+
+  /* ── Phase (image intelligence) — bounded, secret-free sourcing-intelligence diagnostics surfaced from
+   *    the image asset manifest (art-direction consumed, query-plan size, candidates kept/filtered, dedup
+   *    counts, provider distribution, honest metadata limitations, new-call count = 0). Optional/additive. ── */
+  imageIntelligence?: import('@/lib/webBuildImageSourcing').ImageSourcingIntelligenceDiagnostics;
 
   reason: string;
 }
