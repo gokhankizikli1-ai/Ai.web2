@@ -16,13 +16,13 @@
  */
 import type {
   FrontendGeneratedFile, FrontendBuilderReviewIssue, FrontendBuilderReviewSeverity, FrontendBuilderReviewCategory,
-  FrontendSpecIdentity, FrontendSpecSection, FrontendBindingRequirements, FrontendSpecImageSlot,
+  FrontendSpecIdentity, FrontendSpecSection, FrontendBindingRequirements, BindingRequirement, FrontendSpecImageSlot,
 } from '@/lib/webBuildAgents';
 import type { CompositionContract } from '@/lib/webBuildComposition';
 import type { ContentNarrativeContract } from '@/lib/webBuildContentNarrative';
 import type { VisualSystemContract } from '@/lib/webBuildVisualSystem';
 import type { ImageCoverageRequirement } from '@/lib/webBuildImageCoverage';
-import { collectSectionUnits } from '@/lib/webBuildSectionSource';
+import { collectSectionUnits, normId } from '@/lib/webBuildSectionSource';
 
 /* ── Bounds (named, mandatory) ─────────────────────────────────────────────── */
 const MAX_TEXT = 140;
@@ -74,9 +74,13 @@ export interface ExperienceSectionObligation {
     controlPreserved: boolean;
     obligations: string[];
   };
-  /* Phase 3 — interaction */
+  /* Phase 3 — interaction (required* fields materially consumed from #558 binding requirements). */
   interaction?: {
     kind: InteractionKind;
+    required: boolean;                 // #558: an authoritative interactive/dynamic-outcome requirement maps here
+    requiredControls: string[];        // #558: BindingControl labels the section must render
+    requiredOutcome: string;           // #558: the visible outcome that must change (empty if none)
+    frontendOnly: boolean;             // #558: frontend-only vs backend-required
     requiredStates: string[];
     outputRelationship: string;
     obligations: string[];
@@ -86,9 +90,11 @@ export interface ExperienceSectionObligation {
     landmark: string;
     obligations: string[];
   };
-  /* Phase 5 — performance */
+  /* Phase 5 — performance (mediaRequired/heroRequired materially consumed from #559 image coverage). */
   performance?: {
     mediaPriority: MediaPriority;
+    mediaRequired: boolean;            // #559: an image-coverage target correlates to this section
+    heroRequired: boolean;             // #559: this section is the required hero/LCP media
     motionPolicy: string;
     obligations: string[];
   };
@@ -100,6 +106,8 @@ export interface ExperienceQualityContract {
   status: 'derived' | 'legacy';
   /** which sub-policies were derived (phase presence). */
   subPolicies: string[];
+  /** truthful trace of which upstream decisions MATERIALLY changed a derived obligation. */
+  materiallyConsumed: string[];
   rhythmObligation: string;
   globalResponsive: string[];
   globalAccessibility: string[];
@@ -134,16 +142,47 @@ export interface ExperienceQualityInput {
   binding?: FrontendBindingRequirements;
 }
 
-function deriveInteraction(s: FrontendSpecSection, family: string): ExperienceSectionObligation['interaction'] {
-  const hay = `${(s.interactionHints || []).join(' ')} ${s.purpose || ''} ${s.name || ''}`.toLowerCase();
+interface BindingInteraction { required: boolean; controls: string[]; outcome: string; frontendOnly: boolean; }
+
+function sectionText(s: FrontendSpecSection): string {
+  return `${(s.interactionHints || []).join(' ')} ${s.purpose || ''} ${s.name || ''} ${s.id}`.toLowerCase();
+}
+
+/** #558 material consumption: correlate an authoritative interactive/dynamic-outcome binding requirement
+ *  to this section by label/alias, returning its required controls + the outcome that must change. */
+function correlateBinding(s: FrontendSpecSection, binding: FrontendBindingRequirements | undefined): BindingInteraction {
+  const empty: BindingInteraction = { required: false, controls: [], outcome: '', frontendOnly: true };
+  const reqs = binding?.requirements;
+  if (!Array.isArray(reqs)) return empty;
+  const hay = sectionText(s);
+  const match = (r: BindingRequirement): boolean => {
+    const label = (r.label || '').toLowerCase();
+    const first = label.split(/\s+/)[0] || '';
+    return (!!first && hay.includes(first)) || (r.aliases || []).some((a) => a && hay.includes(a.toLowerCase()));
+  };
+  const req = reqs.find((r) => r.required && (r.kind === 'interactive-experience' || r.kind === 'dynamic-outcome') && match(r));
+  if (!req) return empty;
+  return {
+    required: true,
+    controls: uniq((req.controls || []).map((c) => clip(c.label, 40)).filter(Boolean)).slice(0, MAX_LIST),
+    outcome: clip(req.dynamicOutcome || '', 80),
+    frontendOnly: req.frontendOnly !== false,
+  };
+}
+
+function deriveInteraction(s: FrontendSpecSection, family: string, req: BindingInteraction): ExperienceSectionObligation['interaction'] {
+  const hay = sectionText(s);
   let kind: InteractionKind = 'none';
-  if (family === 'focused-tool' || /finder|calculat|configurat|quiz|estimat|planner|builder|\btool\b|selector/.test(hay)) kind = 'tool';
+  // A binding-required interactive experience is authoritatively a tool/form; otherwise infer conservatively.
+  if (req.required) kind = /\bform\b|contact|newsletter|subscribe|sign ?up|booking|enquir|register/.test(hay) ? 'form' : 'tool';
+  else if (family === 'focused-tool' || /finder|calculat|configurat|quiz|estimat|planner|builder|\btool\b|selector/.test(hay)) kind = 'tool';
   else if (/\bform\b|contact|newsletter|subscribe|sign ?up|booking|enquir|\bquote\b|register/.test(hay)) kind = 'form';
   else if (/\btab\b|accordion|\bfaq\b|toggle|expand|disclosure|collaps/.test(hay)) kind = 'disclosure';
   else if (/filter|sort|carousel|slider|gallery|lightbox|\bslide\b/.test(hay)) kind = 'gallery';
   else if (/\bnav\b|menu|hamburger/.test(hay)) kind = 'navigation';
   else if ((s.interactionHints || []).length > 0) kind = 'tool';
-  if (kind === 'none') return undefined;
+  if (kind === 'none' && !req.required) return undefined;
+  if (kind === 'none') kind = 'tool';
   const states: Record<InteractionKind, string[]> = {
     none: [],
     tool: ['default/empty state', 'selection state', 'a derived result that changes with input', 'a reset/change path'],
@@ -152,20 +191,37 @@ function deriveInteraction(s: FrontendSpecSection, family: string): ExperienceSe
     gallery: ['selected/active item state', 'clear prev/next affordance', 'an empty/no-results state'],
     navigation: ['expanded/collapsed state', 'an operable close control', 'keyboard operation', 'responsive visibility'],
   };
-  const output = kind === 'tool' ? 'the output sits with its controls and updates from them'
+  const output = req.outcome ? clip(`the required outcome (${req.outcome}) updates from the controls`, 90)
+    : kind === 'tool' ? 'the output sits with its controls and updates from them'
     : kind === 'form' ? 'submission feedback appears at the form (no fabricated network/booking/payment)'
     : 'the state change is visible in place';
   return {
     kind,
+    required: req.required,
+    requiredControls: req.controls,
+    requiredOutcome: req.outcome,
+    frontendOnly: req.frontendOnly,
     requiredStates: states[kind].slice(0, MAX_OBLIGATIONS),
     outputRelationship: output,
     obligations: uniq([
-      'controls are discoverable and keyboard-operable',
+      ...(req.controls.length ? [`render the required controls (${req.controls.slice(0, 4).join(', ')}) as real, keyboard-operable inputs`] : ['controls are discoverable and keyboard-operable']),
       'every state change produces visible feedback',
       output,
       ...(kind === 'tool' || kind === 'gallery' ? ['handle the empty/no-selection state gracefully'] : []),
     ]).slice(0, MAX_OBLIGATIONS),
   };
+}
+
+/** #559 material consumption: does an image-coverage target require media in this section, and is it the
+ *  hero/LCP media? Correlate by sectionId (preferred) or the hero flag. */
+function correlateMedia(s: FrontendSpecSection, isFirst: boolean, coverage: ImageCoverageRequirement | undefined): { mediaRequired: boolean; heroRequired: boolean } {
+  const targets = coverage?.targets;
+  if (!Array.isArray(targets)) return { mediaRequired: false, heroRequired: false };
+  const sid = normId(s.id);
+  const own = targets.filter((t) => t.required && (t.sectionId ? normId(t.sectionId) === sid : false));
+  const heroTarget = targets.find((t) => t.required && t.hero);
+  const heroRequired = !!(coverage?.heroRequired && isFirst) || own.some((t) => t.hero) || (!!heroTarget && isFirst && own.length === 0 && !targets.some((t) => t.sectionId));
+  return { mediaRequired: own.length > 0 || heroRequired, heroRequired };
 }
 
 function focalFor(role: string, family: string, mediaRole: string, ctaRole: string): ExperienceFocal {
@@ -197,6 +253,9 @@ export function deriveExperienceQualityContract(input: ExperienceQualityInput): 
     const narrativeRole = cn?.narrativeRole || cs?.narrativeRole || 'establish-value';
     const ctaRole = cn?.ctaRole || 'none';
     const focal = focalFor(narrativeRole, family, mediaRole, ctaRole);
+    // #558 (binding) + #559 (image coverage) materially consumed per section.
+    const req = correlateBinding(s, input.binding);
+    const media = correlateMedia(s, i === 0, input.imageCoverage);
     // Content-layout fit: rich/dense planned copy forced into a minimal composition is "tight".
     const wantsRichCopy = /rich|dense/.test(density) || /provide-proof|explain-process|compare|establish-value/.test(narrativeRole);
     const contentLayoutFit: ContentLayoutFit = wantsRichCopy && MINIMAL_FAMILIES.has(family) ? 'tight' : 'fit';
@@ -227,7 +286,7 @@ export function deriveExperienceQualityContract(input: ExperienceQualityInput): 
         mediaAspectRole: mediaRole === 'none' ? 'n/a' : 'reserve aspect ratio; crop keeps the subject',
         overlayReadability: (mediaRole === 'background' || mediaRole === 'anchor') ? 'text over media keeps a scrim/protected panel at every breakpoint' : 'n/a',
         ctaPreserved: ctaRole !== 'none',
-        controlPreserved: (s.interactionHints || []).length > 0,
+        controlPreserved: req.required || (s.interactionHints || []).length > 0,
         obligations: uniq([
           'multi-column layouts collapse to one readable column on mobile',
           ...(ctaRole === 'primary' ? ['keep the primary CTA visible and reachable (full-width) on mobile'] : []),
@@ -235,26 +294,31 @@ export function deriveExperienceQualityContract(input: ExperienceQualityInput): 
           ...(contentLayoutFit === 'tight' ? ['let dense content wrap; do not clip it in a fixed-height box'] : []),
         ]).slice(0, MAX_OBLIGATIONS),
       },
-      // Phase 3 — interaction lifecycle, derived from binding/hints/family (states appropriate to the
-      // requested feature only; never fabricate backend/network/loading where frontend-only is asked).
-      interaction: deriveInteraction(s, family),
+      // Phase 3 — interaction lifecycle, with #558 binding requirements materially consumed (required
+      // controls + the outcome that must change); never fabricate backend where frontend-only is asked.
+      interaction: deriveInteraction(s, family, req),
       // Phase 4 — accessibility obligations (context-aware; native semantics preferred over ARIA).
       accessibility: {
         landmark: i === 0 ? 'page header / hero region' : /footer|contact/.test(lc(s.purpose || s.name)) ? 'contentinfo/footer' : 'labelled section with a heading',
         obligations: uniq([
           'give this section a real heading in correct order',
-          ...((s.interactionHints || []).length > 0 ? ['controls are real <button>/<a>, keyboard-operable, with a visible focus ring'] : []),
+          ...(req.required || (s.interactionHints || []).length > 0 ? ['controls are real <button>/<a>/inputs, keyboard-operable, with a visible focus ring'] : []),
           ...(mediaRole !== 'none' ? ['images carry meaningful alt or are marked decorative (alt="")'] : []),
           ...(ctaRole !== 'none' ? ['the CTA is a real link/button with a clear accessible name'] : []),
         ]).slice(0, MAX_OBLIGATIONS),
       },
-      // Phase 5 — performance / media delivery (reuse #559 media decisions; intelligent delivery only).
+      // Phase 5 — performance / media delivery, with #559 image-coverage materially consumed
+      // (mediaRequired/heroRequired correlate the eager/lazy obligations to the real hero/required media).
       performance: {
-        mediaPriority: (i === 0 && mediaRole !== 'none') ? 'hero' : (family === 'full-bleed-transition' && mediaRole !== 'none') ? 'decorative' : mediaRole !== 'none' ? 'below-fold' : 'none',
+        mediaPriority: (media.heroRequired || (i === 0 && (media.mediaRequired || mediaRole !== 'none'))) ? 'hero'
+          : (family === 'full-bleed-transition' && mediaRole !== 'none') ? 'decorative'
+          : (media.mediaRequired || mediaRole !== 'none') ? 'below-fold' : 'none',
+        mediaRequired: media.mediaRequired,
+        heroRequired: media.heroRequired,
         motionPolicy: 'motion is subtle and respects prefers-reduced-motion; no unbounded continuous animation on content',
         obligations: uniq([
-          ...(i === 0 && mediaRole !== 'none' ? ['prioritize the hero/LCP image (eager, fetchpriority high); reserve its aspect ratio'] : []),
-          ...(i > 0 && mediaRole !== 'none' ? ['lazy-load this below-fold image and reserve width/height/aspect to avoid layout shift'] : []),
+          ...(media.heroRequired || (i === 0 && mediaRole !== 'none') ? ['prioritize the hero/LCP image (eager, fetchpriority high); reserve its aspect ratio'] : []),
+          ...(i > 0 && (media.mediaRequired || mediaRole !== 'none') ? ['lazy-load this below-fold image and reserve width/height/aspect to avoid layout shift'] : []),
           'avoid duplicating the same heavy media; avoid large inline base64 payloads',
           'motion respects prefers-reduced-motion; no unbounded continuous animation',
         ]).slice(0, MAX_OBLIGATIONS),
@@ -264,25 +328,50 @@ export function deriveExperienceQualityContract(input: ExperienceQualityInput): 
   });
 
   const dominant = sections.filter((s) => s.hierarchyRelation === 'dominant moment').length;
+  const requiredInteractions = sections.filter((s) => s.interaction?.required).length;
+  const requiredMedia = sections.filter((s) => s.performance?.mediaRequired).length;
+  // #557 identity material consumption: the PRIMARY page-journey/conversion anchor (owned by neither #561
+  // per-section families nor #563 copy) shapes the whole-page rhythm thesis that #564 owns. Folded in only
+  // when identity actually carries it, so it materially changes the rendered rhythm — not a mere label.
+  const idExperience = clip(input.identity?.primaryWebsiteExperience || input.identity?.websiteExperienceModel || '', 60);
+  const idIntent = clip(input.identity?.primaryConversionIntent || '', 50);
+  const rhythmBase = comp?.globalRhythm || content?.positioningThesis || 'one coherent experience: vary section weight and density, keep 1–2 dominant moments, and make every section point its content, media, hierarchy and CTA the same way';
+  const identityAnchor = (idExperience || idIntent)
+    ? ` — anchor the whole experience to the primary journey${idExperience ? ` (${idExperience})` : ''}${idIntent ? `, building toward ${idIntent}` : ''}`
+    : '';
+  const rhythmObligation = clip(`${rhythmBase}${identityAnchor}`, MAX_TEXT);
+  // Truthful "materially consumed" trace — an upstream decision is listed ONLY if it changed a derived
+  // obligation or an acceptance-relevant field, not merely because its object was present.
+  const materiallyConsumed = uniq([
+    comp ? 'composition→family/hierarchy/media-role/rhythm' : '',
+    content ? 'contentNarrative→narrativeRole/ctaRole/focal' : '',
+    identityAnchor ? 'identity→page journey/conversion anchor (rhythm)' : '',
+    requiredInteractions ? `binding→${requiredInteractions} required interaction(s): controls+outcome` : '',
+    requiredMedia ? `imageCoverage→${requiredMedia} required-media/hero correlation` : '',
+    input.visualSystem?.responsiveObligations?.length ? 'visualSystem→responsive+contrast obligations' : '',
+  ].filter(Boolean)).slice(0, MAX_LIST);
   return {
     version: 'experience-quality-v1', status: 'derived',
     subPolicies: ['coherence', 'responsive', 'interaction', 'accessibility', 'performance'],
-    rhythmObligation: clip(comp?.globalRhythm || content?.positioningThesis || 'one coherent experience: vary section weight and density, keep 1–2 dominant moments, and make every section point its content, media, hierarchy and CTA the same way', MAX_TEXT),
-    globalResponsive: [
-      'every multi-column layout collapses to one readable column on mobile',
+    materiallyConsumed,
+    rhythmObligation,
+    globalResponsive: uniq([
+      'every multi-column layout collapses to one readable column on mobile (base grid-cols-1)',
       'preserve semantic reading/tab order at all breakpoints',
       'no required copy clipped; long headings wrap instead of overflowing',
       'the primary CTA and any required control/output stay visible and reachable on mobile',
-      'reserve media aspect ratio to prevent layout shift; text over media keeps its scrim',
-    ],
-    globalAccessibility: [
+      // #562 material consumption — the visual system's own responsive obligations ride here.
+      ...(input.visualSystem?.responsiveObligations || []).slice(0, 3).map((o) => clip(o, 90)),
+    ]).slice(0, MAX_LIST),
+    globalAccessibility: uniq([
       'use semantic landmarks (header/nav/main/footer) and headings in order',
       'interactive elements are real <button>/<a>, keyboard-operable, with a visible focus ring',
       'every form control has an accessible name (label / aria-label)',
       'images carry meaningful alt or are marked decorative; do not label decorative images as content',
-      'respect prefers-reduced-motion; never communicate state by colour alone',
       'prefer native semantics over redundant/invalid ARIA',
-    ],
+      // #562 material consumption — the visual system's contrast obligations ride here.
+      ...(input.visualSystem?.contrastObligations || []).slice(0, 2).map((o) => clip(o, 90)),
+    ]).slice(0, MAX_LIST),
     globalPerformance: [
       'prioritize the hero/LCP image; never lazy-load it',
       'lazy-load below-fold images and reserve width/height/aspect to avoid layout shift',
@@ -291,10 +380,10 @@ export function deriveExperienceQualityContract(input: ExperienceQualityInput): 
       'keep decorative effects (blur/filters) cheap; deliver responsive image sizes',
     ],
     sections,
-    reasons: [`connected ${sections.length} sections across composition/content/visual/media with ${dominant} dominant moment(s)`].slice(0, MAX_LIST),
+    reasons: [`connected ${sections.length} sections; ${requiredInteractions} binding-required interaction(s), ${requiredMedia} required-media section(s), ${dominant} dominant moment(s)`].slice(0, MAX_LIST),
     derivationBasis: uniq([
       comp ? 'composition' : '', content ? 'contentNarrative' : '', input.visualSystem ? 'visualSystem' : '',
-      input.imageCoverage ? 'imageCoverage' : '', input.binding ? 'bindingRequirements' : '', raw.length ? 'architectureSections' : '',
+      input.imageCoverage ? 'imageCoverage' : '', input.binding ? 'bindingRequirements' : '', input.identity ? 'identity' : '', raw.length ? 'architectureSections' : '',
     ].filter(Boolean)).slice(0, MAX_LIST),
     contractPersistedInSpecification: true,
     contractRenderedToFrontendBuilder: true,
@@ -311,13 +400,19 @@ export function renderExperienceQualityBlock(contract: ExperienceQualityContract
   const secLines = contract.sections.slice(0, MAX_SECTIONS).map((s) => {
     const parts = [`- ${s.id} · focal:${s.focal} · ${s.hierarchyRelation} · desktop:${clip(s.desktopFlow, 60)} · mobile:${clip(s.mobileFlow, 60)}`];
     if (s.responsive) parts.push(`  responsive: ${s.responsive.obligations.slice(0, 3).join('; ')}`);
-    if (s.interaction && s.interaction.kind !== 'none') parts.push(`  interaction(${s.interaction.kind}): ${s.interaction.obligations.slice(0, 3).join('; ')}`);
+    if (s.interaction && s.interaction.kind !== 'none') {
+      const req = s.interaction.required
+        ? ` [REQUIRED${s.interaction.requiredControls.length ? ` controls:${s.interaction.requiredControls.slice(0, 3).join('/')}` : ''}${s.interaction.requiredOutcome ? ` → ${clip(s.interaction.requiredOutcome, 50)}` : ''}${s.interaction.frontendOnly ? '' : ' (backend)'}]`
+        : '';
+      parts.push(`  interaction(${s.interaction.kind})${req}: ${s.interaction.obligations.slice(0, 3).join('; ')}`);
+    }
     if (s.accessibility) parts.push(`  a11y: ${s.accessibility.obligations.slice(0, 3).join('; ')}`);
     if (s.performance) parts.push(`  media/perf: ${s.performance.obligations.slice(0, 3).join('; ')}`);
     return parts.join('\n');
   });
   const out = [
     'BINDING INTEGRATED EXPERIENCE (coherence + responsive + interaction + a11y + performance):',
+    ...(contract.materiallyConsumed.length ? [`Composed from upstream contracts (materially consumed): ${contract.materiallyConsumed.join('; ')}.`] : []),
     `Whole-page rhythm: ${clip(contract.rhythmObligation, MAX_TEXT)}`,
     'Implement each section so its content, media, hierarchy and CTA point the SAME way (the focal',
     'element leads). Keep one coherent experience across the whole page, not isolated sections.',
@@ -362,15 +457,15 @@ function stripComments(src: string): string {
   } catch { return src || ''; }
 }
 
-/** Render-relevant evidence (opening/closing tags + class/style values) — excludes unused string
- *  constants, metadata, console/debug so nothing off-DOM registers as executable evidence. */
-function renderEvidence(cleanSrc: string): string {
+/** Render-relevant evidence reconstructed from the BRACE-AWARE element scan (opening tags + their raw
+ *  attribute text, which carries className/style/value). Shared by every sub-policy so a `>` inside a JSX
+ *  expression can never truncate a tag and drop later attributes. Excludes off-DOM strings/comments. */
+function renderEvidence(elements: ElementRef[]): string {
   try {
-    const tags: string[] = cleanSrc.match(/<\/?[A-Za-z][^>]{0,800}>/g) || [];
-    const classVals: string[] = cleanSrc.match(/\b(?:class|className)\s*=\s*(?:"[^"]*"|'[^']*'|\{[^}]{0,800}\})/g) || [];
-    const styleVals: string[] = cleanSrc.match(/\bstyle\s*=\s*(?:\{\{[^}]{0,800}\}\}|"[^"]*"|'[^']*')/g) || [];
-    return [...tags, ...classVals, ...styleVals].join('\n');
-  } catch { return cleanSrc || ''; }
+    const out: string[] = [];
+    for (const el of elements) { if (!el.tag) continue; out.push(`<${el.tag} ${el.attr}>`); }
+    return out.join('\n');
+  } catch { return ''; }
 }
 
 /** Literal visible JSX text (skips tags/attributes/braced expressions/comments/svg). */
@@ -408,6 +503,65 @@ function extractVisibleText(region: string): { text: string; hasDynamic: boolean
   return { text: out.replace(/\s+/g, ' ').trim(), hasDynamic };
 }
 
+/** One rendered element (opening/self-closing tag) with bounded metadata for element-level correlation. */
+export interface ElementRef {
+  tag: string;            // lowercase tag name ('' for fragments/unknown)
+  attr: string;           // raw attribute text of the opening tag
+  classes: string;        // static className/class value (empty when dynamic-only)
+  classesDynamic: boolean; // className was a {expression} we cannot statically read
+  withinLabel: boolean;   // this element is nested inside a <label>…</label>
+}
+
+/** Scan from '<' to the matching '>' respecting quotes, template literals, escapes and JSX `{…}` brace
+ *  depth — so `>` inside arrow functions/comparisons/strings/nested objects never terminates a tag. */
+function skipTag(s: string, from: number): number {
+  const n = s.length; let i = from + 1; let q: string | null = null; let depth = 0;
+  while (i < n) {
+    const d = s[i];
+    if (q) { if (d === '\\') { i += 2; continue; } if (d === q) q = null; i += 1; continue; }
+    if (d === "'" || d === '"' || d === '`') { q = d; i += 1; continue; }
+    if (d === '{') { depth += 1; i += 1; continue; }
+    if (d === '}') { if (depth > 0) depth -= 1; i += 1; continue; }
+    if (d === '>' && depth === 0) return i + 1;
+    i += 1;
+  }
+  return n;
+}
+function classOf(attr: string): { classes: string; dynamic: boolean } {
+  const stat = /\b(?:class|className)\s*=\s*(?:"([^"]*)"|'([^']*)')/.exec(attr);
+  if (stat) return { classes: stat[1] ?? stat[2] ?? '', dynamic: false };
+  const dyn = /\b(?:class|className)\s*=\s*\{/.test(attr);
+  return { classes: '', dynamic: dyn };
+}
+/** Bounded single-pass element scanner. Fails open (returns what it parsed) on any anomaly. */
+function scanElements(clean: string): ElementRef[] {
+  const els: ElementRef[] = [];
+  try {
+    const n = clean.length; let i = 0; let labelDepth = 0; let guard = 0;
+    while (i < n && guard < 6000) {
+      if (clean[i] !== '<') { i += 1; continue; }
+      const next = clean[i + 1] || '';
+      if (next === '/') {                                   // closing tag
+        const cm = /^<\/\s*([A-Za-z][\w.-]*)/.exec(clean.slice(i, i + 48));
+        if (cm && cm[1] && cm[1].toLowerCase() === 'label' && labelDepth > 0) labelDepth -= 1;
+        i = skipTag(clean, i); guard += 1; continue;
+      }
+      if (!/[A-Za-z]/.test(next)) { i += 1; continue; }     // not an element (comparison etc.)
+      const end = skipTag(clean, i);
+      const tagText = clean.slice(i, end);
+      const nameM = /^<\s*([A-Za-z][\w.-]*)/.exec(tagText);
+      const tag = nameM && nameM[1] ? nameM[1].toLowerCase() : '';
+      const selfClosing = /\/>\s*$/.test(tagText);
+      const attr = tagText.replace(/^<\s*[A-Za-z][\w.-]*/, '').replace(/\/?>\s*$/, '');
+      const cl = classOf(attr);
+      els.push({ tag, attr, classes: cl.classes, classesDynamic: cl.dynamic, withinLabel: labelDepth > 0 });
+      if (tag === 'label' && !selfClosing) labelDepth += 1;
+      guard += 1; i = end;
+    }
+  } catch { /* fail open — return whatever was parsed */ }
+  return els;
+}
+
 export interface SectionFacts {
   id: string;
   path: string;
@@ -417,14 +571,17 @@ export interface SectionFacts {
   words: number;
   hasDynamic: boolean;
   hasChildComponent: boolean;
+  elements: ElementRef[];
 }
 function factsFor(id: string, path: string, content: string): SectionFacts {
   const clean = stripComments((content || '').slice(0, MAX_SCAN));
-  const render = renderEvidence(clean);
+  const elements = scanElements(clean);
+  const render = renderEvidence(elements);
   const vt = extractVisibleText(content || '');
   return {
     id, path, clean, render, text: vt.text, words: vt.text ? vt.text.split(/\s+/).filter((w) => /[a-z0-9]/i.test(w)).length : 0,
     hasDynamic: vt.hasDynamic, hasChildComponent: /<[A-Z][A-Za-z0-9]*[\s/>]/.test(clean),
+    elements,
   };
 }
 
@@ -542,35 +699,59 @@ function coherenceRhythmCheck(contract: ExperienceQualityContract, facts: Sectio
   void contract;
 }
 
-/** Phase 2 — responsive: block only a SYSTEMIC desktop-only grid (unique to this phase; #561/#562 do
- *  not own it). Isolated cases, clipping and mobile-CTA risks are warnings. Ambiguity fails open. */
+/** Parse one container's className tokens into the BASE (unprefixed = mobile) grid columns and whether
+ *  it wraps. Breakpoint-prefixed classes (md:grid-cols-N) do NOT change the base, so `grid-cols-3
+ *  lg:grid-cols-4` is base-3 (three columns on mobile) — correctly unsafe. */
+function baseGridCols(classes: string): { base: number | null; wraps: boolean } {
+  const tokens = classes.split(/\s+/);
+  let base: number | null = null; let wraps = false;
+  for (const t of tokens) {
+    if (t === 'flex-wrap') wraps = true;
+    if (/:/.test(t)) continue;                 // a breakpoint override — not the mobile base
+    const m = /^grid-cols-(\d+)$/.exec(t);
+    if (m && m[1]) base = parseInt(m[1], 10);
+  }
+  return { base, wraps };
+}
+/** Phase 2 — responsive: correlate to the RENDERED grid container. A container whose BASE (mobile)
+ *  grid is multi-column and does not wrap is mobile-unsafe. Systemic → block; isolated → warning;
+ *  dynamic className / child components → ambiguous warning (never a pass, never a block). */
 function responsiveCheck(
   facts: SectionFacts[],
   byId: Map<string, ExperienceSectionObligation>,
   factById: Map<string, SectionFacts>,
   push: (x: ExperienceIssue) => void,
 ): void {
-  // A multi-column grid that provably never collapses (no responsive grid variant, no single-col
-  // fallback, no flex-col, no flex-wrap) is desktop-only. Dynamic/child regions fail open.
-  const desktopOnly = facts.filter((f) => {
-    if (f.hasDynamic || f.hasChildComponent) return false;
-    const r = f.render;
-    if (!/\bgrid-cols-[2-9]\b/.test(r)) return false;
-    const collapses = /(?:sm|md|lg|xl):grid-cols/.test(r) || /\bgrid-cols-1\b/.test(r)
-      || /\bflex-col\b/.test(r) || /(?:sm|md|lg|xl):flex-col/.test(r) || /\bflex-wrap\b/.test(r);
-    return !collapses;
-  });
-  if (desktopOnly.length >= COLLAPSE_MIN && desktopOnly.length >= Math.ceil(facts.length * 0.6)) {
-    push({ code: 'experience-desktop-only', severity: 'major', subPolicy: 'responsive', label: 'desktop-only grids', files: uniq(desktopOnly.map((f) => f.path)).slice(0, MAX_ISSUE_FILES),
-      evidence: capEv(`${desktopOnly.length} of ${facts.length} sections use a fixed multi-column grid (grid-cols-N) with no responsive collapse, single-column fallback, flex-col or wrap — the layout is desktop-only and breaks on mobile`),
-      repairInstruction: capEv('Make multi-column grids collapse on mobile (e.g. grid-cols-1 md:grid-cols-N) so each section stays readable on narrow screens.') });
-  } else if (desktopOnly.length >= 1) {
-    push({ code: 'experience-responsive-warn', severity: 'minor', subPolicy: 'responsive', label: 'possible desktop-only grid', files: uniq(desktopOnly.map((f) => f.path)).slice(0, MAX_ISSUE_FILES),
-      evidence: capEv(`${desktopOnly.length} section(s) use a multi-column grid with no visible responsive collapse — verify they stack on mobile`),
-      repairInstruction: capEv('Add a responsive collapse (grid-cols-1 md:grid-cols-N) so the grid stacks on mobile.') });
+  const unsafe: SectionFacts[] = [];
+  const ambiguous: SectionFacts[] = [];
+  for (const f of facts) {
+    if (f.hasChildComponent) continue;                       // grid may live in a child → fail open
+    let sectionUnsafe = false; let sectionAmbiguous = false;
+    for (const el of f.elements) {
+      const hasGridClass = /grid-cols/.test(el.classes);
+      const dynamicGrid = el.classesDynamic && /grid|flex/i.test(el.attr);
+      if (!hasGridClass && !dynamicGrid) continue;
+      if (dynamicGrid && !hasGridClass) { sectionAmbiguous = true; continue; }
+      const g = baseGridCols(el.classes);
+      if (g.base !== null && g.base >= 2 && !g.wraps) sectionUnsafe = true;
+    }
+    if (sectionUnsafe) unsafe.push(f); else if (sectionAmbiguous) ambiguous.push(f);
+  }
+  if (unsafe.length >= COLLAPSE_MIN && unsafe.length >= Math.ceil(facts.length * 0.6)) {
+    push({ code: 'experience-desktop-only', severity: 'major', subPolicy: 'responsive', label: 'desktop-only grids', files: uniq(unsafe.map((f) => f.path)).slice(0, MAX_ISSUE_FILES),
+      evidence: capEv(`${unsafe.length} of ${facts.length} sections render a grid whose BASE (mobile) layout is multi-column (grid-cols-N, N≥2) with no wrap and no grid-cols-1 base — the layout stays multi-column on phones`),
+      repairInstruction: capEv('Set the base grid to one column and widen at breakpoints (grid-cols-1 md:grid-cols-N) so each section is readable on mobile.') });
+  } else if (unsafe.length >= 1) {
+    push({ code: 'experience-responsive-warn', severity: 'minor', subPolicy: 'responsive', label: 'possible desktop-only grid', files: uniq(unsafe.map((f) => f.path)).slice(0, MAX_ISSUE_FILES),
+      evidence: capEv(`${unsafe.length} section(s) render a base multi-column grid (grid-cols-N without a single-column base) — verify they stack on mobile`),
+      repairInstruction: capEv('Use grid-cols-1 as the base and widen at breakpoints (md:grid-cols-N).') });
+  } else if (ambiguous.length) {
+    push({ code: 'experience-responsive-warn', severity: 'minor', subPolicy: 'responsive', label: 'grid columns dynamic', files: uniq(ambiguous.map((f) => f.path)).slice(0, MAX_ISSUE_FILES),
+      evidence: capEv(`${ambiguous.length} section(s) compute grid columns dynamically — responsive collapse could not be statically confirmed; manual review`),
+      repairInstruction: capEv('Ensure the dynamically-composed grid uses a single-column base on mobile.') });
   }
   // Harmful clipping of substantial copy in a small fixed-height overflow box (warning).
-  const clipped = facts.filter((f) => !f.hasDynamic && f.words >= 20 && /\boverflow-hidden\b/.test(f.render)
+  const clipped = facts.filter((f) => !f.hasChildComponent && f.words >= 20 && /\boverflow-hidden\b/.test(f.render)
     && /\b(?:max-)?h-\[\d{2,3}px\]/.test(f.render) && !/line-clamp/.test(f.render));
   if (clipped.length) {
     push({ code: 'experience-harmful-clip', severity: 'minor', subPolicy: 'responsive', label: 'possible copy clipping', files: uniq(clipped.map((f) => f.path)).slice(0, MAX_ISSUE_FILES),
@@ -581,7 +762,7 @@ function responsiveCheck(
   for (const [id, ob] of byId) {
     if (ob.ctaRole !== 'primary') continue;
     const f = factById.get(id);
-    if (f && !f.hasDynamic && /\bhidden\b/.test(f.render) && !/(?:sm|md|lg|xl):(?:block|flex|inline|inline-block|grid)/.test(f.render)) {
+    if (f && !f.hasChildComponent && /\bhidden\b/.test(f.render) && !/(?:sm|md|lg|xl):(?:block|flex|inline|inline-block|grid)/.test(f.render)) {
       push({ code: 'experience-cta-hidden-mobile', severity: 'minor', subPolicy: 'responsive', label: 'primary CTA may be hidden', files: [f.path],
         evidence: capEv(`the primary-CTA section "${id}" uses a base "hidden" utility with no responsive reveal — verify the CTA is visible on mobile`),
         repairInstruction: capEv('Do not hide the primary CTA at the base breakpoint; keep it visible on mobile.') });
@@ -590,48 +771,174 @@ function responsiveCheck(
   }
 }
 
-/** Phase 3 — interaction: verify the STATE→FEEDBACK loop is wired in the rendered component. #558 owns
- *  whether the control/outcome must exist; this owns whether declared state actually drives visible
- *  feedback. Blocks a required tool/form whose own region declares handlers+state but reads none of that
- *  state back into the JSX (a dead control). Everything else warns; dynamic/child regions fail open. */
+/** A JSX element that is a real interactive control (native control tag, or a div/span promoted with
+ *  role="button"/tabIndex). Excludes hidden/submit-type distinctions — callers refine as needed. */
+const CONTROL_TAGS = new Set(['button', 'input', 'select', 'textarea', 'a']);
+function isControlEl(el: ElementRef): boolean {
+  if (CONTROL_TAGS.has(el.tag)) return true;
+  return (el.tag === 'div' || el.tag === 'span') && (/\brole=["']button["']/.test(el.attr) || /\btabIndex\b/.test(el.attr));
+}
+const HANDLER_ATTR_RE = /\bon(?:Click|Change|Submit|Input|KeyDown|KeyPress|KeyUp|Toggle)\s*=\s*\{/g;
+/** Extract each on*={…} handler expression from one element's raw attribute text, capturing balanced
+ *  braces so an arrow body / nested object / `>` inside the expression never truncates it. Bounded. */
+function handlerExprs(attr: string): string[] {
+  const out: string[] = [];
+  HANDLER_ATTR_RE.lastIndex = 0;
+  let m: RegExpExecArray | null; let guard = 0;
+  while ((m = HANDLER_ATTR_RE.exec(attr)) && guard < 12) {
+    guard += 1;
+    const start = m.index + m[0].length - 1;                  // the opening '{'
+    let depth = 0; let q: string | null = null; let i = start;
+    for (; i < attr.length; i += 1) {
+      const d = attr[i];
+      if (q) { if (d === '\\') { i += 1; continue; } if (d === q) q = null; continue; }
+      if (d === "'" || d === '"' || d === '`') { q = d; continue; }
+      if (d === '{') depth += 1;
+      else if (d === '}') { depth -= 1; if (depth === 0) { i += 1; break; } }
+    }
+    out.push(attr.slice(start, i));
+  }
+  return out;
+}
+/** Capture a named function/arrow body from `clean` starting at `from` (either a `{…}` block or a single
+ *  arrow expression up to the statement end). Bounded to 1400 chars so a runaway never scans the file. */
+function captureBody(clean: string, from: number): string {
+  const cap = Math.min(clean.length, from + 1400);
+  let i = from;
+  while (i < cap && /\s/.test(clean[i] || '')) i += 1;
+  if (clean[i] === '{') {
+    let depth = 0; let q: string | null = null;
+    for (; i < cap; i += 1) {
+      const d = clean[i];
+      if (q) { if (d === '\\') { i += 1; continue; } if (d === q) q = null; continue; }
+      if (d === "'" || d === '"' || d === '`') { q = d; continue; }
+      if (d === '{') depth += 1;
+      else if (d === '}') { depth -= 1; if (depth === 0) { i += 1; break; } }
+    }
+    return clean.slice(from, i);
+  }
+  const rest = clean.slice(from, cap);
+  const end = rest.search(/[;\n]/);
+  return end >= 0 ? rest.slice(0, end) : rest;
+}
+/** Resolve a named handler identifier to its definition body (one level). */
+function namedHandlerBody(clean: string, name: string): string {
+  const arrow = new RegExp(`\\b(?:const|let|var)\\s+${name}\\s*=\\s*(?:async\\s*)?\\([^)]{0,200}\\)\\s*=>`).exec(clean)
+    || new RegExp(`\\b(?:const|let|var)\\s+${name}\\s*=\\s*(?:async\\s*)?[A-Za-z_$][\\w$]*\\s*=>`).exec(clean);
+  if (arrow) return captureBody(clean, arrow.index + arrow[0].length);
+  const fn = new RegExp(`\\bfunction\\s+${name}\\s*\\([^)]{0,200}\\)`).exec(clean);
+  if (fn) return captureBody(clean, fn.index + fn[0].length);
+  return '';
+}
+const JS_KEYWORDS = new Set(['if', 'else', 'for', 'while', 'return', 'const', 'let', 'var', 'function', 'true', 'false', 'null', 'undefined', 'new', 'await', 'async', 'typeof', 'void', 'this', 'e', 'event', 'prev', 'React']);
+/** Correlate this section's rendered controls to the state they actually write. Returns the state vars
+ *  written by a handler that is attached to a REAL control (unrelated setters/handlers are excluded), and
+ *  whether any real control with a handler exists. Bounded; fails open (empty) on anomaly. */
+function correlateControls(f: SectionFacts): { controlWithHandler: boolean; controlCount: number; writtenVars: string[] } {
+  const clean = f.clean;
+  const setterToVar = new Map<string, string>();
+  const sre = /const\s*\[\s*(\w+)\s*,\s*(set\w+)\s*\]\s*=\s*(?:React\.)?useState/g;
+  let sm: RegExpExecArray | null; let sg = 0;
+  while ((sm = sre.exec(clean)) && sg < 60) { sg += 1; if (sm[1] && sm[2]) setterToVar.set(sm[2], sm[1]); }
+  // Gather handler code reachable FROM a real control (not any handler anywhere).
+  let controlWithHandler = false; let controlCount = 0; let handlerCode = '';
+  for (const el of f.elements) {
+    if (!isControlEl(el)) continue;
+    controlCount += 1;
+    const exprs = handlerExprs(el.attr);
+    if (exprs.length) { controlWithHandler = true; handlerCode += '\n' + exprs.join('\n'); }
+  }
+  // Resolve named handlers referenced by the controls (one level deep), bounded.
+  const referenced = uniq((handlerCode.match(/\b[A-Za-z_$][\w$]*\b/g) || []).filter((n) => !JS_KEYWORDS.has(n) && !/^set[A-Z]/.test(n))).slice(0, 12);
+  let resolved = '';
+  for (const name of referenced) resolved += '\n' + namedHandlerBody(clean, name);
+  const reachable = handlerCode + resolved;
+  // Setters called within control-reachable handler code → the state var they write.
+  const writtenVars = uniq([...setterToVar.entries()].filter(([setter]) => new RegExp(`\\b${setter}\\s*\\(`).test(reachable)).map(([, v]) => v));
+  return { controlWithHandler, controlCount, writtenVars };
+}
+/** Is state var `v` read back into a RENDERED outcome (controlled value/checked, className/style, or a JSX
+ *  output expression that is not a setter call or a handler arrow)? f.render already carries every tag +
+ *  class/style value, so value=/checked=/className referencing v shows up there. */
+function readBackIntoRender(v: string, f: SectionFacts): boolean {
+  const word = new RegExp(`\\b${v}\\b`);
+  if (word.test(f.render)) return true;                        // value=/checked=/className/style attr
+  const re = new RegExp(`\\{[^{}]{0,260}\\b${v}\\b[^{}]{0,260}\\}`, 'g');
+  let m: RegExpExecArray | null; let guard = 0;
+  while ((m = re.exec(f.clean)) && guard < 40) {
+    guard += 1; const seg = m[0];
+    if (/=>/.test(seg)) continue;                              // a handler/arrow, not output
+    if (/\bset[A-Z]\w*\s*\(/.test(seg)) continue;              // a setter call, not output
+    return true;                                               // {open && …} / {items.map} / {result}
+  }
+  return false;
+}
+/** Phase 3 — interaction: for every BINDING-REQUIRED interaction (#558 owns the requirement), correlate a
+ *  rendered control → its handler → the state it writes → a rendered dynamic outcome. A required
+ *  frontend-only tool/form whose controls write no state that is read back (and has no aria-live) is a dead
+ *  control → block. Backend-required, non-required, or child-hosted regions warn / fail open — never block. */
 function interactionCheck(
   byId: Map<string, ExperienceSectionObligation>,
   factById: Map<string, SectionFacts>,
   push: (x: ExperienceIssue) => void,
 ): void {
   for (const [id, ob] of byId) {
-    const kind = ob.interaction?.kind;
-    if (!kind || kind === 'none') continue;
+    const it = ob.interaction;
+    const kind = it?.kind;
+    if (!it || !kind || kind === 'none') continue;
     const f = factById.get(id);
-    if (!f || f.hasDynamic || f.hasChildComponent) continue;   // state may live in a child/prop → fail open
-    const region = f.clean;
-    // Handlers are JSX attributes → detect via render evidence (excludes strings/comments), so a string
-    // literal containing "onClick=" can never masquerade as a real handler.
-    const hasHandler = /\bon(?:Click|Change|Submit|Input|KeyDown|Toggle)\s*=/.test(f.render);
-    if (!hasHandler) continue;                                   // no local interactivity to judge
-    const stateVars: string[] = [];
-    const sre = /const\s*\[\s*(\w+)\s*,\s*set\w+\s*\]\s*=\s*(?:React\.)?useState/g;
-    let m: RegExpExecArray | null; let guard = 0;
-    while ((m = sre.exec(region)) && guard < 40) { guard += 1; if (m[1]) stateVars.push(m[1]); }
-    // A state var is "read back" if it appears more than its single destructuring occurrence.
-    const anyStateRead = stateVars.some((v) => (region.match(new RegExp(`\\b${v}\\b`, 'g')) || []).length > 1);
-    // Conditional/feedback signals independent of named state (ternaries in JSX, aria-expanded, data-state).
-    const hasConditionalFeedback = /\?\s*['"`]?[\w-]/.test(f.render) || /aria-(?:expanded|selected|current|pressed)=/.test(region) || /data-state=/.test(region);
-    const noFeedback = (stateVars.length === 0 || !anyStateRead) && !hasConditionalFeedback;
-    if (noFeedback && (kind === 'tool' || kind === 'form')) {
-      push({ code: 'experience-interaction-no-feedback', severity: 'major', subPolicy: 'interaction', label: `${kind} without state feedback`, files: [f.path],
-        evidence: capEv(`the required ${kind} section "${id}" declares interactive handlers but no declared state is read back into the UI and there is no conditional feedback — the control changes nothing visible`),
-        repairInstruction: capEv(`Wire ${kind} state into the rendered UI so interactions produce visible feedback (selection/result/message); do not fabricate network/booking success.`) });
-    } else if (noFeedback) {
+    if (!f) continue;
+    if (f.hasChildComponent) continue;                          // control/state may live in a child → fail open
+    const { controlWithHandler, controlCount, writtenVars } = correlateControls(f);
+    const outcomeWired = writtenVars.some((v) => readBackIntoRender(v, f));
+    const hasAriaLive = /aria-live=/.test(f.render) || /role=["'](?:status|alert)["']/.test(f.render);
+    const hasConditionalFeedback = /aria-(?:expanded|selected|current|pressed)=/.test(f.render) || /data-state=/.test(f.render);
+    const feedbackWired = outcomeWired || hasAriaLive || hasConditionalFeedback;
+
+    // ── Binding-required interactions: the authoritative path. ──
+    if (it.required) {
+      if (!controlCount && !f.hasDynamic) {
+        push({ code: 'experience-interaction-warn', severity: 'minor', subPolicy: 'interaction', label: 'required control not found', files: [f.path],
+          evidence: capEv(`section "${id}" is a binding-required ${kind}${it.requiredControls.length ? ` (controls: ${it.requiredControls.slice(0, 3).join(', ')})` : ''} but no rendered control was found in its own markup — verify the control is present and not only in a child`),
+          repairInstruction: capEv(`Render the required control(s)${it.requiredControls.length ? ` (${it.requiredControls.slice(0, 3).join(', ')})` : ''} as real keyboard-operable inputs in this section.`) });
+        continue;
+      }
+      if (!controlWithHandler) continue;                        // control exists but no local handler to judge → fail open
+      if (feedbackWired) continue;                              // control → state → rendered outcome is wired
+      if ((kind === 'tool' || kind === 'form') && it.frontendOnly) {
+        push({ code: 'experience-interaction-no-feedback', severity: 'major', subPolicy: 'interaction', label: `${kind} control changes nothing`, files: [f.path],
+          evidence: capEv(`the binding-required ${kind} section "${id}" wires a control handler but no state it writes is read back into the UI (no controlled value/output, no aria-live)${it.requiredOutcome ? ` — the required outcome "${it.requiredOutcome}" never updates` : ' — the control produces no visible outcome'}`),
+          repairInstruction: capEv(`Wire the control's state into a rendered outcome${it.requiredOutcome ? ` (${it.requiredOutcome})` : ''} so the interaction is perceivable; do not fabricate backend success.`) });
+      } else {
+        // Backend-required (frontendOnly === false) or a disclosure/gallery/nav: local feedback is not
+        // provable here (server round-trip / child) → warn, never block.
+        push({ code: 'experience-interaction-warn', severity: 'minor', subPolicy: 'interaction', label: `${kind} outcome not visible locally`, files: [f.path],
+          evidence: capEv(`the required ${kind} section "${id}" wires a control but no local state is read back${it.frontendOnly ? '' : ' (outcome may be server-driven)'} — verify the ${it.requiredOutcome || 'result/feedback'} is perceivable`),
+          repairInstruction: capEv('Ensure the interaction produces perceivable feedback (result, selection, or a success/error message) at the control.') });
+      }
+      continue;
+    }
+
+    // ── Non-required interactions inferred from family/hints: warn only, never block. ──
+    if (!controlWithHandler) continue;
+    if (!feedbackWired && (kind === 'tool' || kind === 'form')) {
       push({ code: 'experience-interaction-warn', severity: 'minor', subPolicy: 'interaction', label: `${kind} feedback unclear`, files: [f.path],
-        evidence: capEv(`the ${kind} section "${id}" may not show a visible active/selected/expanded state — verify state changes are perceivable`),
-        repairInstruction: capEv('Add a visible state (active/selected/expanded) so the interaction reads clearly.') });
+        evidence: capEv(`the ${kind} section "${id}" wires a control but no state it writes is read back into the UI — verify interactions produce visible feedback`),
+        repairInstruction: capEv('Wire the control state into a visible outcome (selection/result/message) so the interaction reads clearly.') });
     }
   }
 }
 
-/** Phase 4 — accessibility: block only strong, keyboard/name failures (#559 owns image existence,
- *  #562 owns contrast). Native semantics satisfy requirements; absent-keyword alone never blocks. */
+const A11Y_HANDLER_RE = /\bon(?:Click|MouseDown|MouseUp)\s*=/;
+const A11Y_KEY_RE = /\bon(?:KeyDown|KeyPress|KeyUp)\s*=/;
+function attrIdOf(attr: string): { id: string; dynamic: boolean } {
+  const stat = /\bid\s*=\s*(?:"([^"]*)"|'([^']*)')/.exec(attr);
+  if (stat) return { id: stat[1] ?? stat[2] ?? '', dynamic: false };
+  return { id: '', dynamic: /\bid\s*=\s*\{/.test(attr) };
+}
+/** Phase 4 — accessibility: evaluate EACH suspicious element independently. A single label or a real
+ *  button elsewhere never excuses a separate unlabeled field or a separate click-only div. #559 owns image
+ *  existence, #562 owns contrast. Fails open on child-hosted structure. */
 function accessibilityCheck(
   byId: Map<string, ExperienceSectionObligation>,
   factById: Map<string, SectionFacts>,
@@ -639,37 +946,69 @@ function accessibilityCheck(
 ): void {
   for (const [id, ob] of byId) {
     const f = factById.get(id);
-    if (!f || f.hasDynamic || f.hasChildComponent) continue;   // fail open on ambiguous structure
-    // JSX-attribute signals (controls, labels, roles) live in tags → use render evidence so strings/
-    // comments can never satisfy or trip these checks. (useState lives in JS → read from f.clean below.)
-    const r = f.render;
-    // 1. Interactive control implemented ONLY as a non-focusable clickable div/span (no real button/
-    //    link, no role=button, no tabIndex, no key handler) → not keyboard-operable.
-    const divClick = /<(?:div|span)\b[^>]{0,300}\bon(?:Click|MouseDown)\s*=/.test(r);
-    const hasRealControl = /<button\b/.test(r) || /<a\b[^>]*\bhref=/.test(r);
-    const hasKeyAffordance = /role=["']button["']/.test(r) || /\btabIndex\b/.test(r) || /\bonKeyDown\s*=/.test(r) || /\bonKeyPress\s*=/.test(r);
-    if (divClick && !hasRealControl && !hasKeyAffordance && ob.interaction && ob.interaction.kind !== 'none') {
+    if (!f || f.hasChildComponent) continue;                   // a child could supply the label/control → fail open
+    const interactive = !!ob.interaction && ob.interaction.kind !== 'none';
+
+    // 1. Each non-semantic clickable element judged on ITS OWN affordances — a real <button> elsewhere in
+    //    the section does not make a separate click-only <div> keyboard-operable.
+    let clickDivs = 0;
+    for (const el of f.elements) {
+      if (el.tag !== 'div' && el.tag !== 'span') continue;
+      if (!A11Y_HANDLER_RE.test(el.attr)) continue;
+      const keyboardOperable = /\brole=["']button["']/.test(el.attr) || /\btabIndex\b/.test(el.attr)
+        || A11Y_KEY_RE.test(el.attr) || /\brole=["'](?:link|menuitem|tab|switch|checkbox)["']/.test(el.attr);
+      if (!keyboardOperable) clickDivs += 1;
+    }
+    if (clickDivs > 0 && interactive) {
       push({ code: 'experience-clickable-div', severity: 'major', subPolicy: 'accessibility', label: 'clickable div control', files: [f.path],
-        evidence: capEv(`the interactive section "${id}" implements its control as a clickable <div>/<span> with no real button/link, role or keyboard handler — it is not keyboard-operable`),
-        repairInstruction: capEv('Use a real <button>/<a> for the control (or add role="button", tabIndex and a key handler) so it is keyboard-operable.') });
+        evidence: capEv(`section "${id}" has ${clickDivs} clickable <div>/<span> element(s) with no role/tabIndex/key handler of their own — each is not keyboard-operable (a real button elsewhere does not fix these)`),
+        repairInstruction: capEv('Make every clickable element a real <button>/<a>, or give that same element role="button", tabIndex and an onKeyDown handler.') });
     }
-    // 2. Form control with NO accessible name at all (no <label>, no aria-label/labelledby, no placeholder).
-    const hasField = /<(?:input|textarea|select)\b/.test(r) && !/type=["'](?:hidden|submit|button)["']/.test(r);
-    if (hasField) {
-      const hasName = /<label\b/.test(r) || /aria-label(?:ledby)?=/.test(r);
-      const hasPlaceholder = /\bplaceholder=/.test(r);
-      if (!hasName && !hasPlaceholder) {
-        push({ code: 'experience-input-unlabeled', severity: 'major', subPolicy: 'accessibility', label: 'unlabeled form field', files: [f.path],
-          evidence: capEv(`section "${id}" renders a form control with no accessible name (no <label>, aria-label/labelledby or placeholder) — it cannot be identified by assistive tech`),
-          repairInstruction: capEv('Give every form control an accessible name via a <label> (preferred) or aria-label.') });
-      } else if (!hasName && hasPlaceholder) {
-        push({ code: 'experience-a11y-warn', severity: 'minor', subPolicy: 'accessibility', label: 'placeholder-only field', files: [f.path],
-          evidence: capEv(`section "${id}" labels a field with a placeholder only — verify it has a real <label> for assistive tech`),
-          repairInstruction: capEv('Add a real <label> in addition to the placeholder.') });
-      }
+
+    // 2. Each form field judged on ITS OWN accessible name: wrapping <label>, own aria-label/labelledby/
+    //    title, or an id that a <label htmlFor> points at. Placeholder alone → warn (not a name).
+    const labelForIds = new Set<string>(); let dynamicLabelFor = false;
+    for (const el of f.elements) {
+      if (el.tag !== 'label') continue;
+      const hf = /\bhtmlFor\s*=\s*(?:"([^"]*)"|'([^']*)')/.exec(el.attr);
+      if (hf) { const v = hf[1] ?? hf[2] ?? ''; if (v) labelForIds.add(v); }
+      else if (/\bhtmlFor\s*=\s*\{/.test(el.attr)) dynamicLabelFor = true;   // linkage target computed → unverifiable
     }
+    let unlabeled = 0; let placeholderOnly = 0; let unverifiable = 0;
+    for (const el of f.elements) {
+      if (el.tag !== 'input' && el.tag !== 'textarea' && el.tag !== 'select') continue;
+      if (/\btype\s*=\s*["'](?:hidden|submit|button|image|reset)["']/.test(el.attr)) continue;
+      const named = el.withinLabel
+        || /\baria-label(?:ledby)?\s*=/.test(el.attr)
+        || /\btitle\s*=/.test(el.attr);
+      const idInfo = attrIdOf(el.attr);
+      const idNamed = !!idInfo.id && labelForIds.has(idInfo.id);
+      if (named || idNamed) continue;
+      const hasPlaceholder = /\bplaceholder\s*=/.test(el.attr);
+      // Only DYNAMIC linkage is unverifiable: a field with no static id cannot be a <label htmlFor> target,
+      // so other labels never excuse it. Ambiguity comes from id={…} or a label htmlFor={…} we cannot read.
+      const ambiguousName = idInfo.dynamic || dynamicLabelFor;
+      if (hasPlaceholder) placeholderOnly += 1;
+      else if (ambiguousName) unverifiable += 1;
+      else unlabeled += 1;
+    }
+    if (unlabeled > 0) {
+      push({ code: 'experience-input-unlabeled', severity: 'major', subPolicy: 'accessibility', label: 'unlabeled form field(s)', files: [f.path],
+        evidence: capEv(`section "${id}" renders ${unlabeled} form control(s) with no accessible name (no wrapping <label>, no aria-label/labelledby/title, no matching <label htmlFor>, no placeholder) — they cannot be identified by assistive tech`),
+        repairInstruction: capEv('Give EVERY form control an accessible name: wrap it in a <label>, or pair <label htmlFor="x"> with the control id="x", or add aria-label.') });
+    } else if (placeholderOnly > 0) {
+      push({ code: 'experience-a11y-warn', severity: 'minor', subPolicy: 'accessibility', label: 'placeholder-only field(s)', files: [f.path],
+        evidence: capEv(`section "${id}" names ${placeholderOnly} field(s) with a placeholder only — a placeholder is not an accessible name`),
+        repairInstruction: capEv('Add a real <label> (or aria-label) in addition to the placeholder for each field.') });
+    } else if (unverifiable > 0) {
+      push({ code: 'experience-a11y-warn', severity: 'minor', subPolicy: 'accessibility', label: 'field label linkage dynamic', files: [f.path],
+        evidence: capEv(`section "${id}" has ${unverifiable} field(s) whose id/label linkage is computed dynamically — the accessible name could not be statically confirmed`),
+        repairInstruction: capEv('Ensure each dynamically-linked field resolves to a real <label>/aria-label at runtime.') });
+    }
+
     // 3. Mobile menu / disclosure that toggles but exposes no disclosure state / operable control (warning).
     if (ob.interaction && (ob.interaction.kind === 'navigation' || ob.interaction.kind === 'disclosure')) {
+      const r = f.render;
       const toggles = /\bon(?:Click|Toggle)\s*=/.test(r) || /useState/.test(f.clean);
       const exposes = /aria-(?:expanded|controls|hidden)=/.test(r) || /<button\b/.test(r);
       if (toggles && !exposes) {
@@ -681,32 +1020,45 @@ function accessibilityCheck(
   }
 }
 
-/** Phase 5 — performance / media delivery. Reuses #559 media decisions (no new sourcing). Blocks only
- *  strong, high-impact systemic waste; unprovable runtime cost warns/fails open. */
+/** Is an <img> element decorative / non-primary (marked hidden or empty-alt), so its loading strategy must
+ *  NOT gate the hero LCP decision? */
+function isDecorativeImg(attr: string): boolean {
+  return /\baria-hidden=["']true["']/.test(attr) || /\brole=["']presentation["']/.test(attr) || /\balt=["']["']/.test(attr);
+}
+function isLazyImg(attr: string): boolean { return /\bloading\s*=\s*["']lazy["']/i.test(attr); }
+/** Phase 5 — performance / media delivery. Correlates the hero-eager obligation to the ACTUAL primary
+ *  hero image (#559 heroRequired + #561 focal, via the derived hero priority) — a lazy secondary or
+ *  decorative image in a hero never blocks. Reuses #559 media decisions (no new sourcing). Blocks only
+ *  strong systemic waste on rendered element evidence; unprovable runtime cost warns / fails open. */
 function performanceCheck(
   facts: SectionFacts[],
   byId: Map<string, ExperienceSectionObligation>,
   factById: Map<string, SectionFacts>,
   push: (x: ExperienceIssue) => void,
 ): void {
-  const imgOf = (r: string): string[] => r.match(/<img\b[^>]*>/gi) || [];
-  const allImgs = facts.flatMap((f) => imgOf(f.render));
-  const lazyImgs = allImgs.filter((t) => /loading=["']lazy["']/i.test(t));
-  const sectionsWithImg = facts.filter((f) => imgOf(f.render).length > 0);
-  // 1. All images eager (no lazy anywhere) on an image-heavy page (blocker).
+  const imgEls = (f: SectionFacts): ElementRef[] => f.elements.filter((el) => el.tag === 'img');
+  const allImgs = facts.flatMap((f) => imgEls(f));
+  const lazyImgs = allImgs.filter((el) => isLazyImg(el.attr));
+  const sectionsWithImg = facts.filter((f) => imgEls(f).length > 0);
+  // 1. All images eager (no lazy anywhere) on an image-heavy page (blocker) — real <img> elements only.
   if (allImgs.length >= 6 && sectionsWithImg.length >= COLLAPSE_MIN && lazyImgs.length === 0) {
     push({ code: 'experience-all-eager', severity: 'major', subPolicy: 'performance', label: 'no lazy-loading', files: uniq(sectionsWithImg.map((f) => f.path)).slice(0, MAX_ISSUE_FILES),
-      evidence: capEv(`${allImgs.length} images across ${sectionsWithImg.length} sections load eagerly with zero lazy-loading — below-fold media is downloaded up front, hurting load performance`),
+      evidence: capEv(`${allImgs.length} <img> elements across ${sectionsWithImg.length} sections load eagerly with zero lazy-loading — below-fold media is downloaded up front, hurting load performance`),
       repairInstruction: capEv('Lazy-load below-fold images (loading="lazy") and keep only the hero/LCP image eager.') });
   }
-  // 2. Hero/LCP image lazy-loaded (blocker).
+  // 2. The PRIMARY hero/LCP image lazy-loaded (blocker). Only the first non-decorative image in a section
+  //    whose derived media role is the hero counts — a decorative/secondary lazy image does not block.
   for (const [id, ob] of byId) {
-    if (ob.performance?.mediaPriority !== 'hero') continue;
+    const isHero = ob.performance?.mediaPriority === 'hero' || ob.performance?.heroRequired === true;
+    if (!isHero) continue;
     const f = factById.get(id);
-    if (f && !f.hasDynamic && imgOf(f.render).some((t) => /loading=["']lazy["']/i.test(t))) {
+    if (!f || f.hasChildComponent) continue;                   // hero media may live in a child → fail open
+    const imgs = imgEls(f);
+    const primary = imgs.find((el) => !isDecorativeImg(el.attr));
+    if (primary && isLazyImg(primary.attr)) {
       push({ code: 'experience-hero-lazy', severity: 'major', subPolicy: 'performance', label: 'hero image lazy-loaded', files: [f.path],
-        evidence: capEv(`the hero section "${id}" lazy-loads its image — the LCP image should load eagerly (with priority), not be deferred`),
-        repairInstruction: capEv('Load the hero/LCP image eagerly (remove loading="lazy"; add fetchpriority="high").') });
+        evidence: capEv(`the hero section "${id}" lazy-loads its PRIMARY image — the LCP image should load eagerly (with priority), not be deferred (secondary/decorative images in this section may stay lazy)`),
+        repairInstruction: capEv('Load the hero/LCP image eagerly (remove loading="lazy"; add fetchpriority="high"); keep secondary/decorative images lazy.') });
       break;
     }
   }
@@ -730,7 +1082,7 @@ function performanceCheck(
   }
   // 5. Duplicate heavy media reused across many sections (warning — often intentional, e.g. logos).
   const srcCount = new Map<string, number>();
-  for (const t of allImgs) { const m = /src=["']([^"']+)["']/i.exec(t); if (m && m[1] && !/logo|icon|favicon/i.test(m[1])) srcCount.set(m[1], (srcCount.get(m[1]) || 0) + 1); }
+  for (const el of allImgs) { const m = /src=["']([^"']+)["']/i.exec(el.attr); if (m && m[1] && !/logo|icon|favicon/i.test(m[1])) srcCount.set(m[1], (srcCount.get(m[1]) || 0) + 1); }
   const dup = [...srcCount.entries()].filter(([, c]) => c >= 3);
   if (dup.length) {
     push({ code: 'experience-perf-warn', severity: 'minor', subPolicy: 'performance', label: 'repeated large media', files: [],
@@ -792,6 +1144,10 @@ export interface ExperienceQualityDiagnostics {
   experienceVersion: string;
   experienceStatus: 'derived' | 'legacy';
   subPolicies: string[];
+  /** truthful trace of which upstream contracts materially changed a derived obligation. */
+  materiallyConsumed: string[];
+  requiredInteractionCount: number;
+  requiredMediaCount: number;
   sectionObligationCount: number;
   experienceCharCount: number;
   derivationBasis: string[];
@@ -821,6 +1177,9 @@ export function buildExperienceDiagnostics(
     experienceVersion: contract.version,
     experienceStatus: contract.status,
     subPolicies: contract.subPolicies.slice(0, MAX_LIST),
+    materiallyConsumed: contract.materiallyConsumed.slice(0, MAX_LIST),
+    requiredInteractionCount: contract.sections.filter((s) => s.interaction?.required).length,
+    requiredMediaCount: contract.sections.filter((s) => s.performance?.mediaRequired).length,
     sectionObligationCount: contract.sections.length,
     experienceCharCount,
     derivationBasis: contract.derivationBasis.slice(0, MAX_LIST),
