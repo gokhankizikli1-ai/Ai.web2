@@ -889,6 +889,17 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
         ownerRows.push(['motionExecutionApplied', `builder ${String(!!me.contractRenderedToFrontendBuilder)} · acceptance ${String(!!me.contractUsedByAcceptance)} · agents ${me.agentsActuallyConsumingContract?.length ? me.agentsActuallyConsumingContract.slice(0, 4).join('/') : 'none'}`]);
         ownerRows.push(['motionExecutionAcceptanceStatus', `${me.acceptanceStatus}${me.issueCodes?.length ? ` · ${me.issueCodes.slice(0, 6).join(', ')}` : ''}`]);
       }
+      // ── Phase (execution obligations) — the full obligation lifecycle: derived → rendered → evaluated →
+      //    fulfilled/missing, plus repair-regression protection. Blocking stays with the owner analyzers. ──
+      const ob = fac.executionObligations;
+      if (ob) {
+        ownerRows.push(['executionObligations', `${ob.version} · ${ob.totalObligations} obligations (${ob.requiredCount} required, ${ob.blockerEligibleCount} blocker-eligible) · manifest ${ob.promptCharCount} chars`]);
+        ownerRows.push(['executionObligationsLifecycle', `rendered ${ob.renderedToBuilderCount} · evaluated ${ob.evaluatedCount} · fulfilled ${ob.fulfilled} · partial ${ob.partial} · ambiguous ${ob.ambiguous} · missing ${ob.missing} · contradicted ${ob.contradicted} · n/a ${ob.notApplicable}`]);
+        ownerRows.push(['executionObligationsRepair', `improved ${ob.repairImproved} · regressions ${ob.regressionCount} · scopes ${ob.repairScopesAvailable.join('/') || 'none'}`]);
+        if (Object.keys(ob.ownerDistribution || {}).length) ownerRows.push(['executionObligationsOwners', Object.entries(ob.ownerDistribution).map(([k, v]) => `${k}:${v}`).slice(0, 8).join(' · ')]);
+        if (ob.statusByObligation?.length) ownerRows.push(['executionObligationsStatus', ob.statusByObligation.slice(0, 10).join(' · ')]);
+        ownerRows.push(['executionObligationsApplied', `builder ${String(!!ob.contractRenderedToFrontendBuilder)} · acceptance ${String(!!ob.contractUsedByAcceptance)} · agents ${ob.agentsActuallyConsumingContract?.length ? ob.agentsActuallyConsumingContract.slice(0, 4).join('/') : 'none'}`]);
+      }
     }
 
     // Phase 13D — model-native REVISION diagnostics (owner-only). Present only on an

@@ -134,6 +134,15 @@ import {
   motionExecutionIssueCodes, buildMotionExecutionDiagnostics, renderMotionExecutionBlock,
   type MotionExecutionAcceptanceResult,
 } from '@/lib/webBuildMotionExecution';
+// Phase (execution obligations) — accountability spine. The SAME registry rendered as a builder manifest is
+// evaluated here (pre + post repair) for diagnostics and for the pre/post REGRESSION gate that rejects a
+// repair which breaks a previously-fulfilled required obligation. Blocking stays with the owner analyzers
+// (no duplicate issues); this contributes prevention (manifest) + preservation (regression) + diagnostics.
+import {
+  analyzeObligationFulfillment, compareObligationFulfillment, buildObligationDiagnostics,
+  renderObligationManifestBlock,
+  type ObligationFulfillmentResult, type ObligationComparison,
+} from '@/lib/webBuildExecutionObligations';
 // PR #521 — CONDITIONAL rendered VISION review (fresh-build only, at most one screenshot + one
 // vision call). Its major/blocker findings ride the SAME existing merge → single bounded repair.
 import {
@@ -819,6 +828,12 @@ export async function runFrontendBuilderQualityPipeline(
     const motionExecution = spec?.motionExecution;
     const motionExecutionChars = renderMotionExecutionBlock(motionExecution).join('\n').length;
     const motionHeroSectionId = visualConcept?.rhythm?.peakSectionId;
+    // Phase (execution obligations) — the accountability registry (evaluated pre + post for the regression gate).
+    const executionObligations = spec?.executionObligations;
+    const obligationManifestChars = renderObligationManifestBlock(executionObligations).join('\n').length;
+    let initialObligations: ObligationFulfillmentResult | undefined;
+    let repairObligations: ObligationFulfillmentResult | undefined;
+    let obligationComparison: ObligationComparison | undefined;
     let initialBinding: BindingAcceptanceResult | undefined;
     let initialResearch: ResearchGroundingResult | undefined;
     let initialComposition: CompositionAcceptanceResult | undefined;
@@ -838,6 +853,7 @@ export async function runFrontendBuilderQualityPipeline(
       initialVisual = analyzeVisualContribution(validation?.files, visualConcept);
       initialExperienceIdentity = analyzeExperienceIdentity(validation?.files, experienceIdentity);
       initialMotion = analyzeMotionExecution(validation?.files, motionExecution, motionHeroSectionId);
+      initialObligations = analyzeObligationFulfillment(validation?.files, executionObligations);
       const detIssues = [
         ...(initialBinding ? bindingIssuesToReviewIssues(initialBinding) : []),
         ...(initialResearch ? researchGroundingToReviewIssues(initialResearch) : []),
@@ -871,7 +887,7 @@ export async function runFrontendBuilderQualityPipeline(
     // Bounded, non-sensitive binding/drift diagnostics for the acceptance artifact.
     const bindingExtra = (): Partial<FrontendBuilderAcceptanceArtifact> => {
       const hasAny = !!bindingReqs || !!(initialBinding && initialBinding.driftIssueCount) || !!(repairBinding && repairBinding.driftIssueCount)
-        || !!imageCoverage || !!coverageDiag || !!researchDirection || !!composition || !!visualSystem || !!contentNarrative || !!experienceQuality || !!visualConcept || !!experienceIdentity || !!motionExecution;
+        || !!imageCoverage || !!coverageDiag || !!researchDirection || !!composition || !!visualSystem || !!contentNarrative || !!experienceQuality || !!visualConcept || !!experienceIdentity || !!motionExecution || !!executionObligations;
       if (!hasAny) return {};
       const b = repairBinding || initialBinding;
       const c = bindingReqs?.counts;
@@ -928,6 +944,8 @@ export async function runFrontendBuilderQualityPipeline(
         ...(experienceIdentity ? { experienceIdentity: buildExperienceIdentityDiagnostics(experienceIdentity, repairExperienceIdentity || initialExperienceIdentity, experienceIdentityChars) } : {}),
         // ── Phase (motion visual execution) — bounded, secret-free diagnostics (truthful consumption). ──
         ...(motionExecution ? { motionExecution: buildMotionExecutionDiagnostics(motionExecution, repairMotion || initialMotion, motionExecutionChars) } : {}),
+        // ── Phase (execution obligations) — bounded, secret-free obligation-lifecycle diagnostics. ──
+        ...(executionObligations ? { executionObligations: buildObligationDiagnostics(executionObligations, initialObligations, repairObligations, obligationComparison, obligationManifestChars) } : {}),
       };
     };
 
@@ -1218,6 +1236,8 @@ export async function runFrontendBuilderQualityPipeline(
       repairVisual = analyzeVisualContribution(repairValidation.files, visualConcept);
       repairExperienceIdentity = analyzeExperienceIdentity(repairValidation.files, experienceIdentity);
       repairMotion = analyzeMotionExecution(repairValidation.files, motionExecution, motionHeroSectionId);
+      repairObligations = analyzeObligationFulfillment(repairValidation.files, executionObligations);
+      obligationComparison = compareObligationFulfillment(initialObligations, repairObligations);
       const detIssuesFB = [
         ...(repairBinding ? bindingIssuesToReviewIssues(repairBinding) : []),
         ...(repairResearch ? researchGroundingToReviewIssues(repairResearch) : []),
@@ -1256,7 +1276,10 @@ export async function runFrontendBuilderQualityPipeline(
       !hasBlockingExperienceFindings(repairExperience) &&
       !hasBlockingVisualFindings(repairVisual) &&
       !hasBlockingExperienceIdentityFindings(repairExperienceIdentity) &&
-      !hasBlockingMotionExecutionFindings(repairMotion);
+      !hasBlockingMotionExecutionFindings(repairMotion) &&
+      // Phase 8 — reject a repair that regressed a previously-fulfilled REQUIRED obligation (fails open
+      // when the comparison is ambiguous). Preserves already-good sections; never blocks an initial build.
+      !(obligationComparison && obligationComparison.regressionRejectsRepair);
 
     if (accept) {
       const repair = repairArtifact('accepted', `Repair accepted: score improved ${initialScore} → ${finalScore} and the post-repair review passed with no blocker/major issues and no severe quality warnings.`, {
@@ -1296,6 +1319,8 @@ export async function runFrontendBuilderQualityPipeline(
       ? `The repaired project still fails the binding experience identity (${experienceIdentityIssueCodes(repairExperienceIdentity).slice(0, 4).join(', ')} — e.g. a regulated/high-stakes experience with no visible limitation/disclaimer language); the repair was not accepted.`
       : hasBlockingMotionExecutionFindings(repairMotion)
       ? `The repaired project still fails the binding motion execution (${motionExecutionIssueCodes(repairMotion).slice(0, 4).join(', ')} — e.g. a required signature animated scene rendered as a static visual with no animation); the repair was not accepted.`
+      : (obligationComparison && obligationComparison.regressionRejectsRepair)
+      ? `The repair regressed ${obligationComparison.regressed.length} already-fulfilled required obligation(s) (${obligationComparison.regressed.slice(0, 3).map((r) => `${r.type}: ${r.before}→${r.after}`).join(', ')}); the pre-repair project is preserved instead.`
       : hasBlockingCompositionFindings(repairComposition)
       ? `The repaired project still collapses into a repeated template composition (${compositionIssueCodes(repairComposition).slice(0, 4).join(', ')} — distinct sections rendered as the same generic grid); the repair was not accepted.`
       : hasBlockingResearchFindings(repairResearch)

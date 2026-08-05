@@ -2105,6 +2105,13 @@ export interface FrontendBuildSpecification {
    *  execution blueprint and an animated-demo plan. Composes the EXISTING contracts (no new call).
    *  Additive: fresh builds only; absent ⇒ legacy. */
   motionExecution?: import('@/lib/webBuildMotionExecution').MotionExecutionContract;
+  /** Phase (execution obligations) — the accountability spine: high-value, verifiable obligations collected
+   *  from the EXISTING contracts (one owner + stable id each), rendered as a concise builder manifest and
+   *  evaluated after generation so planned intent survives DERIVED → RENDERED → IMPLEMENTED → VERIFIED →
+   *  REPAIRED. Blocking stays with the owner analyzers (no duplicate issues); this adds prevention
+   *  (manifest), lifecycle diagnostics and pre/post-repair regression protection. Fresh builds only;
+   *  absent ⇒ legacy. No new call. */
+  executionObligations?: import('@/lib/webBuildExecutionObligations').ExecutionObligationRegistry;
 
   honestyRules: string[];
   sourceTrace: string[];
@@ -2775,6 +2782,12 @@ export interface FrontendBuilderAcceptanceArtifact {
    *    contribution, acceptance status + hero-animated/fade-up/infinite counts + issue codes + real
    *    consumers; never raw source, prompts, URLs or secrets). All OPTIONAL/additive. ── */
   motionExecution?: import('@/lib/webBuildMotionExecution').MotionExecutionDiagnostics;
+
+  /* ── Phase (execution obligations) — bounded owner diagnostics of the full obligation lifecycle (totals,
+   *    rendered/evaluated counts, fulfilled/partial/ambiguous/missing/contradicted, repair improved +
+   *    regression counts, owner/section distribution, status-by-id, prompt-char contribution + real
+   *    consumers; never raw source, prompts, URLs or secrets). All OPTIONAL/additive. ── */
+  executionObligations?: import('@/lib/webBuildExecutionObligations').ObligationDiagnostics;
 
   reason: string;
 }

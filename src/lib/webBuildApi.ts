@@ -35,6 +35,7 @@ import { renderExperienceQualityBlock } from '@/lib/webBuildExperienceQuality';
 import { renderVisualConceptBlock } from '@/lib/webBuildVisualConcept';
 import { renderExperienceIdentityBlock } from '@/lib/webBuildExperienceIdentity';
 import { renderMotionExecutionBlock } from '@/lib/webBuildMotionExecution';
+import { renderObligationManifestBlock } from '@/lib/webBuildExecutionObligations';
 // PR #510 — the Experience Architecture enforcement block (a leaf; pure; returns "" when no
 // plan is attached, so the frontend_builder request is unchanged with the flag off).
 import { buildExperienceEnforcementBlock } from '@/lib/webBuildExperienceArchitecture';
@@ -2091,6 +2092,10 @@ export function buildFrontendBuilderRequest(spec: FrontendBuildSpecification): s
   // signature behavior. Leads the design blocks (below) so product/experience direction is not buried.
   // Hard-bounded (≤ RENDER_CHAR_CEILING); absent ⇒ unchanged request.
   const experienceIdentityBlock = renderExperienceIdentityBlock(spec.experienceIdentity);
+  // Phase (execution obligations) — the concise, machine-readable Obligation Manifest (by id, "will be
+  // checked after generation"). Placed near the TOP so the builder treats the high-value obligations as
+  // must-do, not optional. Hard-bounded; references the upstream authorities; absent ⇒ unchanged request.
+  const obligationManifestBlock = renderObligationManifestBlock(spec.executionObligations);
   // Phase (motion visual execution) — how to BUILD the signature animation as real, product-meaningful
   // code (technique family, medium, choreography, state linkage, responsive/reduced-motion/fallback,
   // performance budget). Sits with the visual/experience blocks as implementation guidance. Hard-bounded
@@ -2133,6 +2138,7 @@ export function buildFrontendBuilderRequest(spec: FrontendBuildSpecification): s
     '',
     ...contractLines,
     ...experienceBlock,
+    ...obligationManifestBlock,
     ...experienceIdentityBlock,
     ...visualConceptBlock,
     ...motionExecutionBlock,
