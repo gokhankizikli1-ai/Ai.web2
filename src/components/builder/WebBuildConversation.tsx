@@ -854,6 +854,18 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
         ownerRows.push(['experienceContractApplied', `spec ${String(!!eq.contractPersistedInSpecification)} · builder ${String(!!eq.contractRenderedToFrontendBuilder)} · acceptance ${String(!!eq.contractUsedByAcceptance)} · agents ${eq.agentsActuallyConsumingContract?.length ? eq.agentsActuallyConsumingContract.slice(0, 4).join('/') : 'none'}`]);
         if (eq.experienceAcceptanceStatus) ownerRows.push(['experienceAcceptanceStatus', `${eq.experienceAcceptanceStatus}${eq.experienceIssueCodes?.length ? ` · ${eq.experienceIssueCodes.slice(0, 6).join(', ')}` : ''}`]);
       }
+      // ── Phase (visual concept & art direction) — the authoritative dominant-visual-idea contract:
+      //    signature hero family + media + per-image art direction + designed motion. Consumption is
+      //    truthful (rendered into the builder request + read by acceptance). ──
+      const vc = fac.visualConcept;
+      if (vc) {
+        ownerRows.push(['visualConcept', `${vc.version} · ${vc.category} · signature ${vc.signatureFamily} (${vc.signatureMedium}${vc.signatureAnimated ? ', animated' : ''}) · media ${vc.selectedMedia.slice(0, 5).join('/')} · block ${vc.promptCharCount} chars`]);
+        ownerRows.push(['visualConceptPlan', `image-roles ${vc.imageRoleCount} · required-photos ${vc.requiredPhotoCount} · required-animated ${vc.requiredAnimatedVisualCount}`]);
+        if (vc.upstreamEvidenceUsedToDeriveContract?.length) ownerRows.push(['visualConceptDerivation', vc.upstreamEvidenceUsedToDeriveContract.slice(0, 6).join(', ')]);
+        ownerRows.push(['visualConceptFindings', `hero-located ${String(vc.heroLocated)} · rendered-images ${vc.renderedImageCount} · repeated ${vc.repeatedImageCount}`]);
+        ownerRows.push(['visualConceptApplied', `builder ${String(!!vc.contractRenderedToFrontendBuilder)} · acceptance ${String(!!vc.contractUsedByAcceptance)} · agents ${vc.agentsActuallyConsumingContract?.length ? vc.agentsActuallyConsumingContract.slice(0, 4).join('/') : 'none'}`]);
+        ownerRows.push(['visualConceptAcceptanceStatus', `${vc.acceptanceStatus}${vc.issueCodes?.length ? ` · ${vc.issueCodes.slice(0, 6).join(', ')}` : ''}`]);
+      }
     }
 
     // Phase 13D — model-native REVISION diagnostics (owner-only). Present only on an

@@ -110,6 +110,14 @@ import {
   experienceIssueCodes, buildExperienceDiagnostics, renderExperienceQualityBlock,
   type ExperienceAcceptanceResult,
 } from '@/lib/webBuildExperienceQuality';
+// Phase (visual concept & art direction) — the SAME dominant-visual-idea contract rendered into the builder
+// request is analyzed here; only the three genuinely-unowned visual defects block and ride the EXISTING
+// deterministic-issue merge → the EXISTING single repair. Non-duplicative with experience/imageCoverage.
+import {
+  analyzeVisualContribution, visualToReviewIssues, hasBlockingVisualFindings,
+  visualIssueCodes, buildVisualConceptDiagnostics, renderVisualConceptBlock,
+  type VisualAcceptanceResult,
+} from '@/lib/webBuildVisualConcept';
 // PR #521 — CONDITIONAL rendered VISION review (fresh-build only, at most one screenshot + one
 // vision call). Its major/blocker findings ride the SAME existing merge → single bounded repair.
 import {
@@ -784,12 +792,16 @@ export async function runFrontendBuilderQualityPipeline(
     // Phase (integrated experience quality) — the BINDING cross-system experience contract drives acceptance.
     const experienceQuality = spec?.experienceQuality;
     const experienceQualityChars = renderExperienceQualityBlock(experienceQuality).join('\n').length;
+    // Phase (visual concept & art direction) — the AUTHORITATIVE dominant-visual-idea contract drives acceptance.
+    const visualConcept = spec?.visualConcept;
+    const visualConceptChars = renderVisualConceptBlock(visualConcept).join('\n').length;
     let initialBinding: BindingAcceptanceResult | undefined;
     let initialResearch: ResearchGroundingResult | undefined;
     let initialComposition: CompositionAcceptanceResult | undefined;
     let initialVisualSystem: VisualSystemAcceptanceResult | undefined;
     let initialContent: ContentAcceptanceResult | undefined;
     let initialExperience: ExperienceAcceptanceResult | undefined;
+    let initialVisual: VisualAcceptanceResult | undefined;
     try {
       initialBinding = analyzeBindingAcceptance(validation?.files, bindingReqs, driftPolicy, imageCoverage);
       initialResearch = analyzeResearchGrounding(validation?.files, researchDirection);
@@ -797,6 +809,7 @@ export async function runFrontendBuilderQualityPipeline(
       initialVisualSystem = analyzeVisualSystem(validation?.files, visualSystem);
       initialContent = analyzeContentNarrative(validation?.files, contentNarrative);
       initialExperience = analyzeExperienceQuality(validation?.files, experienceQuality);
+      initialVisual = analyzeVisualContribution(validation?.files, visualConcept);
       const detIssues = [
         ...(initialBinding ? bindingIssuesToReviewIssues(initialBinding) : []),
         ...(initialResearch ? researchGroundingToReviewIssues(initialResearch) : []),
@@ -804,6 +817,7 @@ export async function runFrontendBuilderQualityPipeline(
         ...(initialVisualSystem ? visualSystemToReviewIssues(initialVisualSystem) : []),
         ...(initialContent ? contentNarrativeToReviewIssues(initialContent) : []),
         ...(initialExperience ? experienceToReviewIssues(initialExperience) : []),
+        ...(initialVisual ? visualToReviewIssues(initialVisual) : []),
       ];
       if (detIssues.length && initialReview.status === 'completed') {
         const { issues: mergedB, added: addedB } = mergeDeterministicIssues(initialReview.issues, detIssues);
@@ -821,10 +835,11 @@ export async function runFrontendBuilderQualityPipeline(
     let repairVisualSystem: VisualSystemAcceptanceResult | undefined;
     let repairContent: ContentAcceptanceResult | undefined;
     let repairExperience: ExperienceAcceptanceResult | undefined;
+    let repairVisual: VisualAcceptanceResult | undefined;
     // Bounded, non-sensitive binding/drift diagnostics for the acceptance artifact.
     const bindingExtra = (): Partial<FrontendBuilderAcceptanceArtifact> => {
       const hasAny = !!bindingReqs || !!(initialBinding && initialBinding.driftIssueCount) || !!(repairBinding && repairBinding.driftIssueCount)
-        || !!imageCoverage || !!coverageDiag || !!researchDirection || !!composition || !!visualSystem || !!contentNarrative || !!experienceQuality;
+        || !!imageCoverage || !!coverageDiag || !!researchDirection || !!composition || !!visualSystem || !!contentNarrative || !!experienceQuality || !!visualConcept;
       if (!hasAny) return {};
       const b = repairBinding || initialBinding;
       const c = bindingReqs?.counts;
@@ -875,6 +890,8 @@ export async function runFrontendBuilderQualityPipeline(
         ...(contentNarrative ? { contentNarrative: buildContentNarrativeDiagnostics(contentNarrative, repairContent || initialContent, contentNarrativeChars) } : {}),
         // ── Phase (integrated experience quality) — bounded, secret-free diagnostics (truthful consumption). ──
         ...(experienceQuality ? { experienceQuality: buildExperienceDiagnostics(experienceQuality, repairExperience || initialExperience, experienceQualityChars) } : {}),
+        // ── Phase (visual concept & art direction) — bounded, secret-free diagnostics (truthful consumption). ──
+        ...(visualConcept ? { visualConcept: buildVisualConceptDiagnostics(visualConcept, repairVisual || initialVisual, visualConceptChars) } : {}),
       };
     };
 
@@ -994,7 +1011,7 @@ export async function runFrontendBuilderQualityPipeline(
     // Phase 13C — a model "pass" can NEVER approve while severe deterministic warnings remain.
     //    Phase 12G — a blocking binding-requirement or cross-sector-drift finding can NEVER be
     //    fast-approved (the merge above already flips passed=false, but this is an explicit guard).
-    if (initialReview.passed && severeWarningGatePassed(validation) && !hasBlockingBindingFindings(initialBinding) && !hasBlockingResearchFindings(initialResearch) && !hasBlockingCompositionFindings(initialComposition) && !hasBlockingVisualSystemFindings(initialVisualSystem) && !hasBlockingContentFindings(initialContent) && !hasBlockingExperienceFindings(initialExperience)) {
+    if (initialReview.passed && severeWarningGatePassed(validation) && !hasBlockingBindingFindings(initialBinding) && !hasBlockingResearchFindings(initialResearch) && !hasBlockingCompositionFindings(initialComposition) && !hasBlockingVisualSystemFindings(initialVisualSystem) && !hasBlockingContentFindings(initialContent) && !hasBlockingExperienceFindings(initialExperience) && !hasBlockingVisualFindings(initialVisual)) {
       const acceptance = acceptanceArtifact('approved', initialProjectName, {
         initialReviewPassed: true, repairAttempted: false, repairAccepted: false, finalReviewPassed: false,
         reason: `Initial static design review passed (score ${initialReview.score ?? '?'}); no severe quality warnings. Rendered visual test pending.`,
@@ -1162,6 +1179,7 @@ export async function runFrontendBuilderQualityPipeline(
       repairVisualSystem = analyzeVisualSystem(repairValidation.files, visualSystem);
       repairContent = analyzeContentNarrative(repairValidation.files, contentNarrative);
       repairExperience = analyzeExperienceQuality(repairValidation.files, experienceQuality);
+      repairVisual = analyzeVisualContribution(repairValidation.files, visualConcept);
       const detIssuesFB = [
         ...(repairBinding ? bindingIssuesToReviewIssues(repairBinding) : []),
         ...(repairResearch ? researchGroundingToReviewIssues(repairResearch) : []),
@@ -1169,6 +1187,7 @@ export async function runFrontendBuilderQualityPipeline(
         ...(repairVisualSystem ? visualSystemToReviewIssues(repairVisualSystem) : []),
         ...(repairContent ? contentNarrativeToReviewIssues(repairContent) : []),
         ...(repairExperience ? experienceToReviewIssues(repairExperience) : []),
+        ...(repairVisual ? visualToReviewIssues(repairVisual) : []),
       ];
       if (detIssuesFB.length && finalReview.status === 'completed') {
         const { issues: mergedFB, added: addedFB } = mergeDeterministicIssues(finalReview.issues, detIssuesFB);
@@ -1194,7 +1213,8 @@ export async function runFrontendBuilderQualityPipeline(
       !hasBlockingCompositionFindings(repairComposition) &&
       !hasBlockingVisualSystemFindings(repairVisualSystem) &&
       !hasBlockingContentFindings(repairContent) &&
-      !hasBlockingExperienceFindings(repairExperience);
+      !hasBlockingExperienceFindings(repairExperience) &&
+      !hasBlockingVisualFindings(repairVisual);
 
     if (accept) {
       const repair = repairArtifact('accepted', `Repair accepted: score improved ${initialScore} → ${finalScore} and the post-repair review passed with no blocker/major issues and no severe quality warnings.`, {
@@ -1228,6 +1248,8 @@ export async function runFrontendBuilderQualityPipeline(
       ? `The repaired project still fails the binding content narrative (${contentNarrativeIssueCodes(repairContent).slice(0, 4).join(', ')} — e.g. a required section with no substantive public copy, generic/duplicated propositions across sections, leaked internal planning copy, or no actionable CTA); the repair was not accepted.`
       : hasBlockingVisualSystemFindings(repairVisualSystem)
       ? `The repaired project still fails the binding visual system (${visualSystemIssueCodes(repairVisualSystem).slice(0, 4).join(', ')} — e.g. no coherent token source, declared tokens bypassed, repeated generic card chrome, or unreadable body text); the repair was not accepted.`
+      : hasBlockingVisualFindings(repairVisual)
+      ? `The repaired project still fails the binding visual concept (${visualIssueCodes(repairVisual).slice(0, 4).join(', ')} — e.g. the signature hero visual is absent or a placeholder, or one image is reused across distinct required roles); the repair was not accepted.`
       : hasBlockingCompositionFindings(repairComposition)
       ? `The repaired project still collapses into a repeated template composition (${compositionIssueCodes(repairComposition).slice(0, 4).join(', ')} — distinct sections rendered as the same generic grid); the repair was not accepted.`
       : hasBlockingResearchFindings(repairResearch)

@@ -35,6 +35,7 @@ import { deriveCompositionContract } from '@/lib/webBuildComposition';
 import { deriveVisualSystemContract } from '@/lib/webBuildVisualSystem';
 import { deriveContentNarrativeContract } from '@/lib/webBuildContentNarrative';
 import { deriveExperienceQualityContract } from '@/lib/webBuildExperienceQuality';
+import { deriveVisualConceptContract } from '@/lib/webBuildVisualConcept';
 import type {
   FrontendBuildSpecification, FrontendSpecSection, FrontendSpecImageSlot, FrontendSpecMotionLayer,
   FrontendSpecIdentity, FrontendSpecDesignSystem, FrontendSpecArchitecture, FrontendSpecAssetPlan,
@@ -792,6 +793,28 @@ export function deriveFrontendBuildSpecification(input: FrontendBuildSpecInput):
       });
       if (experienceQuality) built.experienceQuality = experienceQuality;
     } catch { /* never block the build on experience-quality derivation */ }
+
+    // Phase (visual concept & art direction) — compose the derived contracts (composition hero anchor,
+    // visual system, image coverage, research art direction) plus the upstream art-direction artifact into
+    // ONE authoritative visual concept: the dominant visual idea, a signature hero visual chosen by product
+    // meaning, per-image art direction, a designed motion vocabulary, visual rhythm and forbidden generic
+    // patterns. Runs last so every upstream contract is available (deterministic; no model/network call;
+    // fail-open). Absent ⇒ legacy behavior.
+    try {
+      const visualConcept = deriveVisualConceptContract({
+        identity: built.identity,
+        sections: built.architecture?.sections || [],
+        composition: built.composition,
+        visualSystem: built.visualSystem,
+        imageCoverage: built.imageCoverage,
+        contentNarrative: built.contentNarrative,
+        research: built.researchDirection,
+        imageSlots: built.assets?.imageSlots,
+        artDirection: input.artDirection,
+        prompt: built.prompt,
+      });
+      if (visualConcept) built.visualConcept = visualConcept;
+    } catch { /* never block the build on visual-concept derivation */ }
 
     return built;
   } catch {

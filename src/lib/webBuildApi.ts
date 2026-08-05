@@ -32,6 +32,7 @@ import { renderCompositionBlock } from '@/lib/webBuildComposition';
 import { renderVisualSystemBlock } from '@/lib/webBuildVisualSystem';
 import { renderContentNarrativeBlock } from '@/lib/webBuildContentNarrative';
 import { renderExperienceQualityBlock } from '@/lib/webBuildExperienceQuality';
+import { renderVisualConceptBlock } from '@/lib/webBuildVisualConcept';
 // PR #510 — the Experience Architecture enforcement block (a leaf; pure; returns "" when no
 // plan is attached, so the frontend_builder request is unchanged with the flag off).
 import { buildExperienceEnforcementBlock } from '@/lib/webBuildExperienceArchitecture';
@@ -2078,6 +2079,11 @@ export function buildFrontendBuilderRequest(spec: FrontendBuildSpecification): s
   // Phase (integrated experience quality) — the BINDING cross-system experience obligations
   // (coherence + responsive + interaction + a11y + performance). Hard-bounded; absent ⇒ unchanged.
   const experienceBlock2 = renderExperienceQualityBlock(spec.experienceQuality);
+  // Phase (visual concept & art direction) — the ONE dominant visual idea: visual thesis, signature hero
+  // visual, media selection, per-image art direction, designed motion vocabulary, rhythm & forbidden
+  // generic patterns. Placed EARLY (below) so first-glance visual priority is not buried. Hard-bounded
+  // (≤ RENDER_CHAR_CEILING); absent ⇒ unchanged request.
+  const visualConceptBlock = renderVisualConceptBlock(spec.visualConcept);
 
   // Phase (image coverage) — MANDATORY semantic coverage for required/image-led sites. Names each
   // required image purpose + approved slot so the model renders a real, relevant <img> in its
@@ -2115,6 +2121,7 @@ export function buildFrontendBuilderRequest(spec: FrontendBuildSpecification): s
     '',
     ...contractLines,
     ...experienceBlock,
+    ...visualConceptBlock,
     ...researchDirectionBlock,
     ...compositionBlock,
     ...visualSystemBlock,
