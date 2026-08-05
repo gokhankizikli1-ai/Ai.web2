@@ -56,7 +56,7 @@ const MAX_ISSUES = 16;
 const MAX_ISSUE_FILES = 4;
 const MAX_EVIDENCE = 180;
 const MAX_SCAN = 24_000;
-const RENDER_CHAR_CEILING = 2600;   // documented hard ceiling for the rendered builder block
+const RENDER_CHAR_CEILING = 3200;   // documented hard ceiling for the rendered builder block (raised to fit the concrete demonstration blueprint lines)
 
 /* ── Public vocabulary ────────────────────────────────────────────────────── */
 export type ExperiencePersonality =
@@ -85,6 +85,54 @@ export type DemonstrationPattern =
 
 export interface AudienceState { before: string; after: string; }
 
+/* ── Concrete, buildable demonstration blueprint (the execution layer for a demo). ──
+ * ProductDemonstration owns the INTENT (pattern/goal/response). The blueprint turns
+ * that intent into something a builder can implement without inventing structure:
+ * the exact controls, the transformation that turns inputs into a visible output,
+ * the demo state machine, and the calculation-fidelity rules that keep a
+ * frontend-only simulation honest (clamped inputs, no divide-by-zero, no NaN/∞). */
+export type DemoControlKind = 'slider' | 'number' | 'stepper' | 'select' | 'segmented' | 'toggle' | 'text';
+export interface DemoControl {
+  key: string;            // stable semantic key ('amount', 'term', 'plan')
+  label: string;          // human label ('Loan amount')
+  kind: DemoControlKind;
+  unit?: string;          // '$', '%', 'months', 'kg CO₂'
+  min?: number;
+  max?: number;
+  step?: number;
+  options?: string[];     // for select/segmented
+  defaultValue: string;   // default value label
+  drivesOutput: boolean;  // whether it feeds the computation
+}
+export type DemoComputationKind =
+  | 'formula' | 'lookup-mapping' | 'filter-select' | 'compose-preview' | 'progress-path' | 'reveal';
+export interface DemoComputation {
+  kind: DemoComputationKind;
+  describe: string;               // the transformation, in plain language
+  fidelityRules: string[];        // clamp / divide-by-zero / rounding / NaN guards / illustrative label
+}
+export interface DemoStateNode { name: string; visible: string; }
+export interface DemoStateMachine {
+  initial: string;
+  states: DemoStateNode[];        // idle / editing / (computing) / result / (empty)
+  resetBehavior: string;
+  computeSimulated: boolean;      // a brief simulated "computing" step is appropriate (never a fake backend)
+}
+export interface DemoOutput {
+  key: string;
+  label: string;
+  derivedFrom: string[];          // control keys this output depends on
+  format: string;                 // 'currency' | 'percent' | 'number' | 'text' | 'list' | 'visual'
+}
+export interface DemonstrationBlueprint {
+  controls: DemoControl[];
+  computation: DemoComputation;
+  stateMachine: DemoStateMachine;
+  outputs: DemoOutput[];
+  emptyState: string;
+  worstCaseInputsHandled: string;
+}
+
 export interface ProductDemonstration {
   required: boolean;
   pattern: DemonstrationPattern;
@@ -101,6 +149,8 @@ export interface ProductDemonstration {
   frontendSimOk: boolean;
   labelFictionalData: boolean;
   bindingRequirementId?: string;
+  /** Concrete, buildable execution spec — present only when a demonstration is required. */
+  blueprint?: DemonstrationBlueprint;
 }
 
 export interface TrustArchitecture {
@@ -446,6 +496,175 @@ const DNA: Record<VisualCategory, ExperienceDNA> = {
   },
 };
 
+/* ────────────────────────────────────────────────────────────────────────────
+ * DEMONSTRATION BLUEPRINTS — concrete, category-true, buildable demo specs keyed by
+ * DemonstrationPattern. Each supplies real controls + a transformation + the visible
+ * outputs; the state machine and calculation-fidelity rules are composed uniformly so
+ * every frontend-only simulation stays honest (clamped inputs, no divide-by-zero,
+ * rounded outputs, no NaN/∞, illustrative labelling). Deterministic; no data invented.
+ * ──────────────────────────────────────────────────────────────────────────── */
+interface PatternDemoSpec {
+  controls: DemoControl[];
+  computation: Omit<DemoComputation, 'fidelityRules'>;
+  outputs: DemoOutput[];
+  computeSimulated: boolean;
+  emptyState: string;
+}
+
+const NUMERIC_FIDELITY = [
+  'clamp every numeric input to its min/max before computing',
+  'guard divide-by-zero and empty inputs — render the empty state, never NaN or ∞',
+  'round outputs to a sensible precision (currency 0–2 dp, percentages ≤1 dp)',
+  'label all example figures as illustrative; never present a simulated result as live data',
+];
+const SELECTION_FIDELITY = [
+  'handle the empty/none selection explicitly with a clear empty state',
+  'never fabricate live/backend results — all responses are computed client-side from the inputs',
+  'label any example data as illustrative',
+];
+
+const DEMO_SPECS: Partial<Record<DemonstrationPattern, PatternDemoSpec>> = {
+  'input-to-output-transformation': {
+    controls: [
+      { key: 'input', label: 'Your input', kind: 'text', defaultValue: 'a short sample the visitor edits', drivesOutput: true },
+      { key: 'mode', label: 'Transformation mode', kind: 'segmented', options: ['summarize', 'rewrite', 'extract'], defaultValue: 'summarize', drivesOutput: true },
+    ],
+    computation: { kind: 'compose-preview', describe: 'the raw input is transformed into a structured result according to the selected mode, recomputed on every change' },
+    outputs: [{ key: 'result', label: 'Structured result', derivedFrom: ['input', 'mode'], format: 'text' }],
+    computeSimulated: true, emptyState: 'before any input, show a labelled example transformation so the value is obvious',
+  },
+  'scenario-calculator': {
+    controls: [
+      { key: 'amount', label: 'Amount', kind: 'slider', unit: '$', min: 1000, max: 100000, step: 500, defaultValue: '$25,000', drivesOutput: true },
+      { key: 'term', label: 'Term', kind: 'slider', unit: 'months', min: 6, max: 84, step: 6, defaultValue: '36 months', drivesOutput: true },
+      { key: 'rate', label: 'Rate', kind: 'number', unit: '%', min: 0, max: 40, step: 0.1, defaultValue: '7.5%', drivesOutput: true },
+    ],
+    computation: { kind: 'formula', describe: 'a monthly figure and a total are computed from amount, term and rate on every control change (a real, correct formula — not a random number)' },
+    outputs: [
+      { key: 'monthly', label: 'Monthly', derivedFrom: ['amount', 'term', 'rate'], format: 'currency' },
+      { key: 'total', label: 'Total', derivedFrom: ['amount', 'term', 'rate'], format: 'currency' },
+    ],
+    computeSimulated: false, emptyState: 'always shows a computed figure for the default inputs',
+  },
+  'impact-forecast': {
+    controls: [
+      { key: 'scale', label: 'Scale of adoption', kind: 'slider', unit: 'units', min: 1, max: 10000, step: 10, defaultValue: '500 units', drivesOutput: true },
+      { key: 'horizon', label: 'Time horizon', kind: 'segmented', options: ['1 yr', '5 yr', '10 yr'], defaultValue: '5 yr', drivesOutput: true },
+    ],
+    computation: { kind: 'formula', describe: 'a measurable, honest impact figure is projected from scale × horizon using a stated factor, recomputed live' },
+    outputs: [{ key: 'impact', label: 'Projected impact', derivedFrom: ['scale', 'horizon'], format: 'number' }],
+    computeSimulated: false, emptyState: 'shows the projection for the default scenario',
+  },
+  'code-to-result-flow': {
+    controls: [
+      { key: 'snippet', label: 'Example call', kind: 'select', options: ['basic request', 'with options', 'streaming'], defaultValue: 'basic request', drivesOutput: true },
+      { key: 'run', label: 'Run', kind: 'toggle', defaultValue: 'idle', drivesOutput: true },
+    ],
+    computation: { kind: 'reveal', describe: 'selecting a snippet shows the exact code; running it reveals the corresponding real, pre-defined result output (no live backend)' },
+    outputs: [{ key: 'output', label: 'Result', derivedFrom: ['snippet', 'run'], format: 'text' }],
+    computeSimulated: true, emptyState: 'shows the first snippet and its result by default',
+  },
+  'threat-flow-visualization': {
+    controls: [
+      { key: 'stage', label: 'Defense stage', kind: 'segmented', options: ['detect', 'contain', 'resolve'], defaultValue: 'detect', drivesOutput: true },
+      { key: 'defense', label: 'Protection', kind: 'toggle', defaultValue: 'on', drivesOutput: true },
+    ],
+    computation: { kind: 'lookup-mapping', describe: 'the selected stage and protection toggle map to a legible before/after of the guarded system (a state change, not decoration)' },
+    outputs: [{ key: 'state', label: 'System state', derivedFrom: ['stage', 'defense'], format: 'visual' }],
+    computeSimulated: false, emptyState: 'shows the detect stage with protection on',
+  },
+  'workflow-graph': {
+    controls: [
+      { key: 'step', label: 'Workflow step', kind: 'stepper', min: 1, max: 5, step: 1, defaultValue: 'step 1', drivesOutput: true },
+      { key: 'role', label: 'Team / role', kind: 'select', options: ['operations', 'finance', 'support'], defaultValue: 'operations', drivesOutput: true },
+    ],
+    computation: { kind: 'progress-path', describe: 'advancing the step highlights that node in the workflow and updates the panel to show what happens for the selected role' },
+    outputs: [{ key: 'nodeDetail', label: 'Step detail', derivedFrom: ['step', 'role'], format: 'text' }],
+    computeSimulated: false, emptyState: 'starts on step 1 for the default role',
+  },
+  'in-app-flow': {
+    controls: [
+      { key: 'screen', label: 'Screen', kind: 'stepper', min: 1, max: 4, step: 1, defaultValue: 'screen 1', drivesOutput: true },
+      { key: 'action', label: 'Tap action', kind: 'toggle', defaultValue: 'idle', drivesOutput: true },
+    ],
+    computation: { kind: 'progress-path', describe: 'tapping advances the in-hand app through real screens; each screen reflects the prior action (a genuine flow, not a static carousel)' },
+    outputs: [{ key: 'screenState', label: 'Current screen', derivedFrom: ['screen', 'action'], format: 'visual' }],
+    computeSimulated: true, emptyState: 'opens on the first screen',
+  },
+  'guided-learning-path': {
+    controls: [
+      { key: 'level', label: 'Starting level', kind: 'segmented', options: ['beginner', 'intermediate', 'advanced'], defaultValue: 'beginner', drivesOutput: true },
+      { key: 'goal', label: 'Goal', kind: 'select', options: ['fundamentals', 'career switch', 'mastery'], defaultValue: 'fundamentals', drivesOutput: true },
+    ],
+    computation: { kind: 'filter-select', describe: 'level and goal select a concrete, ordered learning path with visible milestones (the path recomputes on change)' },
+    outputs: [{ key: 'path', label: 'Your path', derivedFrom: ['level', 'goal'], format: 'list' }],
+    computeSimulated: false, emptyState: 'shows the beginner→fundamentals path by default',
+  },
+  'quote-flow': {
+    controls: [
+      { key: 'service', label: 'Service', kind: 'select', options: ['repair', 'installation', 'maintenance'], defaultValue: 'repair', drivesOutput: true },
+      { key: 'size', label: 'Job size', kind: 'segmented', options: ['small', 'medium', 'large'], defaultValue: 'medium', drivesOutput: true },
+    ],
+    computation: { kind: 'lookup-mapping', describe: 'service × size map to an indicative price range and next step, updated live (clearly labelled as an estimate, not a binding quote)' },
+    outputs: [{ key: 'estimate', label: 'Estimated range', derivedFrom: ['service', 'size'], format: 'currency' }],
+    computeSimulated: false, emptyState: 'shows an estimate for the default service and size',
+  },
+  'guided-overview': {
+    controls: [
+      { key: 'need', label: 'What you need', kind: 'segmented', options: ['explore', 'compare', 'decide'], defaultValue: 'explore', drivesOutput: true },
+    ],
+    computation: { kind: 'filter-select', describe: 'the selected intent updates the highlighted content so the visitor sees the part most relevant to them' },
+    outputs: [{ key: 'view', label: 'Relevant view', derivedFrom: ['need'], format: 'text' }],
+    computeSimulated: false, emptyState: 'defaults to the explore view',
+  },
+};
+
+/** Build the concrete demonstration blueprint for a pattern, folding in the real binding
+ *  control labels when they exist (reuses the binding contract; never invents a second one). */
+function buildDemonstrationBlueprint(
+  pattern: DemonstrationPattern,
+  bindControls: Array<{ label?: string }>,
+): DemonstrationBlueprint | undefined {
+  const spec = DEMO_SPECS[pattern] || DEMO_SPECS['guided-overview'];
+  if (!spec) return undefined;
+  // Prefer the real requested control labels for the first controls (bounded), keeping the spec's
+  // kind/bounds so the demo stays buildable.
+  const controls: DemoControl[] = spec.controls.slice(0, 3).map((c, i) => {
+    const reqLabel = clip(bindControls[i]?.label, 40);
+    return reqLabel
+      ? { ...c, label: reqLabel, key: reqLabel.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 24) || c.key }
+      : { ...c };
+  });
+  const numeric = controls.some((c) => c.kind === 'slider' || c.kind === 'number' || c.kind === 'stepper');
+  const computation: DemoComputation = {
+    kind: spec.computation.kind,
+    describe: clip(spec.computation.describe, MAX_TEXT),
+    fidelityRules: (numeric ? NUMERIC_FIDELITY : SELECTION_FIDELITY).slice(0, 4),
+  };
+  const stateNodes: DemoStateNode[] = [
+    { name: 'idle', visible: 'controls at their defaults with a computed default result already visible' },
+    { name: 'editing', visible: 'the changed control reflects its value immediately; the result recomputes live' },
+    ...(spec.computeSimulated ? [{ name: 'computing', visible: 'a brief, honest in-progress indicator (no fake backend latency claims)' }] : []),
+    { name: 'result', visible: 'the derived output is shown clearly and tied to the current inputs' },
+  ];
+  const stateMachine: DemoStateMachine = {
+    initial: 'idle',
+    states: stateNodes,
+    resetBehavior: 'a reset returns every control to its default and recomputes the default result',
+    computeSimulated: spec.computeSimulated,
+  };
+  return {
+    controls,
+    computation,
+    stateMachine,
+    outputs: spec.outputs.slice(0, 3).map((o) => ({ ...o })),
+    emptyState: clip(spec.emptyState, MAX_TEXT),
+    worstCaseInputsHandled: numeric
+      ? 'zero, minimum, maximum and rapid changes all produce a valid, rounded, non-empty result'
+      : 'the none/empty selection and rapid switching both resolve to a valid, clearly-labelled state',
+  };
+}
+
 const UNIVERSAL_STORY_EXCLUSIONS = [
   'trust shown only as invented metrics or fake partner logos',
   'every section using the same icon-feature-card block',
@@ -512,6 +731,9 @@ export function deriveExperienceIdentityContract(input: ExperienceIdentityInput)
       frontendSimOk: true,
       labelFictionalData: labelFictional,
       bindingRequirementId: bindReq?.id,
+      blueprint: demonstrationRequired
+        ? buildDemonstrationBlueprint(dna.demonstration, Array.isArray(bindReq?.controls) ? bindReq!.controls : [])
+        : undefined,
     };
 
     // ── Narrative architecture (semantic-primary, stakes/demo-refined, hash-tiebroken). ──
@@ -646,6 +868,15 @@ export function renderExperienceIdentityBlock(contract: ExperienceIdentityContra
     out.push(`  · goal: ${clip(d.goal, 110)}; input: ${clip(d.userInput, 60)} → response: ${clip(d.visibleResponse, 70)}`);
     out.push(`  · feedback: ${clip(d.feedback, 70)}; success: ${clip(d.successOutcome, 80)}; fallback: ${clip(d.fallback, 90)}`);
     out.push(`  · mobile: ${clip(d.mobile, 60)}; a11y: ${clip(d.accessibility, 70)}${d.labelFictionalData ? '; label any example data as illustrative' : ''}`);
+    const bp = d.blueprint;
+    if (bp) {
+      const ctl = bp.controls.map((c) => `${clip(c.label, 22)} (${c.kind}${c.unit ? ` ${c.unit}` : ''}${c.min != null && c.max != null ? ` ${c.min}–${c.max}` : (c.options && c.options.length ? ` [${c.options.slice(0, 3).join('/')}]` : '')})`).join(', ');
+      out.push(`  · BUILD THIS — controls: ${clip(ctl, 170)}`);
+      out.push(`  · computation (${bp.computation.kind}): ${clip(bp.computation.describe, 130)}`);
+      out.push(`  · outputs (recompute from the controls): ${bp.outputs.map((o) => `${clip(o.label, 22)} · ${o.format}`).join('; ')}`);
+      out.push(`  · states: ${bp.stateMachine.states.map((s) => s.name).join(' → ')}; ${clip(bp.stateMachine.resetBehavior, 56)}; empty: ${clip(bp.emptyState, 56)}`);
+      out.push(`  · calculation fidelity (mandatory): ${bp.computation.fidelityRules.slice(0, 3).map((r) => clip(r, 62)).join('; ')}`);
+    }
   } else {
     out.push('- Product demonstration: not forced — this experience leads with visuals/editorial; do not bolt on a synthetic widget.');
   }
@@ -809,6 +1040,9 @@ export interface ExperienceIdentityDiagnostics {
   trustStakes: TrustStakes;
   demonstrationPattern: DemonstrationPattern;
   demonstrationRequired: boolean;
+  demonstrationControlCount: number;
+  demonstrationOutputCount: number;
+  demonstrationComputationKind: DemoComputationKind | 'none';
   disclaimersRequiredCount: number;
   microMotifCount: number;
   promptCharCount: number;
@@ -839,6 +1073,9 @@ export function buildExperienceIdentityDiagnostics(
     trustStakes: contract.trust.stakes,
     demonstrationPattern: contract.demonstration.pattern,
     demonstrationRequired: contract.demonstration.required,
+    demonstrationControlCount: contract.demonstration.blueprint?.controls.length ?? 0,
+    demonstrationOutputCount: contract.demonstration.blueprint?.outputs.length ?? 0,
+    demonstrationComputationKind: contract.demonstration.blueprint?.computation.kind ?? 'none',
     disclaimersRequiredCount: contract.trust.disclaimersRequired.length,
     microMotifCount: contract.microMotifs.length,
     promptCharCount: Math.max(0, Math.round(promptCharCount)),
