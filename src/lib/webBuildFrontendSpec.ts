@@ -36,6 +36,7 @@ import { deriveVisualSystemContract } from '@/lib/webBuildVisualSystem';
 import { deriveContentNarrativeContract } from '@/lib/webBuildContentNarrative';
 import { deriveExperienceQualityContract } from '@/lib/webBuildExperienceQuality';
 import { deriveVisualConceptContract } from '@/lib/webBuildVisualConcept';
+import { deriveExperienceIdentityContract } from '@/lib/webBuildExperienceIdentity';
 import type {
   FrontendBuildSpecification, FrontendSpecSection, FrontendSpecImageSlot, FrontendSpecMotionLayer,
   FrontendSpecIdentity, FrontendSpecDesignSystem, FrontendSpecArchitecture, FrontendSpecAssetPlan,
@@ -815,6 +816,29 @@ export function deriveFrontendBuildSpecification(input: FrontendBuildSpecInput):
       });
       if (visualConcept) built.visualConcept = visualConcept;
     } catch { /* never block the build on visual-concept derivation */ }
+
+    // Phase (experience identity & product storytelling) — compose EVERY derived contract (composition,
+    // content narrative, research, binding, image coverage, visual concept) plus identity/business-model
+    // into ONE product-specific experience identity: experience thesis, audience transformation, narrative
+    // architecture, product-demonstration intent, a category-true trust model (incl. a high-stakes
+    // disclaimer floor), signature behavior and emotional/functional progression. Runs last so every
+    // upstream contract is available (deterministic; no model/network call; fail-open). Absent ⇒ legacy.
+    try {
+      const experienceIdentity = deriveExperienceIdentityContract({
+        identity: built.identity,
+        sections: built.architecture?.sections,
+        demoSurfaces: built.architecture?.demoSurfaces,
+        statefulDemoComponents: built.architecture?.statefulDemoComponents,
+        composition: built.composition,
+        contentNarrative: built.contentNarrative,
+        research: built.researchDirection,
+        binding: built.bindingRequirements,
+        imageCoverage: built.imageCoverage,
+        visualConcept: built.visualConcept,
+        prompt: built.prompt,
+      });
+      if (experienceIdentity) built.experienceIdentity = experienceIdentity;
+    } catch { /* never block the build on experience-identity derivation */ }
 
     return built;
   } catch {

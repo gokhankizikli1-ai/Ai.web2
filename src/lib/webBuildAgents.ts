@@ -2092,6 +2092,12 @@ export interface FrontendBuildSpecification {
    *  EXISTING contracts (composition hero anchor, visualSystem, imageCoverage, research art direction) into
    *  premium first-glance direction. Additive: fresh builds only; absent ⇒ legacy. No new model/network call. */
   visualConcept?: import('@/lib/webBuildVisualConcept').VisualConceptContract;
+  /** Phase (experience identity & product storytelling) — the AUTHORITATIVE product-specific experience:
+   *  experience thesis, product essence, audience transformation, personality, narrative architecture,
+   *  product-demonstration intent, category-true trust model (incl. a high-stakes disclaimer floor),
+   *  signature behavior, emotional + functional progression and story-level exclusions. Composes the
+   *  EXISTING contracts (no new call). Additive: fresh builds only; absent ⇒ legacy. */
+  experienceIdentity?: import('@/lib/webBuildExperienceIdentity').ExperienceIdentityContract;
 
   honestyRules: string[];
   sourceTrace: string[];
@@ -2750,6 +2756,12 @@ export interface FrontendBuilderAcceptanceArtifact {
    *    acceptance status, issue codes, prompt-char contribution + real consumers; never raw source, prompts,
    *    URLs or secrets). All OPTIONAL/additive. ── */
   visualConcept?: import('@/lib/webBuildVisualConcept').VisualConceptDiagnostics;
+
+  /* ── Phase (experience identity & product storytelling) — bounded owner diagnostics (category, business
+   *    model, personality, narrative architecture, trust stakes, demonstration pattern/required, disclaimer
+   *    count, prompt-char contribution, acceptance status + issue codes + real consumers; never raw source,
+   *    prompts, URLs or secrets). All OPTIONAL/additive. ── */
+  experienceIdentity?: import('@/lib/webBuildExperienceIdentity').ExperienceIdentityDiagnostics;
 
   reason: string;
 }
