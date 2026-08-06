@@ -13,6 +13,8 @@ import { useApp } from '@/contexts/AppContext';
 import type { AppSettings } from '@/contexts/AppContext';
 import { useLanguageStore, LANGUAGES } from '@/stores/languageStore';
 import type { LangMode } from '@/stores/languageStore';
+import { useAuthStore } from '@/stores/authStore';
+import { updateDisplayName } from '@/lib/accountApi';
 
 interface SettingsModalProps {
   open: boolean;
@@ -138,6 +140,53 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
     });
   }, []);
 
+  // ─── Display name (account setting; independent of the app-settings draft) ───
+  const authUser = useAuthStore((s) => s.user);
+  const refreshUser = useAuthStore((s) => s.refreshUser);
+  const currentName = authUser?.name || '';
+  const [nameDraft, setNameDraft] = useState(currentName);
+  const [nameSaving, setNameSaving] = useState(false);
+  const [nameStatus, setNameStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [nameError, setNameError] = useState('');
+  const nameTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const NAME_MAX = 80;
+
+  // Re-seed the field from the authoritative name whenever the modal opens or the
+  // account name changes elsewhere — never clobbering an in-progress edit.
+  useEffect(() => {
+    if (open) { setNameDraft(currentName); setNameStatus('idle'); setNameError(''); }
+  }, [open, currentName]);
+  useEffect(() => () => { if (nameTimerRef.current) clearTimeout(nameTimerRef.current); }, []);
+
+  const nameTrimmed = nameDraft.trim();
+  const nameUnchanged = nameTrimmed === currentName.trim();
+  const nameInvalid = nameTrimmed.length < 1 || nameTrimmed.length > NAME_MAX;
+
+  const handleSaveName = useCallback(async () => {
+    if (nameSaving || nameUnchanged || nameInvalid) return;
+    setNameSaving(true);
+    setNameStatus('idle');
+    setNameError('');
+    try {
+      const res = await updateDisplayName(nameTrimmed);
+      if (res.ok) {
+        // Reconcile the authoritative session (updates every render site + persists).
+        try { await refreshUser(); } catch { /* non-fatal */ }
+        setNameStatus('success');
+        if (nameTimerRef.current) clearTimeout(nameTimerRef.current);
+        nameTimerRef.current = setTimeout(() => setNameStatus('idle'), 2000);
+      } else {
+        setNameStatus('error');
+        setNameError(res.message);
+      }
+    } catch {
+      setNameStatus('error');
+      setNameError('Could not update your name.');
+    } finally {
+      setNameSaving(false);
+    }
+  }, [nameSaving, nameUnchanged, nameInvalid, nameTrimmed, refreshUser]);
+
   // ═══════════════════════════════════════════
   //  PREMIUM UI COMPONENTS
   // ═══════════════════════════════════════════
@@ -197,6 +246,43 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
   const currentLangOption = LANG_OPTIONS.find((o) => o.mode === langMode) || LANG_OPTIONS[0];
 
   const renderGeneral = () => (
+    <>
+    {authUser && (
+      <SectionCard title={t('stAccount')} subtitle={t('stAccountSub')}>
+        <SettingRow label={t('stDisplayName')} description={t('stDisplayNameDesc')}>
+          <div className="flex flex-col items-end gap-1.5 w-full max-w-[280px]">
+            <div className="flex items-center gap-2 w-full">
+              <input
+                type="text"
+                value={nameDraft}
+                maxLength={NAME_MAX}
+                onChange={(e) => { setNameDraft(e.target.value); setNameStatus('idle'); setNameError(''); }}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void handleSaveName(); } }}
+                aria-label={t('stDisplayName')}
+                aria-describedby="korvix-display-name-desc"
+                placeholder={currentName || 'Your name'}
+                className="flex-1 min-w-0 rounded-lg px-3 py-2 text-[12px] text-white/90 outline-none transition-all"
+                style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}
+              />
+              <Button
+                onClick={() => void handleSaveName()}
+                disabled={nameSaving || nameUnchanged || nameInvalid}
+                className="shrink-0 h-8 px-3 text-[12px]"
+              >
+                {nameSaving ? t('saving') : t('save')}
+              </Button>
+            </div>
+            <span id="korvix-display-name-desc" className="sr-only">{t('stDisplayNameDesc')}</span>
+            {nameStatus === 'success' && (
+              <span className="text-[11px] text-emerald-400 flex items-center gap-1"><Check className="w-3 h-3" /> {t('stDisplayNameSaved')}</span>
+            )}
+            {nameStatus === 'error' && (
+              <span className="text-[11px] text-rose-400">{nameError || t('stDisplayNameError')}</span>
+            )}
+          </div>
+        </SettingRow>
+      </SectionCard>
+    )}
     <SectionCard title={t('stLanguageRegion')} subtitle={t('stLanguageRegionSub')}>
       <SettingRow label={t('language')} description={t('stLanguageDesc')}>
         <div className="relative">
@@ -245,6 +331,7 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
         </select>
       </SettingRow>
     </SectionCard>
+    </>
   );
 
   const renderAppearance = () => (
