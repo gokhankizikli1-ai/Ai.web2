@@ -34,7 +34,8 @@ from typing import Dict, Optional
 from backend.services.build_routing.types import (
     BuildRoutingDecision,
     PROVIDER_OPENAI, PROVIDER_ANTHROPIC,
-    MODE_DISABLED, MODE_SHADOW, MODE_OWNER_ONLY, VALID_MODES,
+    MODE_DISABLED, MODE_SHADOW, MODE_OWNER_ONLY, MODE_ALL_USERS,
+    VALID_MODES, REAL_EXECUTION_MODES,
     TASK_WEB_PLANNING, TASK_WEB_CODEGEN, TASK_WEB_CONTRACT_REPAIR,
     TASK_WEB_QUALITY_REPAIR, TASK_WEB_STATIC_REVIEW,
     TASK_APP_PLANNING, TASK_APP_CODEGEN, TASK_APP_REVIEW,
@@ -68,6 +69,29 @@ def routing_mode() -> str:
     except Exception:  # pragma: no cover — env access must never break a build
         return MODE_DISABLED
     return raw if raw in VALID_MODES else MODE_DISABLED
+
+
+def claude_planning_eligible(mode: str, owner_eligible: bool) -> str:
+    """Decide whether Web Build website planning should really execute on Claude for THIS request,
+    and via which eligibility path. Pure, total, never raises.
+
+    Returns one of:
+      * 'owner'     — owner_only mode AND a backend-verified owner session (unchanged legacy behavior).
+      * 'all_users' — all_users mode: every authenticated ENTITLED user (parity with the owner).
+      * 'none'      — disabled / shadow / (owner_only + non-owner): keep the existing OpenAI planner.
+
+    Entitlement is enforced UPSTREAM (ai_guard preflight) before planning is ever reached, so any
+    request arriving here in all_users mode is already an allowed, credited build operation — this
+    function only chooses the provider, never a billing/quota/rate-limit decision.
+    """
+    try:
+        if mode == MODE_ALL_USERS:
+            return "all_users"
+        if mode == MODE_OWNER_ONLY and bool(owner_eligible):
+            return "owner"
+    except Exception:  # pragma: no cover — eligibility must never break a build
+        return "none"
+    return "none"
 
 
 def _configured_claude_model() -> str:
@@ -320,12 +344,12 @@ def describe_readiness() -> dict:
     for tk in sorted(VALID_TASK_KINDS):
         d = decide(tk, executed_model="(current-openai-model)", routing_mode=mode)
         executable = tk in OWNER_ONLY_EXECUTABLE_TASK_KINDS
-        # Real Anthropic execution happens ONLY in owner_only mode, ONLY for an
-        # executable task kind, and ONLY for a verified owner (runtime gate).
+        # Real Anthropic execution happens ONLY in a real-execution mode, ONLY for an
+        # executable task kind. owner_only → verified owner; all_users → every entitled user.
         if mode == MODE_OWNER_ONLY and executable:
             real_execution = "anthropic_for_owner_else_openai"
-        elif d.selected_provider == PROVIDER_ANTHROPIC:
-            real_execution = "openai_only"        # would-prefer-Claude but not executed
+        elif mode == MODE_ALL_USERS and executable:
+            real_execution = "anthropic_for_all_entitled_users"
         else:
             real_execution = "openai_only"
         targets[tk] = {
@@ -341,10 +365,10 @@ def describe_readiness() -> dict:
         "routing_mode": mode,
         # Safety-relevant invariants, surfaced so an operator can confirm state:
         "owner_only_available": True,
-        # Real Anthropic execution is possible ONLY in owner_only mode (and then
-        # only for a verified owner on an executable task). False in
-        # disabled/shadow — those never call Anthropic.
-        "executes_anthropic": mode == MODE_OWNER_ONLY,
+        # Real Anthropic execution is possible in a real-execution mode
+        # (owner_only → verified owner; all_users → every entitled user) on an
+        # executable task. False in disabled/shadow — those never call Anthropic.
+        "executes_anthropic": mode in REAL_EXECUTION_MODES,
         "active_mode_available": False,   # no global cutover mode exists
         "real_anthropic_task_kinds": sorted(OWNER_ONLY_EXECUTABLE_TASK_KINDS),
         "anthropic_provider_configured": _anthropic_provider_configured(),
@@ -356,7 +380,7 @@ def describe_readiness() -> dict:
 
 
 __all__ = [
-    "routing_mode", "decide",
+    "routing_mode", "decide", "claude_planning_eligible",
     "web_task_from_frontend_kind", "app_task_from_markers",
     "note_web_build_frontend_task", "note_web_build_planning", "note_app_build_agent_run",
     "record_execution", "describe_readiness",

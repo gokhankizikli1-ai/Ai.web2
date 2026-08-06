@@ -327,6 +327,20 @@ def _update_password_hash(user_id: str, new_hash: str) -> None:
         )
 
 
+def update_display_name(user_id: str, display_name: str) -> bool:
+    """Persist a new display name for an email/password user. Returns True when a
+    row was updated (the user exists in this store), False otherwise. The caller
+    is responsible for validating/normalizing `display_name` first. Only the
+    display_name column is written — never email, hash or any identity field."""
+    init()
+    with _conn() as c:
+        cur = c.execute(
+            "UPDATE auth_password_users SET display_name = ? WHERE id = ?",
+            (display_name, user_id),
+        )
+        return bool(getattr(cur, "rowcount", 0))
+
+
 def verify_credentials(email: str, password: str) -> Optional[dict]:
     """Return the public user dict on a correct email+password, else None.
 

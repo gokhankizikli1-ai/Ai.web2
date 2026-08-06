@@ -34,15 +34,21 @@ PROVIDER_ANTHROPIC = "anthropic"
 # ── Routing modes ─────────────────────────────────────────────────────────────
 # disabled: exact current behavior — OpenAI stays selected, nothing computed or
 #           logged. shadow: compute + log the decision only; execution unchanged;
-#           zero Anthropic calls. owner_only: the ONLY mode that may execute real
-#           Anthropic traffic, and ONLY for `web_build.planning` when the request
-#           is a backend-verified owner — every other user, task and mode stays on
-#           the existing OpenAI path. There is intentionally NO global
-#           active/cutover mode.
+#           zero Anthropic calls. owner_only: may execute real Anthropic traffic
+#           for `web_build.planning` ONLY when the request is a backend-verified
+#           owner — every other user stays on OpenAI. all_users: the SAME
+#           `web_build.planning` Claude execution, extended to EVERY authenticated
+#           entitled user (parity — a normal user gets the same planner as the
+#           owner). Both real-execution modes are scoped to planning only and keep
+#           the single-call + OpenAI fallback; codegen/repairs/review stay on
+#           OpenAI. There is intentionally NO global active/cutover mode.
 MODE_DISABLED = "disabled"
 MODE_SHADOW = "shadow"
 MODE_OWNER_ONLY = "owner_only"
-VALID_MODES = frozenset({MODE_DISABLED, MODE_SHADOW, MODE_OWNER_ONLY})
+MODE_ALL_USERS = "all_users"
+VALID_MODES = frozenset({MODE_DISABLED, MODE_SHADOW, MODE_OWNER_ONLY, MODE_ALL_USERS})
+# The routing modes under which the planner may really execute Anthropic/Claude.
+REAL_EXECUTION_MODES = frozenset({MODE_OWNER_ONLY, MODE_ALL_USERS})
 
 
 # ── Task kinds ────────────────────────────────────────────────────────────────
@@ -121,7 +127,8 @@ class BuildRoutingDecision:
 
 __all__ = [
     "PROVIDER_OPENAI", "PROVIDER_ANTHROPIC",
-    "MODE_DISABLED", "MODE_SHADOW", "MODE_OWNER_ONLY", "VALID_MODES",
+    "MODE_DISABLED", "MODE_SHADOW", "MODE_OWNER_ONLY", "MODE_ALL_USERS",
+    "VALID_MODES", "REAL_EXECUTION_MODES",
     "TASK_WEB_PLANNING", "TASK_WEB_CODEGEN", "TASK_WEB_CONTRACT_REPAIR",
     "TASK_WEB_QUALITY_REPAIR", "TASK_WEB_STATIC_REVIEW",
     "TASK_APP_PLANNING", "TASK_APP_CODEGEN", "TASK_APP_REPAIR", "TASK_APP_REVIEW",

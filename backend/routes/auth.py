@@ -50,6 +50,13 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class UpdateDisplayNameRequest(BaseModel):
+    # Only the display name is accepted — never email/role/plan/id (no mass
+    # assignment). A generous inbound bound; the real normalization/limit is
+    # applied server-side by normalize_display_name.
+    display_name: str = ""
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────
 
 def _err(status_code: int, code: str, message: str) -> HTTPException:
@@ -315,6 +322,71 @@ async def login(body: LoginRequest):
 @router.get("/me")
 async def me(user: Dict[str, Any] = Depends(get_current_user)):
     return {"user": _annotate_verification(user)}
+
+
+def _read_user_by_id(uid: str) -> Optional[Dict[str, Any]]:
+    """Re-resolve a user dict by id across BOTH stores (mirrors get_current_user's
+    resolution order) so the update route can return the freshly-saved record."""
+    from backend.services.auth import passwords
+    u = passwords.get_by_id(uid)
+    if u is not None:
+        return _annotate_owner(u)
+    try:
+        from backend.services.auth.storage import get_user_by_id
+        iu = get_user_by_id(uid)
+        if iu is not None:
+            return _annotate_owner(_identity_user_dict(iu))
+    except Exception as exc:  # pragma: no cover
+        logger.warning("auth._read_user_by_id: identity lookup failed: %s", exc)
+    return None
+
+
+@router.patch("/me")
+async def update_me(
+    body: UpdateDisplayNameRequest,
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Update the authenticated user's editable display name.
+
+    Security: the target user id comes ONLY from the verified Bearer token
+    (`get_current_user`), never from the request body — a caller can only edit
+    themselves. The body carries the display name and nothing else (no mass
+    assignment of email/role/plan/id). The value is normalized + bounds-checked
+    server-side. Returns the refreshed public user dict so the client can update
+    its cache without a logout."""
+    from backend.services.auth.display_name import normalize_display_name
+    ok, result = normalize_display_name(body.display_name)
+    if not ok:
+        msg = {
+            "empty": "Display name cannot be empty.",
+            "too_long": "Display name is too long.",
+            "invalid": "Display name is invalid.",
+        }.get(result, "Display name is invalid.")
+        raise _err(422, "invalid_display_name", msg)
+
+    uid = str(user.get("id", ""))
+    if not uid:
+        raise _err(401, "invalid_token", "Account no longer exists.")
+
+    from backend.services.auth import passwords
+    updated = False
+    try:
+        if passwords.get_by_id(uid) is not None:
+            updated = passwords.update_display_name(uid, result)
+        else:
+            from backend.services.auth.storage import update_display_name as _identity_update
+            updated = _identity_update(uid, result)
+    except Exception as exc:
+        logger.warning("auth.update_me: display-name update failed: %s", exc)
+        raise _err(500, "update_failed", "Could not update the display name.")
+    if not updated:
+        raise _err(404, "user_not_found", "Account no longer exists.")
+
+    fresh = _read_user_by_id(uid)
+    if fresh is None:
+        raise _err(404, "user_not_found", "Account no longer exists.")
+    logger.info("auth.update_me ok | user=%s", uid)
+    return {"user": _annotate_verification(fresh)}
 
 
 @router.post("/logout")

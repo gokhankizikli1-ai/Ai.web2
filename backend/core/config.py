@@ -46,13 +46,19 @@ class Config:
     #                        nothing is computed or logged; ZERO Anthropic calls.
     #   shadow             — compute + log the decision only; execution stays
     #                        on OpenAI; ZERO Anthropic calls.
-    #   owner_only         — the ONLY mode that may execute real Anthropic
-    #                        traffic, and ONLY for `web_build.planning` when the
-    #                        request is a BACKEND-VERIFIED owner. Non-owners and
-    #                        every other task/mode stay on the existing OpenAI
-    #                        path; an Anthropic failure falls back once to the
-    #                        OpenAI website-planning transport. There is NO global
-    #                        active/cutover mode.
+    #   owner_only         — may execute real Anthropic traffic for
+    #                        `web_build.planning` ONLY when the request is a
+    #                        BACKEND-VERIFIED owner. Non-owners stay on OpenAI.
+    #   all_users          — the SAME `web_build.planning` Claude execution,
+    #                        extended to EVERY authenticated ENTITLED user
+    #                        (parity: a normal user gets the same planner as the
+    #                        owner). Entitlement/credits/rate-limits are enforced
+    #                        upstream by ai_guard before planning is reached, so
+    #                        this changes only the provider, never a billing gate.
+    #   Both real-execution modes are scoped to planning only, keep the single
+    #   call + one OpenAI fallback on any Anthropic failure, and never touch
+    #   codegen/repairs/review (which stay on OpenAI). There is NO global
+    #   active/cutover mode.
     # A missing or unrecognized value resolves to `disabled` (fail safe: routing
     # can never silently activate). The RUNTIME source of truth is
     # backend.services.build_routing.policy.routing_mode(), which re-reads this
