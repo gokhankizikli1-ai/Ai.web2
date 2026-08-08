@@ -57,6 +57,68 @@ const TIMEZONES = [
   { value: 'Australia/Sydney', label: 'AEST (Sydney)' },
 ];
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  STABLE, MODULE-SCOPE PRESENTATIONAL COMPONENTS
+//
+//  These were previously declared INSIDE SettingsModal. Because a new function
+//  identity was created on every render, React treated `<SectionCard>` /
+//  `<SettingRow>` (etc.) as a DIFFERENT component type each keystroke and
+//  remounted the subtree — which dropped focus from the controlled inputs they
+//  wrap (e.g. Display name). At module scope their component identity is stable,
+//  so the input's tree stays mounted and focus is naturally preserved. They are
+//  pure (props only) and close over no SettingsModal state.
+// ═══════════════════════════════════════════════════════════════════════════
+
+export function Segmented({ options, value, onChange }: { options: { value: string; label: string }[]; value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="inline-flex rounded-lg p-0.5" style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.04)' }}>
+      {options.map((o) => (
+        <button key={o.value} onClick={() => onChange(o.value)}
+          className={`px-3 py-[5px] rounded-md text-[11px] font-medium transition-all duration-200 whitespace-nowrap ${value === o.value ? 'text-white' : 'text-[#94A3B8] hover:text-slate-300'}`}
+          style={value === o.value ? { background: 'rgba(255,255,255,0.07)' } : { background: 'transparent' }}>
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export function SettingRow({ label, description, children }: { label: string; description?: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between py-3.5 gap-6">
+      <div className="min-w-0 flex-1">
+        <p className="text-[13px] font-medium text-white/80">{label}</p>
+        {description && <p className="text-[12px] text-[#94A3B8] mt-0.5">{description}</p>}
+      </div>
+      <div className="shrink-0">{children}</div>
+    </div>
+  );
+}
+
+export function SectionCard({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
+  return (
+    <div className="mb-6">
+      <div className="mb-4">
+        <h3 className="text-[15px] font-semibold text-white/90 tracking-tight">{title}</h3>
+        {subtitle && <p className="text-[12px] text-[#94A3B8] mt-0.5">{subtitle}</p>}
+      </div>
+      <div
+        className="rounded-xl p-4"
+        style={{
+          background: 'rgba(255,255,255,0.015)',
+          border: '1px solid rgba(255,255,255,0.04)',
+        }}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
+export function Divider() {
+  return <div style={{ borderTop: '1px solid rgba(255,255,255,0.03)' }} className="my-1" />;
+}
+
 export default function SettingsModal({ open, onOpenChange, onSettingsChange }: SettingsModalProps) {
   const { settings: appSettings, updateSettings } = useApp();
   const { mode: langMode, setMode, t } = useLanguageStore();
@@ -186,52 +248,6 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
       setNameSaving(false);
     }
   }, [nameSaving, nameUnchanged, nameInvalid, nameTrimmed, refreshUser]);
-
-  // ═══════════════════════════════════════════
-  //  PREMIUM UI COMPONENTS
-  // ═══════════════════════════════════════════
-
-  const Segmented = ({ options, value, onChange }: { options: { value: string; label: string }[]; value: string; onChange: (v: string) => void }) => (
-    <div className="inline-flex rounded-lg p-0.5" style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.04)' }}>
-      {options.map((o) => (
-        <button key={o.value} onClick={() => onChange(o.value)}
-          className={`px-3 py-[5px] rounded-md text-[11px] font-medium transition-all duration-200 whitespace-nowrap ${value === o.value ? 'text-white' : 'text-[#94A3B8] hover:text-slate-300'}`}
-          style={value === o.value ? { background: 'rgba(255,255,255,0.07)' } : { background: 'transparent' }}>
-          {o.label}
-        </button>
-      ))}
-    </div>
-  );
-
-  const SettingRow = ({ label, description, children }: { label: string; description?: string; children: React.ReactNode }) => (
-    <div className="flex items-center justify-between py-3.5 gap-6">
-      <div className="min-w-0 flex-1">
-        <p className="text-[13px] font-medium text-white/80">{label}</p>
-        {description && <p className="text-[12px] text-[#94A3B8] mt-0.5">{description}</p>}
-      </div>
-      <div className="shrink-0">{children}</div>
-    </div>
-  );
-
-  const SectionCard = ({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) => (
-    <div className="mb-6">
-      <div className="mb-4">
-        <h3 className="text-[15px] font-semibold text-white/90 tracking-tight">{title}</h3>
-        {subtitle && <p className="text-[12px] text-[#94A3B8] mt-0.5">{subtitle}</p>}
-      </div>
-      <div
-        className="rounded-xl p-4"
-        style={{
-          background: 'rgba(255,255,255,0.015)',
-          border: '1px solid rgba(255,255,255,0.04)',
-        }}
-      >
-        {children}
-      </div>
-    </div>
-  );
-
-  const Divider = () => <div style={{ borderTop: '1px solid rgba(255,255,255,0.03)' }} className="my-1" />;
 
   // ═══════════════════════════════════════════
   //  TAB CONTENT
