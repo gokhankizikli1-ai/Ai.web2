@@ -16,6 +16,8 @@ import type { ChatSession, ChatFolder } from '@/types';
 import { useAuthStore } from '@/stores/authStore';
 import { useLanguageStore } from '@/stores/languageStore';
 import { useOwnerMode } from '@/hooks/useOwnerMode';
+import { useBillingPlan } from '@/hooks/useBillingPlan';
+import { shouldShowUpgradeCta } from '@/lib/plan';
 import DeleteConfirmModal from './DeleteConfirmModal';
 import UserAccountDropdown from './UserAccountDropdown';
 
@@ -77,6 +79,12 @@ export default function Sidebar({
   // the shared secret. isAuthenticated alone misses that path
   // (OWNER_TOKEN doesn't go through /v2/auth/*).
   const { isOwner } = useOwnerMode();
+  // The sidebar upgrade CTA must agree with the account-card plan badge: both
+  // derive from the SAME authoritative source (useBillingPlan → /v2/billing/me).
+  // A paid or owner user never sees "Upgrade to Pro", and it never flashes while
+  // the plan is still resolving (planKey === null).
+  const { planKey, isPaid } = useBillingPlan();
+  const showUpgradeCta = shouldShowUpgradeCta({ planKey, isPaid, isOwner });
   // Phase 9 safety net — if a JWT exists in localStorage but the auth
   // store hasn't flipped isAuthenticated to true yet, treat as
   // session-active rather than guest. This catches the failure mode
@@ -443,17 +451,20 @@ export default function Sidebar({
             )}
           </div>
 
-          {/* Upgrade */}
-          <div className="px-3 pb-3">
-            <Button
-              variant="ghost"
-              onClick={onOpenUpgrade}
-              className="w-full h-7 gap-1.5 text-[11px] text-white/30 hover:text-[#60A5FA] hover:bg-[#3B82F6]/[0.08] rounded-lg transition-all border border-transparent hover:border-[#3B82F6]/25"
-            >
-              <Crown className="h-3 w-3" />
-              {t('upgradePro')}
-            </Button>
-          </div>
+          {/* Upgrade — only for a confirmed non-paid, non-owner user (never
+              contradicts the plan badge; never flashes while the plan resolves). */}
+          {showUpgradeCta && (
+            <div className="px-3 pb-3">
+              <Button
+                variant="ghost"
+                onClick={onOpenUpgrade}
+                className="w-full h-7 gap-1.5 text-[11px] text-white/30 hover:text-[#60A5FA] hover:bg-[#3B82F6]/[0.08] rounded-lg transition-all border border-transparent hover:border-[#3B82F6]/25"
+              >
+                <Crown className="h-3 w-3" />
+                {t('upgradePro')}
+              </Button>
+            </div>
+          )}
         </div>
       </aside>
 

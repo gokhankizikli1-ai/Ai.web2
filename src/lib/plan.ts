@@ -55,6 +55,27 @@ export function isPaidPlan(key: PlanKey): boolean {
   return PAID.has(key);
 }
 
+/**
+ * Whether to show a generic "Upgrade to Pro" CTA, derived from the SAME
+ * authoritative plan signals the plan badge uses (useBillingPlan → /v2/billing/me)
+ * plus owner-session status. Pure, so both the sidebar CTA and the account-card
+ * CTA can share one rule and never contradict the visible plan badge.
+ *
+ * Hidden when:
+ *   - the user is on ANY paid tier (`isPaid`) — a Pro/Max/… user must never see it;
+ *   - the user is an owner (effective entitlement, shown as "Owner", not a plan);
+ *   - the plan is still resolving (`planKey === null`) — so a paid user never
+ *     briefly FLASHES a contradictory upgrade CTA during load.
+ * Visible only for a confirmed non-paid, non-owner user (guests resolve to Free).
+ */
+export function shouldShowUpgradeCta(input: {
+  planKey: PlanKey | null;
+  isPaid: boolean;
+  isOwner: boolean;
+}): boolean {
+  return input.planKey !== null && !input.isPaid && !input.isOwner;
+}
+
 /** The label for a resolved plan key. */
 export function planLabel(key: PlanKey): string {
   return PLAN_LABELS[key];
