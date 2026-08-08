@@ -226,6 +226,20 @@ def touch_user(user_id: str) -> None:
         )
 
 
+def update_display_name(user_id: str, display_name: str) -> bool:
+    """Persist a new display name for an identity-store user (OAuth/guest).
+    Returns True when a row was updated (the user exists here), False otherwise.
+    The caller validates/normalizes `display_name` first. Only the display_name
+    column is written — never external_id, kind or any identity field."""
+    init()
+    with _conn() as c:
+        cur = c.execute(
+            "UPDATE auth_users SET display_name = ? WHERE id = ?",
+            (display_name, user_id),
+        )
+        return bool(getattr(cur, "rowcount", 0))
+
+
 # ── Refresh tokens ────────────────────────────────────────────────────────
 
 def record_refresh_token(jti: str, user_id: str, expires_at: str, family_id: str) -> None:

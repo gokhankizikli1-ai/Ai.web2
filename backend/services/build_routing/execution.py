@@ -18,11 +18,18 @@ Execution rules (see the mini-phase spec):
 
   * disabled / shadow  → always call the OpenAI planner (zero Anthropic calls).
   * owner_only + NON-owner → always call the OpenAI planner.
-  * owner_only + verified owner → attempt Anthropic exactly once; on success
-    (non-empty text) return it and do NOT call OpenAI; on ANY classified
-    provider failure (missing config / unavailable / auth / timeout / rate
-    limit / invalid request / malformed / empty output) fall back to the OpenAI
-    planner exactly once with `fallback_used=True`.
+  * owner_only + verified owner → attempt Anthropic exactly once (see below).
+  * all_users → EVERY authenticated entitled user attempts Anthropic exactly
+    once (parity — a normal user gets the SAME Claude planner the owner gets).
+    Entitlement is enforced upstream by ai_guard preflight before planning is
+    reached, so this only changes the provider, never a billing/quota decision.
+
+  In either real-execution case, on success (non-empty text) return the Claude
+  plan and do NOT call OpenAI; on ANY classified provider failure (missing config
+  / unavailable / auth / timeout / rate limit / invalid request / malformed /
+  empty output) fall back to the OpenAI planner exactly once with
+  `fallback_used=True`. The provider-call count is unchanged from the owner path:
+  1 call (Claude ok) or 2 (Claude fail → OpenAI), never more.
 
 The result is a `StructuredAIResult` (imported from the existing transport) so
 the caller's existing consumption path is byte-compatible. Provider/model/
@@ -39,7 +46,7 @@ from typing import Any, Awaitable, Callable, Optional, Tuple
 
 from backend.services.build_routing import policy
 from backend.services.build_routing.types import (
-    MODE_OWNER_ONLY, TASK_WEB_PLANNING,
+    MODE_OWNER_ONLY, MODE_ALL_USERS, TASK_WEB_PLANNING,
     PROVIDER_ANTHROPIC, PROVIDER_OPENAI, POLICY_VERSION,
 )
 
@@ -69,13 +76,17 @@ def _routing_meta(
     *, mode: str, attempted_provider: str, executed_provider: str,
     attempted_model: str, executed_model: str, fallback_used: bool,
     error_kind: Optional[str], latency_ms: Optional[int],
+    eligibility: str = "none",
 ) -> dict:
     """Bounded, sanitized routing-truth block for internal execution metadata.
     ONLY the allowed fields — no prompts, plans, ids, secrets or raw errors."""
     return {
         "task_kind": TASK_WEB_PLANNING,
         "routing_mode": mode,
-        "owner_eligible": mode == MODE_OWNER_ONLY,
+        # Which eligibility path chose Claude: 'owner' | 'all_users' | 'none'.
+        "routing_eligibility": eligibility,
+        # Back-compat field: true only when the owner path gated this request.
+        "owner_eligible": eligibility == "owner",
         "attempted_provider": attempted_provider,
         "executed_provider": executed_provider,
         "attempted_model": attempted_model,
@@ -233,9 +244,9 @@ async def execute_website_planning(
     sanitized routing-truth block for internal execution metadata.
 
     Provider-call counts by outcome:
-      * disabled / shadow / (owner_only + non-owner): 1 OpenAI call, 0 Anthropic.
-      * owner_only + owner, Anthropic OK:             1 Anthropic call, 0 OpenAI.
-      * owner_only + owner, Anthropic fails:          1 Anthropic + 1 OpenAI.
+      * disabled / shadow / (owner_only + non-owner):  1 OpenAI call, 0 Anthropic.
+      * owner_only + owner / all_users, Anthropic OK:  1 Anthropic call, 0 OpenAI.
+      * owner_only + owner / all_users, Anthropic fail:1 Anthropic + 1 OpenAI.
 
     Never raises: both planners are designed not to raise, and every extra step
     (record/replace/log) is guarded, so this returns a valid result in all
@@ -246,9 +257,10 @@ async def execute_website_planning(
     except Exception:  # pragma: no cover
         mode = "disabled"
 
-    # Only a verified owner in owner_only mode may execute Anthropic. Every other
-    # combination keeps the exact existing OpenAI planning execution.
-    if not (mode == MODE_OWNER_ONLY and owner_eligible):
+    # Claude executes for a verified owner (owner_only) OR every entitled user
+    # (all_users). Every other combination keeps the exact existing OpenAI path.
+    eligibility = policy.claude_planning_eligible(mode, owner_eligible)
+    if eligibility == "none":
         result = await openai_planner()
         exec_model = getattr(result, "model", model) or model
         meta = _routing_meta(
@@ -256,10 +268,11 @@ async def execute_website_planning(
             attempted_model=exec_model, executed_model=exec_model,
             fallback_used=False, error_kind=None,
             latency_ms=getattr(result, "latency_ms", None),
+            eligibility=eligibility,
         )
         return result, meta
 
-    # owner_only + verified owner → attempt Anthropic exactly once.
+    # Eligible (owner_only+owner or all_users) → attempt Anthropic exactly once.
     anthropic_res = await _anthropic_website_plan(
         message=message, system=system,
         max_output_tokens=max_output_tokens, temperature=temperature,
@@ -278,6 +291,7 @@ async def execute_website_planning(
             attempted_model=_claude_model(), executed_model=getattr(anthropic_res, "model", _claude_model()),
             fallback_used=False, error_kind=None,
             latency_ms=getattr(anthropic_res, "latency_ms", None),
+            eligibility=eligibility,
         )
         _log(meta)
         return anthropic_res, meta
@@ -309,6 +323,7 @@ async def execute_website_planning(
         attempted_model=_claude_model(), executed_model=getattr(result, "model", model) or model,
         fallback_used=True, error_kind=primary_error_kind,
         latency_ms=getattr(result, "latency_ms", None),
+        eligibility=eligibility,
     )
     _log(meta)
     return result, meta
