@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { resolveDisplayPlan, planLabel, isPaidPlan } from '@/lib/plan';
+import {
+  resolveDisplayPlan, planLabel, isPaidPlan, shouldShowUpgradeCta,
+  type DisplayPlanInput,
+} from '@/lib/plan';
 
 /**
  * Account-scoped plan-display resolver tests.
@@ -76,5 +79,74 @@ describe('plan label / paid helpers', () => {
     expect(isPaidPlan('free')).toBe(false);
     expect(isPaidPlan('pro')).toBe(true);
     expect(isPaidPlan('ultra')).toBe(true);
+  });
+});
+
+/**
+ * "Upgrade to Pro" CTA visibility (sidebar + account card) — must derive from the
+ * SAME authoritative plan source as the plan badge so the two can NEVER contradict
+ * (the reported bug: badge shows "Pro" while the CTA still shows "Upgrade to Pro").
+ *
+ * `ctaFor` reproduces exactly what the components do: resolveDisplayPlan (what the
+ * badge shows) → isPaidPlan → shouldShowUpgradeCta. So a passing case proves the
+ * badge and the CTA agree end-to-end.
+ */
+describe('shouldShowUpgradeCta — never contradicts the plan badge', () => {
+  const authed = { isAuthenticated: true, loading: false };
+  const ctaFor = (input: DisplayPlanInput, isOwner = false): boolean => {
+    const planKey = resolveDisplayPlan(input);            // the SAME value the badge renders
+    const isPaid = planKey ? isPaidPlan(planKey) : false;
+    return shouldShowUpgradeCta({ planKey, isPaid, isOwner });
+  };
+
+  it('Free user → upgrade CTA VISIBLE', () => {
+    expect(ctaFor({ ...authed, snapshot: { active: false, plan: 'free' } })).toBe(true);
+  });
+
+  it('Pro user → upgrade CTA HIDDEN (the reported contradiction)', () => {
+    expect(ctaFor({ ...authed, snapshot: { active: true, plan: 'pro' } })).toBe(false);
+  });
+
+  it('higher paid tiers (Max / Enterprise) → HIDDEN', () => {
+    expect(ctaFor({ ...authed, snapshot: { active: true, plan: 'ultra' } })).toBe(false);
+    expect(ctaFor({ ...authed, snapshot: { active: true, plan: 'enterprise' } })).toBe(false);
+  });
+
+  it('Starter (any paid tier) → HIDDEN', () => {
+    expect(ctaFor({ ...authed, snapshot: { active: true, plan: 'basic' } })).toBe(false);
+  });
+
+  it('paid owner → HIDDEN; free-plan owner → HIDDEN (effective entitlement)', () => {
+    expect(ctaFor({ ...authed, snapshot: { active: true, plan: 'pro' } }, /* isOwner */ true)).toBe(false);
+    expect(ctaFor({ ...authed, snapshot: { active: false, plan: 'free' } }, /* isOwner */ true)).toBe(false);
+  });
+
+  it('unknown/loading state → HIDDEN (no flash, no paid/free contradiction)', () => {
+    // planKey === null while the first authoritative fetch is in flight.
+    expect(ctaFor({ isAuthenticated: true, loading: true, snapshot: null })).toBe(false);
+    // A paid user reloading never flashes the CTA: it stays hidden through load…
+    expect(shouldShowUpgradeCta({ planKey: null, isPaid: false, isOwner: false })).toBe(false);
+    // …and stays hidden once resolved to a paid tier.
+    expect(ctaFor({ ...authed, snapshot: { active: true, plan: 'pro' } })).toBe(false);
+  });
+
+  it('guest resolves to Free → CTA VISIBLE', () => {
+    expect(ctaFor({ isAuthenticated: false, loading: false, snapshot: null })).toBe(true);
+  });
+
+  it('plan refresh flips the CTA in lockstep with the badge (Free → Pro)', () => {
+    const before = { ...authed, snapshot: { active: false, plan: 'free' } };
+    const after = { ...authed, snapshot: { active: true, plan: 'pro' } };
+    expect(resolveDisplayPlan(before)).toBe('free');
+    expect(ctaFor(before)).toBe(true);      // Free: badge "Free", CTA shown
+    expect(resolveDisplayPlan(after)).toBe('pro');
+    expect(ctaFor(after)).toBe(false);      // after refresh: badge "Pro", CTA hidden
+  });
+
+  it('direct predicate matrix', () => {
+    expect(shouldShowUpgradeCta({ planKey: 'free', isPaid: false, isOwner: false })).toBe(true);
+    expect(shouldShowUpgradeCta({ planKey: 'pro', isPaid: true, isOwner: false })).toBe(false);
+    expect(shouldShowUpgradeCta({ planKey: 'free', isPaid: false, isOwner: true })).toBe(false);
+    expect(shouldShowUpgradeCta({ planKey: null, isPaid: false, isOwner: false })).toBe(false);
   });
 });

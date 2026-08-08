@@ -8,6 +8,7 @@ import { useLanguageStore, LANGUAGES } from '@/stores/languageStore';
 import type { Language } from '@/stores/languageStore';
 import { useBillingPlan } from '@/hooks/useBillingPlan';
 import { useCredits } from '@/hooks/useCredits';
+import { shouldShowUpgradeCta } from '@/lib/plan';
 import {
   User, Crown, Zap, Shield, Coins,
   CreditCard, Settings, Globe,
@@ -76,10 +77,14 @@ export default function UserAccountDropdown({ onOpenSettings, onOpenUpgrade }: U
   // — the SAME source the top-right PremiumBadge and CreditDisplay use, so they
   // can never disagree and never show a previous account's plan. Falls back to
   // 'free' while loading (the card always renders a plan row).
-  const { planKey: resolvedPlanKey } = useBillingPlan();
+  const { planKey: resolvedPlanKey, isPaid } = useBillingPlan();
   const planKey = resolvedPlanKey ?? 'free';
   const plan = PLAN_CONFIG[planKey] || PLAN_CONFIG.free;
   const PlanIcon = plan.icon;
+  // The upgrade CTA and the plan badge above derive from the SAME authoritative
+  // source (useBillingPlan) so they can never contradict: a paid/owner user never
+  // sees "Upgrade to Pro", and it never flashes while the plan is still resolving.
+  const showUpgradeCta = shouldShowUpgradeCta({ planKey: resolvedPlanKey, isPaid, isOwner });
 
   // Credit info — AUTHORITATIVE only. `balance` is null while loading, on error,
   // when the caller is a guest, or when ENABLE_BILLING_CREDITS is off. In every
@@ -347,12 +352,14 @@ export default function UserAccountDropdown({ onOpenSettings, onOpenUpgrade }: U
                       >
                         <CreditCard className="w-3 h-3" /> {t('buyCredits')}
                       </button>
-                      <button
-                        onClick={handleUpgrade}
-                        className="w-full h-7 flex items-center justify-center gap-1.5 rounded-lg bg-[#FACC15]/[0.05] text-[#FACC15] border border-[#FACC15]/8 text-[11px] hover:bg-[#FACC15]/[0.08] transition-all"
-                      >
-                        <Crown className="w-3 h-3" /> {t('upgradePlan')}
-                      </button>
+                      {showUpgradeCta && (
+                        <button
+                          onClick={handleUpgrade}
+                          className="w-full h-7 flex items-center justify-center gap-1.5 rounded-lg bg-[#FACC15]/[0.05] text-[#FACC15] border border-[#FACC15]/8 text-[11px] hover:bg-[#FACC15]/[0.08] transition-all"
+                        >
+                          <Crown className="w-3 h-3" /> {t('upgradePlan')}
+                        </button>
+                      )}
                     </div>
                   </div>
 
