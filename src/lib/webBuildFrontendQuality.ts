@@ -206,7 +206,11 @@ function validationRows(v: FrontendBuilderValidationArtifact | undefined): WebBu
   return rows;
 }
 function reviewRows(r: FrontendBuilderReviewArtifact): WebBuildActivityDetailRow[] {
-  const rows: WebBuildActivityDetailRow[] = [{ label: 'result', value: r.passed ? 'passed' : 'needs work' }];
+  // Truthful result: a review whose STATUS is not 'completed' (transport/parser/truncation failure)
+  // is reported as 'incomplete' — never as 'passed'/'needs work', which would imply the model
+  // actually judged the project. Distinguishes the stage finishing from the review completing.
+  const result = r.status !== 'completed' ? 'incomplete' : r.passed ? 'passed' : 'needs work';
+  const rows: WebBuildActivityDetailRow[] = [{ label: 'result', value: result }];
   if (typeof r.score === 'number') rows.push({ label: 'score', value: String(r.score) });
   rows.push({ label: 'issues', value: String(r.issues?.length ?? 0) });
   return rows;
