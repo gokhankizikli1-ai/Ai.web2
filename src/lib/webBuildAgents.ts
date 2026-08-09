@@ -2799,6 +2799,17 @@ export interface FrontendBuilderAcceptanceArtifact {
    *    counts, provider distribution, honest metadata limitations, new-call count = 0). Optional/additive. ── */
   imageIntelligence?: import('@/lib/webBuildImageSourcing').ImageSourcingIntelligenceDiagnostics;
 
+  /* ── Deterministic post-repair ACCEPTANCE-GATE diagnostics. Present whenever the single bounded
+   *    repair ran and its candidate was evaluated by the deterministic gate (accepted OR rejected).
+   *    Records the exact failing/ passing condition — the numeric score gates (initial/final/min/
+   *    improved/threshold), the model-review gates, the severe-warning gate, each of the nine
+   *    blocking-analyzer gates, the obligation-regression gate, and the delta-reconstruction result —
+   *    so the precise rejection reason is visible WITHOUT another build. Counts / booleans / bounded
+   *    codes only; never source, prompts, provider output, ids, secrets or PII. Owner-agnostic:
+   *    identical for owner and normal users on the same candidate. Old artifacts omit it. It does
+   *    NOT change `renderedVisualTestStatus` (static analysis is not a rendered certification). */
+  acceptanceGate?: import('@/lib/webBuildAcceptanceGate').FrontendAcceptanceGateDiagnostics;
+
   reason: string;
 }
 

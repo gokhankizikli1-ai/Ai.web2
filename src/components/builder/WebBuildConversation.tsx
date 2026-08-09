@@ -760,6 +760,27 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
       ownerRows.push(['frontendActiveProject', fac.activeProject]);
       ownerRows.push(['renderedVisualTestStatus', fac.renderedVisualTestStatus]);
       ownerRows.push(['frontendAcceptanceReason', shortStr(fac.reason, 160)]);
+      // Deterministic acceptance-gate diagnostics — the EXACT reason a repaired candidate was
+      // accepted or rejected, surfaced without needing another build. Bounded booleans / counts.
+      const gate = fac.acceptanceGate;
+      if (gate) {
+        ownerRows.push(['frontendAcceptanceGateReason', gate.primaryReasonCode]);
+        ownerRows.push(['frontendAcceptanceGateScore', `${gate.initialScore} → ${gate.finalScore} (min ${gate.minRequiredScore})`]);
+        ownerRows.push(['frontendAcceptanceGateScoreImproved', String(gate.scoreImproved)]);
+        ownerRows.push(['frontendAcceptanceGateScoreMeetsThreshold', String(gate.scoreMeetsThreshold)]);
+        ownerRows.push(['frontendAcceptanceGateReviewPassed', `${String(gate.finalReviewPassed)} (blocker ${gate.blockerCount}, major ${gate.majorCount})`]);
+        ownerRows.push(['frontendAcceptanceGateSevereWarningGate', String(gate.severeWarningGatePassed)]);
+        if (gate.anyBlockingAnalyzer) {
+          const blocked = ([
+            ['binding', gate.blockingBinding], ['research', gate.blockingResearch], ['composition', gate.blockingComposition],
+            ['visual-system', gate.blockingVisualSystem], ['content', gate.blockingContent], ['experience', gate.blockingExperience],
+            ['visual', gate.blockingVisual], ['experience-identity', gate.blockingExperienceIdentity], ['motion', gate.blockingMotionExecution],
+          ] as [string, boolean][]).filter(([, v]) => v).map(([k]) => k);
+          ownerRows.push(['frontendAcceptanceGateBlockingAnalyzers', blocked.join(', ') || 'none']);
+        }
+        if (gate.obligationRegressionRejects) ownerRows.push(['frontendAcceptanceGateObligationRegression', String(gate.obligationRegressedCount ?? true)]);
+        if (gate.deltaRepairUsed) ownerRows.push(['frontendAcceptanceGateDeltaRepair', `used (accepted: ${String(gate.deltaRepairAccepted)})`]);
+      }
       // Phase 13C — severe-warning acceptance-gate diagnostics: why the single quality repair
       // ran and whether severe skeleton warnings existed before/after it.
       if (typeof fac.repairTriggeredByShallowQuality === 'boolean') ownerRows.push(['frontendRepairTriggeredByShallowQuality', String(fac.repairTriggeredByShallowQuality)]);

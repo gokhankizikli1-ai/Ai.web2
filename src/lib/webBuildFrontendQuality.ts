@@ -34,6 +34,11 @@ import {
 // Owner-only DELTA quality-repair — pure, deterministic delta parser/validator/merger. No
 // network. Flag-gated + owner-gated by the caller; fail-open never triggers a second repair call.
 import { resolveWebBuildQualityRepairMode, isDeltaRepairEligible, reconstructRepairRawFromDelta } from '@/lib/webBuildDeltaRepair';
+// Deterministic post-repair acceptance gate — pure, owner-agnostic, no IO. Returns the SAME
+// accept decision the previous inline conjunction made, plus a bounded, sanitized diagnostic
+// exposing the exact rejection reason and every gate signal for the activity timeline.
+import { evaluateAcceptanceGate, acceptanceReasonLabel } from '@/lib/webBuildAcceptanceGate';
+import type { FrontendAcceptanceGateReasonCode } from '@/lib/webBuildAcceptanceGate';
 // Owner-only COMPACT quality-context — pure, deterministic, network-free selection of a bounded,
 // safe source subset for the delta-repair request + post-repair review. Fully safe-fallback: an
 // undefined context means the EXISTING full-context request is used (before the single call).
@@ -209,11 +214,16 @@ function reviewRows(r: FrontendBuilderReviewArtifact): WebBuildActivityDetailRow
 function acceptanceRows(
   status: FrontendBuilderAcceptanceArtifact['status'],
   activeProject: FrontendBuilderAcceptanceArtifact['activeProject'],
+  // Optional exact deterministic gate reason code. When present it is surfaced as a bounded
+  // activity row so the owner sees WHICH gate accepted/rejected the candidate — not just the
+  // coarse status label. Never carries source, prompts, provider output or PII.
+  reasonCode?: FrontendAcceptanceGateReasonCode,
 ): WebBuildActivityDetailRow[] {
   return [
     { label: 'candidate', value: status },
     { label: 'activeProject', value: activeProject },
     { label: 'manualReview', value: status === 'manual-review-required' ? 'yes' : 'no' },
+    ...(reasonCode ? [{ label: 'reason', value: acceptanceReasonLabel(reasonCode) }] : []),
   ];
 }
 
@@ -1267,26 +1277,50 @@ export async function runFrontendBuilderQualityPipeline(
     //    Phase 12G binding/drift gate (blocking binding or cross-sector-drift findings block). ──
     const initialScore = initialReview.score ?? 0;
     const finalScore = finalReview.score ?? 0;
-    const accept =
-      finalReview.status === 'completed' &&
-      finalReview.passed &&
-      finalScore >= MIN_ACCEPT_SCORE &&
-      finalReview.blockerCount === 0 &&
-      finalReview.majorCount === 0 &&
-      finalScore > initialScore &&
-      repairSevereGatePassed &&
-      !hasBlockingBindingFindings(repairBinding) &&
-      !hasBlockingResearchFindings(repairResearch) &&
-      !hasBlockingCompositionFindings(repairComposition) &&
-      !hasBlockingVisualSystemFindings(repairVisualSystem) &&
-      !hasBlockingContentFindings(repairContent) &&
-      !hasBlockingExperienceFindings(repairExperience) &&
-      !hasBlockingVisualFindings(repairVisual) &&
-      !hasBlockingExperienceIdentityFindings(repairExperienceIdentity) &&
-      !hasBlockingMotionExecutionFindings(repairMotion) &&
-      // Phase 8 — reject a repair that regressed a previously-fulfilled REQUIRED obligation (fails open
-      // when the comparison is ambiguous). Preserves already-good sections; never blocks an initial build.
-      !(obligationComparison && obligationComparison.regressionRejectsRepair);
+    // Hoist the nine deterministic blocking-analyzer results + the obligation-regression flag so the
+    // acceptance decision, the human-readable rejection cascade, and the bounded gate diagnostic all
+    // read the SAME single evaluation (no divergence, no double analysis).
+    const blockingBinding = hasBlockingBindingFindings(repairBinding);
+    const blockingResearch = hasBlockingResearchFindings(repairResearch);
+    const blockingComposition = hasBlockingCompositionFindings(repairComposition);
+    const blockingVisualSystem = hasBlockingVisualSystemFindings(repairVisualSystem);
+    const blockingContent = hasBlockingContentFindings(repairContent);
+    const blockingExperience = hasBlockingExperienceFindings(repairExperience);
+    const blockingVisual = hasBlockingVisualFindings(repairVisual);
+    const blockingExperienceIdentity = hasBlockingExperienceIdentityFindings(repairExperienceIdentity);
+    const blockingMotionExecution = hasBlockingMotionExecutionFindings(repairMotion);
+    // Phase 8 — reject a repair that regressed a previously-fulfilled REQUIRED obligation (fails open
+    // when the comparison is ambiguous). Preserves already-good sections; never blocks an initial build.
+    const obligationRegressionRejects = !!(obligationComparison && obligationComparison.regressionRejectsRepair);
+    // ── Deterministic acceptance gate (pure, owner-agnostic). `gate.accept` is byte-for-byte the
+    //    same conjunction as before; `gate.diagnostics` surfaces the exact failing/passing condition
+    //    (numeric score gates, model-review gates, severe-warning gate, each blocking analyzer, the
+    //    obligation-regression gate, delta-reconstruction result) for the activity timeline. ──
+    const gate = evaluateAcceptanceGate({
+      finalReviewCompleted: finalReview.status === 'completed',
+      finalReviewPassed: finalReview.passed,
+      initialScore,
+      finalScore,
+      minRequiredScore: MIN_ACCEPT_SCORE,
+      blockerCount: finalReview.blockerCount ?? 0,
+      majorCount: finalReview.majorCount ?? 0,
+      severeWarningGatePassed: repairSevereGatePassed,
+      blockingBinding,
+      blockingResearch,
+      blockingComposition,
+      blockingVisualSystem,
+      blockingContent,
+      blockingExperience,
+      blockingVisual,
+      blockingExperienceIdentity,
+      blockingMotionExecution,
+      obligationRegressionRejects,
+      deltaRepairUsed: !!deltaDiagnostics,
+      deltaRepairAccepted: deltaDiagnostics ? deltaDiagnostics.accepted : undefined,
+      obligationRegressedCount: obligationComparison ? obligationComparison.regressed.length : undefined,
+      severeWarningCodes: severeWarningsAfterRepair,
+    });
+    const accept = gate.accept;
 
     if (accept) {
       const repair = repairArtifact('accepted', `Repair accepted: score improved ${initialScore} → ${finalScore} and the post-repair review passed with no blocker/major issues and no severe quality warnings.`, {
@@ -1301,9 +1335,9 @@ export async function runFrontendBuilderQualityPipeline(
       const acceptance = acceptanceArtifact('repaired-approved', 'repaired-model-native', {
         initialReviewPassed: false, repairAttempted: true, repairAccepted: true, finalReviewPassed: true,
         reason: `One bounded repair accepted after static validation, a passing post-repair review (score ${initialScore} → ${finalScore}), a clear severe-warning gate and a clear binding/drift gate. Rendered visual test pending.`,
-      }, { usedDeterministicFallback, repairTriggeredByShallowQuality, severeWarningsBeforeRepair, severeWarningsAfterRepair, renderedVisualEvaluation, renderedVisionReview: renderedVisionReviewArtifact, ...bindingExtra() });
+      }, { usedDeterministicFallback, repairTriggeredByShallowQuality, severeWarningsBeforeRepair, severeWarningsAfterRepair, renderedVisualEvaluation, renderedVisionReview: renderedVisionReviewArtifact, acceptanceGate: gate.diagnostics, ...bindingExtra() });
       emit('quality-repair', 'completed', [{ label: 'result', value: 'accepted' }, { label: 'score', value: `${initialScore} → ${finalScore}` }]);
-      emit('acceptance', 'completed', acceptanceRows('repaired-approved', 'repaired-model-native'));
+      emit('acceptance', 'completed', acceptanceRows('repaired-approved', 'repaired-model-native', gate.reasonCode));
       return attachFrontendBuilderQualityResult(working, {
         ran: true, initialReview, repair, finalReview, acceptance,
         acceptedRepairedFiles: repairValidation.files,
@@ -1314,33 +1348,35 @@ export async function runFrontendBuilderQualityPipeline(
     // Repair validated but was not accepted (final review failed / malformed / no improvement /
     // severe warnings still remain). Phase 13C — a repair that stays shallow is rejected by the
     // deterministic severe-warning gate even if the model reviewer "passed" it.
-    const rejectReason = hasBlockingExperienceFindings(repairExperience)
+    // Same priority order as the deterministic gate's reasonCode cascade; uses the hoisted
+    // blocking booleans so the human text and the structured `gate.reasonCode` can never disagree.
+    const rejectReason = blockingExperience
       ? `The repaired project still fails the binding integrated experience (${experienceIssueCodes(repairExperience).slice(0, 4).join(', ')} — e.g. a desktop-only/broken-mobile layout, clipped required copy, a shallow interaction with no feedback, an inaccessible control, or eager/oversized media); the repair was not accepted.`
-      : hasBlockingContentFindings(repairContent)
+      : blockingContent
       ? `The repaired project still fails the binding content narrative (${contentNarrativeIssueCodes(repairContent).slice(0, 4).join(', ')} — e.g. a required section with no substantive public copy, generic/duplicated propositions across sections, leaked internal planning copy, or no actionable CTA); the repair was not accepted.`
-      : hasBlockingVisualSystemFindings(repairVisualSystem)
+      : blockingVisualSystem
       ? `The repaired project still fails the binding visual system (${visualSystemIssueCodes(repairVisualSystem).slice(0, 4).join(', ')} — e.g. no coherent token source, declared tokens bypassed, repeated generic card chrome, or unreadable body text); the repair was not accepted.`
-      : hasBlockingVisualFindings(repairVisual)
+      : blockingVisual
       ? `The repaired project still fails the binding visual concept (${visualIssueCodes(repairVisual).slice(0, 4).join(', ')} — e.g. the signature hero visual is absent or a placeholder, or one image is reused across distinct required roles); the repair was not accepted.`
-      : hasBlockingExperienceIdentityFindings(repairExperienceIdentity)
+      : blockingExperienceIdentity
       ? `The repaired project still fails the binding experience identity (${experienceIdentityIssueCodes(repairExperienceIdentity).slice(0, 4).join(', ')} — e.g. a regulated/high-stakes experience with no visible limitation/disclaimer language); the repair was not accepted.`
-      : hasBlockingMotionExecutionFindings(repairMotion)
+      : blockingMotionExecution
       ? `The repaired project still fails the binding motion execution (${motionExecutionIssueCodes(repairMotion).slice(0, 4).join(', ')} — e.g. a required signature animated scene rendered as a static visual with no animation); the repair was not accepted.`
-      : (obligationComparison && obligationComparison.regressionRejectsRepair)
-      ? `The repair regressed ${obligationComparison.regressed.length} already-fulfilled required obligation(s) (${obligationComparison.regressed.slice(0, 3).map((r) => `${r.type}: ${r.before}→${r.after}`).join(', ')}); the pre-repair project is preserved instead.`
-      : hasBlockingCompositionFindings(repairComposition)
+      : obligationRegressionRejects
+      ? `The repair regressed ${obligationComparison!.regressed.length} already-fulfilled required obligation(s) (${obligationComparison!.regressed.slice(0, 3).map((r) => `${r.type}: ${r.before}→${r.after}`).join(', ')}); the pre-repair project is preserved instead.`
+      : blockingComposition
       ? `The repaired project still collapses into a repeated template composition (${compositionIssueCodes(repairComposition).slice(0, 4).join(', ')} — distinct sections rendered as the same generic grid); the repair was not accepted.`
-      : hasBlockingResearchFindings(repairResearch)
+      : blockingResearch
       ? `The repaired project still contradicts the researched sector direction (${researchGroundingIssueCodes(repairResearch).slice(0, 4).join(', ')} — e.g. a sector-incompatible module, a fabricated public claim, or a missing required sector pattern); the repair was not accepted.`
-      : hasBlockingBindingFindings(repairBinding)
+      : blockingBinding
       ? `The repaired project still fails a binding user-requirement or shows cross-sector drift (${bindingIssueCodes(repairBinding).slice(0, 4).join(', ')}); the repair was not accepted.`
       : !repairSevereGatePassed
       ? `The repaired project still shows severe quality warnings (${severeWarningsAfterRepair.slice(0, 4).join(', ')}); the repair was not accepted.`
       : finalReview.status !== 'completed'
         ? 'The post-repair static review did not complete; the repair was not accepted.'
         : !finalReview.passed
-          ? 'The post-repair review still reports blocker/major issues or a sub-82 score; the repair was not accepted.'
-          : `The repair did not improve the score (${initialScore} → ${finalScore}); it was not accepted.`;
+          ? `The post-repair review still reports blocker/major issues or a sub-${MIN_ACCEPT_SCORE} score (score ${finalScore}); the repair was not accepted.`
+          : `The repair reached a passing review (score ${finalScore}) but did not exceed the initial score (${initialScore} → ${finalScore}), so the strict-improvement gate did not accept it.`;
     const repair = repairArtifact('rejected', rejectReason, {
       model: repairRaw.model, provider: repairRaw.provider, requestId: repairRaw.requestId,
       validationStatus: 'valid',
@@ -1354,9 +1390,9 @@ export async function runFrontendBuilderQualityPipeline(
       initialReviewPassed: false, repairAttempted: true, repairAccepted: false,
       finalReviewPassed: finalReview.passed,
       reason: `${rejectReason} The initial validated project stays active for owner inspection; normal users continue to see Safe Preview. Manual rendered review required.`,
-    }, { usedDeterministicFallback, repairTriggeredByShallowQuality, severeWarningsBeforeRepair, severeWarningsAfterRepair, renderedVisualEvaluation, renderedVisionReview: renderedVisionReviewArtifact, ...bindingExtra() });
+    }, { usedDeterministicFallback, repairTriggeredByShallowQuality, severeWarningsBeforeRepair, severeWarningsAfterRepair, renderedVisualEvaluation, renderedVisionReview: renderedVisionReviewArtifact, acceptanceGate: gate.diagnostics, ...bindingExtra() });
     emit('quality-repair', 'completed', [{ label: 'result', value: 'rejected' }]);
-    emit('acceptance', 'completed', acceptanceRows('manual-review-required', initialProjectName));
+    emit('acceptance', 'completed', acceptanceRows('manual-review-required', initialProjectName, gate.reasonCode));
     return attachFrontendBuilderQualityResult(working, { ran: true, initialReview, repair, finalReview, acceptance });
   } catch (err) {
     // Explicit caller cancellation must propagate so a cancelled turn is not persisted.
