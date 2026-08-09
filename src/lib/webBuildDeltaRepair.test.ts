@@ -294,6 +294,8 @@ describe('reconstructRepairRawFromDelta — wrapper-tolerant end to end + bounde
     expect(out.repairRaw.status).toBe('failed');
     expect(out.diagnostics.accepted).toBe(false);
     expect(out.diagnostics.rejectionCategory).toBe('truncated-json');
+    // Delta-shaped but rejected — not a producer contract conflict, not an undetermined body.
+    expect(out.diagnostics.actualResponseShape).toBe('frontend-delta-v1');
     // The failed raw carries only the delta call's telemetry — nothing new was requested.
     expect(out.repairRaw.provider).toBe('p');
     expect(out.repairRaw.requestId).toBe('r');

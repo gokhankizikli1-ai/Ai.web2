@@ -539,7 +539,7 @@ export function reconstructRepairRawFromDelta(input: {
     const actualResponseShape: FrontendDeltaRepairArtifact['actualResponseShape'] =
       parsed.category === 'wrong-contract' ? 'frontend-files-v1'
       : parsed.category === 'no-response-body' ? 'none'
-      : 'unknown';
+      : 'frontend-delta-v1';
     return {
       repairRaw: failedRaw(deltaRaw, `Owner-delta repair rejected: ${parsed.reason}`),
       diagnostics: {
