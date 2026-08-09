@@ -2568,6 +2568,31 @@ export interface FrontendBuilderReviewArtifact {
  *  acceptance gate — those remain the parent repair artifact's `status`. When `accepted` is false the
  *  original validated project stays active and NO second repair call is made (`rejectionReason` says
  *  why). Old saved builds and full-mode repairs simply lack this field. */
+/** Bounded, sanitized rejection CATEGORY for a delta repair that did not produce an accepted
+ *  reconstruction. A coarse, safe classification for observability/telemetry only — it never
+ *  carries source, prompts, provider output, ids, secrets or PII. Distinguishes the failure modes
+ *  the delta stage can determine authoritatively so a persisted diagnostic can say WHY a bounded
+ *  repair failed instead of collapsing every cause into one opaque reason string:
+ *   - no-response-body       : the delta call produced no usable body (transport/mode/size failure).
+ *   - truncated-json         : a JSON object opened but never closed (truncated / unbalanced output).
+ *   - contract-absent        : no FRONTEND_DELTA_V1 upsert body could be located at all.
+ *   - wrong-contract         : a full frontend-files-v1 envelope was returned instead of a delta.
+ *   - malformed-json         : a JSON body was located but is not parseable JSON.
+ *   - invalid-schema         : parseable JSON, but not a valid { upserts: [...] } delta.
+ *   - unsafe-path            : an upsert path failed the path-safety checks.
+ *   - structural-rejection   : the reconstructed project would fail Phase 12C structural validation.
+ *   - oversize               : the response / an upsert / the total exceeds a hard size bound. */
+export type FrontendDeltaRejectionCategory =
+  | 'no-response-body'
+  | 'truncated-json'
+  | 'contract-absent'
+  | 'wrong-contract'
+  | 'malformed-json'
+  | 'invalid-schema'
+  | 'unsafe-path'
+  | 'structural-rejection'
+  | 'oversize';
+
 export interface FrontendDeltaRepairArtifact {
   version: 'frontend-delta-repair-v1';
   /** The repair response format REQUESTED from the model on this run. */
@@ -2589,6 +2614,9 @@ export interface FrontendDeltaRepairArtifact {
   accepted: boolean;
   /** Bounded reason the delta was rejected at the delta level (absent when accepted). */
   rejectionReason?: string;
+  /** Bounded, sanitized rejection CATEGORY (absent when accepted, and on old saved builds). A coarse
+   *  classification of WHY the delta failed — for observability only; never source/prompts/PII. */
+  rejectionCategory?: FrontendDeltaRejectionCategory;
 }
 
 /** The persisted, bounded record of the single Phase 12E repair attempt. Never

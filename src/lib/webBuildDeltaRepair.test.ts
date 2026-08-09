@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   reconstructProjectFiles,
   reconstructRepairRawFromDelta,
+  parseFrontendDeltaResponse,
   type DeltaUpsert,
 } from '@/lib/webBuildDeltaRepair';
 import { findDeltaIntroducedStructuralIssues } from '@/lib/webBuildFrontendValidation';
@@ -55,6 +56,24 @@ function deltaRaw(upserts: Array<Partial<DeltaUpsert>>): FrontendBuilderRawArtif
 
 const reconstruct = (upserts: Array<Partial<DeltaUpsert>>) =>
   reconstructRepairRawFromDelta({ deltaRaw: deltaRaw(upserts), originalFiles: originalProject() });
+
+/** A raw delta artifact carrying an ARBITRARY response body (to exercise the wrapper-tolerant
+ *  extractor + reconstruction end to end, not just the pre-serialized JSON happy path). */
+function rawWithBody(rawResponse: string): FrontendBuilderRawArtifact {
+  return {
+    version: 'frontend-builder-raw-v1', status: 'completed', requestedFormat: 'frontend-files-v1',
+    mode: 'frontend_builder', rawResponse, responseCharCount: rawResponse.length, truncatedForStorage: false,
+    validationStatus: 'not-run', reason: '', warnings: [],
+    model: 'm', provider: 'p', requestId: 'r',
+  } as FrontendBuilderRawArtifact;
+}
+const reconstructBody = (rawResponse: string) =>
+  reconstructRepairRawFromDelta({ deltaRaw: rawWithBody(rawResponse), originalFiles: originalProject() });
+
+// A VALID bounded delta (a plain in-place edit of an existing file; no new imports).
+const VALID_DELTA_BODY = JSON.stringify({
+  upserts: [{ path: 'src/components/Hero.tsx', language: 'tsx', content: "export default function Hero(){ return <section className='hero'>Recovered</section>; }" }],
+});
 
 describe('delta guard — invalid repair fails open to the original validated candidate', () => {
   it('unresolved import target introduced by the repair → rejected, fail-open, no second call', () => {
@@ -185,5 +204,98 @@ describe('findDeltaIntroducedStructuralIssues — subset of Phase 12C, changed f
     const a = findDeltaIntroducedStructuralIssues(reconstructed, ['src/App.tsx']);
     const b = findDeltaIntroducedStructuralIssues(reconstructed, ['src/App.tsx']);
     expect(a).toEqual(b);
+  });
+});
+
+/**
+ * Wrapper-tolerant extraction regression suite (the production `no FRONTEND_DELTA_V1 JSON body
+ * found` failure). A valid delta returned in a HARMLESS wrapper must be RECOVERED and reconstructed
+ * instead of dropping the whole build to Safe Preview — while a genuinely truncated / wrong-contract
+ * / malformed / unsafe delta stays REJECTED with a precise, bounded category.
+ */
+describe('parseFrontendDeltaResponse — recovers harmless wrappers, rejects genuine failures', () => {
+  it('canonical markers + clean JSON body → parsed', () => {
+    const body = `## FRONTEND_DELTA_V1\n${VALID_DELTA_BODY}\n## END_FRONTEND_DELTA_V1`;
+    const r = parseFrontendDeltaResponse(body);
+    expect(r.ok).toBe(true);
+  });
+
+  it('bare JSON with NO markers → parsed (unchanged legacy behavior)', () => {
+    expect(parseFrontendDeltaResponse(VALID_DELTA_BODY).ok).toBe(true);
+  });
+
+  it('a ```json fenced body BETWEEN the markers → recovered (was rejected as invalid JSON)', () => {
+    const body = `## FRONTEND_DELTA_V1\n\`\`\`json\n${VALID_DELTA_BODY}\n\`\`\`\n## END_FRONTEND_DELTA_V1`;
+    expect(parseFrontendDeltaResponse(body).ok).toBe(true);
+  });
+
+  it('a whole-response ```json fence with no markers → recovered', () => {
+    expect(parseFrontendDeltaResponse(`\`\`\`json\n${VALID_DELTA_BODY}\n\`\`\``).ok).toBe(true);
+  });
+
+  it('leading prose before a bare JSON object → recovered', () => {
+    expect(parseFrontendDeltaResponse(`Here are the upserts:\n\n${VALID_DELTA_BODY}\n\nDone.`).ok).toBe(true);
+  });
+
+  it('heading-level / spacing / case variations of the markers → recovered', () => {
+    const body = `#### frontend_delta_v1\n${VALID_DELTA_BODY}\n#### end_frontend_delta_v1`;
+    expect(parseFrontendDeltaResponse(body).ok).toBe(true);
+  });
+
+  it('genuinely TRUNCATED body (unbalanced JSON) → rejected as truncated-json, never inferred', () => {
+    const truncated = '## FRONTEND_DELTA_V1\n{"upserts":[{"path":"src/components/Hero.tsx","content":"export default function Hero(){ return <sec';
+    const r = parseFrontendDeltaResponse(truncated);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.category).toBe('truncated-json');
+  });
+
+  it('a full frontend-files-v1 envelope instead of a delta → rejected as wrong-contract', () => {
+    const envelope = '## FRONTEND_FILES_V1\n### FILE src/App.tsx\n```tsx\nexport default function App(){ return null; }\n```\n### END_FILE\n## END_FRONTEND_FILES_V1';
+    const r = parseFrontendDeltaResponse(envelope);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.category).toBe('wrong-contract');
+  });
+
+  it('no delta content at all → rejected as contract-absent (the original production reason)', () => {
+    const r = parseFrontendDeltaResponse('I could not complete the requested changes.');
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.category).toBe('contract-absent');
+      expect(r.reason).toMatch(/no FRONTEND_DELTA_V1 JSON body found/);
+    }
+  });
+
+  it('parseable JSON that is not a delta → rejected as invalid-schema', () => {
+    const r = parseFrontendDeltaResponse('{"files":[]}');
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.category).toBe('invalid-schema');
+  });
+
+  it('brace inside file CONTENT does not fool the balanced scan (JSX/CSS bodies survive)', () => {
+    const withBraces = JSON.stringify({
+      upserts: [{ path: 'src/styles.css', language: 'css', content: '.hero { color: #fff; } .cta { color: #000; }' }],
+    });
+    expect(parseFrontendDeltaResponse(`## FRONTEND_DELTA_V1\n${withBraces}\n## END_FRONTEND_DELTA_V1`).ok).toBe(true);
+  });
+});
+
+describe('reconstructRepairRawFromDelta — wrapper-tolerant end to end + bounded categories', () => {
+  it('a fenced-in-markers valid delta is reconstructed into a completed frontend-files-v1 raw', () => {
+    const body = `## FRONTEND_DELTA_V1\n\`\`\`json\n${VALID_DELTA_BODY}\n\`\`\`\n## END_FRONTEND_DELTA_V1`;
+    const out = reconstructBody(body);
+    expect(out.repairRaw.status).toBe('completed');
+    expect(out.diagnostics.accepted).toBe(true);
+    expect(out.diagnostics.returnedUpsertCount).toBe(1);
+    expect(out.changedPaths).toEqual(['src/components/Hero.tsx']);
+  });
+
+  it('a truncated delta fails OPEN (original preserved) with a truncated-json category, no second call', () => {
+    const out = reconstructBody('## FRONTEND_DELTA_V1\n{"upserts":[{"path":"src/components/Hero.tsx","content":"export def');
+    expect(out.repairRaw.status).toBe('failed');
+    expect(out.diagnostics.accepted).toBe(false);
+    expect(out.diagnostics.rejectionCategory).toBe('truncated-json');
+    // The failed raw carries only the delta call's telemetry — nothing new was requested.
+    expect(out.repairRaw.provider).toBe('p');
+    expect(out.repairRaw.requestId).toBe('r');
   });
 });
