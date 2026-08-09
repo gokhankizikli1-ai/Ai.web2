@@ -81,6 +81,22 @@ function isInt0to100(v: unknown): v is number {
   return typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 100;
 }
 
+/** Phase 14L.2 — carry the raw transport diagnostics (request size / size-bounding / server-
+ *  verified continuation role) onto the persisted review artifact, so a non-completed review is
+ *  self-explanatory from a SAVED build. Bounded/optional; absent fields are simply omitted. */
+function rawTransportDiagnostics(raw?: FrontendBuilderReviewRawArtifact): Partial<FrontendBuilderReviewArtifact> {
+  if (!raw) return {};
+  const out: Partial<FrontendBuilderReviewArtifact> = {};
+  if (typeof raw.requestCharCount === 'number') out.requestCharCount = raw.requestCharCount;
+  if (raw.sizeBounded === true) out.sizeBounded = true;
+  if (typeof raw.omittedFileCount === 'number') out.omittedFileCount = raw.omittedFileCount;
+  if (raw.continuationRole === 'start' || raw.continuationRole === 'continuation') {
+    out.continuationRole = raw.continuationRole;
+    out.continuationAttached = raw.continuationRole === 'continuation';
+  }
+  return out;
+}
+
 /** Build a non-passing review artifact for a failed/skipped call or a malformed body.
  *  Never throws; carries the honest phase-boundary flags. */
 function nonPassing(
@@ -109,6 +125,7 @@ function nonPassing(
     provider: raw?.provider,
     requestId: raw?.requestId,
     responseCharCount: raw?.responseCharCount ?? 0,
+    ...rawTransportDiagnostics(raw),
   };
 }
 
@@ -384,6 +401,7 @@ export function parseFrontendBuilderReview(
       provider: raw.provider,
       requestId: raw.requestId,
       responseCharCount: raw.responseCharCount,
+      ...rawTransportDiagnostics(raw),
     };
   } catch {
     // Absolute fail-open backstop — a parser error never throws into the build.
@@ -562,5 +580,12 @@ export function buildDeterministicFallbackReview(
     provider: priorModelReview.provider,
     requestId: priorModelReview.requestId,
     responseCharCount: priorModelReview.responseCharCount,
+    // Carry the failed model review's transport diagnostics so the size/continuation signals
+    // survive into the synthesized fallback review.
+    requestCharCount: priorModelReview.requestCharCount,
+    sizeBounded: priorModelReview.sizeBounded,
+    omittedFileCount: priorModelReview.omittedFileCount,
+    continuationRole: priorModelReview.continuationRole,
+    continuationAttached: priorModelReview.continuationAttached,
   };
 }

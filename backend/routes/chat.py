@@ -470,6 +470,7 @@ async def chat(req: ChatRequest, request: Request):
     _beta_op_type = None
     _beta_reset_at = None
     _beta_idem = None
+    _beta_role = None
     try:
         from backend.services.ai_guard import service as _ai_guard
         _op_type = _ai_guard.classify(
@@ -570,6 +571,7 @@ async def chat(req: ChatRequest, request: Request):
             _beta_op_id = _pf.operation_id
             _beta_op_type = _op_type
             _beta_reset_at = _pf.reset_at
+            _beta_role = _pf.role
     except Exception as _bge:
         logger.warning("CHAT | rid=%s | ai_guard preflight error (fail-open): %s", request_id, _bge)
     timer.mark("ai_guard")
@@ -754,6 +756,12 @@ async def chat(req: ChatRequest, request: Request):
                 "operationType": _beta_op_type,
                 "operationId": _beta_op_id,
                 "resetAt": _beta_reset_at,
+                # Phase 14L.2 — bounded, server-verified continuation summary so the browser
+                # (and owner diagnostics) can confirm a Web Build sub-call ATTACHED to the running
+                # parent build instead of starting a new operation. Role + boolean only — the raw
+                # key is never echoed here beyond the pre-existing operationId field.
+                "role": _beta_role,
+                "continuationAttached": (_beta_role == "continuation"),
             }
         except Exception:
             pass

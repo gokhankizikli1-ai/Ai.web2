@@ -2532,6 +2532,23 @@ export interface FrontendBuilderReviewArtifact {
   provider?: string;
   requestId?: string;
   responseCharCount: number;
+
+  /* ── Phase 14L.2 — bounded, optional REVIEW-TRANSPORT diagnostics carried through from the raw
+   *  artifact (additive; old persisted reviews simply lack them). They make a non-completed review
+   *  (the "did not complete" Safe-Preview cause) self-explanatory from a SAVED build. */
+  /** Serialized review-request size (chars) — high values near the backend 125k structured cap
+   *  explain a `safety_length` rejection (surfaced by the client as an "unexpected mode" failure). */
+  requestCharCount?: number;
+  /** True when the request was re-packed into a bounded include-set + omitted manifest to fit
+   *  under the backend structured-builder safety cap. */
+  sizeBounded?: boolean;
+  /** Files moved to the metadata-only omitted manifest by the size-bounding packer. */
+  omittedFileCount?: number;
+  /** Server-verified ai_guard role for this review sub-call ('continuation' = attached to the
+   *  running parent build; 'start' = not). Absent when no aiOperation echo was present. */
+  continuationRole?: 'start' | 'continuation';
+  /** Mirror of `continuationRole === 'continuation'` (op-key match yes/no); never a raw id. */
+  continuationAttached?: boolean;
 }
 
 /** Owner-only DELTA quality-repair diagnostics (bounded, sanitized, additive). Present on the
@@ -3071,6 +3088,27 @@ export interface FrontendBuilderReviewRawArtifact {
   rawResponse?: string;
   responseCharCount: number;
   reason: string;
+
+  /* ── Phase 14L.2 — bounded, optional REVIEW-TRANSPORT diagnostics (additive; old
+   *  artifacts simply lack them). They make a "review did not complete" Safe-Preview
+   *  fallback self-explanatory in production without exposing any content or raw ids. */
+  /** Serialized review-request size (chars). Lets an owner see when a large project's
+   *  review approached the backend structured-builder safety cap (125k). */
+  requestCharCount?: number;
+  /** True when the request exceeded the safe review bound and was re-packed into a
+   *  bounded include-set + omitted manifest so it fits under the backend 125k cap
+   *  (instead of being rejected as safety_length → false "unexpected mode"). */
+  sizeBounded?: boolean;
+  /** How many project files were moved to the metadata-only omitted manifest by the
+   *  size-bounding packer (0 when the full-file request was sent unchanged). */
+  omittedFileCount?: number;
+  /** Server-verified ai_guard role for THIS review sub-call: 'continuation' means the
+   *  request's operation key matched the already-running parent build (attached, free);
+   *  'start' means it did not. Absent when the response carried no aiOperation echo. */
+  continuationRole?: 'start' | 'continuation';
+  /** Convenience mirror of `continuationRole === 'continuation'` (op-key match yes/no).
+   *  Never carries a raw operation id. */
+  continuationAttached?: boolean;
 }
 
 /* ── Intermediate Phase 12E pipeline result (NOT persisted directly) ───────────

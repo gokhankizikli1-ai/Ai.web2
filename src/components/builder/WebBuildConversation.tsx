@@ -736,7 +736,15 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
         ownerRows.push(['frontendInitialReviewIssues', `blockers=${fir.blockerCount}, major=${fir.majorCount}, minor=${fir.minorCount}`]);
         fir.issues.slice(0, 3).forEach((i, idx) => ownerRows.push([`frontendInitialIssue${idx + 1}`, issueLine(i)]));
       } else {
+        // A non-completed INITIAL review is the exact production "the automatic design-quality
+        // review did not complete" → Safe Preview cause. Surface the persisted transport reason +
+        // the request size + the size-bounding / continuation signals so a SAVED build tells us
+        // whether the review hit the backend 125k structured cap or a genuine transport/parse
+        // problem — and confirms the sub-call attached to the running parent build (op-key match).
         ownerRows.push(['frontendInitialReviewReason', shortStr(fir.reason, 140)]);
+        if (typeof fir.requestCharCount === 'number') ownerRows.push(['frontendInitialReviewRequestChars', String(fir.requestCharCount)]);
+        if (fir.sizeBounded) ownerRows.push(['frontendInitialReviewSizeBounded', `true (omitted ${fir.omittedFileCount ?? 0} file(s) to fit the backend 125k cap)`]);
+        if (fir.continuationRole) ownerRows.push(['frontendInitialReviewContinuation', `${fir.continuationRole} (op-key match: ${fir.continuationAttached ? 'yes' : 'no'})`]);
       }
     }
     const frp = step.artifacts?.frontendBuilderRepair;
@@ -762,6 +770,9 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
         // truncation is diagnosable from the SAVED build — no new build required.
         ownerRows.push(['frontendFinalReviewReason', shortStr(ffr.reason, 180)]);
         ownerRows.push(['frontendFinalReviewResponseChars', String(ffr.responseCharCount ?? 0)]);
+        if (typeof ffr.requestCharCount === 'number') ownerRows.push(['frontendFinalReviewRequestChars', String(ffr.requestCharCount)]);
+        if (ffr.sizeBounded) ownerRows.push(['frontendFinalReviewSizeBounded', `true (omitted ${ffr.omittedFileCount ?? 0} file(s) to fit the backend 125k cap)`]);
+        if (ffr.continuationRole) ownerRows.push(['frontendFinalReviewContinuation', `${ffr.continuationRole} (op-key match: ${ffr.continuationAttached ? 'yes' : 'no'})`]);
       }
     }
     const fac = step.artifacts?.frontendBuilderAcceptance;
