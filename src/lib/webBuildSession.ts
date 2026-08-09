@@ -100,18 +100,72 @@ function readMap(): SessionMap {
   }
 }
 
-function writeMap(map: SessionMap): void {
-  try { localStorage.setItem(sessionsKey(), JSON.stringify(map)); } catch { /* quota */ }
+/**
+ * How many full session payloads we retain in localStorage. Each payload is LARGE (all generated
+ * files + every quality/contract artifact), and they all share ONE key; without a bound the blob
+ * grows until it exceeds the browser's ~5MB quota, at which point `localStorage.setItem` throws
+ * QuotaExceededError. Historically that error was swallowed silently, so the (large) payload write
+ * failed while the (tiny) sidebar title row still persisted — the "title survives, content gone"
+ * bug on reopen. We keep the newest N and evict older builds first. Older builds' sidebar rows may
+ * remain (their reopen shows the existing bounded "no saved data" notice), but the CURRENT and
+ * recent builds ALWAYS persist across reload.
+ */
+const MAX_STORED_SESSIONS = 8;
+
+/** Session ids oldest → newest (by updatedAt; stable for equal stamps). */
+function idsOldestFirst(map: SessionMap): string[] {
+  return Object.values(map)
+    .sort((a, b) => (a.updatedAt < b.updatedAt ? -1 : a.updatedAt > b.updatedAt ? 1 : 0))
+    .map((s) => s.id);
 }
 
-/** Persist (create or update) a session from a payload; marks it active. */
+/**
+ * Persist the session map within the localStorage quota. `keepId` is the session that MUST
+ * survive (the one just written) — it is never evicted. Strategy: cap to the newest
+ * MAX_STORED_SESSIONS, then on any write failure (quota / serialization) evict the OLDEST other
+ * session and retry until it fits or only `keepId` remains. Returns true iff the map (including
+ * `keepId`) was actually stored. A failed `setItem` is atomic — the previously stored value is
+ * left intact — so a false return never corrupts the existing store.
+ */
+function persistMap(map: SessionMap, keepId: string): boolean {
+  let working: SessionMap = { ...map };
+  // Bound the retained set to the newest N up front (never dropping keepId).
+  {
+    const ordered = idsOldestFirst(working);
+    for (const victim of ordered) {
+      if (Object.keys(working).length <= MAX_STORED_SESSIONS) break;
+      if (victim === keepId) continue;
+      const { [victim]: _drop, ...rest } = working;
+      working = rest;
+    }
+  }
+  for (;;) {
+    try {
+      localStorage.setItem(sessionsKey(), JSON.stringify(working));
+      return true;
+    } catch {
+      // Quota (or serialization) — evict the oldest non-keep session and retry.
+      const victim = idsOldestFirst(working).find((id) => id !== keepId);
+      if (!victim) return false; // only keepId remains and it still does not fit
+      const { [victim]: _drop, ...rest } = working;
+      working = rest;
+    }
+  }
+}
+
+/**
+ * Persist (create or update) a session from a payload; marks it active on success.
+ * Returns the session id, or '' when the payload could NOT be stored (invalid id, or it still did
+ * not fit after evicting every other session). A '' return means "not persisted" — callers must
+ * not then create a sidebar companion that would dangle with no restorable content.
+ */
 export function saveWebBuildSession(payload: WebBuildPayload, lang = 'en'): string {
   const id = sessionIdOf(payload);
   if (!id) return '';
   const map = readMap();
   const title = map[id]?.title || deriveWebBuildTitle(payload.prompt, lang);
   map[id] = { id, title, updatedAt: new Date().toISOString(), payload };
-  writeMap(map);
+  if (!persistMap(map, id)) return ''; // could not store the payload — do not claim a saved session
   setActiveWebBuildSession(id);
   return id;
 }
