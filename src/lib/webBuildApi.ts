@@ -2659,14 +2659,19 @@ async function pollFrontendBackgroundTask(
       const deadlineDiag: Record<string, unknown> = {
         background_final_deadline_poll: true,
         background_workflow_budget_ms: workflowBudgetMs,
-        background_expires_in_ms: exec0.expiresInMs,
+        // Same key the parser reads (`expires_in_ms` → expiresInMs → backgroundExpiresInMs).
+        expires_in_ms: exec0.expiresInMs,
         background_transient_poll_failures: transientFails,
       };
       const finalR = await retrieveBackgroundJob(jobId, signal);
       if (finalR.kind === 'user-aborted') return abortCancelled();
       // A real terminal result (completed / incomplete / failed) discovered at the deadline is
       // returned through the UNCHANGED parser/error-mapping path — NEVER overwritten by a timeout.
-      if (finalR.kind === 'terminal') return annotate(finalR.data, pollCount + 1, { ...deadlineDiag, background_final_poll_result: 'completed' });
+      // Disambiguate completed vs failed/incomplete so saved lifecycle rows match the provider terminal.
+      if (finalR.kind === 'terminal') {
+        const terminalPollResult = parseAiExecutionMetadata(finalR.data).status === 'succeeded' ? 'completed' : 'failed';
+        return annotate(finalR.data, pollCount + 1, { ...deadlineDiag, background_final_poll_result: terminalPollResult });
+      }
       // 404 preserves the existing missing / expired / not-owned behavior (pre-increment count).
       if (finalR.kind === 'missing') return annotate(finalR.data, pollCount, { ...deadlineDiag, background_final_poll_result: 'missing' });
       // A terminal 'cancelled' WITHOUT a user abort preserves the unexpected-cancellation class.
@@ -2716,7 +2721,8 @@ async function pollFrontendBackgroundTask(
           background_final_poll_result: 'poll-error',
           background_transient_poll_failures: transientFails,
           background_workflow_budget_ms: workflowBudgetMs,
-          background_expires_in_ms: exec0.expiresInMs,
+          // Same key the parser reads (`expires_in_ms` → expiresInMs → backgroundExpiresInMs).
+          expires_in_ms: exec0.expiresInMs,
           background_cancel_requested: true,
         });
       }
