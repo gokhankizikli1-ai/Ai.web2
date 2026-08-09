@@ -1401,6 +1401,11 @@ export async function runFrontendBuilderQualityPipeline(
   } catch (err) {
     // Explicit caller cancellation must propagate so a cancelled turn is not persisted.
     if (err instanceof WebBuildError && err.kind === 'cancelled') throw err;
+    // A usage/entitlement BLOCK on a Web Build sub-call (e.g. the design-quality review is
+    // gated by ai_guard) is a policy outcome, not a quality failure. Propagate it so the caller
+    // surfaces the HONEST localized limit/concurrency message (the same path generation uses) —
+    // instead of swallowing it into a generic Safe-Preview "quality check could not finish".
+    if (err instanceof WebBuildError && err.kind === 'beta_limit') throw err;
     if (opts?.signal?.aborted) throw err;
     // Any other Phase 12E error fails open: return the already-consumed Phase 12D payload
     // untouched (Preview + All Files + validated project remain usable) with a skipped record.
