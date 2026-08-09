@@ -2252,6 +2252,11 @@ interface AiExecutionMeta {
   backgroundPollCount?: number;
   backgroundWaitMs?: number;
   backgroundTerminalStatus?: string;
+  // Background LIFECYCLE diagnostics (bounded). Emitted by the client poller on a background failure.
+  backgroundWorkflowBudgetMs?: number;
+  backgroundFinalPollResult?: string;
+  backgroundTransientPollFailures?: number;
+  backgroundCancelRequested?: boolean;
   storeRequired?: boolean;
   /* ── Phase 13F.2 — background store health + bounded numeric usage truth (numbers only). */
   backgroundStoreAvailable?: boolean;
@@ -2323,6 +2328,10 @@ function parseAiExecutionMetadata(data: Record<string, unknown>): AiExecutionMet
     backgroundPollCount: boundedInt(exec.background_poll_count),
     backgroundWaitMs: boundedInt(exec.background_wait_ms),
     backgroundTerminalStatus: boundedStr(exec.background_terminal_status, MAX_EXEC_ERR_KIND_CHARS),
+    backgroundWorkflowBudgetMs: boundedInt(exec.background_workflow_budget_ms),
+    backgroundFinalPollResult: boundedStr(exec.background_final_poll_result, MAX_EXEC_ERR_KIND_CHARS),
+    backgroundTransientPollFailures: boundedInt(exec.background_transient_poll_failures),
+    backgroundCancelRequested: typeof exec.background_cancel_requested === 'boolean' ? exec.background_cancel_requested : undefined,
     storeRequired: typeof exec.store_required === 'boolean' ? exec.store_required : undefined,
     backgroundStoreAvailable: typeof exec.background_store_available === 'boolean' ? exec.background_store_available : undefined,
     backgroundStoreStatus: boundedStr(exec.background_store_status, MAX_EXEC_ERR_KIND_CHARS),
@@ -2393,6 +2402,12 @@ function execArtifactFields(exec: AiExecutionMeta, data: Record<string, unknown>
     backgroundPollCount: exec.backgroundPollCount,
     backgroundWaitMs: exec.backgroundWaitMs,
     backgroundTerminalStatus: exec.backgroundTerminalStatus,
+    // Background LIFECYCLE diagnostics (bounded; from the client poller on a background failure).
+    backgroundWorkflowBudgetMs: exec.backgroundWorkflowBudgetMs,
+    backgroundExpiresInMs: exec.expiresInMs,
+    backgroundFinalPollResult: exec.backgroundFinalPollResult as FrontendBuilderRawArtifact['backgroundFinalPollResult'],
+    backgroundTransientPollFailures: exec.backgroundTransientPollFailures,
+    backgroundCancelRequested: exec.backgroundCancelRequested,
     backgroundStoreRequired: exec.storeRequired,
     // Phase 13F.2 — store health + bounded numeric usage truth (numbers only).
     backgroundStoreAvailable: exec.backgroundStoreAvailable,
@@ -2637,27 +2652,45 @@ async function pollFrontendBackgroundTask(
       // have COMPLETED (or begun transitioning to a terminal state) since the previous poll,
       // perform EXACTLY ONE final GET of the SAME opaque job. This retrieves the existing job only
       // — it can never create a new Response and never restarts generation.
+      //
+      // Bounded lifecycle diagnostics attached to EVERY deadline outcome so a background timeout is
+      // diagnosable from a saved build: the resolved client budget, the backend-advertised retention,
+      // the transient-poll-failure tally, and (below) the exact final-poll result. Safe metadata only.
+      const deadlineDiag: Record<string, unknown> = {
+        background_final_deadline_poll: true,
+        background_workflow_budget_ms: workflowBudgetMs,
+        background_expires_in_ms: exec0.expiresInMs,
+        background_transient_poll_failures: transientFails,
+      };
       const finalR = await retrieveBackgroundJob(jobId, signal);
       if (finalR.kind === 'user-aborted') return abortCancelled();
       // A real terminal result (completed / incomplete / failed) discovered at the deadline is
       // returned through the UNCHANGED parser/error-mapping path — NEVER overwritten by a timeout.
-      if (finalR.kind === 'terminal') return annotate(finalR.data, pollCount + 1, { background_final_deadline_poll: true });
+      if (finalR.kind === 'terminal') return annotate(finalR.data, pollCount + 1, { ...deadlineDiag, background_final_poll_result: 'completed' });
       // 404 preserves the existing missing / expired / not-owned behavior (pre-increment count).
-      if (finalR.kind === 'missing') return annotate(finalR.data, pollCount, { background_final_deadline_poll: true });
+      if (finalR.kind === 'missing') return annotate(finalR.data, pollCount, { ...deadlineDiag, background_final_poll_result: 'missing' });
       // A terminal 'cancelled' WITHOUT a user abort preserves the unexpected-cancellation class.
-      if (finalR.kind === 'cancelled') return backgroundFailureData('background-cancelled-unexpectedly', taskKind, pollCount + 1, Date.now() - started, { background_final_deadline_poll: true });
+      if (finalR.kind === 'cancelled') return backgroundFailureData('background-cancelled-unexpectedly', taskKind, pollCount + 1, Date.now() - started, { ...deadlineDiag, background_final_poll_result: 'cancelled' });
       // User cancellation WINS over the deadline-timeout classification: if the caller signal
       // aborted around this final retrieval (e.g. the GET resolved just before the abort landed),
       // treat it as an explicit cancellation, not a timeout.
       if (signal?.aborted) return abortCancelled();
-      // Still queued/in_progress, OR the single bounded final GET could not produce a usable
-      // terminal result (network / non-404 HTTP failure). Either way the client budget is spent:
-      // best-effort cancel the SAME job and return the truthful client-timeout. We deliberately
-      // classify a failed final GET as `background-client-timeout` (not `background-poll-failed`):
-      // the proximate, contract-accurate cause is that the client workflow deadline elapsed, and a
-      // transient blip on this ONE final GET neither restarts generation nor adds a provider call.
+      // The client budget is spent; best-effort cancel the SAME job. The two remaining sub-cases are
+      // now DISTINCT (they used to collapse into one opaque `background-client-timeout`), so the next
+      // failure tells us WHICH root cause to act on:
+      //   • still queued/in_progress → the provider genuinely did not finish within the client budget
+      //     (a real client timeout: the lever is reducing repair latency/work, not a parser change);
+      //   • the single final GET failed (network/non-404 HTTP) → a transport blip on the last poll,
+      //     NOT proof the generation was still running.
+      // Neither restarts generation nor adds a provider call.
       await cancelBackgroundJob(jobId);
-      return backgroundFailureData('background-client-timeout', taskKind, pollCount, Date.now() - started, { background_final_deadline_poll: true, background_cancel_requested: true });
+      if (finalR.kind === 'running') {
+        return backgroundFailureData('background-client-timeout', taskKind, pollCount, Date.now() - started,
+          { ...deadlineDiag, background_final_poll_result: 'running', background_cancel_requested: true });
+      }
+      // finalR.kind === 'error'
+      return backgroundFailureData('background-final-poll-error', taskKind, pollCount, Date.now() - started,
+        { ...deadlineDiag, background_final_poll_result: 'poll-error', background_cancel_requested: true });
     }
 
     // Caller cancellation DURING the inter-poll delay must still best-effort cancel the job (the
@@ -2679,7 +2712,13 @@ async function pollFrontendBackgroundTask(
       transientFails += 1;
       if (transientFails > BACKGROUND_MAX_TRANSIENT_POLL_FAILURES) {
         await cancelBackgroundJob(jobId);
-        return backgroundFailureData('background-poll-failed', taskKind, pollCount, Date.now() - started);
+        return backgroundFailureData('background-poll-failed', taskKind, pollCount, Date.now() - started, {
+          background_final_poll_result: 'poll-error',
+          background_transient_poll_failures: transientFails,
+          background_workflow_budget_ms: workflowBudgetMs,
+          background_expires_in_ms: exec0.expiresInMs,
+          background_cancel_requested: true,
+        });
       }
       continue;
     }
@@ -2935,7 +2974,7 @@ function readContinuationRole(data: Record<string, unknown>): 'start' | 'continu
 }
 type FrontendTaskOutcome =
   | { ok: true; data: FrontendTaskResponse }
-  | { ok: false; reason: string; model?: string; provider?: string; requestId?: string };
+  | { ok: false; reason: string; model?: string; provider?: string; requestId?: string; exec?: AiExecutionMeta };
 
 /**
  * Shared private transport for a dedicated frontend_builder task (`review` / `repair`).
@@ -3030,7 +3069,10 @@ async function callFrontendBuilderTask(
     // (review / repair / contract repair) ever receives a generic chat fallback sentence.
     if (exec.present && exec.status !== 'succeeded') {
       const detail = exec.errorKind ? ` (${exec.errorKind}${exec.errorCode ? `/${exec.errorCode}` : ''})` : '';
-      return { ok: false, reason: `The dedicated frontend task provider execution did not succeed: ${exec.status}${detail}.`, model, provider, requestId };
+      // Carry the parsed execution metadata so the caller can persist the bounded background
+      // lifecycle diagnostics (budget / final-poll-result / poll count / transient failures) that
+      // the poller attached — otherwise a background timeout loses all its lifecycle telemetry.
+      return { ok: false, reason: `The dedicated frontend task provider execution did not succeed: ${exec.status}${detail}.`, model, provider, requestId, exec };
     }
     // Rolling-deploy guard — reject the exact known generic chat fallback (older backend).
     if (isKnownGenericFallback(reply)) {
@@ -3435,7 +3477,13 @@ export async function generateFrontendBuilderRepairRaw(
   }
 
   const outcome = await callFrontendBuilderTask(message, FRONTEND_REPAIR_TIMEOUT_MS, spec.prompt || '', opts);
-  if (!outcome.ok) return frontendBuilderArtifact('failed', outcome.reason);
+  if (!outcome.ok) {
+    // Preserve the bounded background LIFECYCLE telemetry (budget / final-poll-result / poll count /
+    // transient failures / cancel) on the failed repair raw so a background timeout is diagnosable
+    // from the saved build — otherwise this failure path drops all of it. Never a job id or source.
+    const lifecycle = outcome.exec ? execArtifactFields(outcome.exec, {}) : { model: outcome.model, provider: outcome.provider, requestId: outcome.requestId };
+    return frontendBuilderArtifact('failed', outcome.reason, lifecycle);
+  }
 
   const { reply, reportedMode, model, provider, requestId, safetyRejectionReason } = outcome.data;
   // Only carry identity metadata in `base`; the per-case positional `reason` (which
@@ -3572,7 +3620,13 @@ export async function generateFrontendBuilderDeltaRepairRaw(
   }
 
   const outcome = await callFrontendBuilderTask(message, FRONTEND_REPAIR_TIMEOUT_MS, spec.prompt || '', opts);
-  if (!outcome.ok) return frontendBuilderArtifact('failed', outcome.reason);
+  if (!outcome.ok) {
+    // Preserve the bounded background LIFECYCLE telemetry (budget / final-poll-result / poll count /
+    // transient failures / cancel) on the failed repair raw so a background timeout is diagnosable
+    // from the saved build — otherwise this failure path drops all of it. Never a job id or source.
+    const lifecycle = outcome.exec ? execArtifactFields(outcome.exec, {}) : { model: outcome.model, provider: outcome.provider, requestId: outcome.requestId };
+    return frontendBuilderArtifact('failed', outcome.reason, lifecycle);
+  }
 
   const { reply, reportedMode, model, provider, requestId, safetyRejectionReason } = outcome.data;
   const base: Partial<FrontendBuilderRawArtifact> = { model, provider, requestId };

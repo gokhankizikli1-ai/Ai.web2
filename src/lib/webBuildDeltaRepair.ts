@@ -430,6 +430,27 @@ function roundRatio(n: number): number {
   return Math.round(Math.max(0, Math.min(1, n)) * 100) / 100;
 }
 
+/** Mirror the bounded, safe background LIFECYCLE telemetry from a failed delta raw into the delta
+ *  diagnostics so a background timeout is diagnosable from a SAVED build (resolved client budget,
+ *  advertised job retention, elapsed, poll count, transient failures, the final-poll result and the
+ *  transport error kind). Returns `{}` when no lifecycle telemetry is present (e.g. a synchronous
+ *  failure or an old saved build). Never a job id, raw response id, prompt or source. */
+function backgroundLifecycleDiag(deltaRaw: FrontendBuilderRawArtifact): Pick<FrontendDeltaRepairArtifact, 'backgroundLifecycle'> {
+  const lc = {
+    finalPollResult: deltaRaw.backgroundFinalPollResult,
+    workflowBudgetMs: deltaRaw.backgroundWorkflowBudgetMs,
+    expiresInMs: deltaRaw.backgroundExpiresInMs,
+    elapsedMs: deltaRaw.backgroundWaitMs,
+    pollCount: deltaRaw.backgroundPollCount,
+    transientPollFailures: deltaRaw.backgroundTransientPollFailures,
+    cancelRequested: deltaRaw.backgroundCancelRequested,
+    errorKind: deltaRaw.backendErrorKind,
+  };
+  // Only attach when at least one lifecycle signal is present (keeps old/sync failures clean).
+  const hasAny = Object.values(lc).some((v) => v !== undefined);
+  return hasAny ? { backgroundLifecycle: lc } : {};
+}
+
 export interface DeltaReconstruction {
   /** A synthetic raw artifact the caller feeds to the UNCHANGED full-project validator:
    *  a `completed` frontend-files-v1 envelope on success, or a `failed` artifact (carrying a
@@ -524,6 +545,9 @@ export function reconstructRepairRawFromDelta(input: {
         // A completed-but-full-envelope response reaches this branch only via a storage-truncated
         // raw; otherwise there was no usable body. Report the transport's detected shape when known.
         actualResponseShape: deltaRaw.responseShape === 'frontend-envelope' ? 'frontend-files-v1' : 'none',
+        // Mirror the bounded background lifecycle telemetry so a background timeout (the dominant
+        // cause of a `no-response-body` delta failure) is diagnosable from the saved build.
+        ...backgroundLifecycleDiag(deltaRaw),
       },
     };
   }

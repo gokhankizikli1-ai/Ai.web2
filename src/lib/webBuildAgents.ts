@@ -2193,6 +2193,19 @@ export interface FrontendBuilderRawArtifact {
   backgroundWaitMs?: number;
   backgroundTerminalStatus?: string;
   backgroundStoreRequired?: boolean;
+  /* ── Background LIFECYCLE diagnostics (bounded numbers/labels only). Persisted so a background
+   *  timeout is diagnosable from a SAVED build without a new run: the resolved client workflow
+   *  budget, the backend-advertised job retention, the outcome of the single final authoritative
+   *  poll, and how many transient poll failures / whether a cancel was requested. Never a job id,
+   *  raw OpenAI response id, prompt or source. Old builds lack these. */
+  backgroundWorkflowBudgetMs?: number;
+  backgroundExpiresInMs?: number;
+  /** Outcome of the single final-deadline authoritative poll: 'running' (still in progress at the
+   *  budget — a genuine client timeout), 'completed'/'failed'/'missing'/'cancelled' (a real terminal
+   *  found at the deadline), or 'poll-error' (the final GET itself failed transiently). */
+  backgroundFinalPollResult?: 'running' | 'completed' | 'failed' | 'missing' | 'cancelled' | 'poll-error';
+  backgroundTransientPollFailures?: number;
+  backgroundCancelRequested?: boolean;
   /* ── Phase 13F.2 — background store health + bounded numeric usage truth (numbers/codes only;
    *  never source, job id, raw OpenAI response id or reasoning content). Old builds lack these. */
   backgroundStoreAvailable?: boolean;
@@ -2631,6 +2644,28 @@ export interface FrontendDeltaRepairArtifact {
    *   - 'none'              : no usable body was returned,
    *   - 'unknown'          : a body was returned but its contract could not be determined. */
   actualResponseShape?: 'frontend-delta-v1' | 'frontend-files-v1' | 'none' | 'unknown';
+  /** ── Background LIFECYCLE diagnostics for a delta repair that failed at the transport/background
+   *  layer (present only when the delta call did not return a usable body, e.g. a background client
+   *  timeout). Bounded, safe metadata mirrored from the raw artifact so the exact lifecycle cause is
+   *  visible on a SAVED build — never a job id, raw response id, prompt or source. ── */
+  backgroundLifecycle?: {
+    /** 'running' = still in progress at the client budget (genuine timeout); 'poll-error' = the final
+     *  authoritative GET failed; the terminal values = a real terminal was found at the deadline. */
+    finalPollResult?: 'running' | 'completed' | 'failed' | 'missing' | 'cancelled' | 'poll-error';
+    /** The resolved client workflow budget (ms) — 720000 for quality-repair, 540000 otherwise. */
+    workflowBudgetMs?: number;
+    /** The backend-advertised opaque-job retention (ms) — must exceed the client budget. */
+    expiresInMs?: number;
+    /** Wall-clock elapsed at the terminal outcome (ms). */
+    elapsedMs?: number;
+    /** How many steady-state polls ran, and how many transient poll failures were tolerated. */
+    pollCount?: number;
+    transientPollFailures?: number;
+    /** Whether a best-effort cancel of the opaque job was requested (never a new provider call). */
+    cancelRequested?: boolean;
+    /** The bounded transport error kind (e.g. 'background-client-timeout', 'background-final-poll-error'). */
+    errorKind?: string;
+  };
 }
 
 /** The persisted, bounded record of the single Phase 12E repair attempt. Never

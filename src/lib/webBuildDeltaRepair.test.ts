@@ -314,4 +314,32 @@ describe('reconstructRepairRawFromDelta — wrapper-tolerant end to end + bounde
     expect(out.diagnostics.expectedContract).toBe('frontend-delta-v1');
     expect(out.diagnostics.actualResponseShape).toBe('frontend-files-v1');
   });
+
+  it('background-timeout lifecycle telemetry is mirrored into the delta diagnostics', () => {
+    // A background client timeout: the delta call did not complete (no usable body). The bounded
+    // lifecycle telemetry the poller attached must survive onto the delta diagnostics so the exact
+    // cause (still running vs poll-error, and the timing budget) is diagnosable from a saved build.
+    const timedOutRaw = {
+      version: 'frontend-builder-raw-v1', status: 'failed', requestedFormat: 'frontend-files-v1',
+      mode: 'frontend_builder', responseCharCount: 0, truncatedForStorage: false, validationStatus: 'not-run',
+      reason: 'The dedicated frontend task provider execution did not succeed: failed (background-client-timeout).',
+      warnings: [], model: 'm', provider: 'p', requestId: 'r',
+      backgroundMode: true, backgroundTaskKind: 'quality-repair',
+      backgroundWorkflowBudgetMs: 720000, backgroundExpiresInMs: 840000,
+      backgroundFinalPollResult: 'running', backgroundWaitMs: 721345, backgroundPollCount: 180,
+      backgroundTransientPollFailures: 0, backgroundCancelRequested: true,
+      backendErrorKind: 'background-client-timeout',
+    } as FrontendBuilderRawArtifact;
+    const out = reconstructRepairRawFromDelta({ deltaRaw: timedOutRaw, originalFiles: originalProject() });
+    expect(out.repairRaw.status).toBe('failed');            // fail open — original preserved
+    expect(out.diagnostics.rejectionCategory).toBe('no-response-body');
+    expect(out.diagnostics.actualResponseShape).toBe('none');
+    const lc = out.diagnostics.backgroundLifecycle;
+    expect(lc?.finalPollResult).toBe('running');            // genuine timeout (still running at budget)
+    expect(lc?.workflowBudgetMs).toBe(720000);
+    expect(lc?.expiresInMs).toBe(840000);
+    expect(lc?.pollCount).toBe(180);
+    expect(lc?.cancelRequested).toBe(true);
+    expect(lc?.errorKind).toBe('background-client-timeout');
+  });
 });
