@@ -92,6 +92,23 @@ describe('Web Build payload persists across reload (contents restored, not just 
     expect(roundTripped).toEqual(gate);
   });
 
+  it('a pre-gate fallbackReasonCode survives the persistence round-trip (reason reaches UI on reload)', () => {
+    // The exact production case: manual-review-required with NO acceptanceGate but a bounded
+    // fallbackReasonCode. It must survive save→reload so the user-facing line renders on reopen.
+    const p = {
+      steps: [{ id: 'step-fb', artifacts: { frontendBuilderAcceptance: {
+        version: 'frontend-acceptance-v1', status: 'manual-review-required', activeProject: 'initial-model-native',
+        fallbackReasonCode: 'repair-failed-validation',
+      } } }],
+      prompt: 'a saas site', brief: {}, sectionItems: [], files: [], createdAt: 't-fb',
+    } as unknown as WebBuildPayload;
+    const id = saveWebBuildSession(p, 'en');
+    const restored = getWebBuildSession(id);
+    const acc = (restored!.steps[0] as unknown as { artifacts: { frontendBuilderAcceptance: { status: string; fallbackReasonCode: string } } }).artifacts.frontendBuilderAcceptance;
+    expect(acc.status).toBe('manual-review-required');
+    expect(acc.fallbackReasonCode).toBe('repair-failed-validation');
+  });
+
   it('title row and payload stay tied to the SAME conversation id', () => {
     const p = payload('step-3', 'restaurant site');
     const runId = saveWebBuildSession(p, 'en');

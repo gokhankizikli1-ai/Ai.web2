@@ -345,10 +345,107 @@ export function buildUserFacingAcceptanceReason(
         };
       }
       // Fallback — a generic, safe sentence (should be unreachable for a rejected gate).
-      return {
-        en: 'Quality gate: the build did not pass the automatic design-quality checks.',
-        tr: 'Kalite kapısı: yapı otomatik tasarım kalitesi kontrollerini geçemedi.',
-      };
+      return GENERIC_ACCEPTANCE_REASON;
     }
   }
+}
+
+/* ── Pre-gate / non-gate SAFE-PREVIEW fallback reasons ─────────────────────────────────────────
+ * A build can fall to Safe Preview WITHOUT ever reaching the deterministic acceptance gate — the
+ * repair call did not complete, the repaired project failed static re-validation, the initial
+ * review produced no actionable fix, the structural contract repair failed, the project was not
+ * consumable, or the pipeline errored open. Those acceptance artifacts carry NO `acceptanceGate`,
+ * so before this they surfaced NO user-facing reason (the reported "Quality gate line missing"
+ * bug). Each such path now stamps a bounded `fallbackReasonCode` that maps to a safe sentence here.
+ * Counts/booleans/bounded codes only — never source, prompts, provider output, ids or PII. */
+export type FrontendAcceptanceFallbackReasonCode =
+  | 'repair-call-incomplete'
+  | 'repair-failed-validation'
+  | 'no-actionable-issue'
+  | 'initial-review-incomplete'
+  | 'contract-repair-failed'
+  | 'not-consumable'
+  | 'pipeline-error';
+
+/** The single, always-safe generic sentence — used when a build fell back but no specific reason
+ *  code is present, so a Safe-Preview build NEVER shows a blank explanation. */
+const GENERIC_ACCEPTANCE_REASON: { en: string; tr: string } = {
+  en: 'Quality gate: the build did not pass the automatic design-quality checks, so the safe preview is shown.',
+  tr: 'Kalite kapısı: yapı otomatik tasarım kalitesi kontrollerini geçemedi; bu nedenle güvenli önizleme gösteriliyor.',
+};
+
+function fallbackReasonSentence(code: FrontendAcceptanceFallbackReasonCode): { en: string; tr: string } {
+  switch (code) {
+    case 'repair-call-incomplete':
+      return {
+        en: 'Quality gate: the automatic repair did not complete, so the build was not approved.',
+        tr: 'Kalite kapısı: otomatik düzeltme tamamlanmadı; bu nedenle yapı onaylanmadı.',
+      };
+    case 'repair-failed-validation':
+      return {
+        en: 'Quality gate: the repaired project failed static validation, so it was not approved.',
+        tr: 'Kalite kapısı: düzeltilen proje statik doğrulamayı geçemedi; bu nedenle onaylanmadı.',
+      };
+    case 'no-actionable-issue':
+      return {
+        en: 'Quality gate: the review requested changes but produced no actionable fix, so the build was not approved.',
+        tr: 'Kalite kapısı: inceleme değişiklik istedi ancak uygulanabilir bir düzeltme üretmedi; bu nedenle yapı onaylanmadı.',
+      };
+    case 'initial-review-incomplete':
+      return {
+        en: 'Quality gate: the automatic design-quality review did not complete, so the build was not approved.',
+        tr: 'Kalite kapısı: otomatik tasarım kalitesi incelemesi tamamlanmadı; bu nedenle yapı onaylanmadı.',
+      };
+    case 'contract-repair-failed':
+      return {
+        en: 'Quality gate: the generated project failed structural validation and its repair did not pass, so the safe preview is shown.',
+        tr: 'Kalite kapısı: oluşturulan proje yapısal doğrulamayı geçemedi ve düzeltmesi de geçmedi; bu nedenle güvenli önizleme gösteriliyor.',
+      };
+    case 'not-consumable':
+      return {
+        en: 'Quality gate: the generated project was not usable, so the safe preview is shown.',
+        tr: 'Kalite kapısı: oluşturulan proje kullanılabilir değildi; bu nedenle güvenli önizleme gösteriliyor.',
+      };
+    case 'pipeline-error':
+      return {
+        en: 'Quality gate: the quality check could not finish, so the safe preview is shown.',
+        tr: 'Kalite kapısı: kalite kontrolü tamamlanamadı; bu nedenle güvenli önizleme gösteriliyor.',
+      };
+  }
+}
+
+/** The minimal shape of the acceptance artifact this resolver reads (keeps it dependency-light and
+ *  testable without importing the full artifact type). */
+export interface AcceptanceReasonSource {
+  status: 'approved' | 'repaired-approved' | 'manual-review-required' | 'skipped' | string;
+  activeProject?: string;
+  acceptanceGate?: FrontendAcceptanceGateDiagnostics;
+  fallbackReasonCode?: FrontendAcceptanceFallbackReasonCode;
+}
+
+/**
+ * The SINGLE entry point the UI uses to get a bounded, safe, user-facing reason for a build that
+ * fell to Safe Preview — from ANY path, gate or non-gate. Resolution order:
+ *   1. an approved / repaired-approved build → null (nothing to explain);
+ *   2. a rejected deterministic gate diagnostic → the precise gate sentence;
+ *   3. a pre-gate `fallbackReasonCode` → its safe sentence;
+ *   4. any other Safe-Preview build (manual-review-required, or a skipped internal-fallback) →
+ *      the generic safe sentence, so a fallen-back build is NEVER shown with a blank reason.
+ * Returns null only for approved builds and for non-fallback statuses. Never leaks internal data.
+ */
+export function buildUserFacingAcceptanceReasonFromArtifact(
+  acceptance: AcceptanceReasonSource | undefined,
+): { en: string; tr: string } | null {
+  if (!acceptance) return null;
+  if (acceptance.status === 'approved' || acceptance.status === 'repaired-approved') return null;
+  const isFallback =
+    acceptance.status === 'manual-review-required' ||
+    (acceptance.status === 'skipped' && acceptance.activeProject === 'internal-fallback');
+  if (!isFallback) return null;
+  // Prefer the precise deterministic-gate reason when the candidate reached the gate.
+  const gateReason = buildUserFacingAcceptanceReason(acceptance.acceptanceGate);
+  if (gateReason) return gateReason;
+  // Otherwise a bounded pre-gate fallback code, else the always-safe generic sentence.
+  if (acceptance.fallbackReasonCode) return fallbackReasonSentence(acceptance.fallbackReasonCode);
+  return GENERIC_ACCEPTANCE_REASON;
 }
