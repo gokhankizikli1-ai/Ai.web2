@@ -33,12 +33,12 @@ import {
 } from '@/lib/webBuildApi';
 // Owner-only DELTA quality-repair — pure, deterministic delta parser/validator/merger. No
 // network. Flag-gated + owner-gated by the caller; fail-open never triggers a second repair call.
-import { resolveWebBuildQualityRepairMode, reconstructRepairRawFromDelta } from '@/lib/webBuildDeltaRepair';
+import { resolveWebBuildQualityRepairMode, isDeltaRepairEligible, reconstructRepairRawFromDelta } from '@/lib/webBuildDeltaRepair';
 // Owner-only COMPACT quality-context — pure, deterministic, network-free selection of a bounded,
 // safe source subset for the delta-repair request + post-repair review. Fully safe-fallback: an
 // undefined context means the EXISTING full-context request is used (before the single call).
 import {
-  resolveWebBuildQualityContextMode, selectCompactRepairContext, selectCompactPostRepairContext,
+  resolveWebBuildQualityContextMode, isCompactContextEligible, selectCompactRepairContext, selectCompactPostRepairContext,
   disabledQualityContextDiagnostics,
 } from '@/lib/webBuildQualityContext';
 import type { CompactSourceContext } from '@/lib/webBuildQualityContext';
@@ -1123,11 +1123,15 @@ export async function runFrontendBuilderQualityPipeline(
     //    unchanged. A malformed / unsafe / rejected delta fails OPEN to the original project via
     //    the same `repairRaw.status !== 'completed'` branch — NEVER a second repair call. ──
     const repairMode = resolveWebBuildQualityRepairMode();
-    const deltaEligible = repairMode === 'owner_delta' && opts?.ownerEligible === true;
-    // Owner-compact quality-context is eligible ONLY inside the owner-delta path. It never touches
-    // the full-project repair, the initial review, revisions or any non-owner/disabled path.
+    // Delta repair eligibility: owner_delta → owners only (legacy); all_delta → every entitled
+    // build user (parity — a normal beta/paid user gets the same bounded quality-recovery the owner
+    // gets, so their build is not left on a worse full re-emit that can regress into Safe Preview).
+    const ownerEligible = opts?.ownerEligible === true;
+    const deltaEligible = isDeltaRepairEligible(repairMode, ownerEligible);
+    // Compact quality-context is eligible ONLY inside the delta path. It never touches the
+    // full-project repair, the initial review, revisions or any disabled path.
     const contextMode = resolveWebBuildQualityContextMode();
-    const compactContextEligible = deltaEligible && contextMode === 'owner_compact';
+    const compactContextEligible = isCompactContextEligible(deltaEligible, contextMode, ownerEligible);
     let deltaDiagnostics: FrontendDeltaRepairArtifact | undefined;
     let repairRaw: FrontendBuilderRawArtifact;
     // Internal-only: the normalized changed/upsert paths from a valid reconstruction (used to build

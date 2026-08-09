@@ -31,17 +31,38 @@ import type {
 } from '@/lib/webBuildAgents';
 
 /* ── Mode flag (Vite convention, mirrors the other VITE_* readers) ─────────────
- * VITE_WEB_BUILD_QUALITY_REPAIR_MODE = disabled | owner_delta
- * Missing / empty / any unrecognized value resolves to `disabled` (fail-closed). */
-export type WebBuildQualityRepairMode = 'disabled' | 'owner_delta';
+ * VITE_WEB_BUILD_QUALITY_REPAIR_MODE = disabled | owner_delta | all_delta
+ *   disabled    — full-project re-emit repair for everyone (default, fail-closed).
+ *   owner_delta — bounded delta repair for a verified owner session only (legacy).
+ *   all_delta   — the SAME bounded delta repair for EVERY entitled build user
+ *                 (parity: a normal beta/paid user gets the same quality-recovery
+ *                 the owner gets — never a worse full re-emit that can regress
+ *                 untouched sections into a Safe-Preview rejection).
+ * Missing / empty / any unrecognized value resolves to `disabled`. */
+export type WebBuildQualityRepairMode = 'disabled' | 'owner_delta' | 'all_delta';
 
 export function resolveWebBuildQualityRepairMode(): WebBuildQualityRepairMode {
   try {
     const raw = (import.meta as unknown as { env?: Record<string, unknown> })?.env?.VITE_WEB_BUILD_QUALITY_REPAIR_MODE;
-    return typeof raw === 'string' && raw.trim().toLowerCase() === 'owner_delta' ? 'owner_delta' : 'disabled';
+    const v = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
+    return v === 'owner_delta' ? 'owner_delta' : v === 'all_delta' ? 'all_delta' : 'disabled';
   } catch {
     return 'disabled';
   }
+}
+
+/**
+ * Whether the bounded DELTA repair (vs the full-project re-emit) runs for this build.
+ * `owner_delta` → owners only (backend-confirmed owner session); `all_delta` → every
+ * entitled build user (the pipeline is only reached after server-side entitlement/quota
+ * preflight, and delta adds NO extra provider call — it is the same single repair, just
+ * shaped as bounded upserts). Pure + deterministic so it is unit-testable and the delta
+ * eligibility can never diverge between owner and normal users under `all_delta`.
+ */
+export function isDeltaRepairEligible(mode: WebBuildQualityRepairMode, ownerEligible: boolean): boolean {
+  if (mode === 'all_delta') return true;
+  if (mode === 'owner_delta') return ownerEligible === true;
+  return false;
 }
 
 /* ── Bounds (aligned with the unchanged full-project validator so a reconstructed

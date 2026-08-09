@@ -24,17 +24,39 @@ import type {
 } from '@/lib/webBuildAgents';
 
 /* ── Mode flag (Vite convention, mirrors resolveWebBuildQualityRepairMode) ─────
- * VITE_WEB_BUILD_QUALITY_CONTEXT_MODE = disabled | owner_compact
+ * VITE_WEB_BUILD_QUALITY_CONTEXT_MODE = disabled | owner_compact | all_compact
+ *   disabled     — full source is sent with the repair/post-review (default).
+ *   owner_compact— compact source context inside the delta repair, owners only (legacy).
+ *   all_compact  — the SAME compact context for EVERY entitled build user (parity).
+ * Only ever active INSIDE the delta path (compactContextEligible = deltaEligible && …).
  * Missing / empty / malformed / unknown ⇒ disabled (fail-closed). */
-export type WebBuildQualityContextMode = 'disabled' | 'owner_compact';
+export type WebBuildQualityContextMode = 'disabled' | 'owner_compact' | 'all_compact';
 
 export function resolveWebBuildQualityContextMode(): WebBuildQualityContextMode {
   try {
     const raw = (import.meta as unknown as { env?: Record<string, unknown> })?.env?.VITE_WEB_BUILD_QUALITY_CONTEXT_MODE;
-    return typeof raw === 'string' && raw.trim().toLowerCase() === 'owner_compact' ? 'owner_compact' : 'disabled';
+    const v = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
+    return v === 'owner_compact' ? 'owner_compact' : v === 'all_compact' ? 'all_compact' : 'disabled';
   } catch {
     return 'disabled';
   }
+}
+
+/**
+ * Whether the compact repair/post-review context runs for this build. Only ever inside the
+ * delta path (`deltaEligible`). `owner_compact` → owners only; `all_compact` → every entitled
+ * user (parity). Pure + deterministic. Compact context safe-falls-back to full context on any
+ * ambiguity, and never changes the local validator or the deterministic acceptance gates.
+ */
+export function isCompactContextEligible(
+  deltaEligible: boolean,
+  mode: WebBuildQualityContextMode,
+  ownerEligible: boolean,
+): boolean {
+  if (!deltaEligible) return false;
+  if (mode === 'all_compact') return true;
+  if (mode === 'owner_compact') return ownerEligible === true;
+  return false;
 }
 
 /** A bounded, sanitized compact source-context selection: the full-source files to include plus a

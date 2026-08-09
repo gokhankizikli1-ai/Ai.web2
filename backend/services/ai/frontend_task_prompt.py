@@ -6,7 +6,8 @@ The single large frontend_builder system prompt (`_FRONTEND_BUILDER_PROMPT` in
 EXACTLY ONE of those tasks, yet each provider request currently ships all five task blocks —
 repeated input tokens the executing task cannot use.
 
-This pure compiler selects the minimal task-scoped subset for a VERIFIED OWNER session, using
+This pure compiler selects the minimal task-scoped subset for an eligible session (a VERIFIED
+OWNER session under `owner_scoped`, or EVERY build request under `all_scoped`), using
 the COMPLETE legacy prompt passed in by the caller as the single source of truth (it is never
 copied or re-authored here — the selected text is a byte-for-byte slice of that prompt). It
 NEVER makes a provider call and NEVER changes the model, output-token budget, reasoning effort,
@@ -19,7 +20,15 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Backend/Railway env var (NOT a VITE/Vercel var). disabled | owner_scoped; anything else → disabled.
+# Backend/Railway env var (NOT a VITE/Vercel var).
+#   disabled     — complete legacy prompt for every request (default, fail-closed).
+#   owner_scoped — task-scoped subset for a VERIFIED OWNER session only (legacy).
+#   all_scoped   — the SAME task-scoped subset for EVERY build request (parity: a normal
+#                  beta/paid build gets the identical minimal, task-focused system prompt the
+#                  owner gets, so generation adherence is not owner-only). Entitlement/quota are
+#                  enforced upstream (ai_guard preflight); this only shapes the prompt text and
+#                  never changes the model, token budget, effort, transport or call count.
+# Anything else → disabled.
 _MODE_ENV = "WEB_BUILD_FRONTEND_SYSTEM_PROMPT_MODE"
 
 # Exact section markers in the legacy prompt (matched byte-for-byte).
@@ -68,9 +77,16 @@ _COMMON_SENTINEL = "UNTRUSTED INPUT (all tasks)"
 
 
 def resolve_frontend_system_prompt_mode():
-    """Read WEB_BUILD_FRONTEND_SYSTEM_PROMPT_MODE. Missing/empty/malformed/unknown → 'disabled'."""
-    raw = os.environ.get(_MODE_ENV, "") or ""
-    return "owner_scoped" if raw.strip().lower() == "owner_scoped" else "disabled"
+    """Read WEB_BUILD_FRONTEND_SYSTEM_PROMPT_MODE.
+
+    'owner_scoped' | 'all_scoped' recognized; missing/empty/malformed/unknown → 'disabled'.
+    """
+    raw = (os.environ.get(_MODE_ENV, "") or "").strip().lower()
+    if raw == "owner_scoped":
+        return "owner_scoped"
+    if raw == "all_scoped":
+        return "all_scoped"
+    return "disabled"
 
 
 def _split_segments(legacy):
@@ -117,9 +133,10 @@ def select_frontend_system_prompt(task_kind, legacy_prompt, owner_session):
     """Select the system prompt for a frontend_builder task.
 
     Returns (system_prompt, diagnostics). `system_prompt` is a task-scoped byte-for-byte subset
-    of `legacy_prompt` ONLY when the flag is owner_scoped AND `owner_session` is True AND the
-    task kind maps to a scoped selection AND every integrity check passes; otherwise it is the
-    complete `legacy_prompt` unchanged. NEVER makes a provider call and NEVER retries.
+    of `legacy_prompt` ONLY when the flag is enabled for this session (owner_scoped AND
+    `owner_session` is True, OR all_scoped for any session) AND the task kind maps to a scoped
+    selection AND every integrity check passes; otherwise it is the complete `legacy_prompt`
+    unchanged. NEVER makes a provider call and NEVER retries.
     """
     legacy = legacy_prompt or ""
     legacy_chars = len(legacy)
@@ -128,10 +145,14 @@ def select_frontend_system_prompt(task_kind, legacy_prompt, owner_session):
         return legacy, _diagnostics("legacy", kind, legacy_chars, legacy_chars)
 
     try:
-        # Server-authoritative gates: flag, then verified backend owner session.
-        if resolve_frontend_system_prompt_mode() != "owner_scoped":
+        # Server-authoritative gates: flag, then (for owner_scoped only) a verified backend owner
+        # session. 'all_scoped' applies the SAME task-scoped subset to every build request — a
+        # normal beta/paid build gets the identical minimal prompt the owner gets. Entitlement and
+        # quota are enforced upstream (ai_guard preflight); this only shapes prompt text.
+        mode = resolve_frontend_system_prompt_mode()
+        if mode == "disabled":
             return _legacy(task_kind)
-        if not owner_session:
+        if mode == "owner_scoped" and not owner_session:
             return _legacy(task_kind)
 
         segment_keys = _TASK_SEGMENTS.get(task_kind)
@@ -155,7 +176,7 @@ def select_frontend_system_prompt(task_kind, legacy_prompt, owner_session):
         ):
             return _legacy(task_kind)
 
-        return compiled, _diagnostics("owner_scoped", task_kind, len(compiled), legacy_chars)
+        return compiled, _diagnostics(mode, task_kind, len(compiled), legacy_chars)
     except Exception:
         logger.exception("frontend_task_prompt: scoped compile failed; using legacy prompt")
         return _legacy(task_kind)
