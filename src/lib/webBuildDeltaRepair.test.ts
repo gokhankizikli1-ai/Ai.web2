@@ -298,4 +298,20 @@ describe('reconstructRepairRawFromDelta — wrapper-tolerant end to end + bounde
     expect(out.repairRaw.provider).toBe('p');
     expect(out.repairRaw.requestId).toBe('r');
   });
+
+  it('producer-contract observability: an accepted delta records the requested + actual contract', () => {
+    const out = reconstructBody(`## FRONTEND_DELTA_V1\n${VALID_DELTA_BODY}\n## END_FRONTEND_DELTA_V1`);
+    expect(out.diagnostics.taskKind).toBe('quality-repair');
+    expect(out.diagnostics.expectedContract).toBe('frontend-delta-v1');
+    expect(out.diagnostics.actualResponseShape).toBe('frontend-delta-v1');
+  });
+
+  it('producer-contract observability: a WRONG-contract full envelope is detected as frontend-files-v1', () => {
+    const envelope = '## FRONTEND_FILES_V1\n### FILE src/App.tsx\n```tsx\nexport default function App(){ return null; }\n```\n### END_FILE\n## END_FRONTEND_FILES_V1';
+    const out = reconstructBody(envelope);
+    expect(out.repairRaw.status).toBe('failed');            // stays rejected — no local conversion
+    expect(out.diagnostics.rejectionCategory).toBe('wrong-contract');
+    expect(out.diagnostics.expectedContract).toBe('frontend-delta-v1');
+    expect(out.diagnostics.actualResponseShape).toBe('frontend-files-v1');
+  });
 });

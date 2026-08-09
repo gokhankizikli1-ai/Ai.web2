@@ -2617,6 +2617,20 @@ export interface FrontendDeltaRepairArtifact {
   /** Bounded, sanitized rejection CATEGORY (absent when accepted, and on old saved builds). A coarse
    *  classification of WHY the delta failed — for observability only; never source/prompts/PII. */
   rejectionCategory?: FrontendDeltaRejectionCategory;
+  /** ── Producer-contract observability (bounded, safe metadata; never prompts/source/ids). Proves
+   *  which contract this repair asked the model for versus what the model actually returned, so a
+   *  producer-side contract conflict (model emits a full frontend-files-v1 envelope instead of a
+   *  bounded delta) is diagnosable from a SAVED build without exposing any prompt or source. ── */
+  /** The resolved frontend task kind for this repair call (the delta repair IS the quality repair). */
+  taskKind?: 'quality-repair';
+  /** The response contract this repair REQUESTED from the model. */
+  expectedContract?: 'frontend-delta-v1';
+  /** The response contract actually DETECTED in the model output:
+   *   - 'frontend-delta-v1' : a delta upsert body was returned (accepted, or delta-shaped but rejected),
+   *   - 'frontend-files-v1' : a full complete-project envelope was returned (the wrong contract),
+   *   - 'none'              : no usable body was returned,
+   *   - 'unknown'          : a body was returned but its contract could not be determined. */
+  actualResponseShape?: 'frontend-delta-v1' | 'frontend-files-v1' | 'none' | 'unknown';
 }
 
 /** The persisted, bounded record of the single Phase 12E repair attempt. Never
