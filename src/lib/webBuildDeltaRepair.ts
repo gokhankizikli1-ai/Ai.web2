@@ -90,11 +90,12 @@ const ENVELOPE_CLOSE = '## END_FRONTEND_FILES_V1';
  * `## END_FRONTEND_DELTA_V1`, but a model legitimately drifts on the DECORATION (heading level
  * `#`..`######`, `**bold**`, surrounding spaces, or letter case) while keeping the reserved token.
  * These anchored regexes recover the markers across that harmless variation WITHOUT matching the
- * token mid-word: the open locator is anchored to line start + an optional heading/bold prefix, so
- * the `FRONTEND_DELTA_V1` inside `END_FRONTEND_DELTA_V1` (preceded by `END_`, not a line boundary)
- * can never be mistaken for the open marker. Case-insensitive; the JSON body itself is still parsed
- * verbatim and strictly validated. */
-const DELTA_OPEN_RE = /(?:^|\n)[ \t]*(?:#{1,6}[ \t]*)?\*{0,2}FRONTEND_DELTA_V1\*{0,2}[ \t]*(?=\n|$)/i;
+ * token mid-word or mid-close-marker: the open locator requires a heading (`#`..`######`) or bold
+ * (`*`/`**`) decoration and uses `(?<!END_)` so the `FRONTEND_DELTA_V1` inside `END_FRONTEND_DELTA_V1`
+ * can never be mistaken for the open marker, and a bare `FRONTEND_DELTA_V1` line inside markerless
+ * JSON / file content cannot steal extraction before the bare-JSON recovery path. Case-insensitive;
+ * the JSON body itself is still parsed verbatim and strictly validated. */
+const DELTA_OPEN_RE = /(?:^|\n)[ \t]*(?:#{1,6}[ \t]*\*{0,2}|\*{1,2})(?<!END_)FRONTEND_DELTA_V1\*{0,2}[ \t]*(?=\n|$)/i;
 const DELTA_CLOSE_RE = /(?:^|\n)[ \t]*(?:#{1,6}[ \t]*)?\*{0,2}END_FRONTEND_DELTA_V1\*{0,2}[ \t]*(?=\n|$)/i;
 
 /** Outcome of locating the delta JSON body inside a raw model response. Discriminated so the parser
@@ -245,8 +246,14 @@ function extractDeltaJson(rawResponse: string): DeltaExtract {
   // ── No delta markers. A full complete-project envelope is the WRONG contract (precise, distinct
   //    from "absent"): the model re-emitted everything instead of a bounded upsert delta. The
   //    dedicated delta module must NOT consume a complete-project envelope, so this is a clean
-  //    rejection with an honest reason — not a silent second parser. ──
-  if (text.includes(ENVELOPE_OPEN)) return { kind: 'wrong-contract' };
+  //    rejection with an honest reason — not a silent second parser. Match only a line-anchored
+  //    envelope open (not a mid-line substring inside otherwise-valid markerless delta JSON). ──
+  if (
+    text === ENVELOPE_OPEN
+    || text.startsWith(`${ENVELOPE_OPEN}\n`)
+    || text.includes(`\n${ENVELOPE_OPEN}\n`)
+    || text.endsWith(`\n${ENVELOPE_OPEN}`)
+  ) return { kind: 'wrong-contract' };
 
   // ── Bare / fenced / prose-surrounded JSON with no markers. Strip a fully-wrapping fence first. ──
   const unfenced = stripWrappingFence(text).trim();
