@@ -13,7 +13,13 @@
  * This module owns ONLY the pure, deterministic delta stage:
  *   - resolve the mode flag,
  *   - parse + strictly validate the delta response (a DEDICATED parser — it never touches
- *     and can never be confused with the complete-project frontend-files-v1 parser),
+ *     and can never be confused with the complete-project frontend-files-v1 parser). Extraction
+ *     is TOLERANT of harmless model wrappers (a leading BOM, CRLF, surrounding prose, a wrapping or
+ *     inner ```json fence, and heading-level/spacing/case variations of the FRONTEND_DELTA_V1
+ *     markers) so a valid delta returned in such a wrapper is recovered instead of dropped to Safe
+ *     Preview — but STRICT about substance: only a COMPLETE, brace-balanced JSON object is accepted
+ *     (a truncated/unbalanced body is rejected as truncated, never inferred), and JSON.parse plus the
+ *     full schema/path/structural checks below remain the authority,
  *   - normalize + safety-check every upsert path,
  *   - merge upserts into the original files (Phase 1: replace + add only, NEVER delete),
  *   - serialize the reconstructed project back into a frontend-files-v1 envelope so the
@@ -26,7 +32,7 @@
  * returned in diagnostics.
  */
 import type {
-  FrontendBuilderRawArtifact, FrontendDeltaRepairArtifact,
+  FrontendBuilderRawArtifact, FrontendDeltaRepairArtifact, FrontendDeltaRejectionCategory,
   FrontendGeneratedFile, FrontendGeneratedFileLanguage,
 } from '@/lib/webBuildAgents';
 // The SAME Phase 12C structural rules, exposed as a bounded guard over just the changed/added
@@ -77,11 +83,94 @@ const MAX_DELTA_SINGLE_FILE_CHARS = 80_000; // = the validator's MAX_SINGLE_FILE
 const MAX_DELTA_TOTAL_UPSERT_CHARS = 180_000; // = the validator's MAX_TOTAL_PARSED_CHARS
 const MAX_REJECTION_REASON_CHARS = 240;
 
-const DELTA_OPEN = '## FRONTEND_DELTA_V1';
-const DELTA_CLOSE = '## END_FRONTEND_DELTA_V1';
-
 const ENVELOPE_OPEN = '## FRONTEND_FILES_V1';
 const ENVELOPE_CLOSE = '## END_FRONTEND_FILES_V1';
+
+/* ── Tolerant marker locators. The prompt asks for EXACTLY `## FRONTEND_DELTA_V1` /
+ * `## END_FRONTEND_DELTA_V1`, but a model legitimately drifts on the DECORATION (heading level
+ * `#`..`######`, `**bold**`, surrounding spaces, or letter case) while keeping the reserved token.
+ * These anchored regexes recover the markers across that harmless variation WITHOUT matching the
+ * token mid-word: the open locator is anchored to line start + an optional heading/bold prefix, so
+ * the `FRONTEND_DELTA_V1` inside `END_FRONTEND_DELTA_V1` (preceded by `END_`, not a line boundary)
+ * can never be mistaken for the open marker. Case-insensitive; the JSON body itself is still parsed
+ * verbatim and strictly validated. */
+const DELTA_OPEN_RE = /(?:^|\n)[ \t]*(?:#{1,6}[ \t]*)?\*{0,2}FRONTEND_DELTA_V1\*{0,2}[ \t]*(?=\n|$)/i;
+const DELTA_CLOSE_RE = /(?:^|\n)[ \t]*(?:#{1,6}[ \t]*)?\*{0,2}END_FRONTEND_DELTA_V1\*{0,2}[ \t]*(?=\n|$)/i;
+
+/** Outcome of locating the delta JSON body inside a raw model response. Discriminated so the parser
+ *  can emit a PRECISE, bounded rejection category instead of collapsing every wrapper failure into a
+ *  single "not found" reason. `json` is a COMPLETE brace-balanced object (never a truncated fragment). */
+type DeltaExtract =
+  | { kind: 'json'; json: string }
+  | { kind: 'empty' }          // delta markers present, but the body between them is empty
+  | { kind: 'truncated' }      // a JSON object opened but never closed → truncated / unbalanced
+  | { kind: 'wrong-contract' } // a full frontend-files-v1 envelope was returned instead of a delta
+  | { kind: 'absent' };        // no delta upsert body could be located at all
+
+/** Strip a SINGLE code fence that wraps the WHOLE text (```lang … ```), tolerant of a language tag
+ *  and trailing whitespace. Only strips a fully-wrapping fence — never a partial fence among prose
+ *  (the balanced-object scanner below already sees through backticks, so a non-wrapping fence needs
+ *  no stripping). Idempotent and bounded. */
+function stripWrappingFence(text: string): string {
+  const m = /^```[a-zA-Z0-9]*[ \t]*\n([\s\S]*?)\n?```[ \t]*$/.exec(text.trim());
+  return m ? m[1] : text;
+}
+
+/** Scan `text` from `from` for the FIRST complete, brace-balanced top-level JSON object. String
+ *  literals (and their `\` escapes) are respected so a `{`/`}` inside a JSON string (JSX/CSS content)
+ *  never miscounts the depth. Returns the exact substring of that object, or a discriminated miss:
+ *   - 'none'      : no `{` at/after `from` (no object to recover),
+ *   - 'truncated' : a `{` opened but the object never balanced (truncated body or unterminated string).
+ *  This RECOVERS a valid delta from a harmless wrapper (prose/fence) while still REJECTING a genuinely
+ *  truncated response — it never fabricates a closing brace. */
+function scanBalancedJsonObject(text: string, from = 0): { ok: true; json: string } | { ok: false; reason: 'none' | 'truncated' } {
+  const start = text.indexOf('{', from);
+  if (start === -1) return { ok: false, reason: 'none' };
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < text.length; i += 1) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') { inString = true; continue; }
+    if (ch === '{') depth += 1;
+    else if (ch === '}') {
+      depth -= 1;
+      if (depth === 0) return { ok: true, json: text.slice(start, i + 1) };
+    }
+  }
+  // Reached end of input with an unclosed object (or an unterminated string) → truncated/unbalanced.
+  return { ok: false, reason: 'truncated' };
+}
+
+/** Recover the delta object from text with LEADING PROSE and no markers (e.g. "Here are the
+ *  upserts:\n{…}"). Scans left-to-right for the first COMPLETE brace-balanced object that parses to
+ *  an object exposing an `upserts` array, skipping balanced-but-non-delta objects (an incidental
+ *  `{n}` in prose). Reports `truncated` only when a candidate object is genuinely cut off, and
+ *  `none` when no delta object is present. Bounded: each `{` is scanned at most once. This never
+ *  fabricates content — a recovered object is still JSON.parsed and fully validated downstream. */
+function recoverDeltaJsonObject(text: string): { ok: true; json: string } | { ok: false; reason: 'none' | 'truncated' } {
+  let from = 0;
+  while (from < text.length) {
+    const at = text.indexOf('{', from);
+    if (at === -1) return { ok: false, reason: 'none' };
+    const scan = scanBalancedJsonObject(text, at);
+    if (!scan.ok) return { ok: false, reason: scan.reason }; // an unclosed object from here → truncated tail
+    try {
+      const obj = JSON.parse(scan.json) as unknown;
+      if (obj && typeof obj === 'object' && !Array.isArray(obj) && Array.isArray((obj as { upserts?: unknown }).upserts)) {
+        return { ok: true, json: scan.json };
+      }
+    } catch { /* not valid JSON at this brace — keep scanning past it */ }
+    from = at + scan.json.length; // continue AFTER this balanced (non-delta) object
+  }
+  return { ok: false, reason: 'none' };
+}
 
 const EXT_LANGUAGE: Record<string, FrontendGeneratedFileLanguage> = {
   '.tsx': 'tsx',
@@ -110,6 +199,7 @@ interface DeltaParseOk {
 interface DeltaParseErr {
   ok: false;
   reason: string;
+  category: FrontendDeltaRejectionCategory;
   upsertCount: number;
   deltaCharCount: number;
 }
@@ -119,23 +209,62 @@ function cap(reason: string): string {
   return reason.length > MAX_REJECTION_REASON_CHARS ? reason.slice(0, MAX_REJECTION_REASON_CHARS) : reason;
 }
 
-/** Extract the delta JSON body from the raw response. Tolerant of a leading BOM, surrounding
- *  whitespace, an optional ```json code fence and the DELTA_OPEN/DELTA_CLOSE markers; strict
- *  about everything else. Returns the inner JSON string or null. */
-function extractDeltaJson(rawResponse: string): string | null {
-  let text = (rawResponse || '').replace(/^﻿/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
-  if (!text) return null;
-  // Strip a single wrapping ```json … ``` fence if present.
-  const fenced = /^```[a-zA-Z]*\n([\s\S]*)\n```$/.exec(text);
-  if (fenced) text = fenced[1].trim();
-  const open = text.indexOf(DELTA_OPEN);
-  if (open !== -1) {
-    const close = text.indexOf(DELTA_CLOSE, open + DELTA_OPEN.length);
-    if (close === -1) return null;
-    return text.slice(open + DELTA_OPEN.length, close).trim() || null;
+/**
+ * Locate the delta JSON body inside a raw model response. TOLERANT of the harmless wrappers a
+ * model legitimately produces around a valid delta, STRICT about substance.
+ *
+ * Recovered wrappers: a leading BOM, CRLF newlines, surrounding whitespace/prose, a wrapping or
+ * inner ```json fence, and heading-level / spacing / bold / letter-case variations of the
+ * FRONTEND_DELTA_V1 markers. In every case the returned `json` is a COMPLETE, brace-balanced
+ * object — extraction NEVER fabricates a closing brace, so a truncated body is reported as
+ * `truncated` (rejected downstream) rather than silently repaired.
+ *
+ * Returns a discriminated `DeltaExtract` so the caller can attach a precise rejection category.
+ */
+function extractDeltaJson(rawResponse: string): DeltaExtract {
+  const text = (rawResponse || '').replace(/^﻿/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+  if (!text) return { kind: 'absent' };
+
+  // ── Preferred path: the FRONTEND_DELTA_V1 markers are present (in any harmless decoration). ──
+  const openM = DELTA_OPEN_RE.exec(text);
+  if (openM) {
+    const afterOpen = text.slice(openM.index + openM[0].length);
+    const closeM = DELTA_CLOSE_RE.exec(afterOpen);
+    const region = (closeM ? afterOpen.slice(0, closeM.index) : afterOpen);
+    const body = stripWrappingFence(region.trim()).trim();
+    if (!body) return { kind: 'empty' };
+    // Recover a complete JSON object even if the body is fenced or has stray prose around it.
+    const scan = scanBalancedJsonObject(body, 0);
+    if (scan.ok) return { kind: 'json', json: scan.json };
+    if (scan.reason === 'truncated') return { kind: 'truncated' };
+    // Markers present, non-empty, but no JSON object at all: a missing close marker suggests the
+    // body was cut off (truncated); a present close marker means the contract shape is absent.
+    return closeM ? { kind: 'absent' } : { kind: 'truncated' };
   }
-  // No markers — accept a bare top-level JSON object only (strict: must start with '{').
-  return text.startsWith('{') ? text : null;
+
+  // ── No delta markers. A full complete-project envelope is the WRONG contract (precise, distinct
+  //    from "absent"): the model re-emitted everything instead of a bounded upsert delta. The
+  //    dedicated delta module must NOT consume a complete-project envelope, so this is a clean
+  //    rejection with an honest reason — not a silent second parser. ──
+  if (text.includes(ENVELOPE_OPEN)) return { kind: 'wrong-contract' };
+
+  // ── Bare / fenced / prose-surrounded JSON with no markers. Strip a fully-wrapping fence first. ──
+  const unfenced = stripWrappingFence(text).trim();
+  if (unfenced.startsWith('{')) {
+    // Bare (or fenced) JSON object — take it verbatim as the contract body; JSON.parse + schema
+    // checks below are the authority (a balanced-but-invalid object → `malformed-json`, not silently
+    // recovered), and a cut-off object → `truncated`.
+    const scan = scanBalancedJsonObject(unfenced, 0);
+    if (scan.ok) return { kind: 'json', json: scan.json };
+    return { kind: 'truncated' };
+  }
+  // Leading prose before the object (e.g. "Here are the upserts:\n{…}"). Recover the first balanced
+  // object that actually looks like a delta, skipping incidental braces in the prose. This rescues
+  // the shape the old strict `startsWith('{')` check dropped, while still rejecting a truncated body.
+  const recovered = recoverDeltaJsonObject(unfenced);
+  if (recovered.ok) return { kind: 'json', json: recovered.json };
+  if (recovered.reason === 'truncated') return { kind: 'truncated' };
+  return { kind: 'absent' };
 }
 
 /** Normalize + safety-check a single upsert relative path. Rejects absolute, traversal,
@@ -167,51 +296,68 @@ function normalizeDeltaPath(rawPath: unknown): { ok: true; path: string; languag
  */
 export function parseFrontendDeltaResponse(rawResponse: string | undefined): DeltaParseResult {
   const deltaCharCount = typeof rawResponse === 'string' ? rawResponse.length : 0;
-  const fail = (reason: string, upsertCount = 0): DeltaParseErr => ({ ok: false, reason: cap(reason), upsertCount, deltaCharCount });
+  const fail = (reason: string, category: FrontendDeltaRejectionCategory, upsertCount = 0): DeltaParseErr =>
+    ({ ok: false, reason: cap(reason), category, upsertCount, deltaCharCount });
   try {
-    if (!rawResponse || !rawResponse.trim()) return fail('empty delta response');
-    if (deltaCharCount > MAX_DELTA_TOTAL_UPSERT_CHARS * 2) return fail('delta response exceeds the safe size limit');
-    const jsonText = extractDeltaJson(rawResponse);
-    if (!jsonText) return fail('malformed delta response: no FRONTEND_DELTA_V1 JSON body found');
+    if (!rawResponse || !rawResponse.trim()) return fail('empty delta response', 'no-response-body');
+    if (deltaCharCount > MAX_DELTA_TOTAL_UPSERT_CHARS * 2) return fail('delta response exceeds the safe size limit', 'oversize');
+
+    // ── Bounded, wrapper-tolerant extraction. Each miss maps to a PRECISE category so a persisted
+    //    diagnostic distinguishes a truncated body / wrong contract / genuinely-absent contract
+    //    rather than collapsing all three into one opaque "not found" reason. ──
+    const extracted = extractDeltaJson(rawResponse);
+    switch (extracted.kind) {
+      case 'truncated':
+        return fail('malformed delta response: the FRONTEND_DELTA_V1 JSON body is truncated or unbalanced (no complete JSON object)', 'truncated-json');
+      case 'wrong-contract':
+        return fail('malformed delta response: a full frontend-files-v1 project envelope was returned instead of a FRONTEND_DELTA_V1 upsert body', 'wrong-contract');
+      case 'empty':
+        return fail('malformed delta response: FRONTEND_DELTA_V1 markers present but the JSON body is empty', 'contract-absent');
+      case 'absent':
+        return fail('malformed delta response: no FRONTEND_DELTA_V1 JSON body found', 'contract-absent');
+      case 'json':
+        break;
+    }
+    const jsonText = extracted.json;
 
     let parsed: unknown;
-    try { parsed = JSON.parse(jsonText); } catch { return fail('malformed delta response: body is not valid JSON'); }
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return fail('malformed delta response: root is not a JSON object');
+    try { parsed = JSON.parse(jsonText); } catch { return fail('malformed delta response: body is not valid JSON', 'malformed-json'); }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return fail('malformed delta response: root is not a JSON object', 'invalid-schema');
     const upsertsRaw = (parsed as { upserts?: unknown }).upserts;
-    if (!Array.isArray(upsertsRaw)) return fail('malformed delta response: missing "upserts" array');
-    if (upsertsRaw.length === 0) return fail('empty upsert list');
-    if (upsertsRaw.length > MAX_DELTA_UPSERTS) return fail(`too many upserts (${upsertsRaw.length} > ${MAX_DELTA_UPSERTS})`);
+    if (!Array.isArray(upsertsRaw)) return fail('malformed delta response: missing "upserts" array', 'invalid-schema');
+    if (upsertsRaw.length === 0) return fail('empty upsert list', 'invalid-schema');
+    if (upsertsRaw.length > MAX_DELTA_UPSERTS) return fail(`too many upserts (${upsertsRaw.length} > ${MAX_DELTA_UPSERTS})`, 'oversize');
 
     const seen = new Set<string>();
     const upserts: DeltaUpsert[] = [];
     let totalChars = 0;
     for (let i = 0; i < upsertsRaw.length; i += 1) {
       const entry = upsertsRaw[i];
-      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return fail(`upsert #${i + 1} is not an object`);
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return fail(`upsert #${i + 1} is not an object`, 'invalid-schema');
       const norm = normalizeDeltaPath((entry as { path?: unknown }).path);
-      if (!norm.ok) return fail(norm.reason);
-      if (seen.has(norm.path)) return fail(`duplicate upsert path after normalization: ${norm.path}`);
+      if (!norm.ok) return fail(norm.reason, 'unsafe-path');
+      if (seen.has(norm.path)) return fail(`duplicate upsert path after normalization: ${norm.path}`, 'invalid-schema');
       seen.add(norm.path);
 
       const content = (entry as { content?: unknown }).content;
-      if (typeof content !== 'string' || content.trim() === '') return fail(`empty file content for ${norm.path}`);
-      if (content.length > MAX_DELTA_SINGLE_FILE_CHARS) return fail(`file ${norm.path} exceeds ${MAX_DELTA_SINGLE_FILE_CHARS} characters`);
+      if (typeof content !== 'string' || content.trim() === '') return fail(`empty file content for ${norm.path}`, 'invalid-schema');
+      if (content.length > MAX_DELTA_SINGLE_FILE_CHARS) return fail(`file ${norm.path} exceeds ${MAX_DELTA_SINGLE_FILE_CHARS} characters`, 'oversize');
       if (FENCE_LINE_RE.test(content) || RESERVED_MARKER_LINE_RE.test(content)) {
-        return fail(`unsafe content (reserved envelope/fence line) in ${norm.path}`);
+        return fail(`unsafe content (reserved envelope/fence line) in ${norm.path}`, 'invalid-schema');
       }
       // A provided language, when present, must not contradict the path extension.
       const declared = (entry as { language?: unknown }).language;
       if (typeof declared === 'string' && declared.trim() && declared.trim().toLowerCase() !== norm.language) {
-        return fail(`declared language "${declared}" conflicts with the extension of ${norm.path}`);
+        return fail(`declared language "${declared}" conflicts with the extension of ${norm.path}`, 'invalid-schema');
       }
 
       totalChars += content.length;
-      if (totalChars > MAX_DELTA_TOTAL_UPSERT_CHARS) return fail(`total upsert content exceeds ${MAX_DELTA_TOTAL_UPSERT_CHARS} characters`);
+      if (totalChars > MAX_DELTA_TOTAL_UPSERT_CHARS) return fail(`total upsert content exceeds ${MAX_DELTA_TOTAL_UPSERT_CHARS} characters`, 'oversize');
       upserts.push({ path: norm.path, language: norm.language, content });
     }
     return { ok: true, upserts, deltaCharCount };
   } catch {
-    return fail('internal delta-parse error');
+    return fail('internal delta-parse error', 'malformed-json');
   }
 }
 
@@ -356,8 +502,12 @@ export function reconstructRepairRawFromDelta(input: {
     accepted: false,
   };
 
-  // The delta model call itself did not complete (transport/mode/size failure) — fail open.
+  // The delta model call itself did not complete (transport/mode/size failure) — fail open. The
+  // real cause already lives in the transport `reason` (empty body, unexpected backend mode,
+  // structured safety rejection, oversize/storage-truncation); classify it into a bounded category
+  // for the diagnostic: a storage-truncated body ⇒ `truncated-json`, otherwise ⇒ `no-response-body`.
   if (deltaRaw.status !== 'completed' || typeof deltaRaw.rawResponse !== 'string') {
+    const transportCategory: FrontendDeltaRejectionCategory = deltaRaw.truncatedForStorage ? 'truncated-json' : 'no-response-body';
     return {
       repairRaw: deltaRaw.status === 'completed' ? failedRaw(deltaRaw, deltaRaw.reason || 'The owner-delta repair returned no usable body.') : deltaRaw,
       diagnostics: {
@@ -365,6 +515,7 @@ export function reconstructRepairRawFromDelta(input: {
         // No usable delta body ⇒ no meaningful reduction to report.
         outputReductionRatio: 0,
         rejectionReason: cap(deltaRaw.reason || 'the owner-delta repair call did not complete'),
+        rejectionCategory: transportCategory,
       },
     };
   }
@@ -382,6 +533,7 @@ export function reconstructRepairRawFromDelta(input: {
         deltaCharCount,
         outputReductionRatio: reductionOf(deltaCharCount),
         rejectionReason: parsed.reason,
+        rejectionCategory: parsed.category,
       },
     };
   }
@@ -411,6 +563,7 @@ export function reconstructRepairRawFromDelta(input: {
         reconstructedProjectCharCount: charCount(reconstructedFiles),
         outputReductionRatio: reductionOf(deltaCharCount),
         rejectionReason: cap(`reconstructed project fails Phase 12C: ${detail}`),
+        rejectionCategory: 'structural-rejection',
       },
     };
   }
