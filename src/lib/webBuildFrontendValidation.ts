@@ -394,6 +394,98 @@ function packageRoot(spec: string): { root: string } {
   return { root: spec.split('/')[0] };
 }
 
+/* ── Delta-repair STRUCTURAL GUARD (bounded, reuses the exact Phase 12C rules) ──────────────────
+ * A bounded delta repair merges a few upserts into the already-validated original project. The
+ * downstream Phase 12C re-validation is the final authority, but it rejects the WHOLE reconstructed
+ * project — so a delta that introduces one bad import silently drops the entire build to Safe
+ * Preview. This guard lets the delta module reject such an upsert set DETERMINISTICALLY and early
+ * (fail open to the original, no second call, with a precise reason), before the reconstruction is
+ * ever finalized. It checks ONLY the structural violations a bounded upsert can introduce, over the
+ * CHANGED/ADDED files, against the FULL reconstructed file set — so it is always a strict SUBSET of
+ * what `validateProject` checks and can NEVER be stricter than (or diverge from) the full validator:
+ * it reuses the same constants (SAFE_PATH_RE, ALLOWED_PACKAGE_ROOTS, NODE_BUILTINS, EXT_CANDIDATES)
+ * and helpers (langForPath, posixResolve, posixDirname, extractSpecifiers, packageRoot). The
+ * branching mirrors `validateProject` steps 1 + 3 and MUST be kept in sync with them. */
+export type DeltaStructuralIssueCode =
+  | 'unsafe-added-path'
+  | 'unresolved-import'
+  | 'import-escapes-root'
+  | 'unsupported-alias'
+  | 'node-builtin'
+  | 'unsupported-package';
+
+export interface DeltaStructuralIssue {
+  code: DeltaStructuralIssueCode;
+  /** The changed/added file the violation is in. */
+  path: string;
+  /** The offending import specifier, when applicable. */
+  specifier?: string;
+}
+
+/** The EXACT Phase 12C path-safety predicate (mirrors validateProject step 1, lines ~467-471). */
+function isUnsafeProjectPath(p: string): boolean {
+  return (
+    p.includes('\\') || p.startsWith('/') || p.includes('..') || p.includes('\0')
+    || /[:?#]/.test(p) || !SAFE_PATH_RE.test(p)
+    || !p.startsWith('src/') || p.split('/').some((seg) => seg === '' || seg === '.' || seg === '..')
+    || langForPath(p) === null
+  );
+}
+
+/**
+ * Report the SUBSET of Phase 12C structural violations that a bounded delta upsert can introduce:
+ * an added/changed file with an unsafe (non-`src/`, bad-char, wrong-extension) path, and any
+ * relative-import or package-import in a CHANGED/ADDED file that the validator would reject
+ * (unresolved / escapes-root / alias / node-builtin / unsupported-package). Untouched files are NOT
+ * re-checked — they were already validated. Pure; no IO. Bounded to 12 issues.
+ *
+ * `reconstructedFiles` is the COMPLETE merged project (originals + upserts); `changedPaths` are the
+ * FINAL paths (as they appear in `reconstructedFiles`) of the files the upserts changed or added.
+ */
+export function findDeltaIntroducedStructuralIssues(
+  reconstructedFiles: ReadonlyArray<{ path: string; content: string; language?: string }>,
+  changedPaths: ReadonlyArray<string>,
+): DeltaStructuralIssue[] {
+  const issues: DeltaStructuralIssue[] = [];
+  const pathSet = new Set(reconstructedFiles.map((f) => f.path));
+  const byPath = new Map(reconstructedFiles.map((f) => [f.path, f] as const));
+  const seen = new Set<string>();
+  for (const changed of changedPaths) {
+    if (seen.has(changed)) continue;
+    seen.add(changed);
+    // Step 1 mirror — an unsafe path is always a Phase 12C error, whether added or replaced.
+    if (isUnsafeProjectPath(changed)) { issues.push({ code: 'unsafe-added-path', path: changed }); continue; }
+    const f = byPath.get(changed);
+    if (!f) continue;
+    // Step 3 mirror — CSS files are never importers.
+    if (langForPath(changed) === 'css') continue;
+    const dir = posixDirname(changed);
+    for (const specifier of extractSpecifiers(f.content)) {
+      if (specifier.startsWith('.')) {
+        const resolvedBase = posixResolve(dir, specifier);
+        if (resolvedBase === null || !resolvedBase.startsWith('src/')) {
+          issues.push({ code: 'import-escapes-root', path: changed, specifier });
+        } else {
+          const hit = EXT_CANDIDATES.map((c) => `${resolvedBase}${c}`).some((cand) => pathSet.has(cand));
+          if (!hit) issues.push({ code: 'unresolved-import', path: changed, specifier });
+        }
+      } else if (specifier.startsWith('@/') || specifier.startsWith('~/')) {
+        issues.push({ code: 'unsupported-alias', path: changed, specifier });
+      } else {
+        const { root } = packageRoot(specifier);
+        if (NODE_BUILTINS.has(root) || specifier.startsWith('node:')) {
+          issues.push({ code: 'node-builtin', path: changed, specifier });
+        } else if (!ALLOWED_PACKAGE_ROOTS.has(root)) {
+          issues.push({ code: 'unsupported-package', path: changed, specifier });
+        }
+      }
+      if (issues.length >= 12) return issues;
+    }
+    if (issues.length >= 12) return issues;
+  }
+  return issues;
+}
+
 /* ── Copy normalization (compare only; never rewrites generated code) ────────── */
 function normCopy(s: string): string {
   return (s || '')

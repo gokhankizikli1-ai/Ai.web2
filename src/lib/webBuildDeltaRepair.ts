@@ -29,6 +29,10 @@ import type {
   FrontendBuilderRawArtifact, FrontendDeltaRepairArtifact,
   FrontendGeneratedFile, FrontendGeneratedFileLanguage,
 } from '@/lib/webBuildAgents';
+// The SAME Phase 12C structural rules, exposed as a bounded guard over just the changed/added
+// files. Reusing the validator's own predicate means this early rejection can never be stricter
+// than — or diverge from — the full re-validation that remains the final authority downstream.
+import { findDeltaIntroducedStructuralIssues } from '@/lib/webBuildFrontendValidation';
 
 /* ── Mode flag (Vite convention, mirrors the other VITE_* readers) ─────────────
  * VITE_WEB_BUILD_QUALITY_REPAIR_MODE = disabled | owner_delta | all_delta
@@ -218,30 +222,43 @@ function normalizeExistingPath(p: string): string {
   return (p || '').replace(/^(?:\.\/)+/, '').replace(/\/{2,}/g, '/');
 }
 
-/** Deterministically merge upserts into the original validated files. Phase 1: REPLACE an
- *  existing file (matched by normalized path) or ADD a new one — never delete. A replacement
- *  KEEPS the original file's EXACT path (so retained/replaced files never appear renamed to the
- *  downstream diff); only a genuinely new file uses the upsert's normalized path. Original
- *  ordering is preserved; new files are appended in upsert order. */
+/** The CANONICAL match key for reconciling an upsert path with an existing file path. Beyond the
+ *  `./` + `//` normalization it is CASE-INSENSITIVE, because the downstream validator treats two
+ *  paths that differ only by case as a hard `duplicate-path-ci` error. Matching case-insensitively
+ *  means a case-variant upsert (e.g. `src/components/Hero.tsx` vs the original `.../hero.tsx`)
+ *  REPLACES the intended file — keeping the original's exact path — instead of being ADDED as a
+ *  stray duplicate that both fails validation AND leaves the intended edit unapplied. The original
+ *  set was already validated, so it can never contain two files sharing a canonical key. */
+function canonicalDeltaKey(p: string): string {
+  return normalizeExistingPath(p).toLowerCase();
+}
+
+/** Deterministically merge upserts into the original validated files. REPLACE an existing file
+ *  (matched by CANONICAL key — `./`/`//`-normalized + case-insensitive) or ADD a new one — never
+ *  delete. A replacement KEEPS the original file's EXACT path (so retained/replaced files never
+ *  appear renamed, and a case-variant upsert never introduces a case-duplicate); only a genuinely
+ *  new file uses the upsert's normalized path. Original ordering is preserved; new files are
+ *  appended in upsert order. */
 export function reconstructProjectFiles(
   originalFiles: FrontendGeneratedFile[],
   upserts: DeltaUpsert[],
 ): DeltaUpsert[] {
-  const byKey = new Map<string, DeltaUpsert>();  // normalized key → file (with its EXACT path)
+  const byKey = new Map<string, DeltaUpsert>();  // canonical key → file (with its EXACT path)
   const order: string[] = [];
   for (const f of originalFiles) {
-    const key = normalizeExistingPath(f.path);
+    const key = canonicalDeltaKey(f.path);
     if (!byKey.has(key)) order.push(key);
     byKey.set(key, { path: f.path, language: f.language, content: f.content });
   }
   for (const u of upserts) {
-    const existing = byKey.get(u.path);
+    const key = canonicalDeltaKey(u.path);
+    const existing = byKey.get(key);
     if (existing) {
       // Replace content/language; preserve the original file's exact path.
-      byKey.set(u.path, { path: existing.path, language: u.language, content: u.content });
+      byKey.set(key, { path: existing.path, language: u.language, content: u.content });
     } else {
-      order.push(u.path);
-      byKey.set(u.path, { path: u.path, language: u.language, content: u.content });
+      order.push(key);
+      byKey.set(key, { path: u.path, language: u.language, content: u.content });
     }
   }
   return order.map((k) => byKey.get(k) as DeltaUpsert);
@@ -370,6 +387,34 @@ export function reconstructRepairRawFromDelta(input: {
   }
 
   const reconstructedFiles = reconstructProjectFiles(originalFiles, parsed.upserts);
+
+  // ── Deterministic STRUCTURAL GUARD (prevention). Resolve each upsert to its FINAL path in the
+  //    reconstructed set (a replacement keeps the original's exact path), then check ONLY those
+  //    changed/added files against the SAME Phase 12C rules. If a bounded upsert introduced an
+  //    unresolved/aliased/escaping relative import, an unsupported/Node package, or an unsafe path,
+  //    reject the delta NOW — fail open to the original validated project with a precise reason and
+  //    NO second call — instead of finalizing a reconstruction that the downstream Phase 12C
+  //    re-validation would only reject as a whole (dropping the entire build to Safe Preview). This
+  //    is a strict subset of Phase 12C, so it never rejects a delta the full validator would accept. ──
+  const originalKeyToPath = new Map(originalFiles.map((f) => [canonicalDeltaKey(f.path), f.path] as const));
+  const changedFinalPaths = parsed.upserts.map((u) => originalKeyToPath.get(canonicalDeltaKey(u.path)) ?? u.path);
+  const structuralIssues = findDeltaIntroducedStructuralIssues(reconstructedFiles, changedFinalPaths);
+  if (structuralIssues.length > 0) {
+    const first = structuralIssues[0];
+    const detail = first.specifier ? `${first.code} (${first.specifier}) in ${first.path}` : `${first.code} in ${first.path}`;
+    return {
+      repairRaw: failedRaw(deltaRaw, `Owner-delta repair rejected: the reconstructed project would fail Phase 12C structural validation — ${detail}.`),
+      diagnostics: {
+        ...baseDiagnostics,
+        returnedUpsertCount: parsed.upserts.length,
+        deltaCharCount,
+        reconstructedProjectCharCount: charCount(reconstructedFiles),
+        outputReductionRatio: reductionOf(deltaCharCount),
+        rejectionReason: cap(`reconstructed project fails Phase 12C: ${detail}`),
+      },
+    };
+  }
+
   const envelope = serializeFrontendFilesEnvelope(reconstructedFiles);
   const reconstructedProjectCharCount = charCount(reconstructedFiles);
 
@@ -398,6 +443,6 @@ export function reconstructRepairRawFromDelta(input: {
       outputReductionRatio: reductionOf(deltaCharCount),
       accepted: true,
     },
-    changedPaths: parsed.upserts.map((u) => u.path),
+    changedPaths: changedFinalPaths,
   };
 }
