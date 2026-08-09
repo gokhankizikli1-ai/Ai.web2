@@ -169,7 +169,22 @@ class FounderBetaPolicy:
     # -- lock / idempotency TTLs ----------------------------------------------
     @property
     def lock_ttl_seconds(self) -> int:
-        return max(30, _env_int("AI_OPERATION_LOCK_TTL_SECONDS", 600))
+        # This TTL is ONLY the crash-recovery auto-release of an already-authorized operation lock —
+        # quota, credit, concurrency and global-spend are all evaluated exactly once, atomically, at
+        # reserve_start (they do NOT depend on this value). The lock must outlive the longest gap
+        # between the build's `/chat` preflight calls, because a Web Build's internal sub-calls
+        # (initial review, bounded repair, final review, acceptance) attach as FREE continuations of
+        # the one authorized operation via `try_attach_continuation`, and each attach is what
+        # refreshes `expires_at`. The full-source generation and quality-repair run as BACKGROUND
+        # jobs polled by job-GETs that never run preflight, so during each such phase the lock is not
+        # refreshed for up to the frontend's long-background budget (BACKGROUND_WORKFLOW_TIMEOUT_LONG_MS
+        # = 720s). With the previous 600s default the lock expired mid-build, the review fell to the
+        # START path, and a normal user (daily counter already spent by planning) was wrongly blocked
+        # by the per-user daily quota — the one gate an owner is exempt from (why owner builds worked
+        # and normal-user builds fell to Safe Preview). 1800s comfortably outlives one un-heartbeated
+        # 720s background phase; on normal completion the frontend finalizes the op immediately, so
+        # this longer TTL only extends how long a genuinely CRASHED build holds the 1-concurrency slot.
+        return max(30, _env_int("AI_OPERATION_LOCK_TTL_SECONDS", 1800))
 
     @property
     def idempotency_ttl_seconds(self) -> int:
