@@ -113,6 +113,47 @@ function nonPassing(
 }
 
 /**
+ * Extract the single review JSON object from a raw body that may be wrapped in a ```json code
+ * fence and/or surrounded by prose. Returns the object substring, or null when no BALANCED
+ * top-level object exists (a genuinely truncated/unterminated body). It NEVER salvages a partial
+ * object — it requires a fully balanced `{…}`, so the caller's strict schema validation always runs
+ * on a COMPLETE object and quality can never be inferred from a truncated review. Pure; bounded.
+ */
+export function extractReviewJsonObject(body: string): string | null {
+  let text = (body || '').replace(/^﻿/, '').trim();
+  if (!text) return null;
+  // Strip ONE wrapping code fence: ```json\n…\n``` or a bare ```…```.
+  const fence = /^```[A-Za-z0-9]*[ \t]*\r?\n([\s\S]*?)\r?\n?```$/.exec(text);
+  if (fence) text = fence[1].trim();
+  // Fast path — already a pure object.
+  if (text.startsWith('{') && text.endsWith('}')) return text;
+  // Otherwise scan for the FIRST balanced top-level object, respecting strings + escapes so a
+  // brace inside a string literal never miscounts. Anything before the first '{' or after the
+  // matched '}' (leading/trailing prose) is ignored.
+  const start = text.indexOf('{');
+  if (start === -1) return null;
+  let depth = 0;
+  let inStr = false;
+  let esc = false;
+  for (let i = start; i < text.length; i += 1) {
+    const ch = text[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === '\\') esc = true;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') inStr = true;
+    else if (ch === '{') depth += 1;
+    else if (ch === '}') {
+      depth -= 1;
+      if (depth === 0) return text.slice(start, i + 1);
+    }
+  }
+  return null; // unbalanced (truncated) — do NOT salvage a partial object
+}
+
+/**
  * Parse + strictly validate a raw reviewer response into a persisted review artifact.
  * Pure, deterministic, non-mutating, fail-open. `activeFiles` is the project the
  * reviewer was shown (Phase 12D active model-native files or the repaired project),
@@ -142,15 +183,21 @@ export function parseFrontendBuilderReview(
       return nonPassing(stage, 'failed', `Reviewer response (${body.length} chars) exceeds the ${MAX_RAW_REVIEW_CHARS} cap.`, raw);
     }
 
-    // Reject Markdown fences / prose surrounding the JSON — require a single pure object.
-    const trimmed = body.trim();
-    if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) {
-      return nonPassing(stage, 'failed', 'Reviewer response is not a single JSON object (fences or prose present).', raw);
+    // Robustly locate the single review JSON object. The request asks for a bare object, but models
+    // routinely wrap it in a ```json fence or add a line of prose — historically the parser rejected
+    // ALL of those outright, turning a perfectly good review into a false "review incomplete" →
+    // Safe Preview. Tolerate a wrapping fence / surrounding prose by extracting the first BALANCED
+    // top-level {…} object. A genuinely TRUNCATED body has no balanced object and still fails
+    // (conservative — we never infer quality from a partial review, and every strict schema check
+    // below still runs on the complete extracted object, so quality is never weakened).
+    const objText = extractReviewJsonObject(body);
+    if (objText === null) {
+      return nonPassing(stage, 'failed', 'Reviewer response did not contain a complete JSON object (fenced, prose-wrapped, or truncated).', raw);
     }
 
     let obj: Record<string, unknown>;
     try {
-      const parsed: unknown = JSON.parse(trimmed);
+      const parsed: unknown = JSON.parse(objText);
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
         return nonPassing(stage, 'failed', 'Reviewer response did not parse to a JSON object.', raw);
       }

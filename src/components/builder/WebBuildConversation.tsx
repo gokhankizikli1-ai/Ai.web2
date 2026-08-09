@@ -756,6 +756,12 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
         ownerRows.push(['frontendFinalReviewPassed', String(ffr.passed)]);
         ownerRows.push(['frontendFinalReviewScore', String(ffr.score ?? 0)]);
         ffr.issues.slice(0, 2).forEach((i, idx) => ownerRows.push([`frontendFinalIssue${idx + 1}`, issueLine(i)]));
+      } else {
+        // A non-completed post-repair review is the exact "review incomplete" cause. Surface the
+        // persisted parser/transport reason + the raw response length so transport-vs-parser-vs-
+        // truncation is diagnosable from the SAVED build — no new build required.
+        ownerRows.push(['frontendFinalReviewReason', shortStr(ffr.reason, 180)]);
+        ownerRows.push(['frontendFinalReviewResponseChars', String(ffr.responseCharCount ?? 0)]);
       }
     }
     const fac = step.artifacts?.frontendBuilderAcceptance;
