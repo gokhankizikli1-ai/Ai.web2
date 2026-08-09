@@ -767,6 +767,20 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
         if (dr.expectedContract) ownerRows.push(['frontendRepairExpectedContract', dr.expectedContract]);
         if (dr.actualResponseShape) ownerRows.push(['frontendRepairActualShape', dr.actualResponseShape]);
         if (dr.rejectionCategory) ownerRows.push(['frontendRepairDeltaRejectionCategory', dr.rejectionCategory]);
+        // Background LIFECYCLE diagnostics — surface WHY a background delta repair timed out (still
+        // running at the client budget vs a final-poll transport blip) with the exact timing budget,
+        // so a background timeout is diagnosable from the saved build without a new run.
+        const lc = dr.backgroundLifecycle;
+        if (lc) {
+          if (lc.finalPollResult) ownerRows.push(['frontendRepairFinalPollResult', lc.finalPollResult]);
+          if (typeof lc.workflowBudgetMs === 'number') ownerRows.push(['frontendRepairWorkflowBudgetMs', String(lc.workflowBudgetMs)]);
+          if (typeof lc.expiresInMs === 'number') ownerRows.push(['frontendRepairBackendExpiresInMs', String(lc.expiresInMs)]);
+          if (typeof lc.elapsedMs === 'number') ownerRows.push(['frontendRepairElapsedMs', String(lc.elapsedMs)]);
+          if (typeof lc.pollCount === 'number') ownerRows.push(['frontendRepairPollCount', String(lc.pollCount)]);
+          if (typeof lc.transientPollFailures === 'number') ownerRows.push(['frontendRepairTransientPollFailures', String(lc.transientPollFailures)]);
+          if (typeof lc.cancelRequested === 'boolean') ownerRows.push(['frontendRepairCancelRequested', String(lc.cancelRequested)]);
+          if (lc.errorKind) ownerRows.push(['frontendRepairBackgroundErrorKind', lc.errorKind]);
+        }
       }
     }
     const ffr = step.artifacts?.frontendBuilderFinalReview;
