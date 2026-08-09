@@ -405,3 +405,80 @@ export function selectCompactPostRepairContext(input: {
     return { diagnostics: diag('post-repair', false, fullChars, fullChars, (reconstructedFiles || []).length, 0, { fallbackReason: 'assembly-error' }) };
   }
 }
+
+/* ── Phase 14L.2 — deterministic SIZE-BOUNDING for the design-quality review ─────────────────
+ * The static design-quality review serializes the specification + the FULL source of every
+ * generated file. A rich, premium multi-section project can exceed the backend structured-builder
+ * safety cap (_STRUCTURED_MAX_LEN = 125_000 chars in backend/services/safety/guard.py). When it
+ * does, `check_structured_builder_message` rejects the request as `safety_length`; the /chat
+ * response then carries `mode="safety_length"`, which the client reads as "Backend routed the
+ * review request to an unexpected mode" → the review is recorded `failed` → the acceptance
+ * pipeline falls to `initial-review-incomplete` → Safe Preview ("the automatic design-quality
+ * review did not complete"). This hits OWNER and normal users identically (a safety cap, not the
+ * ai_guard quota) and gets WORSE the richer the project — the exact opposite of the goal.
+ *
+ * These pure helpers let the review transport re-pack a too-large request into the SAME bounded
+ * include-set + omitted-manifest shape the reviewer prompt already understands, so a large project
+ * is still reviewed (against a representative subset) instead of silently falling to Safe Preview.
+ * They are pure/deterministic and independent of the compact-context MODE flags above (which only
+ * cover the delta repair + post-repair review); this size floor always applies, to every user. */
+
+/** Entry/root files the reviewer must ALWAYS see (never dropped by the size packer). */
+export const REVIEW_ALWAYS_INCLUDE_PATHS = ['src/main.tsx', 'src/App.tsx', 'src/styles.css'] as const;
+
+/**
+ * Deterministic file ordering for the size-bounded review packer. Returns the files that must be
+ * force-included first — the entry/root files, the spec's declared required files, and any caller-
+ * supplied priority paths (e.g. the changed files of a post-repair review) — followed by the
+ * remaining files sorted by ASCENDING content size (so the packer fits as MANY files as possible),
+ * tie-broken by normalized path for stability. Pure; never mutates its inputs.
+ */
+export function orderFilesForReviewBounding(
+  spec: FrontendBuildSpecification | undefined,
+  files: WebBuildFile[],
+  extraPriorityPaths?: string[],
+): { prioritized: WebBuildFile[]; rest: WebBuildFile[] } {
+  const safe = Array.isArray(files) ? files.filter((f) => f && typeof f.content === 'string') : [];
+  const alwaysOrder = REVIEW_ALWAYS_INCLUDE_PATHS.map((p) => normalizePath(p));
+  const prioSet = new Set<string>([
+    ...alwaysOrder,
+    ...requiredNormsFrom(spec),
+    ...((extraPriorityPaths || []).map(normalizePath).filter(Boolean)),
+  ]);
+  const prioritized: WebBuildFile[] = [];
+  const rest: WebBuildFile[] = [];
+  for (const f of safe) {
+    (prioSet.has(normalizePath(f.path)) ? prioritized : rest).push(f);
+  }
+  const rank = (f: WebBuildFile): number => {
+    const i = alwaysOrder.indexOf(normalizePath(f.path));
+    return i < 0 ? 500 : i;
+  };
+  prioritized.sort((a, b) => rank(a) - rank(b) || normalizePath(a.path).localeCompare(normalizePath(b.path)));
+  rest.sort((a, b) => (a.content?.length ?? 0) - (b.content?.length ?? 0) || normalizePath(a.path).localeCompare(normalizePath(b.path)));
+  return { prioritized, rest };
+}
+
+/**
+ * Build a compact context (included full-source files + a metadata-only manifest of the omitted
+ * files) from a chosen include set. The manifest carries path/language/size ONLY — never the
+ * omitted source. Pure; the returned includedFiles preserve the given order.
+ */
+export function compactContextFromIncludedFiles(
+  allFiles: WebBuildFile[],
+  included: WebBuildFile[],
+): CompactSourceContext {
+  const includedSet = new Set(included);
+  const omittedManifest: CompactSourceContext['omittedManifest'] = [];
+  for (const f of allFiles) {
+    if (includedSet.has(f)) continue;
+    if (omittedManifest.length >= MAX_OMITTED_MANIFEST_ENTRIES) break;
+    const norm = normalizePath(f.path);
+    omittedManifest.push({
+      path: norm.slice(0, MAX_MANIFEST_PATH_CHARS),
+      language: fileLanguage(f, norm),
+      charCount: f.content?.length ?? 0,
+    });
+  }
+  return { includedFiles: [...included], omittedManifest };
+}
