@@ -268,3 +268,87 @@ export function acceptanceReasonLabel(code: FrontendAcceptanceGateReasonCode): s
     case 'score-not-improved': return 'blocked: score did not improve';
   }
 }
+
+/** A short, SAFE, non-technical category name for a blocking-analyzer reason code — used in the
+ *  end-user-facing sentence. Never exposes internal module/implementation names, prompts, ids or
+ *  provider data. Returns null for non-analyzer reason codes. */
+function safeBlockingCategory(code: FrontendAcceptanceGateReasonCode): { en: string; tr: string } | null {
+  const map: Partial<Record<FrontendAcceptanceGateReasonCode, { en: string; tr: string }>> = {
+    'blocking-experience': { en: 'integrated experience', tr: 'bütünleşik deneyim' },
+    'blocking-content': { en: 'content', tr: 'içerik' },
+    'blocking-visual-system': { en: 'visual system', tr: 'görsel sistem' },
+    'blocking-visual': { en: 'visual concept', tr: 'görsel konsept' },
+    'blocking-experience-identity': { en: 'experience identity', tr: 'deneyim kimliği' },
+    'blocking-motion': { en: 'motion', tr: 'hareket' },
+    'blocking-composition': { en: 'layout composition', tr: 'yerleşim düzeni' },
+    'blocking-research': { en: 'sector fit', tr: 'sektör uyumu' },
+    'blocking-binding': { en: 'requirement coverage', tr: 'gereksinim kapsamı' },
+  };
+  return map[code] ?? null;
+}
+
+/**
+ * Build the bounded, SAFE, end-user-facing rejection reason for a build that was NOT approved.
+ *
+ * This is what a NORMAL (non-owner) user is allowed to see about THEIR OWN build. It reads ONLY
+ * the safe fields of the persisted diagnostic — the reason code, the numeric quality scores
+ * (initial / final / minimum), the score-improvement / threshold booleans, a sanitized blocking
+ * category name, and the obligation-regression / severe-warning booleans. It NEVER exposes prompts,
+ * source, provider output, ids, secrets, token usage, internal routing, delta/owner diagnostics, or
+ * raw blocking counts/codes. Returns null when the candidate was accepted (no rejection to explain).
+ */
+export function buildUserFacingAcceptanceReason(
+  gate: FrontendAcceptanceGateDiagnostics | undefined,
+): { en: string; tr: string } | null {
+  if (!gate || gate.outcome !== 'rejected') return null;
+  const init = gate.initialScore;
+  const fin = gate.finalScore;
+  const min = gate.minRequiredScore;
+  switch (gate.primaryReasonCode) {
+    case 'score-not-improved':
+      return {
+        en: `Quality gate: the design-quality score did not improve after the automatic repair (${init} → ${fin}; minimum ${min}).`,
+        tr: `Kalite kapısı: otomatik düzeltmeden sonra tasarım kalite puanı yükselmedi (${init} → ${fin}; asgari ${min}).`,
+      };
+    case 'review-not-passed':
+      return gate.scoreMeetsThreshold
+        ? {
+            en: 'Quality gate: the design-quality review still reported blocking issues after the repair.',
+            tr: 'Kalite kapısı: düzeltmeden sonra tasarım kalite incelemesi hâlâ engelleyici sorunlar bildirdi.',
+          }
+        : {
+            en: `Quality gate: the score after repair stayed below the minimum (${fin}; minimum ${min}).`,
+            tr: `Kalite kapısı: düzeltme sonrası puan asgarinin altında kaldı (${fin}; asgari ${min}).`,
+          };
+    case 'post-repair-review-incomplete':
+      return {
+        en: 'Quality gate: the automatic quality review did not complete, so the build was not approved.',
+        tr: 'Kalite kapısı: otomatik kalite incelemesi tamamlanmadı; bu nedenle yapı onaylanmadı.',
+      };
+    case 'severe-warnings':
+      return {
+        en: 'Quality gate: severe quality warnings remained after the repair.',
+        tr: 'Kalite kapısı: düzeltmeden sonra ciddi kalite uyarıları devam etti.',
+      };
+    case 'obligation-regression':
+      return {
+        en: 'Quality gate: the repair regressed a previously-completed requirement, so the earlier version was kept.',
+        tr: 'Kalite kapısı: düzeltme daha önce tamamlanmış bir gereksinimi bozdu; bu nedenle önceki sürüm korundu.',
+      };
+    default: {
+      // Any of the nine blocking-analyzer reason codes → a sanitized category sentence.
+      const cat = safeBlockingCategory(gate.primaryReasonCode);
+      if (cat) {
+        return {
+          en: `Quality gate: the ${cat.en} quality check still did not pass after the repair.`,
+          tr: `Kalite kapısı: ${cat.tr} kalite kontrolü düzeltmeden sonra hâlâ geçemedi.`,
+        };
+      }
+      // Fallback — a generic, safe sentence (should be unreachable for a rejected gate).
+      return {
+        en: 'Quality gate: the build did not pass the automatic design-quality checks.',
+        tr: 'Kalite kapısı: yapı otomatik tasarım kalitesi kontrollerini geçemedi.',
+      };
+    }
+  }
+}

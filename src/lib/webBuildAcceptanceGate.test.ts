@@ -2,9 +2,11 @@ import { describe, it, expect } from 'vitest';
 import {
   evaluateAcceptanceGate,
   acceptanceReasonLabel,
+  buildUserFacingAcceptanceReason,
   ACCEPTANCE_MIN_SCORE,
   type AcceptanceGateInput,
   type FrontendAcceptanceGateReasonCode,
+  type FrontendAcceptanceGateDiagnostics,
 } from '@/lib/webBuildAcceptanceGate';
 
 /**
@@ -235,6 +237,114 @@ describe('diagnostics record every value the audit asked to expose (post-repair 
     expect(typeof d.obligationRegressionRejects).toBe('boolean');
     expect(d.deltaRepairUsed).toBe(true);
     expect(d.deltaRepairAccepted).toBe(true);
+  });
+
+});
+
+describe('buildUserFacingAcceptanceReason — bounded, safe end-user rejection reason', () => {
+  // A rejected diagnostic that ALSO carries owner-only / extra fields, to prove they never leak
+  // into the user-facing string.
+  function rejectedGate(over: Partial<FrontendAcceptanceGateDiagnostics> = {}): FrontendAcceptanceGateDiagnostics {
+    return {
+      version: 'frontend-acceptance-gate-v1',
+      outcome: 'rejected',
+      primaryReasonCode: 'score-not-improved',
+      initialScore: 84,
+      finalScore: 84,
+      minRequiredScore: 82,
+      scoreMeetsThreshold: true,
+      scoreImproved: false,
+      finalReviewCompleted: true,
+      finalReviewPassed: true,
+      blockerCount: 0,
+      majorCount: 0,
+      severeWarningGatePassed: true,
+      severeWarningCodes: ['shallow-project'],
+      blockingBinding: false,
+      blockingResearch: false,
+      blockingComposition: false,
+      blockingVisualSystem: false,
+      blockingContent: false,
+      blockingExperience: false,
+      blockingVisual: false,
+      blockingExperienceIdentity: false,
+      blockingMotionExecution: false,
+      anyBlockingAnalyzer: false,
+      obligationRegressionRejects: false,
+      obligationRegressedCount: 0,
+      deltaRepairUsed: true,
+      deltaRepairAccepted: true,
+      ...over,
+    };
+  }
+
+  it('rejected build with acceptanceGate → normal user sees a safe reason with the scores', () => {
+    const r = buildUserFacingAcceptanceReason(rejectedGate());
+    expect(r).not.toBeNull();
+    expect(r!.en).toBe('Quality gate: the design-quality score did not improve after the automatic repair (84 → 84; minimum 82).');
+    expect(r!.tr.length).toBeGreaterThan(0);
+  });
+
+  it('accepted build → NO rejection diagnostic (returns null)', () => {
+    expect(buildUserFacingAcceptanceReason(rejectedGate({ outcome: 'accepted', primaryReasonCode: 'accepted' }))).toBeNull();
+  });
+
+  it('missing acceptanceGate → null (component keeps the existing generic fallback)', () => {
+    expect(buildUserFacingAcceptanceReason(undefined)).toBeNull();
+  });
+
+  it('a blocking-analyzer rejection → sanitized category name, NOT an internal module name', () => {
+    const r = buildUserFacingAcceptanceReason(rejectedGate({ primaryReasonCode: 'blocking-visual-system', anyBlockingAnalyzer: true, blockingVisualSystem: true }));
+    expect(r!.en).toBe('Quality gate: the visual system quality check still did not pass after the repair.');
+    // Never the internal analyzer/module identifiers.
+    expect(r!.en).not.toMatch(/hasBlocking|VisualSystemAcceptance|analyze|webBuild/i);
+  });
+
+  it('score-below-threshold vs improved wording is distinct and accurate', () => {
+    const below = buildUserFacingAcceptanceReason(rejectedGate({ primaryReasonCode: 'review-not-passed', scoreMeetsThreshold: false, finalScore: 79, finalReviewPassed: false }));
+    expect(below!.en).toBe('Quality gate: the score after repair stayed below the minimum (79; minimum 82).');
+    const blocking = buildUserFacingAcceptanceReason(rejectedGate({ primaryReasonCode: 'review-not-passed', scoreMeetsThreshold: true, finalReviewPassed: false }));
+    expect(blocking!.en).toBe('Quality gate: the design-quality review still reported blocking issues after the repair.');
+  });
+
+  it('obligation-regression and severe-warning produce safe boolean-driven sentences', () => {
+    expect(buildUserFacingAcceptanceReason(rejectedGate({ primaryReasonCode: 'obligation-regression', obligationRegressionRejects: true }))!.en)
+      .toBe('Quality gate: the repair regressed a previously-completed requirement, so the earlier version was kept.');
+    expect(buildUserFacingAcceptanceReason(rejectedGate({ primaryReasonCode: 'severe-warnings', severeWarningGatePassed: false }))!.en)
+      .toContain('severe quality warnings');
+  });
+
+  it('NEVER leaks owner-only / sensitive tokens for ANY reason code', () => {
+    const codes: FrontendAcceptanceGateReasonCode[] = [
+      'blocking-experience', 'blocking-content', 'blocking-visual-system', 'blocking-visual',
+      'blocking-experience-identity', 'blocking-motion', 'obligation-regression', 'blocking-composition',
+      'blocking-research', 'blocking-binding', 'severe-warnings', 'post-repair-review-incomplete',
+      'review-not-passed', 'score-not-improved',
+    ];
+    // Denylist: delta/owner diagnostics, provider/model/token/id/routing, source/prompt hints, raw counts.
+    const denylist = [
+      'delta', 'owner', 'provider', 'model', 'token', 'requestId', 'request-id', 'id:', 'prompt',
+      'http', 'sk-', 'apiKey', 'api_key', 'blockerCount', 'majorCount', 'severeWarningCodes',
+      'shallow-project', 'admin', 'route',
+    ];
+    for (const code of codes) {
+      // Populate the owner-only fields with recognizable sentinels; they must never appear.
+      const r = buildUserFacingAcceptanceReason(rejectedGate({
+        primaryReasonCode: code,
+        deltaRepairUsed: true, deltaRepairAccepted: true,
+        severeWarningCodes: ['shallow-project', 'internal-copy-leak'],
+        blockerCount: 3, majorCount: 5, obligationRegressedCount: 9,
+        severeWarningGatePassed: code !== 'severe-warnings',
+        obligationRegressionRejects: code === 'obligation-regression',
+      }));
+      expect(r).not.toBeNull();
+      const both = `${r!.en} ${r!.tr}`.toLowerCase();
+      for (const bad of denylist) {
+        expect(both.includes(bad.toLowerCase())).toBe(false);
+      }
+      // Only safe score numbers may appear — assert no long digit runs that could be ids/tokens.
+      expect(r!.en).not.toMatch(/\d{4,}/);
+    }
   });
 
   it('every reason code has a bounded, human-readable label', () => {
