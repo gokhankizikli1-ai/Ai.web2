@@ -3268,6 +3268,20 @@ export function buildFrontendBuilderDeltaRepairRequest(
     'do NOT include unchanged files and do NOT delete files. Use normalized relative project paths',
     '(no absolute paths, no "../" traversal, no backslashes). Emit valid JSON only — no Markdown,',
     'comments or any text outside the two markers.',
+    // STRUCTURAL SELF-CONSISTENCY — the reconstructed project (your upserts merged into the existing
+    // files) MUST still pass the SAME static contract the original passed, or the whole repair is
+    // discarded and the build falls back to the safe preview. So:
+    'STRUCTURAL CONSISTENCY (mandatory — a violation discards the entire repair):',
+    '• Every relative import in a file you change or add MUST resolve to a file that EXISTS after your',
+    '  upserts are applied. If you reference a NEW component/module, INCLUDE that new file as an upsert',
+    '  in the SAME response. Never import a path you do not create or that is not already present.',
+    '• Do NOT introduce any new package/library import. Use ONLY packages already imported elsewhere in',
+    '  the project (e.g. react, framer-motion, lucide-react, recharts, clsx). No new npm dependencies,',
+    '  no Node built-ins, no path aliases (`@/…`, `~/…`), no dynamic import().',
+    '• Match an existing file EXACTLY (same path, same case) when replacing it; only use a new path for a',
+    '  genuinely new file, and keep every path under `src/` with a .tsx/.ts/.css extension.',
+    '• Keep src/main.tsx, src/App.tsx and src/styles.css valid: preserve the App default export, the JSX,',
+    '  the root mount and the Tailwind directives; keep every required section component imported/reachable.',
     'BEGIN_FRONTEND_BUILD_SPEC_JSON',
     'BEGIN_FRONTEND_REPAIR_INPUT_JSON',
     JSON.stringify(input),
