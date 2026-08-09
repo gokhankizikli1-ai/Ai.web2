@@ -2544,6 +2544,11 @@ export interface FrontendBuilderReviewArtifact {
   sizeBounded?: boolean;
   /** Files moved to the metadata-only omitted manifest by the size-bounding packer. */
   omittedFileCount?: number;
+  /** Phase 14L.3 — how the request was fit under the backend cap ('full' | 'files-bounded' |
+   *  'spec-compacted' | 'irreducible'). */
+  reviewFitMode?: 'full' | 'files-bounded' | 'spec-compacted' | 'irreducible';
+  /** True when the review-scoped spec projection was used to fit under the cap. */
+  specCompacted?: boolean;
   /** Server-verified ai_guard role for this review sub-call ('continuation' = attached to the
    *  running parent build; 'start' = not). Absent when no aiOperation echo was present. */
   continuationRole?: 'start' | 'continuation';
@@ -3102,6 +3107,14 @@ export interface FrontendBuilderReviewRawArtifact {
   /** How many project files were moved to the metadata-only omitted manifest by the
    *  size-bounding packer (0 when the full-file request was sent unchanged). */
   omittedFileCount?: number;
+  /** Phase 14L.3 — how the request was fit under the backend structured-builder cap:
+   *  'full' (unchanged), 'files-bounded' (#585 file trim), 'spec-compacted' (review-scoped
+   *  spec projection because the spec dominated — the post-#585 root cause), or 'irreducible'
+   *  (even the compact core overshoots — pathological). */
+  reviewFitMode?: 'full' | 'files-bounded' | 'spec-compacted' | 'irreducible';
+  /** True when the review-scoped spec projection was used (heavy optional generator
+   *  authorities dropped so a rich build is still reviewable under the cap). */
+  specCompacted?: boolean;
   /** Server-verified ai_guard role for THIS review sub-call: 'continuation' means the
    *  request's operation key matched the already-running parent build (attached, free);
    *  'start' means it did not. Absent when the response carried no aiOperation echo. */
