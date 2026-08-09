@@ -763,6 +763,36 @@ function readBetaBlock(data: Record<string, unknown>): BetaLimitReason | null {
   return null;
 }
 
+/**
+ * Recognize an ai_guard BLOCK response even when the structured `metadata.aiOperation` is absent or
+ * malformed. A guard block ALWAYS rides as `intent`/`mode` === 'ai_guard_block' (backend
+ * `_quick_response(..., "ai_guard_block", ...)`), while `readBetaBlock` only matches the fully
+ * structured `status:'blocked'` + known-code shape. So a block whose metadata is partial (e.g. a
+ * rolling-deploy version skew, or a sub-call block) slipped past `readBetaBlock` and fell through to
+ * the per-task `mode !== 'frontend_builder'` check — where it was mislabeled as "Backend routed the
+ * request to an unexpected mode." This wrapper classifies it as the HONEST typed guard block: the
+ * real code from metadata when present, else a bounded generic. It NEVER bypasses the block (the
+ * build is still honestly blocked) — it only stops the misleading "unexpected mode" report.
+ */
+export function readAiGuardBlock(data: Record<string, unknown>): BetaLimitReason | null {
+  const structured = readBetaBlock(data);       // preferred: full founder-beta block metadata
+  if (structured) return structured;
+  const isBlockMarker = data && (data['intent'] === 'ai_guard_block' || data['mode'] === 'ai_guard_block');
+  if (!isBlockMarker) return null;
+  const meta = (data['metadata'] as Record<string, unknown> | undefined);
+  const op = meta && typeof meta === 'object' ? (meta['aiOperation'] as Record<string, unknown> | undefined) : undefined;
+  if (op && typeof op === 'object' && typeof op['operationId'] === 'string') aiGuard.attachOperationId(op['operationId']);
+  // Use the real block code when the metadata carries one; else a bounded generic (localizes to the
+  // generic guard message) — never invents a specific quota/limit reason.
+  const code = op && aiGuard.isBetaBlockCode(op['code']) ? String(op['code']) : 'ai_guard_block';
+  return {
+    betaCode: code,
+    operationType: op && typeof op['operationType'] === 'string' ? String(op['operationType']) : undefined,
+    retryAfterSeconds: op && typeof op['retryAfterSeconds'] === 'number' ? (op['retryAfterSeconds'] as number) : undefined,
+    resetAt: op && typeof op['resetAt'] === 'string' ? String(op['resetAt']) : undefined,
+  };
+}
+
 /** Build the typed founder-beta error. The human message is a neutral fallback;
  *  the UI localizes via t(aiGuard.betaBlockMessageKey(betaCode)). */
 function betaLimitError(reason: BetaLimitReason): WebBuildError {
@@ -1628,8 +1658,9 @@ export async function generateWebBuild(
     // (3) known generic fallback. None of these is a malformed planning reply. ──
     // Phase 14L.1 — a founder-beta 200 block (kill switch, daily limit, concurrency,
     // capacity) rides in metadata.aiOperation. Classify it BEFORE any planning parse or
-    // repair: it never reached the model, so it is not a malformed planning reply.
-    const betaBlock = readBetaBlock(data);
+    // repair: it never reached the model, so it is not a malformed planning reply. Use the
+    // marker-tolerant reader so a guard block is never mislabeled downstream as an unexpected mode.
+    const betaBlock = readAiGuardBlock(data);
     if (betaBlock) throw betaLimitError(betaBlock);
     const exec = parseAiExecutionMetadata(data);
     const safetyRej = parseBackendSafetyRejection(data);
@@ -2916,7 +2947,11 @@ async function callFrontendBuilderTask(
     // Phase 14L.1 — founder-beta 200 block (e.g. a small-edit daily limit or concurrency)
     // rides in metadata.aiOperation; capture the operationId for finalize and surface a
     // typed beta_limit error BEFORE the background poll (a blocked op has no background job).
-    const betaBlock = readBetaBlock(data);
+    // Marker-tolerant: a guard block on a Web Build sub-call (e.g. the design-quality REVIEW) is
+    // classified here as an honest usage/concurrency block, so it is NEVER mislabeled downstream by
+    // the `mode !== 'frontend_builder'` check as "Backend routed the review request to an unexpected
+    // mode." This does not bypass the block — the build is still honestly blocked/finalized.
+    const betaBlock = readAiGuardBlock(data);
     if (betaBlock) throw betaLimitError(betaBlock);
 
     // Phase 13F.1 — full-source quality/contract-repair/revision tasks run in Background mode
