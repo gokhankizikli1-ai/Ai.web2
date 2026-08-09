@@ -15,6 +15,9 @@ import type {
 } from '@/lib/webBuildPayload';
 import type { WebBuildResearch } from '@/lib/webBuildApi';
 import { deriveAgentWorkLog, type WebBuildAgentWorkLogEntry } from '@/lib/webBuildAgents';
+// Bounded, SAFE end-user rejection reason for a build that was not approved. Reads only the safe
+// fields of the persisted acceptance diagnostic — never owner-only / source / provider data.
+import { buildUserFacingAcceptanceReason } from '@/lib/webBuildAcceptanceGate';
 // Phase 10D: Real Image Generation V1 — owner diagnostics read live provider
 // health + the session-local generated-image count. Safety gate is pure.
 import {
@@ -1308,6 +1311,12 @@ function CompletedPlanSummary({ step }: { step: WebBuildStep }) {
     );
   }
   const quality = `${disclaimer} ${parity}${contractSentence ? ` ${contractSentence}` : ''}`;
+  // Bounded, SAFE, user-facing rejection reason — shown to EVERY user (not owner-gated) for their
+  // OWN build that was not approved, so a normal beta/tester can see WHY without an owner account
+  // and without another build. Uses only the persisted, non-sensitive acceptanceGate fields.
+  const gateReason = acceptance?.status === 'manual-review-required'
+    ? buildUserFacingAcceptanceReason(acceptance.acceptanceGate)
+    : null;
 
   return (
     <div className="space-y-1 pt-0.5">
@@ -1337,6 +1346,11 @@ function CompletedPlanSummary({ step }: { step: WebBuildStep }) {
         })()}
       </div>
       <p className="text-[11px] leading-relaxed text-[#64748B]">{quality}</p>
+      {gateReason && (
+        <p className="rounded-md border border-[#E0A35B]/25 bg-[#E0A35B]/[0.06] px-2 py-1 text-[11px] leading-relaxed text-[#E0A35B]">
+          {L(gateReason.en, gateReason.tr)}
+        </p>
+      )}
       {isOwner && data.ownerRows.length > 0 && (
         <details className="mt-1 rounded-lg border border-white/[0.07] bg-white/[0.015] px-2.5 py-1.5 text-[11px] text-[#94A3B8]">
           <summary className="cursor-pointer select-none text-[10.5px] uppercase tracking-wide text-[#64748B] hover:text-[#94A3B8]">
