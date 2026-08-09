@@ -3,7 +3,7 @@ import { parseBuildSections } from '@/lib/gameBuilderApi';
 import { buildWebBuildPayload } from '@/lib/webBuildPayload';
 import {
   fitReviewRequestUnderCap, readAiGuardBlock, readStructuredSafetyRejection,
-  buildFrontendBuilderReviewRequest, SAFE_FRONTEND_REVIEW_REQUEST_CHARS, BACKEND_STRUCTURED_MAX_LEN,
+  SAFE_FRONTEND_REVIEW_REQUEST_CHARS, BACKEND_STRUCTURED_MAX_LEN,
 } from '@/lib/webBuildApi';
 import { buildReviewScopedSpecProjection } from '@/lib/webBuildQualityContext';
 import { parseFrontendBuilderReview } from '@/lib/webBuildFrontendReview';
