@@ -709,7 +709,7 @@ export async function runFrontendBuilderQualityPipeline(
         const skipped = acceptanceArtifact('skipped', 'internal-fallback', {
           initialReviewPassed: false, repairAttempted: false, repairAccepted: false, finalReviewPassed: false,
           reason: gateReason,
-        });
+        }, { fallbackReasonCode: 'contract-repair-failed' });
         emit('quality-review', 'skipped');
         emit('quality-repair', 'skipped');
         emit('acceptance', 'completed', acceptanceRows('skipped', 'internal-fallback'));
@@ -738,7 +738,7 @@ export async function runFrontendBuilderQualityPipeline(
       const skipped = acceptanceArtifact('skipped', 'internal-fallback', {
         initialReviewPassed: false, repairAttempted: false, repairAccepted: false, finalReviewPassed: false,
         reason: 'Phase 12E did not run: no consumed model-native project (the deterministic fallback stays active).',
-      });
+      }, { fallbackReasonCode: 'not-consumable' });
       emit('quality-review', 'skipped');
       emit('quality-repair', 'skipped');
       emit('acceptance', 'completed', acceptanceRows('skipped', 'internal-fallback'));
@@ -1102,7 +1102,7 @@ export async function runFrontendBuilderQualityPipeline(
       const acceptance = acceptanceArtifact('manual-review-required', initialProjectName, {
         initialReviewPassed: false, repairAttempted: false, repairAccepted: false, finalReviewPassed: false,
         reason: `${reason} The validated project stays active; manual rendered review required.`,
-      }, { usedDeterministicFallback, repairTriggeredByShallowQuality: false, severeWarningsBeforeRepair, ...bindingExtra() });
+      }, { usedDeterministicFallback, repairTriggeredByShallowQuality: false, severeWarningsBeforeRepair, fallbackReasonCode: !reviewTrustworthy ? 'initial-review-incomplete' : 'no-actionable-issue', ...bindingExtra() });
       emit('quality-repair', 'skipped');
       emit('acceptance', 'completed', acceptanceRows('manual-review-required', initialProjectName));
       return attachFrontendBuilderQualityResult(working, {
@@ -1188,7 +1188,7 @@ export async function runFrontendBuilderQualityPipeline(
       const acceptance = acceptanceArtifact('manual-review-required', initialProjectName, {
         initialReviewPassed: false, repairAttempted: true, repairAccepted: false, finalReviewPassed: false,
         reason: 'The bounded repair call did not complete; the initial validated project stays active. Manual rendered review required.',
-      }, { usedDeterministicFallback, repairTriggeredByShallowQuality, severeWarningsBeforeRepair, ...bindingExtra() });
+      }, { usedDeterministicFallback, repairTriggeredByShallowQuality, severeWarningsBeforeRepair, fallbackReasonCode: 'repair-call-incomplete', ...bindingExtra() });
       emit('quality-repair', 'completed', [{ label: 'result', value: 'not applied' }]);
       emit('acceptance', 'completed', acceptanceRows('manual-review-required', initialProjectName));
       return attachFrontendBuilderQualityResult(working, { ran: true, initialReview, repair, acceptance });
@@ -1213,7 +1213,7 @@ export async function runFrontendBuilderQualityPipeline(
       const acceptance = acceptanceArtifact('manual-review-required', initialProjectName, {
         initialReviewPassed: false, repairAttempted: true, repairAccepted: false, finalReviewPassed: false,
         reason: 'The repaired project did not pass static validation; the initial validated project stays active. No post-repair review ran. Manual rendered review required.',
-      }, { usedDeterministicFallback, repairTriggeredByShallowQuality, severeWarningsBeforeRepair, ...bindingExtra() });
+      }, { usedDeterministicFallback, repairTriggeredByShallowQuality, severeWarningsBeforeRepair, fallbackReasonCode: 'repair-failed-validation', ...bindingExtra() });
       emit('quality-repair', 'completed', [{ label: 'result', value: 'rejected' }]);
       emit('acceptance', 'completed', acceptanceRows('manual-review-required', initialProjectName));
       return attachFrontendBuilderQualityResult(working, { ran: true, initialReview, repair, acceptance });
@@ -1408,7 +1408,7 @@ export async function runFrontendBuilderQualityPipeline(
     const skipped = acceptanceArtifact('skipped', 'internal-fallback', {
       initialReviewPassed: false, repairAttempted: false, repairAccepted: false, finalReviewPassed: false,
       reason: 'Phase 12E failed open on an unexpected error; the existing validated project stays active.',
-    });
+    }, { fallbackReasonCode: 'pipeline-error' });
     try {
       // `working` is scoped to the try; the catch only has the pre-try `consumed`.
       return attachFrontendBuilderQualityResult(consumed, { ran: false, acceptance: skipped });

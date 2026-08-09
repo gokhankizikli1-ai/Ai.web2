@@ -3,10 +3,13 @@ import {
   evaluateAcceptanceGate,
   acceptanceReasonLabel,
   buildUserFacingAcceptanceReason,
+  buildUserFacingAcceptanceReasonFromArtifact,
   ACCEPTANCE_MIN_SCORE,
   type AcceptanceGateInput,
   type FrontendAcceptanceGateReasonCode,
   type FrontendAcceptanceGateDiagnostics,
+  type FrontendAcceptanceFallbackReasonCode,
+  type AcceptanceReasonSource,
 } from '@/lib/webBuildAcceptanceGate';
 
 /**
@@ -344,6 +347,101 @@ describe('buildUserFacingAcceptanceReason — bounded, safe end-user rejection r
       }
       // Only safe score numbers may appear — assert no long digit runs that could be ids/tokens.
       expect(r!.en).not.toMatch(/\d{4,}/);
+    }
+  });
+
+});
+
+describe('buildUserFacingAcceptanceReasonFromArtifact — EVERY Safe-Preview path reaches the UI', () => {
+  const rejectedGate: FrontendAcceptanceGateDiagnostics = {
+    version: 'frontend-acceptance-gate-v1', outcome: 'rejected', primaryReasonCode: 'score-not-improved',
+    initialScore: 84, finalScore: 84, minRequiredScore: 82, scoreImproved: false, scoreMeetsThreshold: true,
+    finalReviewCompleted: true, finalReviewPassed: true, blockerCount: 0, majorCount: 0,
+    severeWarningGatePassed: true, blockingBinding: false, blockingResearch: false, blockingComposition: false,
+    blockingVisualSystem: false, blockingContent: false, blockingExperience: false, blockingVisual: false,
+    blockingExperienceIdentity: false, blockingMotionExecution: false, anyBlockingAnalyzer: false,
+    obligationRegressionRejects: false, deltaRepairUsed: true, deltaRepairAccepted: true,
+  };
+  const artifact = (over: Partial<AcceptanceReasonSource>): AcceptanceReasonSource =>
+    ({ status: 'manual-review-required', ...over });
+
+  it('repaired candidate rejected by the deterministic gate → gate reason survives to UI', () => {
+    const r = buildUserFacingAcceptanceReasonFromArtifact(artifact({ acceptanceGate: rejectedGate }));
+    expect(r!.en).toContain('did not improve after the automatic repair');
+  });
+
+  it('early validation fallback (repaired project failed validation, NO gate) → safe reason to UI', () => {
+    // This is the exact production path: manual-review-required with no acceptanceGate. Before the
+    // fix this returned null (blank). Now it maps to a bounded sentence.
+    const r = buildUserFacingAcceptanceReasonFromArtifact(artifact({ fallbackReasonCode: 'repair-failed-validation' }));
+    expect(r).not.toBeNull();
+    expect(r!.en).toBe('Quality gate: the repaired project failed static validation, so it was not approved.');
+  });
+
+  it('manual-review-required with NEITHER a gate NOR a code → generic safe reason (never blank)', () => {
+    const r = buildUserFacingAcceptanceReasonFromArtifact(artifact({}));
+    expect(r).not.toBeNull();
+    expect(r!.en).toContain('did not pass the automatic design-quality checks');
+  });
+
+  it('consumption fallback (skipped + internal-fallback) → safe reason to UI', () => {
+    const r = buildUserFacingAcceptanceReasonFromArtifact({ status: 'skipped', activeProject: 'internal-fallback', fallbackReasonCode: 'not-consumable' });
+    expect(r!.en).toBe('Quality gate: the generated project was not usable, so the safe preview is shown.');
+  });
+
+  it('contract-repair failure (skipped + internal-fallback) → safe reason to UI', () => {
+    const r = buildUserFacingAcceptanceReasonFromArtifact({ status: 'skipped', activeProject: 'internal-fallback', fallbackReasonCode: 'contract-repair-failed' });
+    expect(r!.en).toContain('failed structural validation');
+  });
+
+  it('pipeline-error fallback → safe reason to UI', () => {
+    const r = buildUserFacingAcceptanceReasonFromArtifact({ status: 'skipped', activeProject: 'internal-fallback', fallbackReasonCode: 'pipeline-error' });
+    expect(r!.en).toContain('could not finish');
+  });
+
+  it('accepted / repaired-approved builds → NO rejection line', () => {
+    expect(buildUserFacingAcceptanceReasonFromArtifact({ status: 'approved' })).toBeNull();
+    expect(buildUserFacingAcceptanceReasonFromArtifact({ status: 'repaired-approved', acceptanceGate: { ...rejectedGate, outcome: 'accepted' } })).toBeNull();
+  });
+
+  it('a non-fallback skipped (not internal-fallback) → no line; undefined → no line', () => {
+    expect(buildUserFacingAcceptanceReasonFromArtifact({ status: 'skipped', activeProject: 'revised-model-native' })).toBeNull();
+    expect(buildUserFacingAcceptanceReasonFromArtifact(undefined)).toBeNull();
+  });
+
+  it('every fallback reason code yields a non-empty bounded sentence in both languages', () => {
+    const codes: FrontendAcceptanceFallbackReasonCode[] = [
+      'repair-call-incomplete', 'repair-failed-validation', 'no-actionable-issue', 'initial-review-incomplete',
+      'contract-repair-failed', 'not-consumable', 'pipeline-error',
+    ];
+    for (const code of codes) {
+      const r = buildUserFacingAcceptanceReasonFromArtifact(artifact({ fallbackReasonCode: code }));
+      expect(r).not.toBeNull();
+      expect(r!.en.startsWith('Quality gate:')).toBe(true);
+      expect(r!.tr.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('owner and normal user get the IDENTICAL user-facing reason (no owner input)', () => {
+    const a = buildUserFacingAcceptanceReasonFromArtifact(artifact({ fallbackReasonCode: 'repair-failed-validation' }));
+    const b = buildUserFacingAcceptanceReasonFromArtifact(artifact({ fallbackReasonCode: 'repair-failed-validation' }));
+    expect(a).toEqual(b);
+  });
+
+  it('NEVER leaks internal data through the fallback path for ANY code', () => {
+    const denylist = ['delta', 'owner', 'provider', 'model', 'token', 'requestId', 'prompt', 'http', 'sk-', 'apiKey', 'admin', 'route', 'phase 12'];
+    const codes: FrontendAcceptanceFallbackReasonCode[] = [
+      'repair-call-incomplete', 'repair-failed-validation', 'no-actionable-issue', 'initial-review-incomplete',
+      'contract-repair-failed', 'not-consumable', 'pipeline-error',
+    ];
+    for (const code of codes) {
+      const r = buildUserFacingAcceptanceReasonFromArtifact(artifact({
+        // stuff a rejected gate with owner-only fields alongside the code — must not leak.
+        fallbackReasonCode: code, acceptanceGate: { ...rejectedGate, outcome: 'accepted' },
+      }))!;
+      const both = `${r.en} ${r.tr}`.toLowerCase();
+      for (const bad of denylist) expect(both.includes(bad.toLowerCase())).toBe(false);
+      expect(r.en).not.toMatch(/\d{4,}/);
     }
   });
 

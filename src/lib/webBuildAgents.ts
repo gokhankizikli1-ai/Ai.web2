@@ -2810,6 +2810,15 @@ export interface FrontendBuilderAcceptanceArtifact {
    *    NOT change `renderedVisualTestStatus` (static analysis is not a rendered certification). */
   acceptanceGate?: import('@/lib/webBuildAcceptanceGate').FrontendAcceptanceGateDiagnostics;
 
+  /* ── Pre-gate / non-gate SAFE-PREVIEW fallback reason. Present on every acceptance artifact that
+   *    falls to Safe Preview WITHOUT reaching the deterministic gate (repair call incomplete,
+   *    repaired project failed static validation, no actionable review issue, initial review
+   *    incomplete, structural contract repair failed, project not consumable, pipeline error). It
+   *    lets the SAME bounded user-facing "Quality gate" line explain every fallback cause — not only
+   *    the post-repair gate ones. A single safe enum code; never source/prompts/ids/PII. Old
+   *    artifacts omit it. Mutually informative with (not a replacement for) `acceptanceGate`. */
+  fallbackReasonCode?: import('@/lib/webBuildAcceptanceGate').FrontendAcceptanceFallbackReasonCode;
+
   reason: string;
 }
 

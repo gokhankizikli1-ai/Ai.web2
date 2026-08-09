@@ -15,9 +15,10 @@ import type {
 } from '@/lib/webBuildPayload';
 import type { WebBuildResearch } from '@/lib/webBuildApi';
 import { deriveAgentWorkLog, type WebBuildAgentWorkLogEntry } from '@/lib/webBuildAgents';
-// Bounded, SAFE end-user rejection reason for a build that was not approved. Reads only the safe
-// fields of the persisted acceptance diagnostic — never owner-only / source / provider data.
-import { buildUserFacingAcceptanceReason } from '@/lib/webBuildAcceptanceGate';
+// Bounded, SAFE end-user rejection reason for a build that fell to Safe Preview — from ANY path
+// (deterministic gate OR a pre-gate fallback). Reads only the safe fields of the persisted
+// acceptance artifact — never owner-only / source / provider / id data.
+import { buildUserFacingAcceptanceReasonFromArtifact } from '@/lib/webBuildAcceptanceGate';
 // Phase 10D: Real Image Generation V1 — owner diagnostics read live provider
 // health + the session-local generated-image count. Safety gate is pure.
 import {
@@ -1312,11 +1313,12 @@ function CompletedPlanSummary({ step }: { step: WebBuildStep }) {
   }
   const quality = `${disclaimer} ${parity}${contractSentence ? ` ${contractSentence}` : ''}`;
   // Bounded, SAFE, user-facing rejection reason — shown to EVERY user (not owner-gated) for their
-  // OWN build that was not approved, so a normal beta/tester can see WHY without an owner account
-  // and without another build. Uses only the persisted, non-sensitive acceptanceGate fields.
-  const gateReason = acceptance?.status === 'manual-review-required'
-    ? buildUserFacingAcceptanceReason(acceptance.acceptanceGate)
-    : null;
+  // OWN build that fell to Safe Preview, so a normal beta/tester can see WHY without an owner
+  // account and without another build. Covers EVERY fallback cause: the deterministic acceptance
+  // gate (score/severe/analyzer/obligation) AND the pre-gate fallbacks (repair incomplete, repaired
+  // project failed validation, no actionable issue, contract-repair failed, not consumable, pipeline
+  // error) — a fallen-back build is never shown with a blank reason. Safe fields only.
+  const gateReason = buildUserFacingAcceptanceReasonFromArtifact(acceptance);
 
   return (
     <div className="space-y-1 pt-0.5">
