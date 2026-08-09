@@ -3205,43 +3205,42 @@ export interface ReviewFitResult {
   specCompacted: boolean;
 }
 
-/** Phase 14L.2/14L.3 — deterministically fit the design-quality review request under the backend
- *  structured-builder safety cap. PROGRESSIVE escalation, cheapest first:
+/** Phase 14L.2/14L.3/14L.4 — GENERIC deterministic fit of a structured `frontend_builder` request
+ *  (review OR bounded repair) under the backend structured-builder safety cap. PROGRESSIVE
+ *  escalation, cheapest first:
  *    1. `full`           — the byte-for-byte full-spec + full-file request when it already fits
  *                          (the common small/medium-project path; unchanged).
  *    2. `files-bounded`  — full spec + the largest bounded include-set of files (#585).
  *    3. `spec-compacted` — a review-scoped spec projection (drop the heavy optional generator
  *                          authorities; MEASURED ~99k → ~12k) + re-bounded files, used ONLY when
- *                          file-bounding alone cannot reach the cap because the SPEC dominates
- *                          (the post-#585 root cause). The reviewer still gets the full source it
- *                          scores and the core design contract; NO acceptance threshold changes.
- *    4. `irreducible`    — even compact spec + entry files overshoot (pathological, e.g. a single
- *                          >100k entry file); send the best effort and let the honest failure
+ *                          file-bounding alone cannot reach the cap because the SPEC dominates.
+ *                          The model still gets the full source it acts on and the core design
+ *                          contract; NO acceptance threshold changes.
+ *    4. `irreducible`    — even compact spec + entry/priority files overshoot (pathological, e.g. a
+ *                          single >100k file); send the best effort and let the honest failure
  *                          category be recorded (never a mislabeled "unexpected mode").
- *  Pure; no network. */
-export function fitReviewRequestUnderCap(
+ *  `priorityPaths` are files the request MUST retain (entry/required files are added automatically;
+ *  a repair also pins the files its review issues reference so it can still fix them). `buildMessage`
+ *  serializes the concrete request for a given (spec, compact) — the ONE place review vs repair
+ *  differ, so both reuse this identical size logic. Pure; no network. */
+export function fitStructuredBuilderRequestUnderCap(
   spec: FrontendBuildSpecification,
   files: WebBuildFile[],
-  stage: FrontendBuilderReviewStage,
-  previousReview: FrontendBuilderReviewArtifact | undefined,
-  deterministicWarnings: string[] | undefined,
-  compact: CompactSourceContext | undefined,
+  priorityPaths: string[],
+  originalCompact: CompactSourceContext | undefined,
+  buildMessage: (useSpec: FrontendBuildSpecification, compact: CompactSourceContext | undefined) => string,
 ): ReviewFitResult {
-  const full = buildFrontendBuilderReviewRequest(spec, files, stage, previousReview, deterministicWarnings, compact);
+  const full = buildMessage(spec, originalCompact);
   if (full.length <= SAFE_FRONTEND_REVIEW_REQUEST_CHARS) {
     return { message: full, sizeBounded: false, omittedFileCount: 0, fitMode: 'full', specCompacted: false };
   }
-
-  // Keep any files the caller already prioritized via `compact` (e.g. a post-repair review's
-  // changed files) at the front of the must-include set.
-  const priorityPaths = compact ? compact.includedFiles.map((f) => f.path) : [];
 
   // Largest bounded include-set whose serialized request fits, for a given (possibly compacted)
   // spec. Binary-searches the smallest-first remainder; entry/required/priority files always kept.
   const bestFitForSpec = (useSpec: FrontendBuildSpecification): { message: string; included: WebBuildFile[] } => {
     const { prioritized, rest } = orderFilesForReviewBounding(useSpec, files, priorityPaths);
     const build = (included: WebBuildFile[]): string =>
-      buildFrontendBuilderReviewRequest(useSpec, files, stage, previousReview, deterministicWarnings, compactContextFromIncludedFiles(files, included));
+      buildMessage(useSpec, compactContextFromIncludedFiles(files, included));
     let lo = 0;
     let hi = rest.length;
     let bestIncluded = prioritized;
@@ -3268,7 +3267,7 @@ export function fitReviewRequestUnderCap(
     };
   }
 
-  // Level 3 — the spec dominates (post-#585 root cause). Send the review-scoped spec projection
+  // Level 3 — the spec dominates (the #586/#588 root cause). Send the review-scoped spec projection
   // (core design contract only) + re-bounded files. This is the branch that rescues rich builds.
   const compactSpec = buildReviewScopedSpecProjection(spec);
   const specCompacted = bestFitForSpec(compactSpec);
@@ -3283,6 +3282,31 @@ export function fitReviewRequestUnderCap(
     fitMode,
     specCompacted: true,
   };
+}
+
+/** Files a bounded repair MUST retain in its request so it can still fix them: the paths its
+ *  review issues reference. Bounded, sanitized to strings; entry/required files are added by the
+ *  fitter automatically. */
+export function reviewIssueFilePaths(review: FrontendBuilderReviewArtifact | undefined): string[] {
+  const out: string[] = [];
+  for (const issue of review?.issues || []) {
+    for (const p of issue.files || []) if (typeof p === 'string' && p) out.push(p);
+  }
+  return [...new Set(out)];
+}
+
+/** Fit the design-quality REVIEW request under the cap (thin wrapper over the generic fitter). */
+export function fitReviewRequestUnderCap(
+  spec: FrontendBuildSpecification,
+  files: WebBuildFile[],
+  stage: FrontendBuilderReviewStage,
+  previousReview: FrontendBuilderReviewArtifact | undefined,
+  deterministicWarnings: string[] | undefined,
+  compact: CompactSourceContext | undefined,
+): ReviewFitResult {
+  const priorityPaths = compact ? compact.includedFiles.map((f) => f.path) : [];
+  return fitStructuredBuilderRequestUnderCap(spec, files, priorityPaths, compact, (useSpec, useCompact) =>
+    buildFrontendBuilderReviewRequest(useSpec, files, stage, previousReview, deterministicWarnings, useCompact));
 }
 
 /** Serialize the bounded REPAIR request. Sends ONLY: the authoritative specification,
@@ -3396,7 +3420,16 @@ export async function generateFrontendBuilderRepairRaw(
   if (spec.status === 'failed-open') return frontendBuilderArtifact('skipped', 'The specification failed open; the repair was skipped.');
   if (!files.length) return frontendBuilderArtifact('skipped', 'No active model-native files to repair.');
 
-  const message = buildFrontendBuilderRepairRequest(spec, files, initialReview, opts?.deterministicWarnings, opts?.qualityEvidence);
+  // Phase 14L.4 — fit the FULL repair request under the backend 125k structured-builder safety cap.
+  // The full repair returns the COMPLETE project, so files must NEVER be dropped from its request
+  // (an omitted file would be lost from the re-emitted project). We therefore mark EVERY file as a
+  // priority path, so the shared fitter applies ONLY the spec projection (drop the heavy optional
+  // generator authorities, ~99k → ~12k) and always keeps every file. Same reuse as the review/delta
+  // fitter; no extra provider call, no threshold change.
+  const allFilePaths = files.map((f) => f.path);
+  const fit = fitStructuredBuilderRequestUnderCap(spec, files, allFilePaths, undefined, (useSpec) =>
+    buildFrontendBuilderRepairRequest(useSpec, files, initialReview, opts?.deterministicWarnings, opts?.qualityEvidence));
+  const message = fit.message;
   if (message.length > MAX_FRONTEND_TASK_REQUEST_CHARS) {
     return frontendBuilderArtifact('failed', `The repair request (${message.length} chars) exceeds the safe request limit (${MAX_FRONTEND_TASK_REQUEST_CHARS}).`);
   }
@@ -3404,10 +3437,15 @@ export async function generateFrontendBuilderRepairRaw(
   const outcome = await callFrontendBuilderTask(message, FRONTEND_REPAIR_TIMEOUT_MS, spec.prompt || '', opts);
   if (!outcome.ok) return frontendBuilderArtifact('failed', outcome.reason);
 
-  const { reply, reportedMode, model, provider, requestId } = outcome.data;
+  const { reply, reportedMode, model, provider, requestId, safetyRejectionReason } = outcome.data;
   // Only carry identity metadata in `base`; the per-case positional `reason` (which
   // already names this a Phase 12E repair) must win over the spread, never be overridden.
   const base: Partial<FrontendBuilderRawArtifact> = { model, provider, requestId };
+  // Phase 14L.4 — a STRUCTURED SAFETY rejection (e.g. safety_length) is recorded as its TRUE cause,
+  // kept DISTINCT from a genuine routing/mode error.
+  if (safetyRejectionReason) {
+    return frontendBuilderArtifact('failed', safetyRejectionReason, base);
+  }
   if (reportedMode && reportedMode !== FRONTEND_BUILDER_MODE) {
     return frontendBuilderArtifact('failed', 'Backend routed the repair request to an unexpected mode.', base);
   }
@@ -3518,7 +3556,17 @@ export async function generateFrontendBuilderDeltaRepairRaw(
   if (spec.status === 'failed-open') return frontendBuilderArtifact('skipped', 'The specification failed open; the delta repair was skipped.');
   if (!files.length) return frontendBuilderArtifact('skipped', 'No active model-native files to repair.');
 
-  const message = buildFrontendBuilderDeltaRepairRequest(spec, files, initialReview, opts?.deterministicWarnings, opts?.qualityEvidence, opts?.compact);
+  // Phase 14L.4 — fit the delta repair request under the backend 125k structured-builder safety cap,
+  // reusing the SAME progressive fitter as the review (full → files-bounded → spec-compacted). The
+  // repair request (spec ~99k + full source + delta prompt) otherwise exceeds the cap and is rejected
+  // as `safety_length` (which the transport mislabeled "unexpected mode"). Dropping non-issue files
+  // is SAFE for a delta repair: the pure delta module merges the upserts into the ORIGINAL full file
+  // set, so omitted files are preserved byte-for-byte; the review's issue files are pinned so the
+  // repair can still fix them. No extra provider call; no threshold change.
+  const priorityPaths = [...reviewIssueFilePaths(initialReview), ...(opts?.compact ? opts.compact.includedFiles.map((f) => f.path) : [])];
+  const fit = fitStructuredBuilderRequestUnderCap(spec, files, priorityPaths, opts?.compact, (useSpec, useCompact) =>
+    buildFrontendBuilderDeltaRepairRequest(useSpec, files, initialReview, opts?.deterministicWarnings, opts?.qualityEvidence, useCompact));
+  const message = fit.message;
   if (message.length > MAX_FRONTEND_TASK_REQUEST_CHARS) {
     return frontendBuilderArtifact('failed', `The delta repair request (${message.length} chars) exceeds the safe request limit (${MAX_FRONTEND_TASK_REQUEST_CHARS}).`);
   }
@@ -3526,8 +3574,13 @@ export async function generateFrontendBuilderDeltaRepairRaw(
   const outcome = await callFrontendBuilderTask(message, FRONTEND_REPAIR_TIMEOUT_MS, spec.prompt || '', opts);
   if (!outcome.ok) return frontendBuilderArtifact('failed', outcome.reason);
 
-  const { reply, reportedMode, model, provider, requestId } = outcome.data;
+  const { reply, reportedMode, model, provider, requestId, safetyRejectionReason } = outcome.data;
   const base: Partial<FrontendBuilderRawArtifact> = { model, provider, requestId };
+  // Phase 14L.4 — a STRUCTURED SAFETY rejection (e.g. safety_length) is recorded as its TRUE cause,
+  // kept DISTINCT from a genuine routing/mode error (it used to be mislabeled "unexpected mode").
+  if (safetyRejectionReason) {
+    return frontendBuilderArtifact('failed', safetyRejectionReason, base);
+  }
   if (reportedMode && reportedMode !== FRONTEND_BUILDER_MODE) {
     return frontendBuilderArtifact('failed', 'Backend routed the delta repair request to an unexpected mode.', base);
   }
