@@ -742,7 +742,8 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
         // whether the review hit the backend 125k structured cap or a genuine transport/parse
         // problem — and confirms the sub-call attached to the running parent build (op-key match).
         ownerRows.push(['frontendInitialReviewReason', shortStr(fir.reason, 140)]);
-        if (typeof fir.requestCharCount === 'number') ownerRows.push(['frontendInitialReviewRequestChars', String(fir.requestCharCount)]);
+        if (typeof fir.requestCharCount === 'number') ownerRows.push(['frontendInitialReviewRequestChars', `${fir.requestCharCount} (backend safety cap 125000)`]);
+        if (fir.reviewFitMode) ownerRows.push(['frontendInitialReviewFitMode', fir.reviewFitMode + (fir.specCompacted ? ' (spec projection applied)' : '')]);
         if (fir.sizeBounded) ownerRows.push(['frontendInitialReviewSizeBounded', `true (omitted ${fir.omittedFileCount ?? 0} file(s) to fit the backend 125k cap)`]);
         if (fir.continuationRole) ownerRows.push(['frontendInitialReviewContinuation', `${fir.continuationRole} (op-key match: ${fir.continuationAttached ? 'yes' : 'no'})`]);
       }
@@ -770,7 +771,8 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
         // truncation is diagnosable from the SAVED build — no new build required.
         ownerRows.push(['frontendFinalReviewReason', shortStr(ffr.reason, 180)]);
         ownerRows.push(['frontendFinalReviewResponseChars', String(ffr.responseCharCount ?? 0)]);
-        if (typeof ffr.requestCharCount === 'number') ownerRows.push(['frontendFinalReviewRequestChars', String(ffr.requestCharCount)]);
+        if (typeof ffr.requestCharCount === 'number') ownerRows.push(['frontendFinalReviewRequestChars', `${ffr.requestCharCount} (backend safety cap 125000)`]);
+        if (ffr.reviewFitMode) ownerRows.push(['frontendFinalReviewFitMode', ffr.reviewFitMode + (ffr.specCompacted ? ' (spec projection applied)' : '')]);
         if (ffr.sizeBounded) ownerRows.push(['frontendFinalReviewSizeBounded', `true (omitted ${ffr.omittedFileCount ?? 0} file(s) to fit the backend 125k cap)`]);
         if (ffr.continuationRole) ownerRows.push(['frontendFinalReviewContinuation', `${ffr.continuationRole} (op-key match: ${ffr.continuationAttached ? 'yes' : 'no'})`]);
       }

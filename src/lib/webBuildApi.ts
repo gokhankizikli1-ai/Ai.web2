@@ -26,7 +26,7 @@ import type {
 import { hasAffirmedIntent } from '@/lib/webBuildProductIntent';
 import type { WebBuildFile } from '@/lib/webBuildPayload';
 import type { CompactSourceContext } from '@/lib/webBuildQualityContext';
-import { orderFilesForReviewBounding, compactContextFromIncludedFiles } from '@/lib/webBuildQualityContext';
+import { orderFilesForReviewBounding, compactContextFromIncludedFiles, buildReviewScopedSpecProjection } from '@/lib/webBuildQualityContext';
 import { renderBindingRequirementsBlock } from '@/lib/webBuildBindingRequirements';
 import { renderResearchDirectionBlock } from '@/lib/webBuildResearchDirection';
 import { renderCompositionBlock } from '@/lib/webBuildComposition';
@@ -798,6 +798,30 @@ export function readAiGuardBlock(data: Record<string, unknown>): BetaLimitReason
  *  the UI localizes via t(aiGuard.betaBlockMessageKey(betaCode)). */
 function betaLimitError(reason: BetaLimitReason): WebBuildError {
   return new WebBuildError('beta_limit', 'This action is limited in the Founder Beta.', reason);
+}
+
+/** Phase 14L.3 — recognize a STRUCTURED SAFETY-GUARD rejection of a frontend_builder request
+ *  (backend `_quick_response(..., "safety_" + code, metadata.safety={...})`). Returns an explicit,
+ *  bounded reason so a review failure is recorded as its TRUE cause (e.g. `safety_length` — the
+ *  request exceeded the 125k structured cap) instead of the generic "Backend routed the review
+ *  request to an unexpected mode." Keeps `safety_length` DISTINCT from a genuine routing/mode
+ *  error. Returns null when the response is not a structured safety rejection. Never throws. */
+export function readStructuredSafetyRejection(data: Record<string, unknown>): string | null {
+  const meta = data && typeof data === 'object' ? (data['metadata'] as Record<string, unknown> | undefined) : undefined;
+  const safety = meta && typeof meta === 'object' ? (meta['safety'] as Record<string, unknown> | undefined) : undefined;
+  if (safety && typeof safety === 'object' && safety['status'] === 'rejected') {
+    const code = typeof safety['code'] === 'string' ? String(safety['code']) : 'blocked';
+    const reqChars = typeof safety['request_char_count'] === 'number' ? (safety['request_char_count'] as number) : undefined;
+    const limit = typeof safety['limit_char_count'] === 'number' ? (safety['limit_char_count'] as number) : undefined;
+    const size = reqChars != null ? ` (${reqChars} chars${limit != null ? ` > ${limit} cap` : ''})` : '';
+    return `Backend safety guard rejected the review request: safety_${code}${size}.`;
+  }
+  // Version-skew tolerance: a `safety_*` mode/intent marker even without the metadata envelope.
+  const mode = typeof data['mode'] === 'string' ? String(data['mode']) : '';
+  const intent = typeof data['intent'] === 'string' ? String(data['intent']) : '';
+  const marker = [mode, intent].find((m) => m.startsWith('safety_'));
+  if (marker) return `Backend safety guard rejected the review request: ${marker}.`;
+  return null;
 }
 
 /** The i18n key for the friendly user-facing message per error kind. */
@@ -2860,7 +2884,10 @@ const MAX_FRONTEND_REVIEW_RESPONSE_CHARS = 30_000;
 // server-side augmentation + measurement drift; a review request above it is re-packed into a
 // bounded include-set + omitted manifest (the shape the reviewer prompt already understands) so a
 // large premium project is still reviewed instead of silently falling to Safe Preview.
-const SAFE_FRONTEND_REVIEW_REQUEST_CHARS = 118_000;
+export const SAFE_FRONTEND_REVIEW_REQUEST_CHARS = 118_000;
+/** The backend structured-builder safety cap (backend/services/safety/guard.py _STRUCTURED_MAX_LEN)
+ *  — the hard limit the fitter must keep the review request under. Exported for regression tests. */
+export const BACKEND_STRUCTURED_MAX_LEN = 125_000;
 
 /** Privacy allowlist of file fields sent to review/repair — path/language/content
  *  ONLY. Never diff status/added/removed/summary or any payload state. */
@@ -2886,6 +2913,10 @@ interface FrontendTaskResponse {
    *  already-running parent build (attached, free); 'start' means it did not. Undefined when the
    *  response carried no aiOperation echo. Bounded/safe — never a raw operation id. */
   continuationRole?: 'start' | 'continuation';
+  /** Phase 14L.3 — explicit reason when the backend STRUCTURED SAFETY GUARD rejected the request
+   *  (e.g. `safety_length`). Set so the caller records the TRUE cause instead of a generic
+   *  "unexpected mode". Undefined for a normal response. */
+  safetyRejectionReason?: string;
 }
 
 /** Phase 14L.2 — read the bounded, server-verified continuation role from a /chat response's
@@ -3016,6 +3047,7 @@ async function callFrontendBuilderTask(
         requestId,
         exec,
         continuationRole: readContinuationRole(data),
+        safetyRejectionReason: readStructuredSafetyRejection(data) || undefined,
       },
     };
   } finally {
@@ -3125,7 +3157,9 @@ export async function generateFrontendBuilderReviewRaw(
   const message = fit.message;
   const sizeMeta: Partial<FrontendBuilderReviewRawArtifact> = {
     requestCharCount: message.length,
+    reviewFitMode: fit.fitMode,
     ...(fit.sizeBounded ? { sizeBounded: true, omittedFileCount: fit.omittedFileCount } : {}),
+    ...(fit.specCompacted ? { specCompacted: true } : {}),
   };
   if (message.length > MAX_FRONTEND_TASK_REQUEST_CHARS) {
     return reviewRawArtifact(stage, 'failed', `The review request (${message.length} chars) exceeds the safe request limit (${MAX_FRONTEND_TASK_REQUEST_CHARS}).`, sizeMeta);
@@ -3134,11 +3168,17 @@ export async function generateFrontendBuilderReviewRaw(
   const outcome = await callFrontendBuilderTask(message, FRONTEND_REVIEW_TIMEOUT_MS, spec.prompt || '', opts);
   if (!outcome.ok) return reviewRawArtifact(stage, 'failed', outcome.reason, sizeMeta);
 
-  const { reply, reportedMode, model, provider, requestId, continuationRole } = outcome.data;
+  const { reply, reportedMode, model, provider, requestId, continuationRole, safetyRejectionReason } = outcome.data;
   const base: Partial<FrontendBuilderReviewRawArtifact> = {
     model, provider, requestId, ...sizeMeta,
     ...(continuationRole ? { continuationRole, continuationAttached: continuationRole === 'continuation' } : {}),
   };
+  // Phase 14L.3 — a STRUCTURED SAFETY rejection (e.g. safety_length) is recorded as its TRUE cause,
+  // kept DISTINCT from a genuine routing/mode error, so a SAVED build shows the request hit the
+  // backend size cap (the post-#585 signal) rather than a mislabeled "unexpected mode".
+  if (safetyRejectionReason) {
+    return reviewRawArtifact(stage, 'failed', safetyRejectionReason, base);
+  }
   if (reportedMode && reportedMode !== FRONTEND_BUILDER_MODE) {
     return reviewRawArtifact(stage, 'failed', 'Backend routed the review request to an unexpected mode.', base);
   }
@@ -3154,48 +3194,95 @@ export async function generateFrontendBuilderReviewRaw(
   });
 }
 
-/** Phase 14L.2 — deterministically fit the design-quality review request under the backend
- *  structured-builder safety cap. Returns the byte-for-byte full-file request unchanged when it
- *  already fits (the common small-project path); otherwise binary-searches the largest bounded
- *  include-set (entry/required/priority files always kept, remaining files added smallest-first)
- *  whose serialized request stays within SAFE_FRONTEND_REVIEW_REQUEST_CHARS. Pure; no network. */
-function fitReviewRequestUnderCap(
+/** How a review request was fit under the backend structured-builder safety cap. */
+export type ReviewRequestFitMode = 'full' | 'files-bounded' | 'spec-compacted' | 'irreducible';
+
+export interface ReviewFitResult {
+  message: string;
+  sizeBounded: boolean;
+  omittedFileCount: number;
+  fitMode: ReviewRequestFitMode;
+  specCompacted: boolean;
+}
+
+/** Phase 14L.2/14L.3 — deterministically fit the design-quality review request under the backend
+ *  structured-builder safety cap. PROGRESSIVE escalation, cheapest first:
+ *    1. `full`           — the byte-for-byte full-spec + full-file request when it already fits
+ *                          (the common small/medium-project path; unchanged).
+ *    2. `files-bounded`  — full spec + the largest bounded include-set of files (#585).
+ *    3. `spec-compacted` — a review-scoped spec projection (drop the heavy optional generator
+ *                          authorities; MEASURED ~99k → ~12k) + re-bounded files, used ONLY when
+ *                          file-bounding alone cannot reach the cap because the SPEC dominates
+ *                          (the post-#585 root cause). The reviewer still gets the full source it
+ *                          scores and the core design contract; NO acceptance threshold changes.
+ *    4. `irreducible`    — even compact spec + entry files overshoot (pathological, e.g. a single
+ *                          >100k entry file); send the best effort and let the honest failure
+ *                          category be recorded (never a mislabeled "unexpected mode").
+ *  Pure; no network. */
+export function fitReviewRequestUnderCap(
   spec: FrontendBuildSpecification,
   files: WebBuildFile[],
   stage: FrontendBuilderReviewStage,
   previousReview: FrontendBuilderReviewArtifact | undefined,
   deterministicWarnings: string[] | undefined,
   compact: CompactSourceContext | undefined,
-): { message: string; sizeBounded: boolean; omittedFileCount: number } {
+): ReviewFitResult {
   const full = buildFrontendBuilderReviewRequest(spec, files, stage, previousReview, deterministicWarnings, compact);
   if (full.length <= SAFE_FRONTEND_REVIEW_REQUEST_CHARS) {
-    return { message: full, sizeBounded: false, omittedFileCount: 0 };
+    return { message: full, sizeBounded: false, omittedFileCount: 0, fitMode: 'full', specCompacted: false };
   }
-  // Draw from the full active set; keep any files the caller already prioritized via `compact`
-  // (e.g. a post-repair review's changed files) at the front of the must-include set.
+
+  // Keep any files the caller already prioritized via `compact` (e.g. a post-repair review's
+  // changed files) at the front of the must-include set.
   const priorityPaths = compact ? compact.includedFiles.map((f) => f.path) : [];
-  const { prioritized, rest } = orderFilesForReviewBounding(spec, files, priorityPaths);
-  const build = (included: WebBuildFile[]): string =>
-    buildFrontendBuilderReviewRequest(spec, files, stage, previousReview, deterministicWarnings, compactContextFromIncludedFiles(files, included));
-  // Largest K in [0, rest.length] such that prioritized + rest[0..K) fits. Monotonic in K.
-  let lo = 0;
-  let hi = rest.length;
-  let bestIncluded = prioritized;
-  while (lo <= hi) {
-    const mid = (lo + hi) >> 1;
-    const candidate = [...prioritized, ...rest.slice(0, mid)];
-    if (build(candidate).length <= SAFE_FRONTEND_REVIEW_REQUEST_CHARS) {
-      bestIncluded = candidate;
-      lo = mid + 1;
-    } else {
-      hi = mid - 1;
+
+  // Largest bounded include-set whose serialized request fits, for a given (possibly compacted)
+  // spec. Binary-searches the smallest-first remainder; entry/required/priority files always kept.
+  const bestFitForSpec = (useSpec: FrontendBuildSpecification): { message: string; included: WebBuildFile[] } => {
+    const { prioritized, rest } = orderFilesForReviewBounding(useSpec, files, priorityPaths);
+    const build = (included: WebBuildFile[]): string =>
+      buildFrontendBuilderReviewRequest(useSpec, files, stage, previousReview, deterministicWarnings, compactContextFromIncludedFiles(files, included));
+    let lo = 0;
+    let hi = rest.length;
+    let bestIncluded = prioritized;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      const candidate = [...prioritized, ...rest.slice(0, mid)];
+      if (build(candidate).length <= SAFE_FRONTEND_REVIEW_REQUEST_CHARS) {
+        bestIncluded = candidate;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
     }
+    return { message: build(bestIncluded), included: bestIncluded };
+  };
+
+  // Level 2 — full spec + bounded files.
+  const filesBounded = bestFitForSpec(spec);
+  if (filesBounded.message.length <= SAFE_FRONTEND_REVIEW_REQUEST_CHARS) {
+    return {
+      message: filesBounded.message, sizeBounded: filesBounded.included.length < files.length,
+      omittedFileCount: Math.max(0, files.length - filesBounded.included.length),
+      fitMode: 'files-bounded', specCompacted: false,
+    };
   }
-  const message = build(bestIncluded);
-  const omittedFileCount = Math.max(0, files.length - bestIncluded.length);
-  // If even the priority-only set overshoots, `message` may still exceed the safe bound; the
-  // caller's hard-cap check (MAX_FRONTEND_TASK_REQUEST_CHARS) is the final honest guard.
-  return { message, sizeBounded: omittedFileCount > 0, omittedFileCount };
+
+  // Level 3 — the spec dominates (post-#585 root cause). Send the review-scoped spec projection
+  // (core design contract only) + re-bounded files. This is the branch that rescues rich builds.
+  const compactSpec = buildReviewScopedSpecProjection(spec);
+  const specCompacted = bestFitForSpec(compactSpec);
+  const omittedFileCount = Math.max(0, files.length - specCompacted.included.length);
+  const fitMode: ReviewRequestFitMode = specCompacted.message.length <= SAFE_FRONTEND_REVIEW_REQUEST_CHARS
+    ? 'spec-compacted'
+    : 'irreducible';
+  return {
+    message: specCompacted.message,
+    sizeBounded: omittedFileCount > 0,
+    omittedFileCount,
+    fitMode,
+    specCompacted: true,
+  };
 }
 
 /** Serialize the bounded REPAIR request. Sends ONLY: the authoritative specification,

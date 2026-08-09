@@ -90,6 +90,8 @@ function rawTransportDiagnostics(raw?: FrontendBuilderReviewRawArtifact): Partia
   if (typeof raw.requestCharCount === 'number') out.requestCharCount = raw.requestCharCount;
   if (raw.sizeBounded === true) out.sizeBounded = true;
   if (typeof raw.omittedFileCount === 'number') out.omittedFileCount = raw.omittedFileCount;
+  if (raw.reviewFitMode) out.reviewFitMode = raw.reviewFitMode;
+  if (raw.specCompacted === true) out.specCompacted = true;
   if (raw.continuationRole === 'start' || raw.continuationRole === 'continuation') {
     out.continuationRole = raw.continuationRole;
     out.continuationAttached = raw.continuationRole === 'continuation';
@@ -585,6 +587,8 @@ export function buildDeterministicFallbackReview(
     requestCharCount: priorModelReview.requestCharCount,
     sizeBounded: priorModelReview.sizeBounded,
     omittedFileCount: priorModelReview.omittedFileCount,
+    reviewFitMode: priorModelReview.reviewFitMode,
+    specCompacted: priorModelReview.specCompacted,
     continuationRole: priorModelReview.continuationRole,
     continuationAttached: priorModelReview.continuationAttached,
   };

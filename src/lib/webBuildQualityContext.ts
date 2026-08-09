@@ -482,3 +482,46 @@ export function compactContextFromIncludedFiles(
   }
   return { includedFiles: [...included], omittedManifest };
 }
+
+/* ── Phase 14L.3 — REVIEW-SCOPED specification projection ─────────────────────────────────────
+ * MEASURED root cause of the post-#585 failure: a realistic premium build's SERIALIZED
+ * specification is ~99k chars on its own (dominated by the optional generator authorities —
+ * experienceQuality ~19k, visualSystem ~13k, composition ~12k, executionObligations ~8k,
+ * contentNarrative ~7k, visualConcept ~7k, experienceIdentity ~6k, motionExecution ~5k,
+ * researchDirection ~4k, …). #585 bounds only the FILES, never the spec or the always-included
+ * entry files, so for a rich build the fit floor (full spec + entry files + manifest) is ALREADY
+ * over the backend 125k structured-builder cap → the review request is still rejected as
+ * safety_length → "the automatic design-quality review did not complete" → Safe Preview. Owner and
+ * normal users hit this identically (a safety-size cap, not the ai_guard quota).
+ *
+ * The reviewer scores the SOURCE (it explicitly judges "what the specification + source support");
+ * those optional authorities are GENERATION obligations the emitted source already embodies. So
+ * when — and ONLY when — the full-spec request cannot be fit under the cap by file-bounding alone,
+ * we send a review-scoped projection of the spec that keeps the design-authoritative CORE
+ * (identity, design system, section architecture + public copy, asset plan, image coverage,
+ * output contract, honesty rules) at full fidelity and drops the heavy optional generator
+ * authorities. This is progressive (small/medium builds keep the FULL spec) and strictly better
+ * than the status quo — a bounded review vs. NO review. It changes NO acceptance threshold and is
+ * used ONLY for the review request (never generation). Pure; never mutates its input. */
+
+/** Optional heavy generator-authority fields dropped from the review-scoped spec projection. Each
+ *  is an OPTIONAL field on FrontendBuildSpecification (absent ⇒ a valid spec), so omitting them
+ *  yields a well-typed, smaller spec. They are generation obligations embodied by the source. */
+const REVIEW_SPEC_DROPPABLE_FIELDS = [
+  'experienceArchitecture', 'bindingRequirements', 'researchDirection', 'composition',
+  'visualSystem', 'contentNarrative', 'experienceQuality', 'visualConcept',
+  'experienceIdentity', 'motionExecution', 'executionObligations',
+] as const;
+
+/** Build the review-scoped projection: keep every core/required field, drop the heavy optional
+ *  generator authorities, and bound the free-text trace arrays. Returns a valid, smaller
+ *  FrontendBuildSpecification. Pure. */
+export function buildReviewScopedSpecProjection(spec: FrontendBuildSpecification): FrontendBuildSpecification {
+  const projected: Record<string, unknown> = { ...(spec as unknown as Record<string, unknown>) };
+  for (const f of REVIEW_SPEC_DROPPABLE_FIELDS) delete projected[f];
+  // Bound the diagnostic trace arrays (not design-authoritative; never scored).
+  if (Array.isArray(projected.sourceTrace)) projected.sourceTrace = (projected.sourceTrace as string[]).slice(0, 4);
+  if (Array.isArray(projected.warnings)) projected.warnings = (projected.warnings as string[]).slice(0, 4);
+  if (Array.isArray(projected.missingInputs)) projected.missingInputs = (projected.missingInputs as string[]).slice(0, 4);
+  return projected as unknown as FrontendBuildSpecification;
+}
