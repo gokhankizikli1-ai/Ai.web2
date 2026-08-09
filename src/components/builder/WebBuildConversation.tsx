@@ -757,6 +757,17 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
         ownerRows.push(['frontendRepairScore', `${frp.initialScore ?? '?'} → ${frp.finalScore ?? '?'}`]);
       }
       if (frp.status !== 'not-run') ownerRows.push(['frontendRepairReason', shortStr(frp.reason, 140)]);
+      // Producer-contract observability (owner_delta / all_delta path only). Proves which contract
+      // the bounded repair requested vs what the model actually returned, so a producer-side contract
+      // conflict (a full frontend-files-v1 envelope emitted instead of a delta) is diagnosable from
+      // the SAVED build. Safe metadata only — never prompts, source or ids.
+      const dr = frp.deltaRepair;
+      if (dr) {
+        if (dr.taskKind) ownerRows.push(['frontendRepairTaskKind', dr.taskKind]);
+        if (dr.expectedContract) ownerRows.push(['frontendRepairExpectedContract', dr.expectedContract]);
+        if (dr.actualResponseShape) ownerRows.push(['frontendRepairActualShape', dr.actualResponseShape]);
+        if (dr.rejectionCategory) ownerRows.push(['frontendRepairDeltaRejectionCategory', dr.rejectionCategory]);
+      }
     }
     const ffr = step.artifacts?.frontendBuilderFinalReview;
     if (ffr) {

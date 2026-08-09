@@ -500,6 +500,11 @@ export function reconstructRepairRawFromDelta(input: {
     reconstructedProjectCharCount: 0,
     outputReductionRatio: 0,
     accepted: false,
+    // Producer-contract observability: this path IS the bounded quality repair and always requests
+    // the delta contract. `actualResponseShape` below records what the model actually returned so a
+    // producer-side contract conflict (full envelope emitted instead of a delta) is visible.
+    taskKind: 'quality-repair',
+    expectedContract: 'frontend-delta-v1',
   };
 
   // The delta model call itself did not complete (transport/mode/size failure) — fail open. The
@@ -516,6 +521,9 @@ export function reconstructRepairRawFromDelta(input: {
         outputReductionRatio: 0,
         rejectionReason: cap(deltaRaw.reason || 'the owner-delta repair call did not complete'),
         rejectionCategory: transportCategory,
+        // A completed-but-full-envelope response reaches this branch only via a storage-truncated
+        // raw; otherwise there was no usable body. Report the transport's detected shape when known.
+        actualResponseShape: deltaRaw.responseShape === 'frontend-envelope' ? 'frontend-files-v1' : 'none',
       },
     };
   }
@@ -525,6 +533,13 @@ export function reconstructRepairRawFromDelta(input: {
   const reductionOf = (n: number) => roundRatio(1 - n / Math.max(1, originalProjectCharCount));
 
   if (!parsed.ok) {
+    // Detected shape: a wrong-contract rejection means the model returned a FULL envelope; an
+    // empty/no-body rejection means nothing usable; anything else was a delta-shaped body that
+    // failed a delta check (truncated / malformed / invalid-schema / unsafe path).
+    const actualResponseShape: FrontendDeltaRepairArtifact['actualResponseShape'] =
+      parsed.category === 'wrong-contract' ? 'frontend-files-v1'
+      : parsed.category === 'no-response-body' ? 'none'
+      : 'unknown';
     return {
       repairRaw: failedRaw(deltaRaw, `Owner-delta repair rejected: ${parsed.reason}`),
       diagnostics: {
@@ -534,6 +549,7 @@ export function reconstructRepairRawFromDelta(input: {
         outputReductionRatio: reductionOf(deltaCharCount),
         rejectionReason: parsed.reason,
         rejectionCategory: parsed.category,
+        actualResponseShape,
       },
     };
   }
@@ -564,6 +580,8 @@ export function reconstructRepairRawFromDelta(input: {
         outputReductionRatio: reductionOf(deltaCharCount),
         rejectionReason: cap(`reconstructed project fails Phase 12C: ${detail}`),
         rejectionCategory: 'structural-rejection',
+        // The model DID return a well-formed delta; it was rejected on reconstruction, not contract.
+        actualResponseShape: 'frontend-delta-v1',
       },
     };
   }
@@ -595,6 +613,7 @@ export function reconstructRepairRawFromDelta(input: {
       reconstructedProjectCharCount,
       outputReductionRatio: reductionOf(deltaCharCount),
       accepted: true,
+      actualResponseShape: 'frontend-delta-v1',
     },
     changedPaths: changedFinalPaths,
   };
