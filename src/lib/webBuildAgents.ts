@@ -2206,6 +2206,10 @@ export interface FrontendBuilderRawArtifact {
   backgroundFinalPollResult?: 'running' | 'completed' | 'failed' | 'missing' | 'cancelled' | 'poll-error';
   backgroundTransientPollFailures?: number;
   backgroundCancelRequested?: boolean;
+  /** Present when this raw represents an AI-usage-guard BLOCK (the provider call was refused at
+   *  preflight, not run). Bounded, safe metadata carried to the pipeline so a guard-blocked repair
+   *  fails open with the exact code recorded. Never a prompt, source, provider id or secret. */
+  guardBlock?: { code: string; httpStatus?: number; retryAfterSeconds?: number; operationType?: string };
   /* ── Phase 13F.2 — background store health + bounded numeric usage truth (numbers/codes only;
    *  never source, job id, raw OpenAI response id or reasoning content). Old builds lack these. */
   backgroundStoreAvailable?: boolean;
@@ -2705,6 +2709,30 @@ export interface FrontendBuilderRepairArtifact {
   qualityContext?: {
     repair?: FrontendQualityContextDiagnostics;
     postReview?: FrontendQualityContextDiagnostics;
+  };
+
+  /** ── AI-USAGE-GUARD block diagnostics. Present ONLY when the bounded quality repair was refused by
+   *  the server ai_guard (founder-beta / global-spend / concurrency preflight) rather than run. The
+   *  guard did its job — the extra repair spend was NOT incurred and the VALIDATED initial project is
+   *  preserved (fail-open, no retry, no bypass). Bounded, safe metadata so the EXACT guard code is
+   *  diagnosable from a saved build without exposing prompts, source, provider ids or secrets. ── */
+  guardBlock?: {
+    /** Always 'blocked' when present — the repair provider call did not start. */
+    startResult: 'blocked';
+    /** The stable backend guard code, e.g. 'global_spend_limit_reached' | 'credit_unavailable' |
+     *  'rate_limited' | 'operation_in_progress' | 'daily_limit_reached' | 'ai_temporarily_disabled'. */
+    code: string;
+    /** Coarse classification of the guard code (for quick triage). */
+    kind: 'capacity' | 'quota' | 'rate-limit' | 'in-progress' | 'disabled' | 'conflict' | 'other';
+    /** The HTTP status the block arrived on (200 metadata-block or 429 rate-limit). */
+    httpStatus?: number;
+    /** Whether re-running the build later is expected to succeed (a transient capacity/rate block)
+     *  vs blocked until a reset/config change (quota/disabled/conflict). */
+    retryable: boolean;
+    /** The resolved frontend task kind for the blocked call (the delta repair IS the quality repair). */
+    taskKind: 'quality-repair';
+    /** Server-advised retry delay when present (seconds); never fabricated. */
+    retryAfterSeconds?: number;
   };
 }
 

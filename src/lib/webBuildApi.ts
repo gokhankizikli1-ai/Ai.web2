@@ -744,7 +744,7 @@ export async function guardVerificationRequired(response: Response): Promise<voi
 }
 
 /** Phase 14L.1 — the founder-beta block code carried on a `beta_limit` error. */
-export interface BetaLimitReason { betaCode: string; operationType?: string; retryAfterSeconds?: number; resetAt?: string; }
+export interface BetaLimitReason { betaCode: string; operationType?: string; retryAfterSeconds?: number; resetAt?: string; httpStatus?: number; }
 
 /** Read a founder-beta BLOCK from a /chat response (200 with metadata.aiOperation
  *  status='blocked'). Also records the server operationId for later finalize. */
@@ -759,6 +759,7 @@ function readBetaBlock(data: Record<string, unknown>): BetaLimitReason | null {
       operationType: typeof op['operationType'] === 'string' ? op['operationType'] : undefined,
       retryAfterSeconds: typeof op['retryAfterSeconds'] === 'number' ? op['retryAfterSeconds'] : undefined,
       resetAt: typeof op['resetAt'] === 'string' ? op['resetAt'] : undefined,
+      httpStatus: 200,   // a structured founder-beta block rides on a 200 /chat response
     };
   }
   return null;
@@ -791,6 +792,7 @@ export function readAiGuardBlock(data: Record<string, unknown>): BetaLimitReason
     operationType: op && typeof op['operationType'] === 'string' ? String(op['operationType']) : undefined,
     retryAfterSeconds: op && typeof op['retryAfterSeconds'] === 'number' ? (op['retryAfterSeconds'] as number) : undefined,
     resetAt: op && typeof op['resetAt'] === 'string' ? String(op['resetAt']) : undefined,
+    httpStatus: 200,   // a 200 /chat response carrying an ai_guard_block marker
   };
 }
 
@@ -2464,6 +2466,22 @@ function frontendBuilderArtifact(
   };
 }
 
+/** Convert a thrown AI-usage-guard block (`beta_limit`) on the OPTIONAL quality repair into a
+ *  FAILED raw carrying the exact, bounded guard code — so the pipeline's existing fail-open branch
+ *  preserves the already-VALIDATED initial project instead of discarding the whole build on a
+ *  capacity/quota/rate block. The server guard already did its job (the extra repair spend was NOT
+ *  incurred); this neither retries, re-calls, nor bypasses it. Returns null for any other error
+ *  (e.g. an explicit cancellation), which must propagate unchanged. */
+function guardBlockedRepairRaw(err: unknown): FrontendBuilderRawArtifact | null {
+  if (!(err instanceof WebBuildError) || err.kind !== 'beta_limit') return null;
+  const r = (err.reason && typeof err.reason === 'object') ? (err.reason as BetaLimitReason) : { betaCode: 'ai_guard_block' };
+  return frontendBuilderArtifact(
+    'failed',
+    `The bounded quality repair was refused by the AI usage guard (${r.betaCode}); the validated initial project was preserved (no retry, no bypass).`,
+    { guardBlock: { code: r.betaCode, httpStatus: r.httpStatus, retryAfterSeconds: r.retryAfterSeconds, operationType: r.operationType } },
+  );
+}
+
 /* ── Phase 13F.1 — shared OpenAI Background Responses client polling ───────────────────
  * Full-source frontend tasks (initial generation / contract-repair / quality-repair /
  * revision) start as an OpenAI Background Response: the initial `/chat` POST returns quickly
@@ -3037,7 +3055,7 @@ async function callFrontendBuilderTask(
       try { body = await response.json(); } catch { /* empty */ }
       const beta = readBetaBlock(body);
       const retryHeader = Number(response.headers.get('Retry-After') || '');
-      throw betaLimitError(beta || { betaCode: 'rate_limited', retryAfterSeconds: Number.isFinite(retryHeader) ? retryHeader : undefined });
+      throw betaLimitError({ ...(beta || { betaCode: 'rate_limited', retryAfterSeconds: Number.isFinite(retryHeader) ? retryHeader : undefined }), httpStatus: 429 });
     }
     if (!response.ok) return { ok: false, reason: `The backend returned HTTP ${response.status} for the dedicated frontend task.` };
     let data: Record<string, unknown>;
@@ -3476,7 +3494,16 @@ export async function generateFrontendBuilderRepairRaw(
     return frontendBuilderArtifact('failed', `The repair request (${message.length} chars) exceeds the safe request limit (${MAX_FRONTEND_TASK_REQUEST_CHARS}).`);
   }
 
-  const outcome = await callFrontendBuilderTask(message, FRONTEND_REPAIR_TIMEOUT_MS, spec.prompt || '', opts);
+  let outcome: FrontendTaskOutcome;
+  try {
+    outcome = await callFrontendBuilderTask(message, FRONTEND_REPAIR_TIMEOUT_MS, spec.prompt || '', opts);
+  } catch (err) {
+    // A guard block on this OPTIONAL repair fails OPEN to the validated initial project (recording the
+    // exact guard code) instead of aborting the whole build; any other error (cancellation) propagates.
+    const blocked = guardBlockedRepairRaw(err);
+    if (blocked) return blocked;
+    throw err;
+  }
   if (!outcome.ok) {
     // Preserve the bounded background LIFECYCLE telemetry (budget / final-poll-result / poll count /
     // transient failures / cancel) on the failed repair raw so a background timeout is diagnosable
@@ -3619,7 +3646,16 @@ export async function generateFrontendBuilderDeltaRepairRaw(
     return frontendBuilderArtifact('failed', `The delta repair request (${message.length} chars) exceeds the safe request limit (${MAX_FRONTEND_TASK_REQUEST_CHARS}).`);
   }
 
-  const outcome = await callFrontendBuilderTask(message, FRONTEND_REPAIR_TIMEOUT_MS, spec.prompt || '', opts);
+  let outcome: FrontendTaskOutcome;
+  try {
+    outcome = await callFrontendBuilderTask(message, FRONTEND_REPAIR_TIMEOUT_MS, spec.prompt || '', opts);
+  } catch (err) {
+    // A guard block on this OPTIONAL repair fails OPEN to the validated initial project (recording the
+    // exact guard code) instead of aborting the whole build; any other error (cancellation) propagates.
+    const blocked = guardBlockedRepairRaw(err);
+    if (blocked) return blocked;
+    throw err;
+  }
   if (!outcome.ok) {
     // Preserve the bounded background LIFECYCLE telemetry (budget / final-poll-result / poll count /
     // transient failures / cancel) on the failed repair raw so a background timeout is diagnosable
