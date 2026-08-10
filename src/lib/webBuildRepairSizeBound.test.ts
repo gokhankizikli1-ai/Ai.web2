@@ -166,3 +166,41 @@ describe('reviewIssueFilePaths — bounded, deduped issue-file extraction', () =
     expect(reviewIssueFilePaths(undefined)).toEqual([]);
   });
 });
+
+import { selectBoundedRepairIssues, MAX_REPAIR_ISSUES } from '@/lib/webBuildApi';
+import type { FrontendBuilderReviewIssue } from '@/lib/webBuildAgents';
+
+/**
+ * Repair issue SELECTION priority. Production: a valid repair improved 56->77 but the final review
+ * still reported 2 majors (a contract-fidelity architecture issue + a component-composition issue).
+ * The bounded repair set must fill in priority order — blocker > gate-critical research >
+ * contract-fidelity major > component-composition major > remaining major > minor — so the
+ * highest-priority majors are never squeezed out by lower-priority ones.
+ */
+describe('selectBoundedRepairIssues — priority order + bounded size', () => {
+  const mk = (over: Partial<FrontendBuilderReviewIssue>): FrontendBuilderReviewIssue => ({
+    id: over.id || 'x', severity: 'major', category: 'copy-fidelity', files: [], evidence: 'e', repairInstruction: 'r', ...over,
+  });
+
+  it('orders blocker > research > contract-fidelity > component-composition > major > minor', () => {
+    const issues = [
+      mk({ id: 'minor-1', severity: 'minor', category: 'typography' }),
+      mk({ id: 'major-generic', severity: 'major', category: 'copy-fidelity' }),
+      mk({ id: 'comp-1', severity: 'major', category: 'component-composition' }),
+      mk({ id: 'cf-1', severity: 'major', category: 'contract-fidelity' }),
+      mk({ id: 'research-required-pattern-missing-1', severity: 'major', category: 'contract-fidelity', gateCritical: true }),
+      mk({ id: 'blocker-1', severity: 'blocker', category: 'honesty' }),
+    ];
+    const ids = selectBoundedRepairIssues(issues).map((i) => i.id);
+    expect(ids).toEqual(['blocker-1', 'research-required-pattern-missing-1', 'cf-1', 'comp-1', 'major-generic', 'minor-1']);
+  });
+
+  it('never exceeds the bounded budget and keeps the top-priority issues when over budget', () => {
+    const many: FrontendBuilderReviewIssue[] = [];
+    for (let i = 0; i < 20; i += 1) many.push(mk({ id: `filler-${i}`, severity: 'minor', category: 'typography' }));
+    many.push(mk({ id: 'cf-late', severity: 'major', category: 'contract-fidelity' }));
+    const sel = selectBoundedRepairIssues(many);
+    expect(sel.length).toBe(MAX_REPAIR_ISSUES);
+    expect(sel.map((i) => i.id)).toContain('cf-late'); // a contract-fidelity major is never squeezed out by minors
+  });
+});

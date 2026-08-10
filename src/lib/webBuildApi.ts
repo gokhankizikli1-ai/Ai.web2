@@ -3386,12 +3386,69 @@ export interface FrontendRepairQualityEvidence {
   heroComponentPath?: string;
 }
 
+/** The bounded number of actionable issues the single repair receives. Kept small so the request
+ *  stays well under the backend cap; the PRIORITY (not the size) is what guarantees the important
+ *  obligations survive — see `repairIssuePriority`. */
+export const MAX_REPAIR_ISSUES = 8;
+
+/** Priority for the bounded repair issue set (lower = kept first). Encodes the required order so the
+ *  highest-value obligations are never squeezed out by lower-priority issues:
+ *   0 blocker · 1 gate-critical research requirement · 2 contract-fidelity major (architecture/spec
+ *   fidelity — model OR deterministic) · 3 component-composition major · 4 any OTHER gate-critical
+ *   major (binding/visual-system/content/… — preserves the guarantee that every acceptance-gate
+ *   blocker reaches the repair) · 5 remaining (non-gate) major · 6 minor. */
+function repairIssuePriority(i: FrontendBuilderReviewIssue): number {
+  if (i.severity === 'blocker') return 0;
+  if (i.severity !== 'major') return 6;   // minor (and any unrecognized severity)
+  const gate = i.gateCritical === true;
+  if (gate && typeof i.id === 'string' && i.id.startsWith('research-')) return 1;
+  if (i.category === 'contract-fidelity') return 2;
+  if (i.category === 'component-composition') return 3;
+  if (gate) return 4;                      // other gate-critical major — kept ahead of non-gate majors
+  return 5;                                // remaining non-gate model-review major
+}
+
+/** Select the bounded, PRIORITY-ordered actionable issues sent to the single repair. Stable within a
+ *  priority tier (preserves discovery order). Exported so the quality pipeline reports which issues
+ *  were selected vs dropped (major-alignment diagnostics) without re-deriving the logic. */
+export function selectBoundedRepairIssues(issues: FrontendBuilderReviewIssue[]): FrontendBuilderReviewIssue[] {
+  return [...(issues || [])]
+    .map((i, idx) => ({ i, idx, p: repairIssuePriority(i) }))
+    .sort((a, b) => (a.p - b.p) || (a.idx - b.idx))
+    .slice(0, MAX_REPAIR_ISSUES)
+    .map((x) => x.i);
+}
+
+/** Bounded, safe AUTHORITATIVE architecture-fidelity obligation for the repair: the exact ordered
+ *  section identity the reconstructed project must match, plus the explicit rule that an unplanned
+ *  section (one not in this list) must be REMOVED — the single exception to "preserve every section"
+ *  — and that each section must have a distinct composition. Returns undefined when the spec has no
+ *  usable section list (fail-safe: never instruct removal against an empty/partial architecture). */
+function buildArchitectureFidelityObligation(spec: FrontendBuildSpecification): Record<string, unknown> | undefined {
+  const order = (Array.isArray(spec.architecture?.sectionOrder) ? spec.architecture.sectionOrder : [])
+    .filter((s): s is string => typeof s === 'string' && !!s.trim()).map((s) => s.trim()).slice(0, 30);
+  if (order.length < 3) return undefined;   // too few authoritative sections to safely instruct removal
+  const components = (Array.isArray(spec.outputContract?.requiredSectionComponentFiles) ? spec.outputContract.requiredSectionComponentFiles : [])
+    .filter((s): s is string => typeof s === 'string' && !!s.trim()).map((s) => s.trim()).slice(0, 30);
+  return {
+    authoritativeSectionOrder: order,
+    authoritativeSectionComponents: components,
+    rule: 'Render EXACTLY these sections, in this order. Do NOT add any section that is not in authoritativeSectionOrder. '
+      + 'If the current project renders an extra/unplanned section (a top-level section not in this list), REMOVE it and its '
+      + 'import/render from src/App.tsx — this is the ONLY allowed exception to preserving sections (you need not delete the '
+      + 'component file; just stop importing/rendering it). Give EACH section a DISTINCT composition tied to its own purpose; '
+      + 'never duplicate another section\'s card/label structure (e.g. a pricing section must compare plans/limits/decision '
+      + 'criteria, not repeat the capability cards used by a features/use-cases section).',
+  };
+}
+
 /** Assemble the bounded, privacy-safe repair INPUT payload shared by the full-project repair
  *  request and the owner-only delta repair request. Extracting it keeps a single source of
  *  truth for what the repair model receives; both callers serialize this exact object (the
  *  delta caller only overrides `responseContract`), so the full-repair request stays byte-for-
- *  byte unchanged. Sends ONLY: the spec, the active files, ≤8 highest-severity actionable issues,
- *  ≤6 strengths, bounded deterministic warnings and the real-file quality evidence. */
+ *  byte unchanged. Sends ONLY: the spec, the active files, ≤8 priority-ordered actionable issues,
+ *  the authoritative architecture-fidelity obligation, ≤6 strengths, bounded deterministic warnings
+ *  and the real-file quality evidence. */
 function buildFrontendRepairInputPayload(
   spec: FrontendBuildSpecification,
   files: WebBuildFile[],
@@ -3399,19 +3456,10 @@ function buildFrontendRepairInputPayload(
   deterministicWarnings?: string[],
   qualityEvidence?: FrontendRepairQualityEvidence,
 ): Record<string, unknown> {
-  // Select up to 8 actionable issues, but GUARANTEE that every acceptance-gate blocker (a gate-critical
-  // non-minor issue — research / binding / composition / …) is included: otherwise a blocking obligation
-  // silently omitted here guarantees a post-repair gate rejection ("score improved but still blocked").
-  // Gate-critical non-minor issues fill first (highest-severity first, bounded), then the remaining
-  // slots are filled by the rest highest-severity first. Same 8-issue budget — no request-size growth.
-  const rank: Record<string, number> = { blocker: 0, major: 1, minor: 2 };
-  const bySeverity = (a: FrontendBuilderReviewIssue, b: FrontendBuilderReviewIssue) => (rank[a.severity] ?? 3) - (rank[b.severity] ?? 3);
-  const all = [...(initialReview.issues || [])];
-  const gate = all.filter((i) => i.gateCritical === true && i.severity !== 'minor').sort(bySeverity).slice(0, 6);
-  const gateIds = new Set(gate.map((i) => i.id));
-  const rest = all.filter((i) => !gateIds.has(i.id)).sort(bySeverity);
-  const issuesToFix = [...gate, ...rest]
-    .slice(0, 8)
+  // Priority-ordered, bounded selection (blocker → gate-critical research → contract-fidelity major →
+  // component-composition major → remaining major → minor), so a high-priority architecture/composition
+  // obligation is never squeezed out of the fixed 8-issue budget by a lower-priority issue.
+  const issuesToFix = selectBoundedRepairIssues(initialReview.issues || [])
     .map((i) => ({
       id: i.id, severity: i.severity, category: i.category,
       files: i.files, evidence: i.evidence, repairInstruction: i.repairInstruction,
@@ -3424,6 +3472,10 @@ function buildFrontendRepairInputPayload(
     issuesToFix,
     strengthsToPreserve: (initialReview.strengths || []).slice(0, 6),
   };
+  // Authoritative page-architecture fidelity obligation (exact ordered sections + remove-unplanned +
+  // distinct-composition rule). Absent when the spec has no usable section list (fail-safe).
+  const architectureFidelity = buildArchitectureFidelityObligation(spec);
+  if (architectureFidelity) input.architectureFidelity = architectureFidelity;
   // Phase 13B — bounded deterministic quality WARNINGS the repair should also address by
   // EXPANDING shallow sections and REMOVING internal-copy leaks (never by rewriting copy).
   if (deterministicWarnings && deterministicWarnings.length) {
@@ -3462,7 +3514,14 @@ export function buildFrontendBuilderRepairRequest(
     'Preserve required public copy, required section order, the primary concept identity,',
     'the website language and the listed strengths. EXPAND shallow sections into fully',
     'realized compositions (never collapse or replace them); deepen the exact files listed',
-    'in qualityEvidence. Return ONLY a complete frontend-files-v1 envelope',
+    'in qualityEvidence.',
+    'ARCHITECTURE FIDELITY (when `architectureFidelity` is present): render EXACTLY the sections in',
+    'architectureFidelity.authoritativeSectionOrder, in that order, and NOTHING ELSE. If the current',
+    'project renders an extra/unplanned section that is not in that list, REMOVE it (drop its import',
+    'and render) — this is the one allowed exception to preserving sections. Give each section a',
+    'DISTINCT composition tied to its own purpose; do not let one section repeat another section\'s',
+    'card/label structure.',
+    'Return ONLY a complete frontend-files-v1 envelope',
     '(## FRONTEND_FILES_V1 … ## END_FRONTEND_FILES_V1) — never a patch, only-changed files,',
     'prose or explanations.',
     'BEGIN_FRONTEND_BUILD_SPEC_JSON',
@@ -3584,6 +3643,12 @@ export function buildFrontendBuilderDeltaRepairRequest(
     'Preserve required public copy, required section order, the primary concept identity, the',
     'website language and the listed strengths. EXPAND shallow sections into fully realized',
     'compositions (never collapse or replace them); deepen the exact files listed in qualityEvidence.',
+    'ARCHITECTURE FIDELITY (when `architectureFidelity` is present): the rendered top-level sections MUST',
+    'be EXACTLY architectureFidelity.authoritativeSectionOrder, in that order. If the project renders an',
+    'extra/unplanned section not in that list, REMOVE it by upserting src/App.tsx WITHOUT that section\'s',
+    'import and render (you need not delete the component file) — the one allowed exception to preserving',
+    'sections. Give each section a DISTINCT composition tied to its own purpose; do not let one section',
+    'repeat another section\'s card/label structure.',
     ...(compact ? [
       'CONTEXT NOTE: `files` contains the files most relevant to these fixes (targets + their',
       'directly-related source) as COMPLETE source; `omittedFilesManifest` lists the remaining',

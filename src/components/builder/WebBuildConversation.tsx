@@ -768,6 +768,17 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
         ownerRows.push(['frontendRepairResearchRequirementsAddressed', String(ga.researchRequirementsAddressed)]);
         if (ga.finalResearchBlockingReasons.length) ownerRows.push(['frontendFinalResearchBlockingReasons', shortStr(ga.finalResearchBlockingReasons.join(' | '), 160)]);
       }
+      // MAJOR-issue alignment — did the highest-priority majors reach the single repair, and how many
+      // does the final review still flag ("score improved but majors remain" is now diagnosable).
+      const ma = frp.majorAlignment;
+      if (ma) {
+        ownerRows.push(['frontendRepairRequiredMajors', String(ma.requiredMajors)]);
+        ownerRows.push(['frontendRepairAddressedMajors', String(ma.addressedMajors)]);
+        ownerRows.push(['frontendRepairUnresolvedMajors', String(ma.unresolvedMajors)]);
+        ownerRows.push(['frontendRepairIssueSelectionCount', String(ma.issueSelectionCount)]);
+        ownerRows.push(['frontendRepairIssueSelectionDroppedMajors', String(ma.issueSelectionDroppedMajors)]);
+        if (ma.finalMajorReasons.length) ownerRows.push(['frontendFinalMajorReasons', shortStr(ma.finalMajorReasons.join(' | '), 160)]);
+      }
       // AI-usage-guard block on the OPTIONAL quality repair — the EXACT guard code so a "temporarily
       // at capacity" outcome is diagnosable from the saved build (the validated project stays active).
       const gb = frp.guardBlock;

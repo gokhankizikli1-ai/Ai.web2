@@ -520,9 +520,13 @@ export function synthesizeDeterministicReviewIssues(
 /** A stable per-issue key for de-duplicating GATE-CRITICAL deterministic issues WITHOUT collapsing
  *  two genuinely-different acceptance-gate blockers that merely share a review category. Keyed by the
  *  issue id when present (deterministic analyzers emit code-scoped ids like `research-…` / `binding-…`),
- *  else by category + first target file. */
+ *  else by category + first target file + a normalized instruction/evidence identity — so two distinct
+ *  same-category issues in different files (or with different obligations) never collapse to one. */
 function gateIssueKey(i: FrontendBuilderReviewIssue): string {
-  return (i.id && i.id.trim()) ? `id:${i.id.trim()}` : `cf:${i.category}|${(i.files && i.files[0]) || ''}`;
+  if (i.id && i.id.trim()) return `id:${i.id.trim()}`;
+  const file = (i.files && i.files[0]) || '';
+  const ident = (i.repairInstruction || i.evidence || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().slice(0, 48);
+  return `cf:${i.category}|${file}|${ident}`;
 }
 
 /**

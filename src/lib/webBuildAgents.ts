@@ -2736,6 +2736,25 @@ export interface FrontendBuilderRepairArtifact {
     finalResearchBlockingReasons: string[];
   };
 
+  /** ── MAJOR-issue REPAIR ALIGNMENT diagnostics (bounded, safe). Shows whether the highest-priority
+   *  MAJOR obligations reached the single repair and how many the final review still flags — so a
+   *  "score improved but two majors remain" outcome is diagnosable from a SAVED build. Only counts +
+   *  bounded category:file labels; never prompts, source, provider ids or secrets. ── */
+  majorAlignment?: {
+    /** Major issues present in the initial (pre-repair) review. */
+    requiredMajors: number;
+    /** Approximate majors resolved by the single repair (initial majors − final majors, clamped). */
+    addressedMajors: number;
+    /** Major issues the post-repair final review still reports. */
+    unresolvedMajors: number;
+    /** How many actionable issues were actually sent to the repair (the bounded selection size). */
+    issueSelectionCount: number;
+    /** Initial major issues that did NOT make the bounded selection (squeezed out by the budget). */
+    issueSelectionDroppedMajors: number;
+    /** Bounded `category:file` labels of the final review's remaining majors (safe metadata). */
+    finalMajorReasons: string[];
+  };
+
   /** ── AI-USAGE-GUARD block diagnostics. Present ONLY when the bounded quality repair was refused by
    *  the server ai_guard (founder-beta / global-spend / concurrency preflight) rather than run. The
    *  guard did its job — the extra repair spend was NOT incurred and the VALIDATED initial project is
