@@ -496,6 +496,15 @@ function normCopy(s: string): string {
     .trim();
 }
 
+// Strip a leading internal SPEC field-label prefix ("Headline:", "Subheadline:", …) from an
+// AUTHORITATIVE copy value before the verbatim fidelity comparison (Fix C). If a spec value is
+// written as "Headline: Foo", fidelity must require only the real public text "Foo" — never the
+// internal prefix — so fidelity can never FORCE the very leak the content analyzer forbids. This
+// only ever RELAXES the required substring (the real copy is still enforced), never real-copy
+// fidelity. KEEP IN SYNC with FIELD_LABEL_PREFIXES in webBuildContentNarrative.ts.
+const LEADING_FIELD_LABEL_RE = /^\s*(?:headline|subheadline|subtitle|eyebrow|cta|body|description|label)\s*:\s*/i;
+function stripLeadingFieldLabel(s: string): string { return (s || '').replace(LEADING_FIELD_LABEL_RE, ''); }
+
 /**
  * Extract only comment text from TypeScript and TSX files: line comments, block
  * comments and JSX comments (the latter two share the same delimiters).
@@ -725,15 +734,18 @@ function validateProject(rawFiles: RawFile[], spec: FrontendBuildSpecification, 
   const haystack = normCopy(allContent);
   const sections = Array.isArray(spec.architecture?.sections) ? spec.architecture.sections : [];
   for (const s of sections) {
-    const headline = normCopy(s.headline || '');
-    const cta = normCopy(s.primaryCTA || '');
-    if (headline.length >= 2 && !haystack.includes(headline)) acc.missingCriticalCopy.push(trunc(s.headline || '', MAX_COPY_PREVIEW_CHARS));
-    if (cta.length >= 2 && !haystack.includes(cta)) acc.missingCriticalCopy.push(trunc(s.primaryCTA || '', MAX_COPY_PREVIEW_CHARS));
-    const sub = normCopy(s.subheadline || '');
-    if (sub.length >= 2 && !haystack.includes(sub)) acc.missingSupportingCopy.push(trunc(s.subheadline || '', MAX_COPY_PREVIEW_CHARS));
+    // Fix C — compare against the authoritative copy with any leading internal field-label prefix
+    // stripped, so fidelity requires only the real public text (never "Headline:") and the reported
+    // required value carries no prefix for the repair to re-introduce.
+    const headline = normCopy(stripLeadingFieldLabel(s.headline || ''));
+    const cta = normCopy(stripLeadingFieldLabel(s.primaryCTA || ''));
+    if (headline.length >= 2 && !haystack.includes(headline)) acc.missingCriticalCopy.push(trunc(stripLeadingFieldLabel(s.headline || ''), MAX_COPY_PREVIEW_CHARS));
+    if (cta.length >= 2 && !haystack.includes(cta)) acc.missingCriticalCopy.push(trunc(stripLeadingFieldLabel(s.primaryCTA || ''), MAX_COPY_PREVIEW_CHARS));
+    const sub = normCopy(stripLeadingFieldLabel(s.subheadline || ''));
+    if (sub.length >= 2 && !haystack.includes(sub)) acc.missingSupportingCopy.push(trunc(stripLeadingFieldLabel(s.subheadline || ''), MAX_COPY_PREVIEW_CHARS));
     for (const b of (Array.isArray(s.bullets) ? s.bullets : [])) {
-      const nb = normCopy(b || '');
-      if (nb.length >= 2 && !haystack.includes(nb)) acc.missingSupportingCopy.push(trunc(b || '', MAX_COPY_PREVIEW_CHARS));
+      const nb = normCopy(stripLeadingFieldLabel(b || ''));
+      if (nb.length >= 2 && !haystack.includes(nb)) acc.missingSupportingCopy.push(trunc(stripLeadingFieldLabel(b || ''), MAX_COPY_PREVIEW_CHARS));
     }
   }
   // Phase 12F.3 — missing critical copy is a bounded COPY-QUALITY issue, NOT a

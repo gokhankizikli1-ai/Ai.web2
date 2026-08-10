@@ -4015,6 +4015,13 @@ const MAX_CRITICAL_SECTION_ID = 100;
 function copyPreview(s: string): string {
   return s.length > 60 ? `${s.slice(0, 60)}…` : s;
 }
+// Strip a leading internal SPEC field-label prefix ("Headline:", …) from an authoritative copy value
+// (Fix C), so the EXACT required-copy value sent to the single repair is the real public text ("Foo"),
+// never "Headline: Foo" — the repair is thus never told to preserve the internal prefix. Must match the
+// validator's stripped preview so recovery still matches. KEEP IN SYNC with FIELD_LABEL_PREFIXES in
+// webBuildContentNarrative.ts and stripLeadingFieldLabel in webBuildFrontendValidation.ts.
+const LEADING_FIELD_LABEL_RE = /^\s*(?:headline|subheadline|subtitle|eyebrow|cta|body|description|label)\s*:\s*/i;
+function stripLeadingFieldLabel(s: string): string { return (s || '').replace(LEADING_FIELD_LABEL_RE, ''); }
 
 /**
  * Recover the EXACT full missing critical copy (headline / primary CTA) by matching the
@@ -4033,9 +4040,11 @@ export function deriveMissingCriticalCopy(
   for (const s of sections) {
     if (out.length >= MAX_CRITICAL_COPY_ENTRIES) break;
     const id = String(s.id || '').slice(0, MAX_CRITICAL_SECTION_ID);
-    const h = (s.headline || '').trim();
+    // Fix C — the authoritative value with any leading internal field-label prefix stripped; this both
+    // matches the validator's stripped preview and sends the real public text as the verbatim requirement.
+    const h = stripLeadingFieldLabel(s.headline || '').trim();
     if (h.length >= 2 && previews.has(copyPreview(h))) out.push({ sectionId: id, field: 'headline', value: h.slice(0, MAX_CRITICAL_COPY_VALUE) });
-    const c = (s.primaryCTA || '').trim();
+    const c = stripLeadingFieldLabel(s.primaryCTA || '').trim();
     if (out.length < MAX_CRITICAL_COPY_ENTRIES && c.length >= 2 && previews.has(copyPreview(c))) out.push({ sectionId: id, field: 'primaryCTA', value: c.slice(0, MAX_CRITICAL_COPY_VALUE) });
   }
   return out.slice(0, MAX_CRITICAL_COPY_ENTRIES);
@@ -4049,9 +4058,10 @@ function allCriticalCopyRequirements(spec: FrontendBuildSpecification): MissingC
   for (const s of sections) {
     if (out.length >= MAX_CRITICAL_COPY_ENTRIES) break;
     const id = String(s.id || '').slice(0, MAX_CRITICAL_SECTION_ID);
-    const h = (s.headline || '').trim();
+    // Fix C — send the real public text as the verbatim requirement, never a leaked field-label prefix.
+    const h = stripLeadingFieldLabel(s.headline || '').trim();
     if (h.length >= 2) out.push({ sectionId: id, field: 'headline', value: h.slice(0, MAX_CRITICAL_COPY_VALUE) });
-    const c = (s.primaryCTA || '').trim();
+    const c = stripLeadingFieldLabel(s.primaryCTA || '').trim();
     if (out.length < MAX_CRITICAL_COPY_ENTRIES && c.length >= 2) out.push({ sectionId: id, field: 'primaryCTA', value: c.slice(0, MAX_CRITICAL_COPY_VALUE) });
   }
   return out.slice(0, MAX_CRITICAL_COPY_ENTRIES);
