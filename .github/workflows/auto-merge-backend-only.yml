@@ -409,7 +409,7 @@ jobs:
           BODY=$(cat <<EOF
           Auto-merged by \`auto-merge-backend-only\` (squash → main @ \`${MERGE_SHA}\`).
 
-          \`post-deploy-healthcheck\` is now polling Railway. It will write a \`railway/production-deploy\` commit status on the merge SHA — \`success\` once Railway serves the new build's commit SHA on \`/health\`, \`failure\` if the rollout doesn't land within 8 minutes.
+          \`post-deploy-healthcheck\` is now polling Railway. It will write a \`railway/production-deploy\` commit status on the merge SHA — \`success\` once the API/web service serves the new build's commit SHA on \`/v2/health\` (\`metadata.commit_sha\`), \`failure\` if the rollout doesn't land within 8 minutes.
 
           If the health check fails, this workflow will refuse to auto-merge any further PR until production is healthy again (production-broken freeze).
           EOF
