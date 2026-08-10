@@ -361,6 +361,7 @@ export function buildUserFacingAcceptanceReason(
 export type FrontendAcceptanceFallbackReasonCode =
   | 'repair-call-incomplete'
   | 'repair-failed-validation'
+  | 'repair-guard-blocked'
   | 'no-actionable-issue'
   | 'initial-review-incomplete'
   | 'contract-repair-failed'
@@ -385,6 +386,11 @@ function fallbackReasonSentence(code: FrontendAcceptanceFallbackReasonCode): { e
       return {
         en: 'Quality gate: the repaired project failed static validation, so it was not approved.',
         tr: 'Kalite kapısı: düzeltilen proje statik doğrulamayı geçemedi; bu nedenle onaylanmadı.',
+      };
+    case 'repair-guard-blocked':
+      return {
+        en: 'Quality gate: the optional quality repair was temporarily at capacity, so the validated build is shown as-is.',
+        tr: 'Kalite kapısı: isteğe bağlı kalite düzeltmesi geçici olarak yoğundu; bu nedenle doğrulanmış yapı olduğu gibi gösteriliyor.',
       };
     case 'no-actionable-issue':
       return {

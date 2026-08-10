@@ -757,6 +757,18 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
         ownerRows.push(['frontendRepairScore', `${frp.initialScore ?? '?'} → ${frp.finalScore ?? '?'}`]);
       }
       if (frp.status !== 'not-run') ownerRows.push(['frontendRepairReason', shortStr(frp.reason, 140)]);
+      // AI-usage-guard block on the OPTIONAL quality repair — the EXACT guard code so a "temporarily
+      // at capacity" outcome is diagnosable from the saved build (the validated project stays active).
+      const gb = frp.guardBlock;
+      if (gb) {
+        ownerRows.push(['frontendRepairStartResult', gb.startResult]);
+        ownerRows.push(['frontendRepairGuardCode', gb.code]);
+        ownerRows.push(['frontendRepairGuardKind', gb.kind]);
+        if (typeof gb.httpStatus === 'number') ownerRows.push(['frontendRepairHttpStatus', String(gb.httpStatus)]);
+        ownerRows.push(['frontendRepairRetryable', String(gb.retryable)]);
+        ownerRows.push(['frontendRepairTaskKind', gb.taskKind]);
+        if (typeof gb.retryAfterSeconds === 'number') ownerRows.push(['frontendRepairRetryAfterSeconds', String(gb.retryAfterSeconds)]);
+      }
       // Producer-contract observability (owner_delta / all_delta path only). Proves which contract
       // the bounded repair requested vs what the model actually returned, so a producer-side contract
       // conflict (a full frontend-files-v1 envelope emitted instead of a delta) is diagnosable from

@@ -34,6 +34,9 @@ import {
 // Owner-only DELTA quality-repair — pure, deterministic delta parser/validator/merger. No
 // network. Flag-gated + owner-gated by the caller; fail-open never triggers a second repair call.
 import { resolveWebBuildQualityRepairMode, isDeltaRepairEligible, reconstructRepairRawFromDelta } from '@/lib/webBuildDeltaRepair';
+// Pure guard-code classifiers (no IO) — turn a bounded raw guardBlock into the repair-artifact guard
+// diagnostic when the OPTIONAL quality repair was refused by the server ai_guard. Never enforcement.
+import { betaBlockKind, betaBlockRetryable } from '@/lib/aiGuard';
 // Deterministic post-repair acceptance gate — pure, owner-agnostic, no IO. Returns the SAME
 // accept decision the previous inline conjunction made, plus a bounded, sanitized diagnostic
 // exposing the exact rejection reason and every gate signal for the activity timeline.
@@ -1184,16 +1187,27 @@ export async function runFrontendBuilderQualityPipeline(
       };
     };
     if (repairRaw.status !== 'completed') {
+      // An AI-usage-guard block on the OPTIONAL repair is recorded as bounded, safe diagnostics (the
+      // exact guard code / kind / retryability) so the failure is diagnosable from a SAVED build; the
+      // VALIDATED initial project stays active either way (fail-open). The guard already prevented the
+      // extra repair spend — this never retries, re-calls or bypasses it.
+      const gb = repairRaw.guardBlock;
+      const guardExtra: Partial<FrontendBuilderRepairArtifact> = gb
+        ? { guardBlock: { startResult: 'blocked', code: gb.code, kind: betaBlockKind(gb.code), httpStatus: gb.httpStatus, retryable: betaBlockRetryable(gb.code), taskKind: 'quality-repair', retryAfterSeconds: gb.retryAfterSeconds } }
+        : {};
       const repair = repairArtifact('failed', repairRaw.reason || 'The repair call did not complete.', {
         model: repairRaw.model, provider: repairRaw.provider, requestId: repairRaw.requestId, initialScore: initialReview.score,
         ...(deltaDiagnostics ? { deltaRepair: deltaDiagnostics } : {}),
+        ...guardExtra,
         ...qcExtra(),
       });
       const acceptance = acceptanceArtifact('manual-review-required', initialProjectName, {
         initialReviewPassed: false, repairAttempted: true, repairAccepted: false, finalReviewPassed: false,
-        reason: 'The bounded repair call did not complete; the initial validated project stays active. Manual rendered review required.',
-      }, { usedDeterministicFallback, repairTriggeredByShallowQuality, severeWarningsBeforeRepair, fallbackReasonCode: 'repair-call-incomplete', ...bindingExtra() });
-      emit('quality-repair', 'completed', [{ label: 'result', value: 'not applied' }]);
+        reason: gb
+          ? `The bounded repair was refused by the AI usage guard (${gb.code}); the initial validated project stays active. Manual rendered review required.`
+          : 'The bounded repair call did not complete; the initial validated project stays active. Manual rendered review required.',
+      }, { usedDeterministicFallback, repairTriggeredByShallowQuality, severeWarningsBeforeRepair, fallbackReasonCode: gb ? 'repair-guard-blocked' : 'repair-call-incomplete', ...bindingExtra() });
+      emit('quality-repair', 'completed', [{ label: 'result', value: gb ? `guard-blocked (${gb.code})` : 'not applied' }]);
       emit('acceptance', 'completed', acceptanceRows('manual-review-required', initialProjectName));
       return attachFrontendBuilderQualityResult(working, { ran: true, initialReview, repair, acceptance });
     }

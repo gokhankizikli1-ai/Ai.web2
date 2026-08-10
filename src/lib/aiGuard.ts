@@ -56,6 +56,35 @@ export function isBetaBlockCode(code: unknown): code is AiBlockCode {
   return typeof code === 'string' && BLOCK_CODES.has(code);
 }
 
+/** Coarse guard-code classification for bounded diagnostics/triage (never user-facing copy). */
+export type AiBlockKind = 'capacity' | 'quota' | 'rate-limit' | 'in-progress' | 'disabled' | 'conflict' | 'other';
+const CODE_KINDS: Record<string, AiBlockKind> = {
+  global_spend_limit_reached: 'capacity',
+  credit_unavailable: 'capacity',
+  daily_limit_reached: 'quota',
+  rate_limited: 'rate-limit',
+  operation_in_progress: 'in-progress',
+  ai_temporarily_disabled: 'disabled',
+  operation_disabled: 'disabled',
+  idempotency_conflict: 'conflict',
+};
+export function betaBlockKind(code: unknown): AiBlockKind {
+  return (typeof code === 'string' && CODE_KINDS[code]) || 'other';
+}
+
+/** Whether simply re-running the build LATER is expected to clear the block. Transient global
+ *  capacity, a burst rate-limit, a still-in-progress prior op, and the temporary kill switch →
+ *  retryable later; a spent daily quota (until reset), a policy-disabled operation, or an
+ *  idempotency conflict → NOT cleared by a plain retry. Advisory diagnostic only — it never weakens
+ *  or bypasses the server guard, which remains the sole authority. */
+const RETRYABLE_CODES = new Set<string>([
+  'global_spend_limit_reached', 'credit_unavailable', 'rate_limited',
+  'operation_in_progress', 'ai_temporarily_disabled',
+]);
+export function betaBlockRetryable(code: unknown): boolean {
+  return typeof code === 'string' && RETRYABLE_CODES.has(code);
+}
+
 /** i18n key for a block code. The daily-limit message differs for a full build
  *  vs a small edit, so the operation type refines that one code. */
 export function betaBlockMessageKey(code: unknown, operationType?: string): string {
