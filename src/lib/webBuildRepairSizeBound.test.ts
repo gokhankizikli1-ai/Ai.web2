@@ -174,8 +174,9 @@ import type { FrontendBuilderReviewIssue } from '@/lib/webBuildAgents';
  * Repair issue SELECTION priority. Production: a valid repair improved 56->77 but the final review
  * still reported 2 majors (a contract-fidelity architecture issue + a component-composition issue).
  * The bounded repair set must fill in priority order — blocker > gate-critical research >
- * contract-fidelity major > component-composition major > remaining major > minor — so the
- * highest-priority majors are never squeezed out by lower-priority ones.
+ * gate-critical major > contract-fidelity major > component-composition major > remaining major >
+ * minor — so the highest-priority majors (including every acceptance-gate obligation) are never
+ * squeezed out by lower-priority ones.
  */
 describe('selectBoundedRepairIssues — priority order + bounded size', () => {
   const mk = (over: Partial<FrontendBuilderReviewIssue>): FrontendBuilderReviewIssue => ({
@@ -202,5 +203,29 @@ describe('selectBoundedRepairIssues — priority order + bounded size', () => {
     const sel = selectBoundedRepairIssues(many);
     expect(sel.length).toBe(MAX_REPAIR_ISSUES);
     expect(sel.map((i) => i.id)).toContain('cf-late'); // a contract-fidelity major is never squeezed out by minors
+  });
+
+  it('a non-research gate-critical major is kept ahead of same-category model majors at the repair cap', () => {
+    // Eight model contract-fidelity majors fill the repair budget; a later-appended gate-critical
+    // binding obligation (same category) must still reach issuesToFix — Finding 3's merge survival
+    // is useless if repair selection then drops it on a same-priority index tie.
+    const issues: FrontendBuilderReviewIssue[] = [];
+    for (let n = 0; n < 8; n += 1) {
+      issues.push(mk({ id: `model-cf-${n}`, severity: 'major', category: 'contract-fidelity' }));
+    }
+    for (let n = 0; n < 4; n += 1) {
+      issues.push(mk({ id: `model-minor-${n}`, severity: 'minor', category: 'typography' }));
+    }
+    issues.push(mk({
+      id: 'binding-section-missing-1',
+      severity: 'major',
+      category: 'contract-fidelity',
+      gateCritical: true,
+      repairInstruction: 'restore the bound section',
+    }));
+    const ids = selectBoundedRepairIssues(issues).map((i) => i.id);
+    expect(ids.length).toBe(MAX_REPAIR_ISSUES);
+    expect(ids).toContain('binding-section-missing-1');
+    expect(ids.filter((id) => id.startsWith('model-cf-')).length).toBe(MAX_REPAIR_ISSUES - 1);
   });
 });

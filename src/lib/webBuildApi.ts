@@ -3393,18 +3393,19 @@ export const MAX_REPAIR_ISSUES = 8;
 
 /** Priority for the bounded repair issue set (lower = kept first). Encodes the required order so the
  *  highest-value obligations are never squeezed out by lower-priority issues:
- *   0 blocker · 1 gate-critical research requirement · 2 contract-fidelity major (architecture/spec
- *   fidelity — model OR deterministic) · 3 component-composition major · 4 any OTHER gate-critical
- *   major (binding/visual-system/content/… — preserves the guarantee that every acceptance-gate
- *   blocker reaches the repair) · 5 remaining (non-gate) major · 6 minor. */
+ *   0 blocker · 1 gate-critical research requirement · 2 any OTHER gate-critical major (binding /
+ *   visual-system / content / contract-fidelity / component-composition — every acceptance-gate
+ *   obligation outranks non-gate peers so a merged gate issue is never dropped from the bounded
+ *   repair set by same-category model majors) · 3 non-gate contract-fidelity major · 4 non-gate
+ *   component-composition major · 5 remaining (non-gate) major · 6 minor. */
 function repairIssuePriority(i: FrontendBuilderReviewIssue): number {
   if (i.severity === 'blocker') return 0;
   if (i.severity !== 'major') return 6;   // minor (and any unrecognized severity)
   const gate = i.gateCritical === true;
   if (gate && typeof i.id === 'string' && i.id.startsWith('research-')) return 1;
-  if (i.category === 'contract-fidelity') return 2;
-  if (i.category === 'component-composition') return 3;
-  if (gate) return 4;                      // other gate-critical major — kept ahead of non-gate majors
+  if (gate) return 2;                      // all other gate-critical majors — ahead of non-gate peers
+  if (i.category === 'contract-fidelity') return 3;
+  if (i.category === 'component-composition') return 4;
   return 5;                                // remaining non-gate model-review major
 }
 
