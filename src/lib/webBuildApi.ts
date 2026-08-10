@@ -3402,12 +3402,12 @@ function buildFrontendRepairInputPayload(
   // Select up to 8 actionable issues, but GUARANTEE that every acceptance-gate blocker (a gate-critical
   // non-minor issue — research / binding / composition / …) is included: otherwise a blocking obligation
   // silently omitted here guarantees a post-repair gate rejection ("score improved but still blocked").
-  // Gate-critical non-minor issues fill first (highest-severity first, bounded), then the remaining
-  // slots are filled by the rest highest-severity first. Same 8-issue budget — no request-size growth.
+  // Gate-critical non-minor issues fill first (highest-severity first), then any remaining slots are
+  // filled by the rest highest-severity first. Same 8-issue budget — no request-size growth.
   const rank: Record<string, number> = { blocker: 0, major: 1, minor: 2 };
   const bySeverity = (a: FrontendBuilderReviewIssue, b: FrontendBuilderReviewIssue) => (rank[a.severity] ?? 3) - (rank[b.severity] ?? 3);
   const all = [...(initialReview.issues || [])];
-  const gate = all.filter((i) => i.gateCritical === true && i.severity !== 'minor').sort(bySeverity).slice(0, 6);
+  const gate = all.filter((i) => i.gateCritical === true && i.severity !== 'minor').sort(bySeverity);
   const gateIds = new Set(gate.map((i) => i.id));
   const rest = all.filter((i) => !gateIds.has(i.id)).sort(bySeverity);
   const issuesToFix = [...gate, ...rest]
