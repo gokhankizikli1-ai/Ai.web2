@@ -872,6 +872,10 @@ export async function runFrontendBuilderQualityPipeline(
       initialExperienceIdentity = analyzeExperienceIdentity(validation?.files, experienceIdentity);
       initialMotion = analyzeMotionExecution(validation?.files, motionExecution, motionHeroSectionId);
       initialObligations = analyzeObligationFulfillment(validation?.files, executionObligations);
+      // Every deterministic issue here maps to a hard ACCEPTANCE-GATE analyzer, so tag them
+      // gate-critical: a non-minor one must reach the single repair as its own explicit obligation
+      // and must NOT be collapsed away by category-dedup when it collides with another gate blocker
+      // sharing a review category (e.g. binding + research both use `contract-fidelity`).
       const detIssues = [
         ...(initialBinding ? bindingIssuesToReviewIssues(initialBinding) : []),
         ...(initialResearch ? researchGroundingToReviewIssues(initialResearch) : []),
@@ -882,7 +886,7 @@ export async function runFrontendBuilderQualityPipeline(
         ...(initialVisual ? visualToReviewIssues(initialVisual) : []),
         ...(initialExperienceIdentity ? experienceIdentityToReviewIssues(initialExperienceIdentity) : []),
         ...(initialMotion ? motionExecutionToReviewIssues(initialMotion) : []),
-      ];
+      ].map((i) => ({ ...i, gateCritical: true }));
       if (detIssues.length && initialReview.status === 'completed') {
         const { issues: mergedB, added: addedB } = mergeDeterministicIssues(initialReview.issues, detIssues);
         if (addedB > 0) {
@@ -1283,7 +1287,7 @@ export async function runFrontendBuilderQualityPipeline(
         ...(repairVisual ? visualToReviewIssues(repairVisual) : []),
         ...(repairExperienceIdentity ? experienceIdentityToReviewIssues(repairExperienceIdentity) : []),
         ...(repairMotion ? motionExecutionToReviewIssues(repairMotion) : []),
-      ];
+      ].map((i) => ({ ...i, gateCritical: true }));
       if (detIssuesFB.length && finalReview.status === 'completed') {
         const { issues: mergedFB, added: addedFB } = mergeDeterministicIssues(finalReview.issues, detIssuesFB);
         if (addedFB > 0) finalReview = recomputeReviewWithMergedIssues(finalReview, mergedFB, addedFB);
@@ -1340,6 +1344,41 @@ export async function runFrontendBuilderQualityPipeline(
     });
     const accept = gate.accept;
 
+    // ── Bounded acceptance-gate / repair ALIGNMENT diagnostics (safe metadata only). Proves every
+    //    acceptance-gate blocker became an explicit repair obligation and how many survived one repair,
+    //    so "score improved but a gate still blocks" is diagnosable from the saved build. Per-dimension
+    //    blocking state pre vs post; research-pattern counts; the exact remaining research reasons. ──
+    const gateAlignment: NonNullable<FrontendBuilderRepairArtifact['gateAlignment']> = (() => {
+      const dims: Array<[boolean, boolean]> = [
+        [hasBlockingBindingFindings(initialBinding), blockingBinding],
+        [hasBlockingResearchFindings(initialResearch), blockingResearch],
+        [hasBlockingCompositionFindings(initialComposition), blockingComposition],
+        [hasBlockingVisualSystemFindings(initialVisualSystem), blockingVisualSystem],
+        [hasBlockingContentFindings(initialContent), blockingContent],
+        [hasBlockingExperienceFindings(initialExperience), blockingExperience],
+        [hasBlockingVisualFindings(initialVisual), blockingVisual],
+        [hasBlockingExperienceIdentityFindings(initialExperienceIdentity), blockingExperienceIdentity],
+        [hasBlockingMotionExecutionFindings(initialMotion), blockingMotionExecution],
+      ];
+      const requiredBlockers = dims.filter(([pre]) => pre).length;
+      const unresolvedBlockers = dims.filter(([pre, post]) => pre && post).length;
+      const nonMinorMissing = (r: ResearchGroundingResult | undefined) =>
+        r ? r.issues.filter((i) => i.severity !== 'minor' && i.code === 'research-required-pattern-missing').length : 0;
+      const researchRequirementsCount = nonMinorMissing(initialResearch);
+      const researchRequirementsAddressed = Math.max(0, researchRequirementsCount - nonMinorMissing(repairResearch));
+      const finalResearchBlockingReasons = repairResearch
+        ? repairResearch.issues.filter((i) => i.severity !== 'minor').map((i) => `${i.code}:${i.label}`.slice(0, 80)).slice(0, 6)
+        : [];
+      return {
+        requiredBlockers,
+        addressedBlockers: Math.max(0, requiredBlockers - unresolvedBlockers),
+        unresolvedBlockers,
+        researchRequirementsCount,
+        researchRequirementsAddressed,
+        finalResearchBlockingReasons,
+      };
+    })();
+
     if (accept) {
       const repair = repairArtifact('accepted', `Repair accepted: score improved ${initialScore} → ${finalScore} and the post-repair review passed with no blocker/major issues and no severe quality warnings.`, {
         model: repairRaw.model, provider: repairRaw.provider, requestId: repairRaw.requestId,
@@ -1348,6 +1387,7 @@ export async function runFrontendBuilderQualityPipeline(
         generatedCharCount: repairValidation.totalCharCount,
         initialScore, finalScore,
         ...(deltaDiagnostics ? { deltaRepair: deltaDiagnostics } : {}),
+        gateAlignment,
         ...qcExtra(),
       });
       const acceptance = acceptanceArtifact('repaired-approved', 'repaired-model-native', {
@@ -1402,6 +1442,7 @@ export async function runFrontendBuilderQualityPipeline(
       generatedCharCount: repairValidation.totalCharCount,
       initialScore, finalScore: finalReview.status === 'completed' ? finalScore : undefined,
       ...(deltaDiagnostics ? { deltaRepair: deltaDiagnostics } : {}),
+      gateAlignment,
       ...qcExtra(),
     });
     const acceptance = acceptanceArtifact('manual-review-required', initialProjectName, {

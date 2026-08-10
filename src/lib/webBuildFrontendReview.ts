@@ -517,24 +517,46 @@ export function synthesizeDeterministicReviewIssues(
   return out.slice(0, MAX_ISSUES);
 }
 
+/** A stable per-issue key for de-duplicating GATE-CRITICAL deterministic issues WITHOUT collapsing
+ *  two genuinely-different acceptance-gate blockers that merely share a review category. Keyed by the
+ *  issue id when present (deterministic analyzers emit code-scoped ids like `research-…` / `binding-…`),
+ *  else by category + first target file. */
+function gateIssueKey(i: FrontendBuilderReviewIssue): string {
+  return (i.id && i.id.trim()) ? `id:${i.id.trim()}` : `cf:${i.category}|${(i.files && i.files[0]) || ''}`;
+}
+
 /**
- * Merge deterministic severe issues into an existing (healthy) model review's issues,
- * bounded and de-duplicated: a synthesized issue whose category already appears in the
- * model review is skipped (do not duplicate an equivalent valid model issue). Returns the
- * merged, bounded issue list and how many deterministic issues were actually added.
+ * Merge deterministic issues into an existing (healthy) model review's issues, bounded and
+ * de-duplicated. ADVISORY deterministic issues collapse by CATEGORY (do not duplicate an equivalent
+ * valid model issue — one per category). But a GATE-CRITICAL, non-minor deterministic issue (one that
+ * maps to a hard acceptance-gate blocker) is NEVER dropped merely because its category already appears:
+ * multiple DISTINCT gate blockers legitimately share a category (e.g. `binding-section-missing` and
+ * `research-required-pattern-missing` are both `contract-fidelity`), and collapsing them by category
+ * silently omitted a blocker from the single repair, guaranteeing a post-repair gate rejection. Such
+ * issues are de-duplicated only against an EXACT prior occurrence (stable id/file key), so every
+ * acceptance-gate blocker reaches the repair as its own explicit obligation. Returns the merged,
+ * bounded issue list and how many deterministic issues were actually added.
  */
 export function mergeDeterministicIssues(
   modelIssues: FrontendBuilderReviewIssue[],
   deterministicIssues: FrontendBuilderReviewIssue[],
 ): { issues: FrontendBuilderReviewIssue[]; added: number } {
   const existingCategories = new Set(modelIssues.map((i) => i.category));
+  const seenGateKeys = new Set(modelIssues.map(gateIssueKey));
   const merged = [...modelIssues];
   let added = 0;
   for (const det of deterministicIssues) {
     if (merged.length >= MAX_ISSUES) break;
-    if (existingCategories.has(det.category)) continue;
+    const gateCritical = det.gateCritical === true && det.severity !== 'minor';
+    if (gateCritical) {
+      // Preserve distinct gate blockers even on a category collision; drop only exact duplicates.
+      if (seenGateKeys.has(gateIssueKey(det))) continue;
+    } else if (existingCategories.has(det.category)) {
+      continue;   // advisory: one issue per category
+    }
     merged.push(det);
     existingCategories.add(det.category);
+    seenGateKeys.add(gateIssueKey(det));
     added += 1;
   }
   return { issues: merged.slice(0, MAX_ISSUES), added };
