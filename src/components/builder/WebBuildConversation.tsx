@@ -1341,6 +1341,11 @@ function CompletedPlanSummary({ step }: { step: WebBuildStep }) {
   // fall back to the Phase 12D source-aware parity messaging.
   const acceptance = step.artifacts?.frontendBuilderAcceptance;
   const modelNativeConsumed = step.artifacts?.frontendBuilderConsumption?.status === 'model-native';
+  // Quality approval != render safety (Phase 13A split): a structurally valid, consumed, runnable
+  // build that only lacks FINAL quality approval is shown provisionally (the real project), not the
+  // Safe renderer. Read render-safety from the same pure derivation the Preview authority uses, so
+  // this honest sentence matches what the user actually sees.
+  const renderSafeModelNative = deriveModelNativeCandidate(step, step.files).safeToRenderModelNativePreview;
   const disclaimer = L(
     `Front-end demo only — no real backend, AI, database or payments; no fake metrics, logos or testimonials. Preview shell: ${data.shellFromModel ? 'from model plan' : 'fallback'}.`,
     `Yalnızca ön yüz demosu — gerçek arka uç, yapay zekâ, veritabanı veya ödeme yok; sahte metrik, logo veya yorum yok. Önizleme kabuğu: ${data.shellFromModel ? 'model planından' : 'yedek'}.`,
@@ -1356,10 +1361,17 @@ function CompletedPlanSummary({ step }: { step: WebBuildStep }) {
       'One bounded repair pass was accepted after static validation and final design review. A rendered visual test is still pending.',
       'Tek sınırlı düzeltme turu, statik doğrulama ve son tasarım incelemesinden sonra kabul edildi. Gerçek render görsel testi hâlâ bekliyor.',
     );
-  } else if (acceptance?.status === 'manual-review-required') {
+  } else if (acceptance?.status === 'manual-review-required' && renderSafeModelNative) {
+    // Render-SAFE but not finally approved → shown provisionally (the real project), NOT Safe.
     parity = L(
-      'The generated frontend project could not be approved by the static design review, so it is NOT shown as a finished site. The Preview falls back to the deterministic safe renderer and the build needs regeneration; the unapproved files stay available in All Files.',
-      'Oluşturulan ön yüz projesi statik tasarım incelemesince onaylanamadı; bu nedenle bitmiş bir site olarak gösterilmiyor. Önizleme deterministik güvenli oluşturucuya düşüyor ve yapı yeniden oluşturulmalı; onaylanmamış dosyalar Tüm Dosyalar’da kalıyor.',
+      'The generated frontend project is structurally valid and runs, but has not yet received final quality approval, so the Preview shows it provisionally pending that review — it is not framed as a finished site. A rendered visual test is still pending; the files are available in All Files.',
+      'Oluşturulan ön yüz projesi yapısal olarak geçerli ve çalışıyor, ancak henüz nihai kalite onayını almadı; bu nedenle Önizleme onu bu inceleme beklenirken geçici olarak gösteriyor — bitmiş bir site olarak sunulmuyor. Gerçek render görsel testi hâlâ bekliyor; dosyalar Tüm Dosyalar’da mevcut.',
+    );
+  } else if (acceptance?.status === 'manual-review-required') {
+    // Not render-safe (invalid / unconsumed / missing entry) → deterministic Safe renderer.
+    parity = L(
+      'The generated frontend project could not be approved by the static design review and is not render-safe, so it is NOT shown as a finished site. The Preview falls back to the deterministic safe renderer and the build needs regeneration; the unapproved files stay available in All Files.',
+      'Oluşturulan ön yüz projesi statik tasarım incelemesince onaylanamadı ve render güvenli değil; bu nedenle bitmiş bir site olarak gösterilmiyor. Önizleme deterministik güvenli oluşturucuya düşüyor ve yapı yeniden oluşturulmalı; onaylanmamış dosyalar Tüm Dosyalar’da kalıyor.',
     );
   } else if (modelNativeConsumed) {
     // Model-native consumed but no Phase 12E acceptance (old saved build): keep the
