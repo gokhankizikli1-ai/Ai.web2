@@ -135,8 +135,14 @@ export default function WebBuildPreviewPanel({
   const mode: WebBuildPreviewMode = candidate
     ? resolvePreviewMode(candidate, isOwner, ownerSel)
     : (previewSource === 'model-native-sandbox' && legacyFiles.length > 0 ? 'approved-model-native' : 'safe-fallback');
-  const showModelNative = mode === 'approved-model-native' || mode === 'owner-candidate';
+  // 'provisional-model-native' is a real model-native RENDER mode (a structurally valid, render-safe
+  // project shown to a normal user pending final quality review) — so it participates in the SAME
+  // candidate eligibility + runtime-failure protection as the approved/owner modes.
+  const showModelNative = mode === 'approved-model-native' || mode === 'provisional-model-native' || mode === 'owner-candidate';
   const isCandidateMode = mode === 'owner-candidate';
+  // A user-facing provisional preview (NOT the owner-candidate inspection UI) that is actually
+  // rendering the real project — used only to show an honest "pending final review" label.
+  const isProvisionalMode = mode === 'provisional-model-native';
   const candidateEligible = showModelNative && nativeFiles.length > 0;
 
   // ── Candidate Preview HEALTH — DISTINCT from Visual-Select bridge readiness. Health
@@ -516,6 +522,14 @@ export default function WebBuildPreviewPanel({
     <p className="mb-3 text-[11px] text-[#94A3B8]">{t('previewSafeDebugActive')}</p>
   ) : null;
 
+  // Honest, SUBTLE label for a provisional preview: the real model-native project is rendering but
+  // final quality review has not approved it. Never exposes scores, blocker categories, prompts,
+  // provider details or owner diagnostics. Shown only while the real project is actually rendering
+  // (not when it has failed over to Safe). Approved previews never show this.
+  const provisionalNote = (isProvisionalMode && candidateActive) ? (
+    <p role="status" className="mb-3 text-[11px] text-[#94A3B8]">{t('previewPendingReview')}</p>
+  ) : null;
+
   const openPreviewButton = (
     <button
       onClick={openPreview}
@@ -633,6 +647,7 @@ export default function WebBuildPreviewPanel({
         {isCandidateMode && candidate && !usingSafeFallback ? <CandidateUnapprovedNotice candidate={candidate} /> : null}
         {fallbackNotice}
         {ownerDebugNote}
+        {provisionalNote}
         <div className="mb-3 flex items-start justify-between gap-3">
           <div>{previewHeading}</div>
           <div className="flex flex-col items-end gap-2">

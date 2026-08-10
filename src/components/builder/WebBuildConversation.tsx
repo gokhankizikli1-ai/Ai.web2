@@ -1579,13 +1579,16 @@ export default function WebBuildConversation({
   const openFile = (path?: string) => { setFilePath(path); setPanel('files'); };
 
   // Phase 13A — derive the model-native candidate (consumed or parsed-initial) for the
-  // latest step. The panel turns it into one of three explicit Preview modes:
-  //   • approved-model-native — a normal user sees the approved Sandpack project;
-  //   • owner-candidate       — an owner may inspect the UNAPPROVED generated project;
-  //   • safe-fallback         — everyone else sees the deterministic safe renderer.
+  // latest step. The panel turns it into one of the explicit Preview modes:
+  //   • approved-model-native    — a normal user sees the approved Sandpack project;
+  //   • provisional-model-native — a normal user sees a render-SAFE (structurally valid,
+  //                                consumed, runnable) project pending final quality review;
+  //   • owner-candidate          — an owner may inspect a non-render-safe generated project;
+  //   • safe-fallback            — everyone else sees the deterministic safe renderer.
   // Acceptance / payload / files are never rewritten here (Phase 12F.3 semantics intact):
-  // a 'manual-review-required' build still shows the "Build needs regeneration" notice and
-  // the safe fallback to normal users, while the real candidate becomes owner-inspectable.
+  // a 'manual-review-required' build keeps its acceptance artifact untouched — it is NOT
+  // auto-approved. A render-safe such build is now shown provisionally instead of forced to
+  // the safe fallback; a non-render-safe one still falls back and stays owner-inspectable.
   const lastStep = steps[lastIdx];
   const candidate = deriveModelNativeCandidate(lastStep, files);
   const previewBlocked = lastStep?.artifacts?.frontendBuilderAcceptance?.status === 'manual-review-required';

@@ -1014,6 +1014,7 @@ export const en: Record<string, string> = {
   previewOpenSafeDebug: 'Open safe preview',
   previewReturnToMain: 'Return to preview',
   previewSafeDebugActive: 'Debug: showing the safe preview.',
+  previewPendingReview: 'Preview — pending final quality review',
 
   /* ── Device image upload + example-image treatment (Phase 14K.6) ── */
   imgExampleImage: 'Example image',
