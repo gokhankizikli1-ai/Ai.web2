@@ -8,8 +8,8 @@
 import type { Project, ProjectMemory } from '@/types/projects';
 import { getProject, addProject, updateProject } from '@/stores/projectStore';
 import type { WebBuildResult } from '@/lib/webBuildApi';
-import { buildWebBuildPayload, type WebBuildPayload } from '@/lib/webBuildPayload';
-import { hasModelNativeEntryFiles } from '@/lib/webBuildPreviewStash';
+import { buildWebBuildPayload, type WebBuildPayload, type WebBuildStep } from '@/lib/webBuildPayload';
+import { hasModelNativeEntryFiles, canonicalWebBuildFilesFingerprint } from '@/lib/webBuildPreviewStash';
 
 function uid(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -141,7 +141,7 @@ export function deriveWebProjectNameFromPayload(payload: WebBuildPayload): strin
 export interface SaveWebBuildResult {
   ok: boolean;
   project: Project;
-  reason?: 'write-failed' | 'project-not-persisted' | 'webbuild-missing' | 'latest-step-missing' | 'model-native-files-missing';
+  reason?: 'write-failed' | 'project-not-persisted' | 'webbuild-missing' | 'latest-step-missing' | 'model-native-files-missing' | 'latest-step-content-mismatch';
 }
 
 function latestStep(p: WebBuildPayload) {
@@ -149,20 +149,48 @@ function latestStep(p: WebBuildPayload) {
   return steps[steps.length - 1];
 }
 
+/**
+ * UPSERT the incoming steps into the previous step list BY STEP ID (Defect 1). A same-id step (e.g. a
+ * same-step image replacement, which keeps the step id but changes file content) REPLACES the previous
+ * one IN PLACE; a new id is APPENDED; unrelated older steps are preserved; no id is ever duplicated and
+ * chronological order is kept. The old union-by-id merge kept `prevSteps` and dropped any incoming step
+ * whose id already existed — silently losing same-step content updates.
+ *
+ *   previous [A(old), B(old)] + incoming [B(new), C(new)] → [A(old), B(new), C(new)]
+ */
+export function upsertWebBuildSteps(previous: WebBuildStep[], incoming: WebBuildStep[]): WebBuildStep[] {
+  const result = Array.isArray(previous) ? [...previous] : [];
+  for (const step of (Array.isArray(incoming) ? incoming : [])) {
+    if (!step || typeof step.id !== 'string') continue;
+    const idx = result.findIndex((s) => s && s.id === step.id);
+    if (idx >= 0) result[idx] = step; // same id → replace in place with the new version
+    else result.push(step);           // new id → append
+  }
+  return result;
+}
+
 /** Read the project back from durable storage and verify the Web Build survived: same id, webBuild
  *  present, the expected latest step id present, and — when the saved latest step is model-native — its
- *  preview-critical entry files still present. Returns a reason on the first failed check, else null. */
+ *  preview-critical entry files still present. Crucially it also proves the persisted latest step's file
+ *  CONTENT equals what was saved (canonical file fingerprint), so a stale same-id step (Defect 1) fails
+ *  verification instead of passing on id presence alone. Returns a reason on the first failed check. */
 function verifyWebBuildPersisted(projectId: string, saved: WebBuildPayload): SaveWebBuildResult['reason'] | null {
   const back = getProject(projectId);
   if (!back) return 'project-not-persisted';
   if (!back.webBuild) return 'webbuild-missing';
   const backSteps = Array.isArray(back.webBuild.steps) ? back.webBuild.steps : [];
   const savedStep = latestStep(saved);
-  const stepId = savedStep?.id;
-  if (stepId && !backSteps.some((s) => s.id === stepId)) return 'latest-step-missing';
-  if (savedStep && hasModelNativeEntryFiles(savedStep.files)) {
-    const backStep = backSteps.find((s) => s.id === savedStep.id);
-    if (!backStep || !hasModelNativeEntryFiles(backStep.files)) return 'model-native-files-missing';
+  if (!savedStep) return null;
+  const backStep = backSteps.find((s) => s.id === savedStep.id);
+  if (savedStep.id && !backStep) return 'latest-step-missing';
+  if (hasModelNativeEntryFiles(savedStep.files) && (!backStep || !hasModelNativeEntryFiles(backStep.files))) {
+    return 'model-native-files-missing';
+  }
+  // Content proof: the persisted latest step's files must fingerprint-match the saved latest step's
+  // files. A same-id step whose content did not actually update (union-by-id drop, silent truncation)
+  // fingerprints differently and is rejected — never reported as a successful save.
+  if (backStep && canonicalWebBuildFilesFingerprint(savedStep.files) !== canonicalWebBuildFilesFingerprint(backStep.files)) {
+    return 'latest-step-content-mismatch';
   }
   return null;
 }
@@ -187,9 +215,10 @@ export function saveWebBuildPayloadToProject(
       const prevSteps = existing.webBuild?.steps || [];
       const merged: WebBuildPayload = {
         ...saved,
-        // Keep the earliest createdAt + the union of steps (existing first).
+        // Keep the earliest createdAt + UPSERT steps by id (existing first): a same-id step is replaced
+        // in place with the new version (so same-step content updates are not lost), a new id appended.
         createdAt: existing.webBuild?.createdAt || saved.createdAt,
-        steps: [...prevSteps, ...saved.steps.filter((s) => !prevSteps.some((p) => p.id === s.id))],
+        steps: upsertWebBuildSteps(prevSteps, saved.steps),
         updatedAt: now,
       };
       const project: Project = { ...existing, webBuild: merged };

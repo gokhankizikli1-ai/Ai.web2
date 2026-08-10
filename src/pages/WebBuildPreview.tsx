@@ -5,7 +5,7 @@ import { useLanguageStore } from '@/stores/languageStore';
 import { useOwnerMode } from '@/hooks/useOwnerMode';
 import WebBuildPreviewDocument from '@/components/builder/WebBuildPreviewDocument';
 import WebBuildModelNativePreview, { CandidateUnapprovedNotice, RuntimeDiagnosticsBlock } from '@/components/builder/WebBuildModelNativePreview';
-import { readPreview, sanitizeReturnTo, requestPreviewForRun, subscribePreviewResponses, isUsablePreviewData, hasModelNativeEntryFiles, modelNativePreviewFields, resolvePreviewSources, type WebBuildPreviewData } from '@/lib/webBuildPreviewStash';
+import { readPreview, sanitizeReturnTo, requestPreviewForRun, subscribePreviewResponses, isUsablePreviewData, hasModelNativeEntryFiles, modelNativePreviewFields, resolvePreviewSources, canonicalWebBuildFilesFingerprint, type WebBuildPreviewData } from '@/lib/webBuildPreviewStash';
 import { isModelNativeRuntimeFailure, type ModelNativeCandidate, type ModelNativeRuntimeSnapshot } from '@/lib/webBuildRuntimePreview';
 import { listWebBuildSessions, getWebBuildSession } from '@/lib/webBuildSession';
 import { getProjects } from '@/stores/projectStore';
@@ -43,14 +43,17 @@ export function stepToPreviewData(
   const step = (wb.steps || []).find((s) => s.id === runId);
   if (!step) return null;
   const brief = wb.brief || {};
+  // Version identity of THIS persisted source (its latest-step files) — the authoritative current
+  // fingerprint restore compares an explicit handoff against to detect a stale same-step handoff (Defect 2).
+  const sourceFingerprint = canonicalWebBuildFilesFingerprint(step.files);
   // Single source of truth: modelNativePreviewFields derives the SAME non-owner authority the embedded
   // panel and the stash use (owner-candidate is never produced on a cold restore). A render-safe consumed
   // model-native step restores as approved/provisional model-native; everything else is Safe.
   const mn = modelNativePreviewFields(step, step.files);
   if (mn) {
-    return { runId, sectionItems: wb.sectionItems || [], brief, slug: undefined, prompt: wb.prompt, ...mn };
+    return { runId, sectionItems: wb.sectionItems || [], brief, slug: undefined, prompt: wb.prompt, sourceFingerprint, ...mn };
   }
-  const fallback: WebBuildPreviewData = { runId, sectionItems: wb.sectionItems || [], brief, slug: undefined, prompt: wb.prompt, previewMode: 'safe-fallback' };
+  const fallback: WebBuildPreviewData = { runId, sectionItems: wb.sectionItems || [], brief, slug: undefined, prompt: wb.prompt, previewMode: 'safe-fallback', sourceFingerprint };
   return usablePreview(fallback) ? fallback : null;
 }
 

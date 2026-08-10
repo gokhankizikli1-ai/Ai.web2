@@ -5,6 +5,7 @@ import {
   previewAuthorityRank,
   pickHighestAuthorityPreview,
   resolvePreviewSources,
+  canonicalWebBuildFilesFingerprint,
   type WebBuildPreviewData,
 } from '@/lib/webBuildPreviewStash';
 import type { WebBuildFile, WebBuildStep, WebBuildPayload } from '@/lib/webBuildPayload';
@@ -193,5 +194,92 @@ describe('resolvePreviewSources — handoff provenance (Finding 1)', () => {
   });
   it('returns null when neither the stash nor any persisted source is usable', () => {
     expect(resolvePreviewSources(null, [null, undefined])).toBeNull();
+  });
+});
+
+/* ── Defect 2 — an explicit handoff must not stale-mask a NEWER version of the same run forever.
+ *  A same-step image replacement keeps the step id but changes file content, so a source-version
+ *  fingerprint (not runId) is what distinguishes VERSION A from VERSION B. */
+
+const filesA = (): WebBuildFile[] => entryFiles(); // content 'x'
+const filesB = (): WebBuildFile[] => entryFiles().map((f) => ({ ...f, content: 'y' })); // content 'y'
+const FP_A = canonicalWebBuildFilesFingerprint(filesA());
+const FP_B = canonicalWebBuildFilesFingerprint(filesB());
+
+const explicitMode = (mode: 'approved-model-native' | 'provisional-model-native' | 'owner-candidate' | 'safe-fallback', fp?: string): WebBuildPreviewData => {
+  const base = { runId: 'r', sectionItems: [{ id: 's1' }], brief: {}, previewMode: mode, handoffKind: 'explicit', sourceFingerprint: fp } as unknown as WebBuildPreviewData;
+  if (mode !== 'safe-fallback') return { ...base, sectionItems: [], files: entryFiles(), previewSource: 'model-native-sandbox' } as unknown as WebBuildPreviewData;
+  return base;
+};
+const persistedVersion = (mode: 'approved-model-native' | 'provisional-model-native', fp: string): WebBuildPreviewData =>
+  ({ runId: 'r', sectionItems: [], brief: {}, files: entryFiles(), previewSource: 'model-native-sandbox', previewMode: mode, sourceFingerprint: fp } as unknown as WebBuildPreviewData);
+
+describe('canonicalWebBuildFilesFingerprint (Defect 2)', () => {
+  it('J: same paths, different content → different fingerprint', () => {
+    expect(FP_A).not.toBe(FP_B);
+  });
+  it('K: same files in a different array order → identical fingerprint', () => {
+    const forward = entryFiles();
+    const reversed = [...entryFiles()].reverse();
+    expect(canonicalWebBuildFilesFingerprint(forward)).toBe(canonicalWebBuildFilesFingerprint(reversed));
+  });
+  it('is empty/missing-safe and deterministic', () => {
+    expect(canonicalWebBuildFilesFingerprint([])).toBe(canonicalWebBuildFilesFingerprint(undefined));
+    expect(canonicalWebBuildFilesFingerprint(entryFiles())).toBe(canonicalWebBuildFilesFingerprint(entryFiles()));
+  });
+  it('ignores malformed entries the same way sanitizeFiles does (raw vs sanitized match)', () => {
+    const raw = [...entryFiles(), { path: 'x', content: 123 } as unknown as WebBuildFile, null as unknown as WebBuildFile];
+    expect(canonicalWebBuildFilesFingerprint(raw)).toBe(canonicalWebBuildFilesFingerprint(entryFiles()));
+  });
+});
+
+describe('resolvePreviewSources — explicit handoff source-version staleness (Defect 2)', () => {
+  it('A: explicit provisional VERSION A + persisted provisional VERSION A → explicit honored', () => {
+    const picked = resolvePreviewSources(explicitMode('provisional-model-native', FP_A), [persistedVersion('provisional-model-native', FP_A)]);
+    expect(picked?.handoffKind).toBe('explicit');
+    expect(picked?.previewMode).toBe('provisional-model-native');
+  });
+  it('B: explicit Safe VERSION A + persisted model-native VERSION A → explicit Safe honored', () => {
+    const picked = resolvePreviewSources(explicitMode('safe-fallback', FP_A), [persistedVersion('provisional-model-native', FP_A)]);
+    expect(picked?.previewMode).toBe('safe-fallback');
+    expect(picked?.previewSource).toBeUndefined();
+  });
+  it('C: explicit owner-candidate VERSION A + persisted provisional VERSION A → owner-candidate honored (route owner-gates)', () => {
+    expect(resolvePreviewSources(explicitMode('owner-candidate', FP_A), [persistedVersion('provisional-model-native', FP_A)])?.previewMode).toBe('owner-candidate');
+  });
+  it('D: explicit provisional VERSION A + persisted provisional VERSION B → persisted B wins (stale explicit)', () => {
+    const picked = resolvePreviewSources(explicitMode('provisional-model-native', FP_A), [persistedVersion('provisional-model-native', FP_B)]);
+    expect(picked?.sourceFingerprint).toBe(FP_B);
+    expect(picked?.handoffKind).toBeUndefined(); // the persisted representation, not the explicit stash
+  });
+  it('E: explicit Safe VERSION A + persisted approved VERSION B → stale Safe no longer masks B', () => {
+    const picked = resolvePreviewSources(explicitMode('safe-fallback', FP_A), [persistedVersion('approved-model-native', FP_B)]);
+    expect(picked?.previewMode).toBe('approved-model-native');
+    expect(picked?.sourceFingerprint).toBe(FP_B);
+  });
+  it('F: explicit owner-candidate VERSION A + persisted VERSION B → stale owner-candidate does not mask B', () => {
+    const picked = resolvePreviewSources(explicitMode('owner-candidate', FP_A), [persistedVersion('provisional-model-native', FP_B)]);
+    expect(picked?.previewMode).toBe('provisional-model-native');
+    expect(picked?.sourceFingerprint).toBe(FP_B);
+  });
+  it('G: automatic VERSION A + persisted VERSION B → persisted B wins', () => {
+    const auto = { ...persistedVersion('provisional-model-native', FP_A), handoffKind: 'automatic' } as unknown as WebBuildPreviewData;
+    expect(resolvePreviewSources(auto, [persistedVersion('approved-model-native', FP_B)])?.sourceFingerprint).toBe(FP_B);
+  });
+  it('H: explicit stash, no persisted source → explicit still works', () => {
+    const explicit = explicitMode('provisional-model-native', FP_A);
+    expect(resolvePreviewSources(explicit, [null, null])).toBe(explicit);
+  });
+  it('I: legacy explicit stash WITHOUT fingerprint + current model-native persisted → conservative: persisted wins (no permanent masking)', () => {
+    const legacy = explicitMode('safe-fallback', undefined); // no sourceFingerprint
+    const picked = resolvePreviewSources(legacy, [persistedVersion('provisional-model-native', FP_B)]);
+    expect(picked?.previewMode).toBe('provisional-model-native'); // model-native persisted wins
+    // …but a legacy explicit + only a SECTION/Safe persisted source (rank 1) is still honored:
+    const sectionPersisted = { runId: 'r', sectionItems: [{ id: 's1' }], brief: {}, sourceFingerprint: FP_B } as unknown as WebBuildPreviewData;
+    expect(resolvePreviewSources(legacy, [sectionPersisted])?.previewMode).toBe('safe-fallback');
+  });
+  it('current source without a fingerprint cannot prove staleness → explicit honored', () => {
+    const persistedNoFp = { runId: 'r', sectionItems: [], brief: {}, files: entryFiles(), previewSource: 'model-native-sandbox', previewMode: 'approved-model-native' } as unknown as WebBuildPreviewData;
+    expect(resolvePreviewSources(explicitMode('safe-fallback', FP_A), [persistedNoFp])?.previewMode).toBe('safe-fallback');
   });
 });
