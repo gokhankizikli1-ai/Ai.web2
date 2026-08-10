@@ -2479,6 +2479,13 @@ export interface FrontendBuilderReviewIssue {
   files: string[];
   evidence: string;
   repairInstruction: string;
+  /** True for a DETERMINISTIC issue that corresponds to a hard ACCEPTANCE-GATE blocker (research /
+   *  binding / composition / visual-system / content / experience / … ). Such an issue must reach the
+   *  single repair as an explicit obligation: it is NOT collapsed away by category-dedup when it
+   *  collides with a lower-priority same-category issue, and it is prioritized into the bounded
+   *  repair issue set so a blocking finding can never be silently omitted. Absent on ordinary
+   *  model-review issues and old saved builds. */
+  gateCritical?: boolean;
 }
 
 export interface FrontendBuilderReviewDimensions {
@@ -2709,6 +2716,24 @@ export interface FrontendBuilderRepairArtifact {
   qualityContext?: {
     repair?: FrontendQualityContextDiagnostics;
     postReview?: FrontendQualityContextDiagnostics;
+  };
+
+  /** ── ACCEPTANCE-GATE / REPAIR ALIGNMENT diagnostics (bounded, safe). Proves that every acceptance-
+   *  gate blocker became an explicit repair obligation and how many survived one repair — so a
+   *  "repair improved the score but still failed a gate" outcome is diagnosable from a SAVED build.
+   *  Never prompts, source, provider ids or secrets — only counts + bounded sector-pattern labels. ── */
+  gateAlignment?: {
+    /** Acceptance-gate blocking obligations identified BEFORE the repair (sent to the repair model). */
+    requiredBlockers: number;
+    /** Of those, how many are NO LONGER blocking after the single repair. */
+    addressedBlockers: number;
+    /** Blocking obligations that remain after the repair (these drive the rejection). */
+    unresolvedBlockers: number;
+    /** Research required-sector-pattern obligations before the repair, and how many were satisfied. */
+    researchRequirementsCount: number;
+    researchRequirementsAddressed: number;
+    /** Bounded sector-pattern labels/codes still blocking on research after the repair (safe metadata). */
+    finalResearchBlockingReasons: string[];
   };
 
   /** ── AI-USAGE-GUARD block diagnostics. Present ONLY when the bounded quality repair was refused by

@@ -449,6 +449,19 @@ const LEGACY_GROUNDING: ResearchGroundingResult = {
 };
 
 function capEv(s: string): string { const t = (s || '').replace(/\s+/g, ' ').trim(); return t.length > MAX_EVIDENCE ? t.slice(0, MAX_EVIDENCE) : t; }
+// A concrete, file/component/action-oriented repair instruction needs more room than a short evidence
+// line, so a blocking sector-pattern obligation can name the file to create, the wiring, the expected
+// structure/behavior and why. Still bounded (never source/prompts).
+const MAX_INSTRUCTION = 420;
+function capInstr(s: string): string { const t = (s || '').replace(/\s+/g, ' ').trim(); return t.length > MAX_INSTRUCTION ? t.slice(0, MAX_INSTRUCTION) : t; }
+
+/** Derive a safe PascalCase React component name from a required-pattern label (e.g. "booking system"
+ *  → "BookingSystem"). Bounded; falls back to a generic-but-valid identifier. Never emits unsafe chars. */
+function componentNameFromLabel(label: string): string {
+  const toks = labelTokens(label).filter((t) => /^[a-z][a-z0-9]*$/i.test(t)).slice(0, 4);
+  const pascal = toks.map((t) => t.charAt(0).toUpperCase() + t.slice(1)).join('').replace(/[^A-Za-z0-9]/g, '');
+  return (pascal && /^[A-Za-z]/.test(pascal)) ? pascal.slice(0, 40) : 'ResearchRequiredSection';
+}
 
 /** Rendered "naming" surfaces of a single file: headings, aria-labels, nav/button/link/section text. */
 function namingText(content: string): string {
@@ -595,9 +608,16 @@ export function analyzeResearchGrounding(
           repairInstruction: capEv(`Make "${req}" a real, semantic rendered section (heading + meaningful content) for ${contract.operatorIdentity}, not just a heading or incidental text.`) });
       } else if (strongAuthority && requiredMissing < 2) {                // token nowhere → clearly absent → block
         requiredMissing += 1;
-        push({ code: 'research-required-pattern-missing', severity: 'major', label: req, files: [],
-          evidence: capEv(`required sector pattern "${req}" is entirely absent — the researched ${contract.sector} decision journey expects it`),
-          repairInstruction: capEv(`Add a real "${req}" section appropriate to ${contract.operatorIdentity}; the researched conversion journey depends on it.`) });
+        // Concrete, file/component/action-oriented obligation so the single bounded repair can actually
+        // add the missing sector pattern: name the NEW component to create, the wiring anchor (App.tsx),
+        // the expected structure/behavior, and why (this is the acceptance-gate BLOCKER).
+        const comp = componentNameFromLabel(req);
+        const behavior = functional
+          ? 'real interactive controls (inputs/buttons) wired to React state with a visible input->process->outcome result'
+          : 'a clear section heading plus concrete supporting content (real copy, a list or step sequence, and honest imagery placeholders)';
+        push({ code: 'research-required-pattern-missing', severity: 'major', label: req, files: ['src/App.tsx'],
+          evidence: capEv(`required ${contract.sector} pattern "${req}" is entirely absent — the researched decision journey expects it (BLOCKER: acceptance rejects with blocking-research until it exists)`),
+          repairInstruction: capInstr(`Create src/components/${comp}.tsx for the "${req}" ${functional ? 'interactive' : 'informational'} section (${contract.operatorIdentity}, ${contract.sector}) and import + render it in src/App.tsx in the researched section order. It MUST contain ${behavior}. This researched sector pattern is missing and BLOCKS acceptance.`) });
       }
     }
 
@@ -667,7 +687,9 @@ export function researchGroundingToReviewIssues(result: ResearchGroundingResult 
       category: GROUNDING_CATEGORY[issue.code],
       files: (issue.files || []).slice(0, MAX_ISSUE_FILES),
       evidence: capEv(issue.evidence),
-      repairInstruction: capEv(issue.repairInstruction),
+      // Preserve the concrete, file/component/action-oriented obligation (a blocking sector pattern
+      // needs the fuller instruction budget, not the short evidence cap).
+      repairInstruction: capInstr(issue.repairInstruction),
     });
     if (out.length >= MAX_ISSUES) break;
   }

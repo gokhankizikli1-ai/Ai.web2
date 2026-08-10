@@ -757,6 +757,17 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
         ownerRows.push(['frontendRepairScore', `${frp.initialScore ?? '?'} → ${frp.finalScore ?? '?'}`]);
       }
       if (frp.status !== 'not-run') ownerRows.push(['frontendRepairReason', shortStr(frp.reason, 140)]);
+      // Acceptance-gate / repair ALIGNMENT — proves every blocker became a repair obligation and how
+      // many survived one repair, so "score improved but a gate still blocks" is diagnosable.
+      const ga = frp.gateAlignment;
+      if (ga) {
+        ownerRows.push(['frontendRepairRequiredBlockers', String(ga.requiredBlockers)]);
+        ownerRows.push(['frontendRepairAddressedBlockers', String(ga.addressedBlockers)]);
+        ownerRows.push(['frontendRepairUnresolvedBlockers', String(ga.unresolvedBlockers)]);
+        ownerRows.push(['frontendRepairResearchRequirementsCount', String(ga.researchRequirementsCount)]);
+        ownerRows.push(['frontendRepairResearchRequirementsAddressed', String(ga.researchRequirementsAddressed)]);
+        if (ga.finalResearchBlockingReasons.length) ownerRows.push(['frontendFinalResearchBlockingReasons', shortStr(ga.finalResearchBlockingReasons.join(' | '), 160)]);
+      }
       // AI-usage-guard block on the OPTIONAL quality repair — the EXACT guard code so a "temporarily
       // at capacity" outcome is diagnosable from the saved build (the validated project stays active).
       const gb = frp.guardBlock;

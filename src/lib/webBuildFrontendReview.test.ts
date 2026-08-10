@@ -1,7 +1,53 @@
 import { describe, it, expect } from 'vitest';
-import { parseFrontendBuilderReview, extractReviewJsonObject } from '@/lib/webBuildFrontendReview';
-import type { FrontendBuilderReviewRawArtifact } from '@/lib/webBuildAgents';
+import { parseFrontendBuilderReview, extractReviewJsonObject, mergeDeterministicIssues } from '@/lib/webBuildFrontendReview';
+import type { FrontendBuilderReviewRawArtifact, FrontendBuilderReviewIssue } from '@/lib/webBuildAgents';
 import type { WebBuildFile } from '@/lib/webBuildPayload';
+
+/**
+ * Regression: two DISTINCT acceptance-gate blockers that share a review category (e.g.
+ * `binding-section-missing` and `research-required-pattern-missing` are both `contract-fidelity`)
+ * must BOTH reach the single repair. The old category-only dedup collapsed them, silently omitting
+ * the research blocker from the repair prompt — so the repair improved the score but the research
+ * gate still rejected the build.
+ */
+describe('mergeDeterministicIssues — gate-critical blockers survive a category collision', () => {
+  const issue = (id: string, over: Partial<FrontendBuilderReviewIssue> = {}): FrontendBuilderReviewIssue => ({
+    id, severity: 'major', category: 'contract-fidelity', files: [], evidence: 'e', repairInstruction: 'r', ...over,
+  });
+
+  it('keeps both same-category gate-critical majors (binding + research)', () => {
+    const det = [
+      issue('binding-section-missing-1', { gateCritical: true }),
+      issue('research-required-pattern-missing-1', { gateCritical: true }),
+    ];
+    const { issues, added } = mergeDeterministicIssues([], det);
+    expect(added).toBe(2);
+    expect(issues.map((i) => i.id)).toEqual(['binding-section-missing-1', 'research-required-pattern-missing-1']);
+  });
+
+  it('a gate-critical blocker is NOT shadowed by a same-category MODEL issue', () => {
+    const model = [issue('model-1', { gateCritical: undefined })];
+    const det = [issue('research-required-pattern-missing-1', { gateCritical: true })];
+    const { issues } = mergeDeterministicIssues(model, det);
+    expect(issues.some((i) => i.id === 'research-required-pattern-missing-1')).toBe(true);
+  });
+
+  it('ADVISORY (non-gate / minor) deterministic issues still collapse by category (unchanged)', () => {
+    const model = [issue('model-1')];
+    const det = [issue('advisory-1', { gateCritical: false }), issue('advisory-minor', { severity: 'minor', gateCritical: true })];
+    const { added } = mergeDeterministicIssues(model, det);
+    expect(added).toBe(0); // both share contract-fidelity with the model issue → collapsed as before
+  });
+
+  it('exact-duplicate gate-critical issues still dedupe (no runaway)', () => {
+    const det = [
+      issue('research-required-pattern-missing-1', { gateCritical: true }),
+      issue('research-required-pattern-missing-1', { gateCritical: true }),
+    ];
+    const { added } = mergeDeterministicIssues([], det);
+    expect(added).toBe(1);
+  });
+});
 
 /**
  * Design-quality review parser robustness regression suite.
