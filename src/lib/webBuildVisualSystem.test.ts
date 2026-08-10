@@ -169,3 +169,40 @@ describe('webBuildVisualSystem — continuity acceptance evidence (Phases 5–6,
     expect(d.footerContinuity === undefined || typeof d.footerContinuity === 'string').toBe(true);
   });
 });
+
+describe('webBuildVisualSystem — unreadable-body: decorative/hidden excluded, visible still blocks (Fix A)', () => {
+  const contract = () => deriveVisualSystemContract(input({ prompt: 'a light professional services site', identity: { sector: 'general' } as VisualSystemInput['identity'], designSystem: { colorTokens: { background: '#ffffff', foreground: '#111111', primary: '#2563eb' }, paletteDecision: 'sector' } as unknown as VisualSystemInput['designSystem'] }))!;
+  const hasUnreadable = (content: string) =>
+    analyzeVisualSystem([file('App.tsx', content)], contract()).issues.some((i) => i.code === 'visual-system-unreadable-body');
+
+  it('1. two aria-hidden decorative paragraphs → NO unreadable-body block', () => {
+    expect(hasUnreadable('<div><p aria-hidden="true" className="opacity-0 absolute">Ghost one</p><p aria-hidden="true" className="opacity-0 absolute">Ghost two</p></div>')).toBe(false);
+  });
+
+  it('2. two role="presentation" transparent text nodes → NO block', () => {
+    expect(hasUnreadable('<div><p role="presentation" className="text-transparent">deco a</p><p role="presentation" className="text-transparent">deco b</p></div>')).toBe(false);
+  });
+
+  it('3. sr-only / visually-hidden text → NO block', () => {
+    expect(hasUnreadable('<div><p className="sr-only opacity-0">a11y a</p><p className="visually-hidden text-transparent">a11y b</p></div>')).toBe(false);
+  });
+
+  it('4. two genuinely visible opacity-10 body paragraphs → STILL BLOCK', () => {
+    expect(hasUnreadable('<div><p className="opacity-10">real body one</p><p className="opacity-10">real body two</p></div>')).toBe(true);
+  });
+
+  it('5. visible text-transparent (no clip) body copy → STILL BLOCK', () => {
+    expect(hasUnreadable('<div><p className="text-transparent">invisible a</p><p className="text-transparent">invisible b</p></div>')).toBe(true);
+    // gradient clip text stays excluded (not a readability defect)
+    expect(hasUnreadable('<div><p className="bg-clip-text text-transparent bg-gradient-to-r">g1</p><p className="bg-clip-text text-transparent bg-gradient-to-r">g2</p></div>')).toBe(false);
+  });
+
+  it('6. decorative aria-hidden text-white/bg-white → NO block; visible equivalent → STILL BLOCK', () => {
+    expect(hasUnreadable('<span aria-hidden="true" className="text-white bg-white">deco</span>')).toBe(false);
+    expect(hasUnreadable('<span className="text-white bg-white">real invisible label</span>')).toBe(true);
+  });
+
+  it('does not treat the "not-sr-only" reveal utility as hidden (still counts as visible)', () => {
+    expect(hasUnreadable('<div><p className="not-sr-only opacity-10">revealed one</p><p className="not-sr-only opacity-10">revealed two</p></div>')).toBe(true);
+  });
+});

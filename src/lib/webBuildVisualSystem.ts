@@ -776,6 +776,18 @@ function renderEvidence(cleanSrc: string): string {
   } catch { return cleanSrc || ''; }
 }
 
+/** True when an opening tag is structurally HIDDEN or purely DECORATIVE — screen-reader-hidden
+ *  (aria-hidden="true"/{true}), presentational (role="presentation"/"none"), or a visually-hidden
+ *  utility (sr-only / visually-hidden, but NOT the "not-sr-only" reveal). Such nodes are never the
+ *  authoritative visible body copy, so near-transparent/decorative/same-token text inside them is not
+ *  a readability defect. Deliberately NARROW: only explicit hidden/decorative markers exclude a node;
+ *  a genuinely visible low-opacity or same-token element is unaffected and still counts. Pure. */
+function isHiddenOrDecorativeTag(tag: string): boolean {
+  return /\baria-hidden\s*=\s*(?:["']true["']|\{\s*true\s*\})/i.test(tag)
+    || /\brole\s*=\s*["'](?:presentation|none)["']/i.test(tag)
+    || /(?<![\w-])(?:sr-only|visually-hidden)(?![\w-])/i.test(tag);
+}
+
 export function analyzeVisualSystem(
   files: FrontendGeneratedFile[] | undefined,
   contract: VisualSystemContract | undefined,
@@ -859,10 +871,15 @@ export function analyzeVisualSystem(
 
     // ── Global readability (works even if section correlation is thin). Render-relevant, comment-free. ──
     const readSrc = renderUnits.length >= 2 ? renderUnits.map((u) => u.render).join('\n') : codeRender;
+    // Decorative/hidden nodes (aria-hidden, role=presentation/none, sr-only/visually-hidden) are NOT
+    // the authoritative visible copy, so they never count as unreadable body evidence (Fix A). Gradient
+    // clip text (bg-clip-text) stays excluded. Genuinely visible low-opacity/same-token text still counts.
     const transparentBody = (readSrc.match(/<(?:p|blockquote)\b[^>]*\b(?:opacity-(?:0|5|10|15|20)|text-transparent)\b[^>]*>/gi) || [])
-      .filter((tag) => !/bg-clip-text/.test(tag)).length;
-    const sameTokenTextBg = (readSrc.match(/<[a-zA-Z][^>]*\b(?:text-white\b[^>]*\bbg-white|text-black\b[^>]*\bbg-black)\b[^>]*>/gi) || []).length
-      + (readSrc.match(/<[a-zA-Z][^>]*text-\[?(var\(--[\w-]+\))\]?[^>]*bg-\[?\1\]?/gi) || []).length;
+      .filter((tag) => !/bg-clip-text/.test(tag) && !isHiddenOrDecorativeTag(tag)).length;
+    const sameTokenTextBg = (readSrc.match(/<[a-zA-Z][^>]*\b(?:text-white\b[^>]*\bbg-white|text-black\b[^>]*\bbg-black)\b[^>]*>/gi) || [])
+      .filter((tag) => !isHiddenOrDecorativeTag(tag)).length
+      + (readSrc.match(/<[a-zA-Z][^>]*text-\[?(var\(--[\w-]+\))\]?[^>]*bg-\[?\1\]?/gi) || [])
+        .filter((tag) => !isHiddenOrDecorativeTag(tag)).length;
 
     // ── 1. No coherent token source + severe cross-section fragmentation (blocker). ──
     let blocked = false;

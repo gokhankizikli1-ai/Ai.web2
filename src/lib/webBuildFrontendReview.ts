@@ -506,7 +506,10 @@ export function synthesizeDeterministicReviewIssues(
     add('det-internal-copy-leak', 'major', SEVERE_WARNING_CATEGORY['internal-copy-leak'],
       leakPaths,
       'Deterministic validation: internal planning vocabulary appears in visible source copy.',
-      'Remove internal planning language from visible copy and replace it with real audience-facing copy while preserving authoritative public copy.');
+      // Fix C — unambiguous: strip ONLY the internal planning language / field-label prefix; keep the
+      // real audience-facing text after it. "Preserve authoritative public copy" never means preserve
+      // an internal label like "Headline:" — that prefix is internal planning language, not public copy.
+      'Delete the internal planning language and any leaked field-label prefix (e.g. "Headline:") from visible copy; keep only the real audience-facing text. Never treat an internal label prefix as authoritative public copy.');
   }
   if (validation.missingHeroVisualLayerDetected && heroReal) {
     add('det-missing-hero-visual', 'major', SEVERE_WARNING_CATEGORY['missing-hero-visual-layer'],

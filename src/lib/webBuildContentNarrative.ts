@@ -124,6 +124,26 @@ const INTERNAL_MARKERS = [
   'feature-mosaic', 'sequential-steps', 'gallery-strip', 'focused-tool', 'proof-ledger', 'catalog-index',
   'full-bleed-transition', 'compact-utility', 'conversion-finale', 'standard-stack',
 ];
+// Internal SPEC field-label prefixes that must NEVER be rendered as the start of visible public copy
+// (Fix B): the model sometimes echoes a `Headline:`/`Subheadline:` label from the spec structure onto
+// the page. Detection is ANCHORED to the start of a rendered text node (immediately after `>`), so
+// ordinary prose containing a colon (e.g. "Pricing: simple", "A good headline: keep it short") is
+// never flagged — the fixed label vocabulary is the filter. Case-insensitive.
+const FIELD_LABEL_PREFIXES = ['headline', 'subheadline', 'subtitle', 'eyebrow', 'cta', 'body', 'description', 'label'];
+const FIELD_LABEL_PREFIX_RE = new RegExp(`>\\s*(${FIELD_LABEL_PREFIXES.join('|')})\\s*:`, 'gi');
+
+/** Distinct internal field-label prefixes (Headline:/Subheadline:/…) that leaked as the START of a
+ *  VISIBLE text node in this region. Operates on the text between `>` and the next `<` (a rendered
+ *  text-node boundary), NOT attribute values or arbitrary colon-containing prose. Pure, bounded.
+ *  Exported for focused regression tests. */
+export function detectLeakedFieldLabels(region: string): string[] {
+  const cleaned = stripComments(region || '').replace(/<(svg|script|style)\b[\s\S]*?<\/\1>/gi, ' ');
+  const found = new Set<string>();
+  let m: RegExpExecArray | null; let guard = 0;
+  FIELD_LABEL_PREFIX_RE.lastIndex = 0;
+  while ((m = FIELD_LABEL_PREFIX_RE.exec(cleaned)) && guard < 400) { guard += 1; found.add(m[1].toLowerCase()); }
+  return [...found];
+}
 
 function tokens(s: string): string[] {
   return lc(s).split(/[^a-z0-9]+/).filter((w) => w.length >= 4 && !STOPWORDS.has(w));
@@ -470,6 +490,7 @@ export type ContentIssueCode =
   | 'content-generic-collapse'
   | 'content-duplicate-propositions'
   | 'content-internal-leak'
+  | 'content-internal-label-leak'
   | 'content-cta-hierarchy-missing'
   | 'content-weak-headline'
   | 'content-cta-vague'
@@ -532,7 +553,7 @@ export function analyzeContentNarrative(
     const anchorSet = new Set(contract.sections.flatMap((s) => s.specificityAnchors));
     const genericSet = new Set(contract.genericTerms);
 
-    interface SecEval { id: string; path: string; role: NarrativeRole; required: boolean; words: string[]; hasDynamic: boolean; hasChild: boolean; hasSpecificity: boolean; genericOnly: boolean; fingerprint: Set<string>; leaked: string[]; substantive: boolean; }
+    interface SecEval { id: string; path: string; role: NarrativeRole; required: boolean; words: string[]; hasDynamic: boolean; hasChild: boolean; hasSpecificity: boolean; genericOnly: boolean; fingerprint: Set<string>; leaked: string[]; labelLeaked: string[]; substantive: boolean; }
     const evals: SecEval[] = [];
     for (const u of units.slice(0, MAX_SECTIONS)) {
       const sc = byId.get(u.id); if (!sc) continue;
@@ -544,6 +565,8 @@ export function analyzeContentNarrative(
       // Internal-planning leakage — only from VISIBLE text (comments/attrs excluded by the reader).
       const vlow = ` ${lc(vt.text)} `;
       const leaked = INTERNAL_MARKERS.filter((mk) => vlow.includes(` ${mk} `) || vlow.includes(`${mk}:`) || vlow.includes(`(${mk})`));
+      // Internal field-label prefixes (Headline:/Subheadline:/…) leaked at a visible text-node start (Fix B).
+      const labelLeaked = detectLeakedFieldLabels(region);
       // Proposition fingerprint = significant, non-brand, non-generic tokens of the section copy.
       const fingerprint = new Set(contentWords(vt.text).filter((w) => !genericSet.has(w)));
       // Specific = uses a domain anchor OR carries ≥2 concrete (non-generic) content words. Generic-only
@@ -551,7 +574,7 @@ export function analyzeContentNarrative(
       const substantive = words.length >= MIN_WORDS;
       const hasSpecificity = words.some((w) => anchorSet.has(w)) || fingerprint.size >= 2;
       const genericOnly = substantive && !hasSpecificity && words.some((w) => genericSet.has(w));
-      evals.push({ id: u.id, path: u.path, role: sc.narrativeRole, required: sc.publicCopyRequired, words, hasDynamic: vt.hasDynamic, hasChild, hasSpecificity, genericOnly, fingerprint, leaked, substantive });
+      evals.push({ id: u.id, path: u.path, role: sc.narrativeRole, required: sc.publicCopyRequired, words, hasDynamic: vt.hasDynamic, hasChild, hasSpecificity, genericOnly, fingerprint, leaked, labelLeaked, substantive });
     }
 
     // ── 1. Missing substantive public content in a REQUIRED section (blocker, per section). A dynamic
@@ -608,6 +631,16 @@ export function analyzeContentNarrative(
       push({ code: 'content-internal-leak', severity: 'major', label: 'internal copy leaked', files: uniq(leakEvals.map((e) => e.path)).slice(0, MAX_ISSUE_FILES),
         evidence: capEv(`internal planning language is visibly rendered as public copy (${uniq(leakEvals.flatMap((e) => e.leaked)).slice(0, 6).join(', ')}) — these terms must never appear on the page`),
         repairInstruction: capEv('Remove internal role names/visitor questions/planning labels from visible copy; render only real public-facing text.') });
+    }
+
+    // ── 4b. Internal SPEC FIELD-LABEL prefixes rendered as visible copy (blocker, Fix B). A leaked
+    //    `Headline:`/`Subheadline:`/… prefix at a text-node start must be STRIPPED — while keeping the
+    //    authoritative public text after the colon (so this never conflicts with copy fidelity). ──
+    const labelLeakEvals = evals.filter((e) => e.labelLeaked.length);
+    if (labelLeakEvals.length) {
+      push({ code: 'content-internal-label-leak', severity: 'major', label: 'internal field label leaked', files: uniq(labelLeakEvals.map((e) => e.path)).slice(0, MAX_ISSUE_FILES),
+        evidence: capEv(`internal spec field-label prefixes are visibly rendered as public copy (${uniq(labelLeakEvals.flatMap((e) => e.labelLeaked.map((l) => `${l}:`))).slice(0, 6).join(', ')}) — these labels must never appear on the page`),
+        repairInstruction: capEv('Delete the internal field-label prefix only (e.g. "Headline:", "Subheadline:"); preserve the user-facing text after the colon verbatim.') });
     }
 
     // ── 5. CTA hierarchy: the required conversion action absent from all CTAs (blocker, strong authority only). ──
@@ -669,6 +702,7 @@ const CONTENT_CATEGORY: Record<ContentIssueCode, FrontendBuilderReviewCategory> 
   'content-generic-collapse': 'generic-template',
   'content-duplicate-propositions': 'copy-fidelity',
   'content-internal-leak': 'contract-fidelity',
+  'content-internal-label-leak': 'contract-fidelity',
   'content-cta-hierarchy-missing': 'copy-fidelity',
   'content-weak-headline': 'copy-fidelity',
   'content-cta-vague': 'copy-fidelity',
