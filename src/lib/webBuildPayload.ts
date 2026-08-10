@@ -776,8 +776,9 @@ export function attachAcceptedFrontendRevision(
     };
 
     // Deterministically valid + preservation-gated, but NOT rendered/visual reviewed →
-    // honestly manual-review-required so the owner sees the revised Candidate Preview while
-    // normal users keep Safe Preview. Never claims production approval or visual success.
+    // honestly manual-review-required. The owner sees the revised Candidate Preview; a normal user
+    // sees this render-safe model-native project as a PROVISIONAL preview pending final approval (the
+    // real project, not an approved site) — not Safe. Never claims production approval or visual success.
     const acceptance: FrontendBuilderAcceptanceArtifact = {
       version: 'frontend-acceptance-v1',
       status: 'manual-review-required',

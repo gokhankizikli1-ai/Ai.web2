@@ -6,7 +6,7 @@ import { useOwnerMode } from '@/hooks/useOwnerMode';
 import WebBuildPreviewDocument from '@/components/builder/WebBuildPreviewDocument';
 import WebBuildModelNativePreview, { CandidateUnapprovedNotice, RuntimeDiagnosticsBlock } from '@/components/builder/WebBuildModelNativePreview';
 import { readPreview, sanitizeReturnTo, requestPreviewForRun, subscribePreviewResponses, isUsablePreviewData, hasModelNativeEntryFiles, type WebBuildPreviewData } from '@/lib/webBuildPreviewStash';
-import { deriveModelNativeCandidate, isModelNativeRuntimeFailure, type ModelNativeCandidate, type ModelNativeRuntimeSnapshot, type WebBuildPreviewMode } from '@/lib/webBuildRuntimePreview';
+import { deriveModelNativeCandidate, resolvePreviewMode, isModelNativeRuntimeFailure, type ModelNativeCandidate, type ModelNativeRuntimeSnapshot } from '@/lib/webBuildRuntimePreview';
 import { listWebBuildSessions, getWebBuildSession } from '@/lib/webBuildSession';
 import { getProjects } from '@/stores/projectStore';
 import type { WebBuildStep } from '@/lib/webBuildPayload';
@@ -44,10 +44,11 @@ function stepToPreviewData(
   if (!step) return null;
   const brief = wb.brief || {};
   const candidate = deriveModelNativeCandidate(step, step.files);
-  if (candidate.safeToRenderModelNativePreview && candidate.source === 'consumed-model-native' && hasModelNativeEntryFiles(step.files)) {
-    const previewMode: WebBuildPreviewMode = candidate.approvedForUserPreview
-      ? 'approved-model-native'
-      : 'provisional-model-native';
+  // Single source of truth: the SAME pure decision the embedded panel uses (non-owner authority —
+  // owner-candidate is reachable only via an explicit owner handoff, never on cold restore). A
+  // render-safe consumed model-native project restores as approved/provisional; everything else Safe.
+  const previewMode = resolvePreviewMode(candidate, false, undefined);
+  if (previewMode !== 'safe-fallback' && candidate.source === 'consumed-model-native' && hasModelNativeEntryFiles(step.files)) {
     return { runId, sectionItems: wb.sectionItems || [], brief, slug: undefined, prompt: wb.prompt, files: step.files, previewSource: 'model-native-sandbox', previewMode };
   }
   const fallback: WebBuildPreviewData = { runId, sectionItems: wb.sectionItems || [], brief, slug: undefined, prompt: wb.prompt, previewMode: 'safe-fallback' };
