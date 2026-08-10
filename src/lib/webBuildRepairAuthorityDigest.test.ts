@@ -67,8 +67,8 @@ describe('buildRepairAuthorityDigest — bounded acceptance-authority extract', 
     const spec = specWithAuthorities();
     const projected = buildReviewScopedSpecProjection(spec);
     // The projection drops the authorities from the spec...
-    expect((projected as Record<string, unknown>).researchDirection).toBeUndefined();
-    expect((projected as Record<string, unknown>).bindingRequirements).toBeUndefined();
+    expect((projected as unknown as Record<string, unknown>).researchDirection).toBeUndefined();
+    expect((projected as unknown as Record<string, unknown>).bindingRequirements).toBeUndefined();
     // ...but the digest built from the ORIGINAL spec still carries them.
     const d = buildRepairAuthorityDigest(spec) as Record<string, any>;
     expect(d.research?.requiredPatterns?.length).toBeGreaterThan(0);
