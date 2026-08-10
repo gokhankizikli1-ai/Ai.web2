@@ -27,7 +27,7 @@ import type {
 import { hasAffirmedIntent } from '@/lib/webBuildProductIntent';
 import type { WebBuildFile } from '@/lib/webBuildPayload';
 import type { CompactSourceContext } from '@/lib/webBuildQualityContext';
-import { orderFilesForReviewBounding, compactContextFromIncludedFiles, buildReviewScopedSpecProjection } from '@/lib/webBuildQualityContext';
+import { orderFilesForReviewBounding, compactContextFromIncludedFiles, buildReviewScopedSpecProjection, buildRepairAuthorityDigest } from '@/lib/webBuildQualityContext';
 import { renderBindingRequirementsBlock } from '@/lib/webBuildBindingRequirements';
 import { renderResearchDirectionBlock } from '@/lib/webBuildResearchDirection';
 import { renderCompositionBlock } from '@/lib/webBuildComposition';
@@ -3455,6 +3455,9 @@ function buildFrontendRepairInputPayload(
   initialReview: FrontendBuilderReviewArtifact,
   deterministicWarnings?: string[],
   qualityEvidence?: FrontendRepairQualityEvidence,
+  // Bounded acceptance-authority digest built from the ORIGINAL full spec (passed in so it survives
+  // spec compaction — `spec` here may be the review-scoped projection at the spec-compacted fit level).
+  repairAuthorityDigest?: Record<string, unknown>,
 ): Record<string, unknown> {
   // Priority-ordered, bounded selection (blocker → gate-critical research → contract-fidelity major →
   // component-composition major → remaining major → minor), so a high-priority architecture/composition
@@ -3476,6 +3479,11 @@ function buildFrontendRepairInputPayload(
   // distinct-composition rule). Absent when the spec has no usable section list (fail-safe).
   const architectureFidelity = buildArchitectureFidelityObligation(spec);
   if (architectureFidelity) input.architectureFidelity = architectureFidelity;
+  // Bounded acceptance-authority digest from the ORIGINAL full spec — carries the hard requirements
+  // (binding / research / composition / content / visual / motion / execution / architecture) the
+  // post-repair analyzers still evaluate, so a size-compacted repair cannot regress a requirement it
+  // never saw. Present regardless of spec compaction; absent only when no authority carries a hard rule.
+  if (repairAuthorityDigest && Object.keys(repairAuthorityDigest).length) input.repairAuthorityDigest = repairAuthorityDigest;
   // Phase 13B — bounded deterministic quality WARNINGS the repair should also address by
   // EXPANDING shallow sections and REMOVING internal-copy leaks (never by rewriting copy).
   if (deterministicWarnings && deterministicWarnings.length) {
@@ -3505,8 +3513,9 @@ export function buildFrontendBuilderRepairRequest(
   initialReview: FrontendBuilderReviewArtifact,
   deterministicWarnings?: string[],
   qualityEvidence?: FrontendRepairQualityEvidence,
+  repairAuthorityDigest?: Record<string, unknown>,
 ): string {
-  const input = buildFrontendRepairInputPayload(spec, files, initialReview, deterministicWarnings, qualityEvidence);
+  const input = buildFrontendRepairInputPayload(spec, files, initialReview, deterministicWarnings, qualityEvidence, repairAuthorityDigest);
   return [
     '[FRONTEND BUILDER REQUEST]',
     '[FRONTEND REPAIR REQUEST]',
@@ -3521,6 +3530,10 @@ export function buildFrontendBuilderRepairRequest(
     'and render) — this is the one allowed exception to preserving sections. Give each section a',
     'DISTINCT composition tied to its own purpose; do not let one section repeat another section\'s',
     'card/label structure.',
+    'AUTHORITY DIGEST (when `repairAuthorityDigest` is present): it lists the bounded acceptance-critical',
+    'requirements (required bindings/interactions, required + forbidden sector patterns, per-section',
+    'composition families, required content sections/CTA, required visuals, motion and execution',
+    'obligations). Satisfy these and do NOT regress any of them, even when no issue names them.',
     'Return ONLY a complete frontend-files-v1 envelope',
     '(## FRONTEND_FILES_V1 … ## END_FRONTEND_FILES_V1) — never a patch, only-changed files,',
     'prose or explanations.',
@@ -3555,8 +3568,11 @@ export async function generateFrontendBuilderRepairRaw(
   // generator authorities, ~99k → ~12k) and always keeps every file. Same reuse as the review/delta
   // fitter; no extra provider call, no threshold change.
   const allFilePaths = files.map((f) => f.path);
+  // Digest built from the ORIGINAL full spec BEFORE fitting, so the acceptance authorities survive even
+  // when the fitter compacts `useSpec` (which drops those very authorities).
+  const authorityDigest = buildRepairAuthorityDigest(spec);
   const fit = fitStructuredBuilderRequestUnderCap(spec, files, allFilePaths, undefined, (useSpec) =>
-    buildFrontendBuilderRepairRequest(useSpec, files, initialReview, opts?.deterministicWarnings, opts?.qualityEvidence));
+    buildFrontendBuilderRepairRequest(useSpec, files, initialReview, opts?.deterministicWarnings, opts?.qualityEvidence, authorityDigest));
   const message = fit.message;
   if (message.length > MAX_FRONTEND_TASK_REQUEST_CHARS) {
     return frontendBuilderArtifact('failed', `The repair request (${message.length} chars) exceeds the safe request limit (${MAX_FRONTEND_TASK_REQUEST_CHARS}).`);
@@ -3624,8 +3640,9 @@ export function buildFrontendBuilderDeltaRepairRequest(
   deterministicWarnings?: string[],
   qualityEvidence?: FrontendRepairQualityEvidence,
   compact?: CompactSourceContext,
+  repairAuthorityDigest?: Record<string, unknown>,
 ): string {
-  const input = buildFrontendRepairInputPayload(spec, files, initialReview, deterministicWarnings, qualityEvidence);
+  const input = buildFrontendRepairInputPayload(spec, files, initialReview, deterministicWarnings, qualityEvidence, repairAuthorityDigest);
   // The model receives the SAME bounded repair input; only the requested response shape differs.
   input.responseContract = 'frontend-delta-v1';
   // Owner-compact repair: replace the full source with the selected target/dependency/root files
@@ -3649,6 +3666,10 @@ export function buildFrontendBuilderDeltaRepairRequest(
     'import and render (you need not delete the component file) — the one allowed exception to preserving',
     'sections. Give each section a DISTINCT composition tied to its own purpose; do not let one section',
     'repeat another section\'s card/label structure.',
+    'AUTHORITY DIGEST (when `repairAuthorityDigest` is present): it lists the bounded acceptance-critical',
+    'requirements (required bindings/interactions, required + forbidden sector patterns, per-section',
+    'composition families, required content sections/CTA, required visuals, motion and execution',
+    'obligations). Satisfy these and do NOT regress any of them, even when no issue names them.',
     ...(compact ? [
       'CONTEXT NOTE: `files` contains the files most relevant to these fixes (targets + their',
       'directly-related source) as COMPLETE source; `omittedFilesManifest` lists the remaining',
@@ -3713,8 +3734,11 @@ export async function generateFrontendBuilderDeltaRepairRaw(
   // set, so omitted files are preserved byte-for-byte; the review's issue files are pinned so the
   // repair can still fix them. No extra provider call; no threshold change.
   const priorityPaths = [...reviewIssueFilePaths(initialReview), ...(opts?.compact ? opts.compact.includedFiles.map((f) => f.path) : [])];
+  // Digest built from the ORIGINAL full spec BEFORE fitting, so the acceptance authorities survive even
+  // when the fitter compacts `useSpec` (spec-compacted level drops those authorities from the spec).
+  const authorityDigest = buildRepairAuthorityDigest(spec);
   const fit = fitStructuredBuilderRequestUnderCap(spec, files, priorityPaths, opts?.compact, (useSpec, useCompact) =>
-    buildFrontendBuilderDeltaRepairRequest(useSpec, files, initialReview, opts?.deterministicWarnings, opts?.qualityEvidence, useCompact));
+    buildFrontendBuilderDeltaRepairRequest(useSpec, files, initialReview, opts?.deterministicWarnings, opts?.qualityEvidence, useCompact, authorityDigest));
   const message = fit.message;
   if (message.length > MAX_FRONTEND_TASK_REQUEST_CHARS) {
     return frontendBuilderArtifact('failed', `The delta repair request (${message.length} chars) exceeds the safe request limit (${MAX_FRONTEND_TASK_REQUEST_CHARS}).`);
