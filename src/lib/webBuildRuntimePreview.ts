@@ -39,11 +39,21 @@ export interface ModelNativeCandidate {
   /** Read-only model-native files for the isolated Sandpack runtime. Never mutated. */
   files: WebBuildFile[];
   acceptance: FrontendAcceptanceState;
-  /** True ONLY when this candidate may drive the NORMAL user-facing Preview as a finished
-   *  site. Requires the ACTIVE consumed model-native project AND an approving acceptance
-   *  (approved / repaired-approved), OR a legacy build with no acceptance artifact that
-   *  already consumed model-native (pre-Phase-12E behaviour preserved). */
+  /** True ONLY when this candidate may drive the NORMAL user-facing Preview as a FINISHED,
+   *  quality-APPROVED site. Requires the ACTIVE consumed model-native project AND an approving
+   *  acceptance (approved / repaired-approved), OR a legacy build with no acceptance artifact that
+   *  already consumed model-native (pre-Phase-12E behaviour preserved). This is a QUALITY-approval
+   *  fact; it is deliberately DISTINCT from `safeToRenderModelNativePreview`. */
   approvedForUserPreview: boolean;
+  /** True when the ACTIVE project is a genuinely render-SAFE model-native project — structurally
+   *  valid, ready for consumption and runnable — INDEPENDENT of quality acceptance. This is the
+   *  "safe/valid enough to render" concept (vs `approvedForUserPreview` = "approved as finished").
+   *  Requires: consumption model-native (the active files ARE the model-native project, NOT the
+   *  deterministic internal-synthesis fallback), validation status 'valid' (⇒ no structural errors
+   *  AND no forbidden runtime/security patterns), readyForConsumption, and all three entry files.
+   *  A PARSED-but-unconsumed initial candidate is NEVER render-safe for a normal user (false), so it
+   *  can never gain user-facing authority. Runtime error/timeout is enforced separately by the panel. */
+  safeToRenderModelNativePreview: boolean;
   reason: string;
 }
 
@@ -51,6 +61,7 @@ export interface ModelNativeCandidate {
 
 export type WebBuildPreviewMode =
   | 'approved-model-native'
+  | 'provisional-model-native'
   | 'owner-candidate'
   | 'safe-fallback';
 
@@ -160,16 +171,26 @@ export function deriveModelNativeCandidate(
         // Legacy: a pre-Phase-12E build has no acceptance artifact but already consumed
         // model-native as its finished preview — preserve that behaviour.
         || acceptance === 'unknown';
+      // Render-SAFETY is a STRUCTURAL fact, independent of quality acceptance: the active files are
+      // the consumed model-native project (not the deterministic fallback), Phase 12C validation is
+      // 'valid' (⇒ no structural errors and no forbidden runtime/security patterns) and ready for
+      // consumption, and the three entry files are present. Never inferred from the acceptance score.
+      const safeToRender = validation?.status === 'valid'
+        && validation?.readyForConsumption === true
+        && candidateHasEntryFiles(active);
       return {
         available: true,
         source: 'consumed-model-native',
         files: active,
         acceptance,
         approvedForUserPreview: approving,
+        safeToRenderModelNativePreview: safeToRender,
         reason: bound(
           approving
             ? `Consumed model-native project is the active build (acceptance: ${acceptance}).`
-            : `Consumed model-native project exists but was not approved (acceptance: ${acceptance}); owner inspection only.`,
+            : safeToRender
+              ? `Consumed model-native project is structurally valid and render-safe but not quality-approved (acceptance: ${acceptance}); provisional user preview.`
+              : `Consumed model-native project exists but is not render-safe (acceptance: ${acceptance}); owner inspection only.`,
           MAX_RUNTIME_MESSAGE_CHARS,
         ),
       };
@@ -186,6 +207,9 @@ export function deriveModelNativeCandidate(
           acceptance,
           // A parsed-but-unconsumed candidate is NEVER the approved user-facing preview.
           approvedForUserPreview: false,
+          // ...and NEVER render-safe for a normal user either — it was not consumed as the active
+          // project, so it must not gain user-facing authority through the new safe-render path.
+          safeToRenderModelNativePreview: false,
           reason: bound(
             `Parsed initial model-native candidate (not consumed; acceptance: ${acceptance}). Owner inspection only — validation/quality did not pass for user preview.`,
             MAX_RUNTIME_MESSAGE_CHARS,
@@ -201,18 +225,27 @@ export function deriveModelNativeCandidate(
       files: [],
       acceptance,
       approvedForUserPreview: false,
+      safeToRenderModelNativePreview: false,
       reason: bound(`No model-native candidate available (acceptance: ${acceptance}). Deterministic safe fallback is the active result.`, MAX_RUNTIME_MESSAGE_CHARS),
     };
   } catch {
-    return { available: false, source: 'none', files: [], acceptance: 'unknown', approvedForUserPreview: false, reason: 'Candidate derivation failed open.' };
+    return { available: false, source: 'none', files: [], acceptance: 'unknown', approvedForUserPreview: false, safeToRenderModelNativePreview: false, reason: 'Candidate derivation failed open.' };
   }
 }
 
 /**
  * Resolve the explicit Preview mode a viewer should see. Pure.
  *
- *   • Non-owner: the approved model-native project OR the safe fallback — never a candidate.
- *   • Owner: may inspect the candidate (default) or switch to the safe fallback.
+ *   • Non-owner: a structurally render-SAFE model-native project (approved → 'approved-model-native';
+ *     valid-but-not-yet-approved → 'provisional-model-native'), otherwise the safe fallback. A
+ *     manual-review-required build is NO LONGER forced to safe-fallback merely because quality
+ *     acceptance did not approve it — only a NON-render-safe project falls back. This decouples
+ *     "safe/valid enough to render" from "approved as finished" without auto-approving anything.
+ *   • Owner: may inspect the candidate (default) or switch to the safe fallback (UNCHANGED).
+ *
+ * Runtime error/timeout/missing-entry safety is enforced downstream by the panel's candidate-failure
+ * path for EVERY model-native mode (including 'provisional-model-native'), so this stays purely the
+ * static source-authority decision.
  */
 export function resolvePreviewMode(
   candidate: ModelNativeCandidate | undefined,
@@ -220,7 +253,10 @@ export function resolvePreviewMode(
   selection: OwnerPreviewSelection | undefined,
 ): WebBuildPreviewMode {
   const approved = !!candidate?.approvedForUserPreview;
-  if (!isOwner) return approved ? 'approved-model-native' : 'safe-fallback';
+  if (!isOwner) {
+    if (!candidate?.safeToRenderModelNativePreview) return 'safe-fallback';
+    return approved ? 'approved-model-native' : 'provisional-model-native';
+  }
   if (!candidate?.available) return 'safe-fallback';
   const sel: OwnerPreviewSelection = selection ?? 'model-native';
   if (sel === 'safe') return 'safe-fallback';

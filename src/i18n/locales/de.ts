@@ -988,6 +988,7 @@ export const de: Record<string, string> = {
   previewOpenSafeDebug: 'Sichere Vorschau öffnen',
   previewReturnToMain: 'Zur Vorschau zurückkehren',
   previewSafeDebugActive: 'Debug: sichere Vorschau wird angezeigt.',
+  previewPendingReview: 'Vorschau — abschließende Qualitätsprüfung ausstehend',
 
   /* ── Bild-Upload vom Gerät + Beispielbild-Sprache (Phase 14K.6) ── */
   imgExampleImage: 'Beispielbild',

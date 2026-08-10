@@ -37,8 +37,9 @@ export interface WebBuildPreviewData {
   previewSource?: FrontendBuilderPreviewSource;
   /** Phase 13A — the EXPLICIT preview mode this handoff represents. 'owner-candidate' is
    *  the unapproved generated candidate and the standalone route renders it ONLY when the
-   *  viewer is an owner; 'approved-model-native' renders for everyone; 'safe-fallback'
-   *  carries section data only. Optional → old stashes without it keep loading. */
+   *  viewer is an owner; 'approved-model-native' and 'provisional-model-native' (a render-safe
+   *  project pending final quality review) both render for everyone; 'safe-fallback' carries
+   *  section data only. Optional → old stashes without it keep loading. */
   previewMode?: WebBuildPreviewMode;
 }
 
@@ -111,7 +112,10 @@ function toMinimalPreview(data: WebBuildPreviewData): WebBuildPreviewData {
   };
   // Phase 13A — carry the explicit preview mode so the standalone route renders EXACTLY the
   // selected mode (and gates 'owner-candidate' behind owner status). Bounded string only.
-  if (data.previewMode === 'approved-model-native' || data.previewMode === 'owner-candidate' || data.previewMode === 'safe-fallback') {
+  // 'provisional-model-native' is a render-safe user preview pending final quality review — it
+  // renders for everyone like 'approved-model-native' (see line 121: files travel for any
+  // non-'safe-fallback' model-native mode).
+  if (data.previewMode === 'approved-model-native' || data.previewMode === 'provisional-model-native' || data.previewMode === 'owner-candidate' || data.previewMode === 'safe-fallback') {
     minimal.previewMode = data.previewMode;
   }
   // Phase 12D — for a model-native preview, carry ONLY the validated files + source

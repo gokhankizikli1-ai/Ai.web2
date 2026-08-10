@@ -6,7 +6,7 @@ import { useOwnerMode } from '@/hooks/useOwnerMode';
 import WebBuildPreviewDocument from '@/components/builder/WebBuildPreviewDocument';
 import WebBuildModelNativePreview, { CandidateUnapprovedNotice, RuntimeDiagnosticsBlock } from '@/components/builder/WebBuildModelNativePreview';
 import { readPreview, sanitizeReturnTo, requestPreviewForRun, subscribePreviewResponses, isUsablePreviewData, hasModelNativeEntryFiles, type WebBuildPreviewData } from '@/lib/webBuildPreviewStash';
-import { deriveModelNativeCandidate, type ModelNativeCandidate, type ModelNativeRuntimeSnapshot } from '@/lib/webBuildRuntimePreview';
+import { deriveModelNativeCandidate, type ModelNativeCandidate, type ModelNativeRuntimeSnapshot, type WebBuildPreviewMode } from '@/lib/webBuildRuntimePreview';
 import { listWebBuildSessions, getWebBuildSession } from '@/lib/webBuildSession';
 import { getProjects } from '@/stores/projectStore';
 import type { WebBuildStep } from '@/lib/webBuildPayload';
@@ -25,13 +25,17 @@ import type { WebBuildStep } from '@/lib/webBuildPayload';
 const usablePreview = isUsablePreviewData;
 
 /** Build preview data from a saved Web Build step. Phase 13A — AUTOMATIC cold restoration
- *  must honor FRONTEND ACCEPTANCE, not consumption alone: a model-native project is
- *  restored only when it is APPROVED for the user preview (acceptance approved /
- *  repaired-approved, or a legacy build with no acceptance artifact that already consumed
- *  model-native). An unapproved 'manual-review-required' / 'skipped' build restores the
- *  deterministic safe fallback. An unapproved candidate is NEVER auto-exposed here — it is
- *  reachable only through an explicit stashed owner-candidate handoff. Acceptance/source
- *  are read from the derived candidate (artifact-driven), never inferred from filenames. */
+ *  honors render-SAFETY, not consumption alone, and uses the SAME authority split as the
+ *  embedded panel so the two never disagree: a model-native project is restored for the user
+ *  when it is render-SAFE (`safeToRenderModelNativePreview` — structurally valid, ready for
+ *  consumption, all entry files, the actual consumed project). A render-safe build that quality
+ *  acceptance APPROVED restores as 'approved-model-native'; a render-safe but not-yet-approved
+ *  ('manual-review-required') build restores as 'provisional-model-native' (still the real
+ *  project, shown pending final review — never auto-approved). A NON-render-safe build (invalid /
+ *  not ready / missing entry files / internal-synthesis fallback) restores the deterministic safe
+ *  fallback. An unapproved unconsumed candidate is NEVER auto-exposed here — it is reachable only
+ *  through an explicit stashed owner-candidate handoff. Safety/acceptance/source are read from the
+ *  derived candidate (artifact-driven), never inferred from filenames. */
 function stepToPreviewData(
   runId: string,
   wb: { sectionItems?: WebBuildPreviewData['sectionItems']; brief?: WebBuildPreviewData['brief']; prompt?: string; steps?: WebBuildStep[] },
@@ -40,8 +44,11 @@ function stepToPreviewData(
   if (!step) return null;
   const brief = wb.brief || {};
   const candidate = deriveModelNativeCandidate(step, step.files);
-  if (candidate.approvedForUserPreview && candidate.source === 'consumed-model-native' && hasModelNativeEntryFiles(step.files)) {
-    return { runId, sectionItems: wb.sectionItems || [], brief, slug: undefined, prompt: wb.prompt, files: step.files, previewSource: 'model-native-sandbox', previewMode: 'approved-model-native' };
+  if (candidate.safeToRenderModelNativePreview && candidate.source === 'consumed-model-native' && hasModelNativeEntryFiles(step.files)) {
+    const previewMode: WebBuildPreviewMode = candidate.approvedForUserPreview
+      ? 'approved-model-native'
+      : 'provisional-model-native';
+    return { runId, sectionItems: wb.sectionItems || [], brief, slug: undefined, prompt: wb.prompt, files: step.files, previewSource: 'model-native-sandbox', previewMode };
   }
   const fallback: WebBuildPreviewData = { runId, sectionItems: wb.sectionItems || [], brief, slug: undefined, prompt: wb.prompt, previewMode: 'safe-fallback' };
   return usablePreview(fallback) ? fallback : null;
@@ -147,10 +154,11 @@ export default function WebBuildPreview() {
   }
 
   // Phase 13A — an owner-candidate handoff renders the UNAPPROVED generated project ONLY
-  // for an owner; a non-owner falls back safely. 'approved-model-native' (and legacy
-  // undefined-mode model-native stashes, i.e. pre-13A approved builds) render for everyone;
-  // 'safe-fallback' never renders model-native. Owner status is read from useOwnerMode —
-  // NEVER from a URL flag or a preview-authored localStorage field.
+  // for an owner; a non-owner falls back safely. 'approved-model-native' and the new
+  // 'provisional-model-native' (a render-SAFE model-native project pending final quality
+  // review) both render for everyone — as do legacy undefined-mode model-native stashes
+  // (pre-13A approved builds); only 'safe-fallback' never renders model-native. Owner status
+  // is read from useOwnerMode — NEVER from a URL flag or a preview-authored localStorage field.
   const wantsModelNative = !!data && data.previewSource === 'model-native-sandbox' && hasModelNativeEntryFiles(data.files);
   const isOwnerCandidate = data?.previewMode === 'owner-candidate';
   const modelNative = wantsModelNative && (

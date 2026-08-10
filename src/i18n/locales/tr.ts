@@ -990,6 +990,7 @@ export const tr: Record<string, string> = {
   previewOpenSafeDebug: 'Güvenli önizlemeyi aç',
   previewReturnToMain: 'Önizlemeye dön',
   previewSafeDebugActive: 'Hata ayıklama: güvenli önizleme gösteriliyor.',
+  previewPendingReview: 'Önizleme — son kalite incelemesi bekleniyor',
 
   /* ── Cihazdan görsel yükleme + örnek görsel dili (Phase 14K.6) ── */
   imgExampleImage: 'Örnek görsel',
