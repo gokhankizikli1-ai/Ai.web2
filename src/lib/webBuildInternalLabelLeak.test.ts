@@ -44,6 +44,14 @@ describe('detectLeakedFieldLabels — anchored visible-copy prefix leak (Fix B)'
   it('does NOT flag a prefix inside an attribute value (not visible text)', () => {
     expect(detectLeakedFieldLabels('<img alt="Headline: x" src="/a.png" />')).toEqual([]);
     expect(detectLeakedFieldLabels('<div data-note="CTA: click">real copy</div>')).toEqual([]);
+    // `>` may appear inside a quoted attribute; that is not a text-node boundary
+    expect(detectLeakedFieldLabels('<div data-hint="see >Headline: above">real copy</div>')).toEqual([]);
+  });
+
+  it('does NOT flag a prefix inside a string literal or JSX braced expression', () => {
+    expect(detectLeakedFieldLabels("const tip = '>Headline: ignore'; return <p>ok</p>;")).toEqual([]);
+    expect(detectLeakedFieldLabels("<h1>{'>Headline: ' + title}</h1>")).toEqual([]);
+    expect(detectLeakedFieldLabels('<p>{"Subheadline: hidden"}</p>')).toEqual([]);
   });
 
   it('collects distinct prefixes across multiple nodes', () => {

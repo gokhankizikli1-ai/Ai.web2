@@ -130,18 +130,54 @@ const INTERNAL_MARKERS = [
 // ordinary prose containing a colon (e.g. "Pricing: simple", "A good headline: keep it short") is
 // never flagged — the fixed label vocabulary is the filter. Case-insensitive.
 const FIELD_LABEL_PREFIXES = ['headline', 'subheadline', 'subtitle', 'eyebrow', 'cta', 'body', 'description', 'label'];
-const FIELD_LABEL_PREFIX_RE = new RegExp(`>\\s*(${FIELD_LABEL_PREFIXES.join('|')})\\s*:`, 'gi');
+const FIELD_LABEL_TEXT_RE = new RegExp(`^\\s*(${FIELD_LABEL_PREFIXES.join('|')})\\s*:`, 'i');
 
 /** Distinct internal field-label prefixes (Headline:/Subheadline:/…) that leaked as the START of a
- *  VISIBLE text node in this region. Operates on the text between `>` and the next `<` (a rendered
- *  text-node boundary), NOT attribute values or arbitrary colon-containing prose. Pure, bounded.
+ *  VISIBLE text node in this region. Operates on the text between `>` and the next `<`/`{` (a rendered
+ *  text-node boundary), NOT attribute values, string literals, braced expressions, or arbitrary
+ *  colon-containing prose. Walks JSX like extractVisibleText (quote/brace-aware tags). Pure, bounded.
  *  Exported for focused regression tests. */
 export function detectLeakedFieldLabels(region: string): string[] {
   const cleaned = stripComments(region || '').replace(/<(svg|script|style)\b[\s\S]*?<\/\1>/gi, ' ');
   const found = new Set<string>();
-  let m: RegExpExecArray | null; let guard = 0;
-  FIELD_LABEL_PREFIX_RE.lastIndex = 0;
-  while ((m = FIELD_LABEL_PREFIX_RE.exec(cleaned)) && guard < 400) { guard += 1; found.add(m[1].toLowerCase()); }
+  const n = cleaned.length; let i = 0; let guard = 0;
+  while (i < n && guard < 4000) {
+    guard += 1;
+    const c = cleaned[i];
+    if (c === '<') {
+      // consume a full tag to the matching '>' at brace/quote depth 0 (same as extractVisibleText).
+      i += 1; let depth = 0; let q: string | null = null;
+      while (i < n) {
+        const d = cleaned[i];
+        if (q) { if (d === '\\') { i += 2; continue; } if (d === q) q = null; i += 1; continue; }
+        if (d === "'" || d === '"' || d === '`') { q = d; i += 1; continue; }
+        if (d === '{') { depth += 1; i += 1; continue; }
+        if (d === '}') { if (depth > 0) depth -= 1; i += 1; continue; }
+        if (d === '>' && depth === 0) { i += 1; break; }
+        i += 1;
+      }
+      // Text-node start: from after `>` until the next tag or braced expression.
+      const start = i;
+      while (i < n && cleaned[i] !== '<' && cleaned[i] !== '{') i += 1;
+      const m = FIELD_LABEL_TEXT_RE.exec(cleaned.slice(start, i));
+      if (m) found.add(m[1].toLowerCase());
+      continue;
+    }
+    if (c === '{') {
+      // JSX expression — not a visible text-node start; skip balanced braces (respect strings).
+      i += 1; let depth = 1; let q: string | null = null;
+      while (i < n && depth > 0) {
+        const d = cleaned[i];
+        if (q) { if (d === '\\') { i += 2; continue; } if (d === q) q = null; i += 1; continue; }
+        if (d === "'" || d === '"' || d === '`') { q = d; i += 1; continue; }
+        if (d === '{') depth += 1;
+        else if (d === '}') depth -= 1;
+        i += 1;
+      }
+      continue;
+    }
+    i += 1;
+  }
   return [...found];
 }
 
