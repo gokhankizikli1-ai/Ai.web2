@@ -3,6 +3,7 @@ import {
   deriveModelNativeCandidate,
   resolvePreviewMode,
   candidateHasEntryFiles,
+  isModelNativeRuntimeFailure,
   type WebBuildPreviewMode,
   type ModelNativeRuntimePhase,
 } from '@/lib/webBuildRuntimePreview';
@@ -66,13 +67,14 @@ function step(opts: {
 }
 
 /**
- * Mirror of the panel's runtime-failure gate (WebBuildPreviewPanel: `candidateFailed` /
- * `usingSafeFallback`) so case G can be asserted purely. The panel uses the REAL exported
- * `candidateHasEntryFiles` for the entry-file health check — we exercise the same function
- * here — plus the runtime snapshot phase. This is the single runtime-safety path shared by
- * BOTH approved and provisional model-native modes (no second safety system).
+ * The runtime→Safe decision, expressed with the SAME shared primitives both real surfaces use:
+ * the exported `candidateHasEntryFiles` (entry-file health) and `isModelNativeRuntimeFailure`
+ * (confirmed runtime failure). The embedded panel computes `candidateFailed = !entryOk ||
+ * isModelNativeRuntimeFailure(phase)`; the standalone page computes `runtimeFailed =
+ * isModelNativeRuntimeFailure(phase)` under the same entry-file gate. Because BOTH call the same
+ * pure helper, this single function models both — so a parity test here proves they cannot drift.
  */
-function panelUsesSafeFallback(
+function usesSafeFallback(
   mode: WebBuildPreviewMode,
   nativeFiles: WebBuildFile[],
   phase: ModelNativeRuntimePhase | undefined,
@@ -80,8 +82,7 @@ function panelUsesSafeFallback(
   const showModelNative = mode === 'approved-model-native' || mode === 'provisional-model-native' || mode === 'owner-candidate';
   const candidateEligible = showModelNative && nativeFiles.length > 0;
   const candidateEntryOk = candidateHasEntryFiles(nativeFiles);
-  const candidateFailed = candidateEligible && (!candidateEntryOk || phase === 'error' || phase === 'timeout');
-  return candidateEligible && candidateFailed;
+  return candidateEligible && (!candidateEntryOk || isModelNativeRuntimeFailure(phase));
 }
 
 describe('deriveModelNativeCandidate — render-safety vs approval split', () => {
@@ -164,18 +165,68 @@ describe('deriveModelNativeCandidate — render-safety vs approval split', () =>
     expect(resolvePreviewMode(c, true, undefined)).toBe('owner-candidate');
   });
 
-  it('G: a runtime failure still forces Safe in the panel for BOTH approved and provisional modes', () => {
+  it('F(runtime): a CONFIRMED runtime failure still forces Safe for BOTH approved and provisional modes', () => {
     const files = entryFiles();
     for (const mode of ['approved-model-native', 'provisional-model-native'] as WebBuildPreviewMode[]) {
       // Healthy running project → not forced to Safe.
-      expect(panelUsesSafeFallback(mode, files, 'running')).toBe(false);
+      expect(usesSafeFallback(mode, files, 'running')).toBe(false);
       // Sandbox compile/runtime error → Safe.
-      expect(panelUsesSafeFallback(mode, files, 'error')).toBe(true);
-      // Startup timeout → Safe.
-      expect(panelUsesSafeFallback(mode, files, 'timeout')).toBe(true);
+      expect(usesSafeFallback(mode, files, 'error')).toBe(true);
+      // Genuine sandbox timeout → Safe.
+      expect(usesSafeFallback(mode, files, 'timeout')).toBe(true);
       // Missing entry file at render time → Safe.
-      expect(panelUsesSafeFallback(mode, entryFilesMissingOne(), 'running')).toBe(true);
+      expect(usesSafeFallback(mode, entryFilesMissingOne(), 'running')).toBe(true);
     }
+  });
+
+  it('G: a host-side slow-start / no-signal observation ALONE must NOT force Safe (Finding 2)', () => {
+    const files = entryFiles();
+    // 'slow-start' is a host soft-timeout observation, never a confirmed failure.
+    expect(isModelNativeRuntimeFailure('slow-start')).toBe(false);
+    // Non-terminal phases are likewise never failures.
+    for (const phase of ['not-started', 'initializing', 'running', 'slow-start', 'unknown', undefined] as Array<ModelNativeRuntimePhase | undefined>) {
+      expect(isModelNativeRuntimeFailure(phase)).toBe(false);
+    }
+    // Only the two CONFIRMED failure phases return true.
+    expect(isModelNativeRuntimeFailure('error')).toBe(true);
+    expect(isModelNativeRuntimeFailure('timeout')).toBe(true);
+    // A structurally valid model-native project that is merely slow keeps rendering (not Safe)…
+    for (const mode of ['approved-model-native', 'provisional-model-native', 'owner-candidate'] as WebBuildPreviewMode[]) {
+      expect(usesSafeFallback(mode, files, 'slow-start')).toBe(false);
+      expect(usesSafeFallback(mode, files, 'initializing')).toBe(false);
+    }
+  });
+
+  it('H: standalone and embedded ultimately SHOW Safe under the exact same conditions (no drift)', () => {
+    // Compare the HOLISTIC "does this surface end up showing the Safe renderer?" decision. The two
+    // surfaces reach Safe through different structural gates but the same shared primitives, so they
+    // must agree for every mode × phase × file-shape. Missing entry files reach Safe on BOTH: the
+    // panel via candidateFailed(!entryOk), the page via !modelNative — same outcome, different path.
+    const embeddedShowsSafe = (mode: WebBuildPreviewMode, f: WebBuildFile[], phase?: ModelNativeRuntimePhase) => {
+      const showMN = mode === 'approved-model-native' || mode === 'provisional-model-native' || mode === 'owner-candidate';
+      const eligible = showMN && f.length > 0;
+      const failed = eligible && (!candidateHasEntryFiles(f) || isModelNativeRuntimeFailure(phase));
+      return !eligible || failed; // panel renders Safe when not eligible, or when the candidate failed
+    };
+    const standaloneShowsSafe = (mode: WebBuildPreviewMode, f: WebBuildFile[], phase?: ModelNativeRuntimePhase) => {
+      const modelNative = mode !== 'safe-fallback' && candidateHasEntryFiles(f);
+      return !modelNative || isModelNativeRuntimeFailure(phase); // page renders Safe when not model-native, or on runtime failure
+    };
+    const phases: Array<ModelNativeRuntimePhase | undefined> = ['not-started', 'initializing', 'slow-start', 'running', 'error', 'timeout', 'unknown', undefined];
+    const shapes = [entryFiles(), entryFilesMissingOne(), [] as WebBuildFile[]];
+    for (const mode of ['approved-model-native', 'provisional-model-native', 'owner-candidate'] as WebBuildPreviewMode[]) {
+      for (const phase of phases) {
+        for (const f of shapes) {
+          expect(standaloneShowsSafe(mode, f, phase)).toBe(embeddedShowsSafe(mode, f, phase));
+        }
+      }
+    }
+    // And both keep a healthy/slow project OUT of Safe, but send a confirmed failure INTO Safe.
+    const files = entryFiles();
+    expect(embeddedShowsSafe('provisional-model-native', files, 'slow-start')).toBe(false);
+    expect(standaloneShowsSafe('provisional-model-native', files, 'slow-start')).toBe(false);
+    expect(embeddedShowsSafe('provisional-model-native', files, 'error')).toBe(true);
+    expect(standaloneShowsSafe('provisional-model-native', files, 'error')).toBe(true);
   });
 });
 

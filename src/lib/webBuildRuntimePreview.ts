@@ -75,7 +75,15 @@ export type ModelNativeRuntimePhase =
   | 'initializing'
   | 'running'
   | 'error'
+  // CONFIRMED failures below this line: 'error' = a fatal compile/runtime error reported by
+  // the sandbox; 'timeout' = the SANDBOX ITSELF reported a bundler timeout. Both are genuine
+  // render-safety failures (see isModelNativeRuntimeFailure).
   | 'timeout'
+  // HOST-side observation, NOT a confirmed failure: our own soft timeout elapsed without the
+  // sandbox emitting a running/done signal. A healthy-but-slow COLD start (large dependency
+  // install / transpile) lands here. It is deliberately EXCLUDED from runtime failure so a
+  // structurally valid model-native project is never replaced by Safe merely for being slow.
+  | 'slow-start'
   | 'unknown';
 
 export interface ModelNativeRuntimeSnapshot {
@@ -261,6 +269,23 @@ export function resolvePreviewMode(
   const sel: OwnerPreviewSelection = selection ?? 'model-native';
   if (sel === 'safe') return 'safe-fallback';
   return approved ? 'approved-model-native' : 'owner-candidate';
+}
+
+/**
+ * The SINGLE, shared decision for "did the model-native runtime genuinely FAIL, such that a
+ * structurally valid project must be replaced by the deterministic Safe preview?" Pure.
+ *
+ * Returns true ONLY for a CONFIRMED render-safety failure:
+ *   • 'error'   — a fatal compile/runtime error reported by the sandbox;
+ *   • 'timeout' — the SANDBOX ITSELF reported a bundler timeout.
+ *
+ * It returns FALSE for 'slow-start' (a host-side no-signal soft-timeout observation — a healthy
+ * but slow cold start), and for every non-terminal phase ('not-started', 'initializing',
+ * 'running', 'unknown'). Both the embedded panel and the standalone route call THIS helper, so
+ * their runtime→Safe decisions can never drift, and a slow start is never mistaken for a failure.
+ */
+export function isModelNativeRuntimeFailure(phase: ModelNativeRuntimePhase | undefined): boolean {
+  return phase === 'error' || phase === 'timeout';
 }
 
 /* ── Runtime snapshot helpers ─────────────────────────────────────────────────── */

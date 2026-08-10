@@ -6,7 +6,7 @@ import { useOwnerMode } from '@/hooks/useOwnerMode';
 import WebBuildPreviewDocument from '@/components/builder/WebBuildPreviewDocument';
 import WebBuildModelNativePreview, { CandidateUnapprovedNotice, RuntimeDiagnosticsBlock } from '@/components/builder/WebBuildModelNativePreview';
 import { readPreview, sanitizeReturnTo, requestPreviewForRun, subscribePreviewResponses, isUsablePreviewData, hasModelNativeEntryFiles, type WebBuildPreviewData } from '@/lib/webBuildPreviewStash';
-import { deriveModelNativeCandidate, type ModelNativeCandidate, type ModelNativeRuntimeSnapshot, type WebBuildPreviewMode } from '@/lib/webBuildRuntimePreview';
+import { deriveModelNativeCandidate, isModelNativeRuntimeFailure, type ModelNativeCandidate, type ModelNativeRuntimeSnapshot, type WebBuildPreviewMode } from '@/lib/webBuildRuntimePreview';
 import { listWebBuildSessions, getWebBuildSession } from '@/lib/webBuildSession';
 import { getProjects } from '@/stores/projectStore';
 import type { WebBuildStep } from '@/lib/webBuildPayload';
@@ -166,6 +166,14 @@ export default function WebBuildPreview() {
       : data?.previewMode === 'safe-fallback' ? false
         : true
   );
+  // RUNTIME parity with the embedded panel: the isolated runtime observer is wired for EVERY
+  // model-native mode here (not only owner diagnostics), and a CONFIRMED runtime failure (fatal
+  // compile/runtime error, or a genuine sandbox timeout) auto-falls back to the deterministic Safe
+  // renderer — using the SAME shared isModelNativeRuntimeFailure decision as the panel so the two
+  // can never drift. A host-side 'slow-start' (slow cold boot, no signal yet) is NOT a failure and
+  // keeps the real project rendering. Once failed, the snapshot stays terminal, so this is stable.
+  const runtimeFailed = isModelNativeRuntimeFailure(snapshot?.phase);
+  const showModelNativeRuntime = modelNative && !runtimeFailed;
   // A display-only candidate for the owner Candidate Preview's warning + diagnostics. The
   // stash carries only the mode + files, so acceptance is the honest "unapproved" reason.
   const displayCandidate: ModelNativeCandidate | null = (modelNative && isOwnerCandidate && data)
@@ -219,14 +227,19 @@ export default function WebBuildPreview() {
 
       {/* Real generated page. A model-native project runs in the isolated Sandpack
           runtime and controls its OWN full-width layout (never the max-w-5xl frame);
-          the legacy section renderer keeps the centered document frame. */}
-      {modelNative
+          the legacy section renderer keeps the centered document frame. On a CONFIRMED
+          runtime failure the model-native project auto-falls back to the same Safe
+          renderer (runtime parity with the embedded panel). The observer is ALWAYS wired
+          for a model-native render so the failure can be detected; the owner-only
+          diagnostics block is still gated on the owner-candidate handoff. */}
+      {showModelNativeRuntime
         ? (
           <>
             <WebBuildModelNativePreview
               files={data.files || []}
               mode="standalone"
-              {...(displayCandidate ? { candidate: true, onRuntimeSnapshot: setSnapshot } : {})}
+              onRuntimeSnapshot={setSnapshot}
+              {...(displayCandidate ? { candidate: true } : {})}
             />
             {displayCandidate ? (
               <div className="mx-auto max-w-3xl px-4 pb-4">

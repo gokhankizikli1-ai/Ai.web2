@@ -369,7 +369,8 @@ function RuntimeObserver({ onSnapshot }: { onSnapshot: (s: ModelNativeRuntimeSna
       reason:
         reasonHint
         || (acc.phase === 'error' ? 'A bundler/runtime error was reported by the sandbox.'
-          : acc.phase === 'timeout' ? 'No runtime signal was observed within the soft timeout (observation only).'
+          : acc.phase === 'timeout' ? 'The sandbox reported a bundler timeout.'
+          : acc.phase === 'slow-start' ? 'No runtime signal was observed within the soft timeout (host observation only; the sandbox may still be starting).'
           : acc.phase === 'running' ? 'Sandbox reports running. Visual quality NOT evaluated; manual inspection still required.'
           : acc.phase === 'initializing' ? 'Sandbox is initializing (installing/transpiling).'
           : 'No runtime signal observed yet.'),
@@ -450,13 +451,17 @@ function RuntimeObserver({ onSnapshot }: { onSnapshot: (s: ModelNativeRuntimeSna
     emit();
   }, [publicStatus, emit]);
 
-  // Soft timeout: honestly report "no runtime signal observed within Ns" (our observation),
-  // never a claim from Sandpack. Only fires while still not-started/initializing.
+  // Soft timeout: honestly report "no runtime signal observed within Ns" as a HOST-side
+  // observation ('slow-start'), NOT a confirmed failure and NEVER a claim from Sandpack. A
+  // healthy-but-slow cold start (large install/transpile) lands here; it must NOT be treated
+  // as a runtime failure (see isModelNativeRuntimeFailure) so a valid project is not forced to
+  // Safe merely for being slow. Only fires while still not-started/initializing. A GENUINE
+  // sandbox timeout arrives separately as the bundler 'timeout' message → phase 'timeout'.
   useEffect(() => {
     const id = setTimeout(() => {
       const acc = accRef.current;
       if (acc.phase === 'not-started' || acc.phase === 'initializing') {
-        acc.phase = 'timeout';
+        acc.phase = 'slow-start';
         emit();
       }
     }, RUNTIME_SOFT_TIMEOUT_MS);
@@ -624,6 +629,7 @@ export function CandidateUnapprovedNotice({ candidate }: { candidate: ModelNativ
 const PHASE_TONE: Record<ModelNativeRuntimePhase, string> = {
   'not-started': '#64748B',
   initializing: '#94A3B8',
+  'slow-start': '#94A3B8',
   running: '#86A08F',
   error: '#E0A35B',
   timeout: '#E0A35B',
@@ -639,9 +645,10 @@ export function RuntimeDiagnosticsBlock({ snapshot, candidate }: { snapshot: Mod
   const phaseLabel: Record<ModelNativeRuntimePhase, [string, string]> = {
     'not-started': ['not started', 'başlamadı'],
     initializing: ['initializing', 'başlatılıyor'],
+    'slow-start': ['still starting (slow)', 'hâlâ başlatılıyor (yavaş)'],
     running: ['sandbox running', 'çalışma ortamı çalışıyor'],
     error: ['runtime error observed', 'çalışma zamanı hatası gözlemlendi'],
-    timeout: ['no runtime signal (timeout)', 'çalışma sinyali yok (zaman aşımı)'],
+    timeout: ['sandbox timeout', 'çalışma ortamı zaman aşımı'],
     unknown: ['unknown', 'bilinmiyor'],
   };
   const first = s.messages.slice(0, 3);

@@ -14,7 +14,7 @@ import type { ImageReplacementInput } from '@/lib/webBuildImageReplace';
 import { useOwnerMode } from '@/hooks/useOwnerMode';
 import { useLanguageStore } from '@/stores/languageStore';
 import { openPreviewInNewTab, currentReturnTo } from '@/lib/webBuildPreviewStash';
-import { resolvePreviewMode, candidateHasEntryFiles, type ModelNativeCandidate, type ModelNativeRuntimeSnapshot, type OwnerPreviewSelection, type WebBuildPreviewMode } from '@/lib/webBuildRuntimePreview';
+import { resolvePreviewMode, candidateHasEntryFiles, isModelNativeRuntimeFailure, type ModelNativeCandidate, type ModelNativeRuntimeSnapshot, type OwnerPreviewSelection, type WebBuildPreviewMode } from '@/lib/webBuildRuntimePreview';
 import type { WebBuildSectionItem, WebBuildFile } from '@/lib/webBuildPayload';
 import type { WebBuildBrief } from '@/lib/webBuildApi';
 import type { InteractionContract } from '@/lib/webBuildInteractionContract';
@@ -66,10 +66,14 @@ export default function WebBuildPreviewPanel({
   /** Phase 12D — which renderer drives the Preview: the isolated Sandpack runtime for
    *  the model-native project, or the deterministic legacy section renderer. */
   previewSource?: FrontendBuilderPreviewSource;
-  /** Phase 12F.3 — the frontend build could not be approved (acceptance
-   *  'manual-review-required'). The user-facing Preview shows the deterministic safe
-   *  fallback plus an explicit "Build needs regeneration" notice; the unapproved
-   *  model-native files remain reachable in All Files. Optional → old builds unaffected. */
+  /** Phase 12F.3 — final quality approval did not pass (acceptance 'manual-review-required').
+   *  This is a QUALITY-approval fact, NOT a render-authority one: quality approval != render
+   *  safety. A structurally valid, consumed, runnable such build is now shown as
+   *  'provisional-model-native' (the real project, pending final review) — it is NOT forced to
+   *  Safe. This flag only affects the DETERMINISTIC SAFE-fallback presentation: when the build is
+   *  genuinely not render-safe (invalid / unconsumed / missing-entry) and the Safe renderer is
+   *  active, it adds the explicit "Build needs regeneration" notice and disables Safe-preview
+   *  Visual Select. The unapproved model-native files remain reachable in All Files. Optional. */
   blockedNeedsRegeneration?: boolean;
   /** Phase 13A — the derived model-native candidate (consumed or parsed-initial). Drives
    *  the three explicit Preview modes and the owner Candidate/Safe selector. Optional →
@@ -147,13 +151,15 @@ export default function WebBuildPreviewPanel({
 
   // ── Candidate Preview HEALTH — DISTINCT from Visual-Select bridge readiness. Health
   // comes ONLY from the isolated runtime's own signals (RuntimeObserver): a missing
-  // renderable entry, a bundler/compile error, a fatal runtime error, or the startup
-  // soft-timeout. The Visual-Select bridge starting/unavailable NEVER affects health,
-  // so a Candidate site that renders fine while Select is still connecting is NOT
+  // renderable entry, or a CONFIRMED runtime failure (a bundler/compile error, or a genuine
+  // sandbox timeout) — decided by the shared isModelNativeRuntimeFailure so the embedded and
+  // standalone surfaces can never drift. A host-side 'slow-start' (soft-timeout with no signal)
+  // is NOT a failure and never forces Safe. The Visual-Select bridge starting/unavailable NEVER
+  // affects health, so a Candidate that renders fine while Select is still connecting is NOT
   // treated as failed — it never falls back merely because Select isn't ready.
   const candidateEntryOk = candidateHasEntryFiles(nativeFiles);
   const candidatePhase = runtimeSnapshot?.phase;
-  const candidateFailed = candidateEligible && (!candidateEntryOk || candidatePhase === 'error' || candidatePhase === 'timeout');
+  const candidateFailed = candidateEligible && (!candidateEntryOk || isModelNativeRuntimeFailure(candidatePhase));
   const candidateStarting = candidateEligible && !candidateFailed && candidatePhase !== 'running';
   // Show Safe: automatically on genuine failure, or when the owner manually asks (debug).
   const usingSafeFallback = candidateEligible && (candidateFailed || ownerDebugSafe);
