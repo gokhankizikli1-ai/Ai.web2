@@ -169,7 +169,7 @@ export default function WebBuildPreview() {
   // A display-only candidate for the owner Candidate Preview's warning + diagnostics. The
   // stash carries only the mode + files, so acceptance is the honest "unapproved" reason.
   const displayCandidate: ModelNativeCandidate | null = (modelNative && isOwnerCandidate && data)
-    ? { available: true, source: 'consumed-model-native', files: data.files || [], acceptance: 'manual-review-required', approvedForUserPreview: false, reason: 'Explicit owner-candidate handoff.' }
+    ? { available: true, source: 'consumed-model-native', files: data.files || [], acceptance: 'manual-review-required', approvedForUserPreview: false, safeToRenderModelNativePreview: false, reason: 'Explicit owner-candidate handoff.' }
     : null;
 
   if (!data || !isUsablePreviewData(data)) {
