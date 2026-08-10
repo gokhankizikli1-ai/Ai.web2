@@ -1,17 +1,39 @@
 name: post-deploy-healthcheck
 
 # Runs on every push to main (i.e. immediately after a PR merges to main).
-# Railway auto-deploys from main on the same trigger, so this job polls the
-# production /health endpoint until the new build's commit SHA matches the
-# just-pushed SHA — then verifies /tools/health.
+# Railway auto-deploys from main on the same trigger, so this job verifies the
+# API/web service (uvicorn `api:app`) until the new build's commit SHA matches
+# the just-pushed SHA — then verifies /tools/health.
+#
+# WHICH SERVICE THIS VERIFIES (and why)
+# -------------------------------------
+# There are TWO Railway services in this repo (see Procfile / railway.toml /
+# railway.worker.toml):
+#   • web    — uvicorn `api:app` (FastAPI). Exposes HTTP /health, /v2/health and
+#              /tools/health. THIS is the service this workflow checks.
+#   • worker — a pure Celery worker (`worker:` in the Procfile). It binds NO HTTP
+#              port on purpose (railway.worker.toml: healthcheckPath = "", public
+#              networking removed), so it has NO /health route. Its liveness is
+#              observed out of band (Railway restart policy + Redis queue depth),
+#              NOT by an HTTP probe. We must never poll HTTP /health on the worker.
+#
+# Endpoints used (all on the API/web service, all public — no secrets required):
+#   • GET /health      → basic 200 liveness (the web service's Railway probe).
+#   • GET /v2/health   → always-200 envelope whose `metadata.commit_sha` carries
+#                        RAILWAY_GIT_COMMIT_SHA — the reliable build-SHA signal
+#                        (the plain /health handler does not expose the SHA).
+#   • GET /tools/health→ observability shape (cache/safety/memory + tool registry).
 #
 # Status is written back to the merge commit so it shows in the GitHub UI and
 # can be read programmatically via the GitHub API (or the GitHub MCP tools)
 # in subsequent automation sessions.
 #
 # Configuration (no secrets required for the public endpoints):
-#   vars.RAILWAY_PROD_URL  — defaults to https://worker-production-1345.up.railway.app
-#                            override via repo Variables → Actions if the URL ever changes
+#   vars.RAILWAY_PROD_URL  — the API/web service base URL. Defaults to
+#                            https://korvixai-backend-production.up.railway.app
+#                            (the same DEFAULT_API_HOST the frontend uses).
+#                            Override via repo Variables → Actions if it changes.
+#                            NOTE: this must be the API/web URL, never the worker URL.
 #
 # Manual re-run: workflow_dispatch is enabled so you can trigger this from
 # the Actions UI against any commit on main.
@@ -40,12 +62,14 @@ jobs:
       - name: Resolve target URL
         id: cfg
         run: |
+          # The API/web service base URL (uvicorn api:app). The worker service has
+          # no HTTP server, so this must resolve to the API/web URL only.
           URL="${{ vars.RAILWAY_PROD_URL }}"
           if [ -z "$URL" ]; then
-            URL="https://worker-production-1345.up.railway.app"
+            URL="https://korvixai-backend-production.up.railway.app"
           fi
           echo "url=$URL" >> "$GITHUB_OUTPUT"
-          echo "Target: $URL"
+          echo "Target (API/web service): $URL"
           echo "Expected commit SHA: ${{ github.sha }}"
 
       - name: Mark commit status "pending"
@@ -86,8 +110,13 @@ jobs:
             fi
           done
 
-      # ── Step 2: wait until the SHA in /health matches the merge SHA ──────
-      - name: Wait for new build SHA on /health
+      # ── Step 2: wait until the build SHA on /v2/health matches the merge SHA ──
+      # The plain /health handler returns liveness only (no build SHA); the API's
+      # /v2/health envelope carries the deployed commit as `metadata.commit_sha`
+      # (from RAILWAY_GIT_COMMIT_SHA). We read the SHA there so this still PROVES
+      # the expected merged commit actually reached production. The default
+      # "unknown" (env var absent) never matches a real SHA, so it stays pending.
+      - name: Wait for new build SHA on /v2/health
         id: health_sha
         run: |
           set -e
@@ -95,8 +124,9 @@ jobs:
           EXPECTED="${{ github.sha }}"
           OBSERVED=""
           for i in $(seq 1 80); do      # 80 × 6s = 8 min
-            BODY=$(curl -s --max-time 6 "$URL/health" || echo '{}')
-            OBSERVED=$(echo "$BODY" | python3 -c "import sys,json; d=json.loads(sys.stdin.read() or '{}'); print(d.get('build',{}).get('commit_sha','') or '')" 2>/dev/null || echo "")
+            BODY=$(curl -s --max-time 6 "$URL/v2/health" || echo '{}')
+            echo "$BODY" > /tmp/v2_health.json
+            OBSERVED=$(echo "$BODY" | python3 -c "import sys,json; d=json.loads(sys.stdin.read() or '{}'); s=(d.get('metadata') or {}).get('commit_sha','') or ''; print('' if s=='unknown' else s)" 2>/dev/null || echo "")
             if [ "$OBSERVED" = "$EXPECTED" ]; then
               echo "SHA match on attempt $i: $OBSERVED"
               break
@@ -106,7 +136,7 @@ jobs:
             sleep 6
             if [ "$i" = "80" ]; then
               echo "::warning::Build SHA did not match within 8 min. Observed: '$OBSERVED' expected: '$EXPECTED'."
-              echo "::warning::This can mean (1) Railway env var RAILWAY_GIT_COMMIT_SHA is not exposed to the worker, or (2) deploy failed silently."
+              echo "::warning::This can mean (1) Railway env var RAILWAY_GIT_COMMIT_SHA is not exposed to the API/web service, or (2) the deploy failed silently."
               # Don't hard-fail here — /tools/health check below may still pass and we want partial signal.
             fi
           done
@@ -193,18 +223,28 @@ jobs:
         if: always()
         run: |
           {
-            echo "## Railway production deploy verification"
+            echo "## Railway production deploy verification (API/web service)"
             echo ""
             echo "| Field | Value |"
             echo "|---|---|"
-            echo "| Target | ${{ steps.cfg.outputs.url }} |"
+            echo "| Target (API/web) | ${{ steps.cfg.outputs.url }} |"
+            echo "| SHA source | \`/v2/health\` → \`metadata.commit_sha\` |"
             echo "| Expected SHA | \`${{ github.sha }}\` |"
             echo "| Observed SHA | \`${{ steps.health_sha.outputs.observed_sha }}\` |"
             echo "| Match? | ${{ steps.health_sha.outputs.observed_sha == github.sha && '✅ yes' || '⚠️ no' }} |"
             echo ""
-            echo "### /health"
+            echo "> Worker service (Celery) is intentionally NOT probed over HTTP — it binds no port"
+            echo "> (railway.worker.toml: healthcheckPath=\"\"). Its liveness is Railway's restart policy"
+            echo "> + Redis queue depth, not an HTTP /health route."
+            echo ""
+            echo "### /health (liveness)"
             echo "\`\`\`json"
             cat /tmp/health.json 2>/dev/null || echo "(unavailable)"
+            echo "\`\`\`"
+            echo ""
+            echo "### /v2/health (build SHA)"
+            echo "\`\`\`json"
+            cat /tmp/v2_health.json 2>/dev/null || echo "(unavailable)"
             echo "\`\`\`"
             echo ""
             echo "### /tools/health"
