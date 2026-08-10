@@ -28,7 +28,7 @@ import {
   savePendingWebBuildRun, clearPendingWebBuildRun,
 } from '@/lib/webBuildSession';
 import { upsertWebBuildChatSession } from '@/lib/webBuildChatSession';
-import { stashPreview } from '@/lib/webBuildPreviewStash';
+import { stashPreview, buildLatestPreviewStash } from '@/lib/webBuildPreviewStash';
 import { currentUserScope } from '@/lib/userScope';
 
 export type WebBuildRunStatus = 'idle' | 'running' | 'completed' | 'failed';
@@ -69,10 +69,12 @@ export function slugFromIdea(idea: string): string {
   return `${base || 'yoursite'}.korvix.build`;
 }
 
-/** Persist the latest preview so the standalone /preview route can always load it. */
+/** Persist the latest preview so the standalone /preview route can always load it — preserving the
+ *  model-native render authority (files + previewSource + approved/provisional previewMode) when the
+ *  latest step is render-safe, so a section-only stash never masks it on restore (Defect 1). */
 function stashLatestPreview(p: WebBuildPayload): void {
-  const runId = p.steps[p.steps.length - 1]?.id;
-  if (runId) stashPreview({ runId, sectionItems: p.sectionItems, brief: p.brief, slug: slugFromIdea(p.prompt), prompt: p.prompt });
+  const data = buildLatestPreviewStash(p, { slug: slugFromIdea(p.prompt) });
+  if (data) stashPreview(data);
 }
 
 /**

@@ -1,7 +1,7 @@
-import type { WebBuildSectionItem, WebBuildFile } from '@/lib/webBuildPayload';
+import type { WebBuildSectionItem, WebBuildFile, WebBuildStep, WebBuildPayload } from '@/lib/webBuildPayload';
 import type { WebBuildBrief } from '@/lib/webBuildApi';
 import type { FrontendBuilderPreviewSource } from '@/lib/webBuildAgents';
-import type { WebBuildPreviewMode } from '@/lib/webBuildRuntimePreview';
+import { deriveModelNativeCandidate, resolvePreviewMode, type WebBuildPreviewMode } from '@/lib/webBuildRuntimePreview';
 import { scopedKey } from '@/lib/userScope';
 
 /**
@@ -65,6 +65,90 @@ export function isUsablePreviewData(d: WebBuildPreviewData | null | undefined): 
   if (!d || typeof d !== 'object') return false;
   if (d.previewSource === 'model-native-sandbox' && hasModelNativeEntryFiles(d.files)) return true;
   return Array.isArray(d.sectionItems) && d.sectionItems.length > 0;
+}
+
+/* ── Preview AUTHORITY (Defect 1) ─────────────────────────────────────────────
+ * The automatic latest-preview stash used to carry ONLY sectionItems, which made a
+ * section-only Safe representation out-rank a healthier model-native saved session/project
+ * on restore. These helpers derive and preserve the SAME render authority the real Preview
+ * uses, and pick the highest-authority representation across sources for the same run — so a
+ * poorer stash can never mask a model-native persisted build. All pure. */
+
+/** Fields for a render-safe model-native latest step, or null for a Safe/legacy step.
+ *  Uses the canonical deriveModelNativeCandidate + resolvePreviewMode as a NON-OWNER, so a cold
+ *  restore never exposes owner-candidate — only approved/provisional model-native or Safe. */
+export function modelNativePreviewFields(
+  step: WebBuildStep | undefined,
+  files: WebBuildFile[] | undefined,
+): { files: WebBuildFile[]; previewSource: 'model-native-sandbox'; previewMode: WebBuildPreviewMode } | null {
+  if (!step) return null;
+  const candidate = deriveModelNativeCandidate(step, files);
+  const mode = resolvePreviewMode(candidate, false, undefined);
+  if ((mode === 'approved-model-native' || mode === 'provisional-model-native')
+    && candidate.source === 'consumed-model-native'
+    && hasModelNativeEntryFiles(files)) {
+    return { files: files as WebBuildFile[], previewSource: 'model-native-sandbox', previewMode: mode };
+  }
+  return null;
+}
+
+/**
+ * Build the automatic latest-preview stash for a completed Web Build, preserving the REAL preview
+ * authority: a render-safe consumed model-native latest step is stashed WITH files + previewSource +
+ * approved/provisional previewMode (so a standalone restore renders the model-native project, never
+ * the legacy renderer); otherwise the section representation is stashed. Returns null when nothing
+ * usable can be stashed (no latest step, and neither model-native entry files nor sectionItems) so the
+ * caller never plants an empty stash that could mask a healthier saved session/project.
+ */
+export function buildLatestPreviewStash(
+  payload: WebBuildPayload,
+  opts?: { slug?: string; returnTo?: string; returnChatSessionId?: string; returnWebBuildRunId?: string },
+): WebBuildPreviewData | null {
+  const steps = Array.isArray(payload?.steps) ? payload.steps : [];
+  const step = steps[steps.length - 1];
+  const runId = step?.id;
+  if (!runId) return null;
+  const base: WebBuildPreviewData = {
+    runId,
+    sectionItems: Array.isArray(payload.sectionItems) ? payload.sectionItems : [],
+    brief: payload.brief,
+    slug: opts?.slug,
+    prompt: payload.prompt,
+    returnTo: opts?.returnTo,
+    returnChatSessionId: opts?.returnChatSessionId,
+    returnWebBuildRunId: opts?.returnWebBuildRunId,
+  };
+  const mn = modelNativePreviewFields(step, step.files);
+  const data: WebBuildPreviewData = mn ? { ...base, ...mn } : base;
+  return isUsablePreviewData(data) ? data : null;
+}
+
+/** Render-authority rank of a USABLE representation (higher = stronger). A render-safe model-native
+ *  project (approved/provisional + entry files) outranks a section-only / Safe representation. */
+export function previewAuthorityRank(d: WebBuildPreviewData | null | undefined): number {
+  if (!isUsablePreviewData(d)) return 0;
+  if (d.previewSource === 'model-native-sandbox'
+    && (d.previewMode === 'approved-model-native' || d.previewMode === 'provisional-model-native')
+    && hasModelNativeEntryFiles(d.files)) return 2;
+  return 1;
+}
+
+/**
+ * Pick the HIGHEST-authority usable representation among candidate sources for the same run (stash,
+ * saved session, saved project). Strictly-greater comparison keeps source order on ties, so the stash
+ * (passed first) wins an equal-authority tie and its fresher return-context is preserved. Null if none
+ * are usable. This is what prevents a stale lower-authority stash from masking a model-native build.
+ */
+export function pickHighestAuthorityPreview(
+  candidates: Array<WebBuildPreviewData | null | undefined>,
+): WebBuildPreviewData | null {
+  let best: WebBuildPreviewData | null = null;
+  let bestRank = 0;
+  for (const c of candidates) {
+    const r = previewAuthorityRank(c);
+    if (r > bestRank) { best = c as WebBuildPreviewData; bestRank = r; }
+  }
+  return best;
 }
 
 /** A stash id must be a plain, non-empty string (never a URL). */

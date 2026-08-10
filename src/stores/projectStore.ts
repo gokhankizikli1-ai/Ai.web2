@@ -172,19 +172,23 @@ function loadProjects(): Project[] {
   return [];
 }
 
-function saveProjects(projects: Project[]) {
+/** Persist the project list. Returns TRUE only when the localStorage write succeeded, so callers can
+ *  detect quota/serialization failures instead of silently reporting success (Defect 3). */
+function saveProjects(projects: Project[]): boolean {
   ensureScopeMigrated();
-  try { localStorage.setItem(projectsKey(), JSON.stringify(projects)); } catch { /* ignore */ }
+  try { localStorage.setItem(projectsKey(), JSON.stringify(projects)); return true; } catch { return false; }
 }
 
 export function getProjects(): Project[] {
   return loadProjects();
 }
 
-export function addProject(project: Project) {
+/** Returns TRUE only when the durable localStorage write succeeded. The backend mirror stays
+ *  fire-and-forget and does not affect the returned value. */
+export function addProject(project: Project): boolean {
   const projects = loadProjects();
   projects.unshift(project);
-  saveProjects(projects);
+  const wrote = saveProjects(projects);
   // Mirror to backend (fire-and-forget). When backend has ENABLE_PROJECTS
   // off we get a 503 — apiSafe swallows it. The localStorage write above
   // is the authoritative one for UI purposes.
@@ -201,18 +205,21 @@ export function addProject(project: Project) {
       }),
     });
   });
+  return wrote;
 }
 
 export function getProject(id: string): Project | undefined {
   return getProjects().find(p => p.id === id);
 }
 
-export function updateProject(id: string, updates: Partial<Project>) {
+/** Returns TRUE only when the durable localStorage write succeeded (FALSE when the id is unknown or the
+ *  write threw). The backend mirror stays fire-and-forget and does not affect the returned value. */
+export function updateProject(id: string, updates: Partial<Project>): boolean {
   const projects = loadProjects();
   const idx = projects.findIndex(p => p.id === id);
-  if (idx < 0) return;
+  if (idx < 0) return false;
   projects[idx] = { ...projects[idx], ...updates };
-  saveProjects(projects);
+  const wrote = saveProjects(projects);
   apiSafe(async () => {
     await fetch(`${getApiBase()}/projects/${id}`, {
       method: 'PATCH',
@@ -223,6 +230,7 @@ export function updateProject(id: string, updates: Partial<Project>) {
       }),
     });
   });
+  return wrote;
 }
 
 export function deleteProject(id: string) {

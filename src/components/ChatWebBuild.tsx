@@ -21,7 +21,7 @@ import { runFrontendBuilderRevision } from '@/lib/webBuildFrontendRevision';
 import { saveWebBuildPayloadToProject } from '@/lib/webBuildProject';
 import { applyImageReplacement, type ImageReplacementInput } from '@/lib/webBuildImageReplace';
 import { upsertWebBuildChatSession } from '@/lib/webBuildChatSession';
-import { stashPreview } from '@/lib/webBuildPreviewStash';
+import { stashPreview, buildLatestPreviewStash } from '@/lib/webBuildPreviewStash';
 import { getProjects } from '@/stores/projectStore';
 import {
   initBuildActivity, initRevisionActivity, applyActivityUpdate, completeActivity, failActiveActivity,
@@ -49,19 +49,16 @@ function stashLatestPreview(p: WebBuildPayload, slug: string, sessionId?: string
   // PERSISTED Web Build session id (sessionIdOf = first step id, what
   // getWebBuildSession / restoreRunId use) and the owning chat session id — so
   // Back Build can reopen the exact embedded conversation, not a new chat.
-  const previewRunId = p.steps[p.steps.length - 1]?.id;
-  if (!previewRunId) return;
-  // Never plant an EMPTY stash: it would out-rank (mask) the saved-session
-  // fallback the standalone preview route uses. The session is already persisted
-  // (persist() runs before this), so fromSession(runId) can resolve the route.
-  if (!Array.isArray(p.sectionItems) || p.sectionItems.length === 0) return;
   const webBuildRunId = sessionIdOf(p);
   const chatSessionId = (sessionId && sessionId.trim()) || webBuildRunId;
   const returnTo = `#/chat?webBuildRunId=${encodeURIComponent(webBuildRunId)}&chatSessionId=${encodeURIComponent(chatSessionId)}`;
-  stashPreview({
-    runId: previewRunId, sectionItems: p.sectionItems, brief: p.brief, slug, prompt: p.prompt,
-    returnTo, returnChatSessionId: chatSessionId, returnWebBuildRunId: webBuildRunId,
-  });
+  // Preserve the REAL preview authority: a render-safe model-native latest step is stashed with its
+  // files + previewSource + approved/provisional previewMode (Defect 1), so a section-only stash can
+  // never downgrade a healthy model-native build to the legacy renderer on restore. buildLatestPreviewStash
+  // returns null (→ no stash) when nothing usable exists, so it never plants an empty stash that masks
+  // the already-persisted session.
+  const data = buildLatestPreviewStash(p, { slug, returnTo, returnChatSessionId: chatSessionId, returnWebBuildRunId: webBuildRunId });
+  if (data) stashPreview(data);
 }
 
 interface ChatWebBuildProps {
@@ -107,6 +104,9 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
   const [savedProjectId, setSavedProjectId] = useState<string | undefined>(undefined);
   const [savedName, setSavedName] = useState('');
   const [saveStep, setSaveStep] = useState<'closed' | 'prompt' | 'picker'>('closed');
+  // Defect 3 — bounded save-failure signal. Set only when a verified project save did NOT durably
+  // persist (quota/serialization); the save UI stays open for retry and success is never claimed.
+  const [saveFailed, setSaveFailed] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
   const feedEndRef = useRef<HTMLDivElement | null>(null);
@@ -152,7 +152,14 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
     if (!r.ok || !r.payload) return { ok: false, error: r.error };
     setPayload(r.payload);
     persist(r.payload);
-    if (savedProjectId) { try { saveWebBuildPayloadToProject(r.payload, savedProjectId); } catch { /* localStorage quota */ } }
+    // Keep the ALREADY-SAVED project's copy in sync with the replacement. The live build + session are
+    // updated above (authoritative for the preview); the project copy is a best-effort mirror. If its
+    // verified write does NOT durably persist, flag the project save as stale (Defect 3) so it is never
+    // falsely reported as permanently saved — but the image replacement itself still succeeded.
+    if (savedProjectId) {
+      const res = saveWebBuildPayloadToProject(r.payload, savedProjectId);
+      if (!res.ok) setSaveFailed(true);
+    }
     return { ok: true };
   }, [payload, persist, savedProjectId]);
 
@@ -297,6 +304,7 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
     setErrorMsg('');
     setPayload(null);
     setSavedProjectId(undefined);
+    setSaveFailed(false);
     setSaveStep('closed');
     startLive(trimmed, 'build', controller);
     const reporter = makeReporter(controller);
@@ -481,9 +489,16 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
   /* ── Save to project ──────────────────────────────────────────────── */
   const commitSave = useCallback((projectId?: string) => {
     if (!payload) return;
-    const proj = saveWebBuildPayloadToProject(payload, projectId);
-    setSavedProjectId(proj.id);
-    setSavedName(proj.name);
+    const res = saveWebBuildPayloadToProject(payload, projectId);
+    if (!res.ok) {
+      // Persistence did NOT durably round-trip (quota/serialization). Do NOT claim success: keep the
+      // in-memory build untouched, surface a bounded failure, and leave the save UI open for retry.
+      setSaveFailed(true);
+      return;
+    }
+    setSaveFailed(false);
+    setSavedProjectId(res.project.id);
+    setSavedName(res.project.name);
     setSaveStep('closed');
   }, [payload]);
 
@@ -491,6 +506,16 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
 
   const cardBase = 'w-full max-w-sm rounded-xl border border-white/[0.08] bg-white/[0.02]';
   const rowBtn = 'w-full flex items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[12.5px] text-[#CBD5E1] hover:bg-white/[0.05] hover:text-white transition-colors';
+
+  // Defect 3 — bounded, honest save-failure notice. Shown while the save UI is open after a verified
+  // save did NOT durably persist; the build stays in memory and the user can retry.
+  const saveFailedNotice = saveFailed ? (
+    <div role="alert" className="mb-2 rounded-lg border border-[#F59E0B]/30 bg-[#F59E0B]/[0.08] px-2.5 py-1.5 text-[11px] leading-relaxed text-[#FCD9A6]">
+      {lang === 'tr'
+        ? 'Kaydedilemedi (depolama dolu olabilir). Yapı korunuyor — tekrar deneyin.'
+        : 'Could not save (storage may be full). Your build is kept — please try again.'}
+    </div>
+  ) : null;
 
   const saveCard = savedProjectId ? (
     <div className={`${cardBase} flex items-center gap-3 px-3 py-2.5`}>
@@ -510,6 +535,7 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
         </button>
         <span className="text-[13px] font-medium text-white">{t('wbChooseProject')}</span>
       </div>
+      {saveFailedNotice}
       <div className="max-h-56 overflow-y-auto scrollbar-thin space-y-0.5">
         {existingProjects.length === 0 ? (
           <p className="px-1 py-3 text-[12px] text-[#64748B]">{t('wbNoProjectsYet')}</p>
@@ -524,6 +550,7 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
   ) : saveStep === 'prompt' ? (
     <div className={`${cardBase} p-3`}>
       <p className="text-[13px] font-medium text-white mb-2.5 px-0.5">{t('wbSavePromptTitle')}</p>
+      {saveFailedNotice}
       <div className="space-y-1">
         <button onClick={() => commitSave(undefined)} className={rowBtn}>
           <Plus className="h-3.5 w-3.5 shrink-0" style={{ color: ACCENT }} /> {t('wbCreateNewProject')}
@@ -537,7 +564,7 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
       </div>
     </div>
   ) : (
-    <button onClick={() => setSaveStep('prompt')} className={`${cardBase} group flex items-center gap-3 px-3 py-2.5 text-left hover:bg-white/[0.04] transition-colors`}>
+    <button onClick={() => { setSaveFailed(false); setSaveStep('prompt'); }} className={`${cardBase} group flex items-center gap-3 px-3 py-2.5 text-left hover:bg-white/[0.04] transition-colors`}>
       <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" style={{ background: `${ACCENT}1a` }}>
         <FolderPlus className="h-4 w-4" style={{ color: ACCENT }} />
       </span>
