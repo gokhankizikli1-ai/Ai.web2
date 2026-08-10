@@ -30,6 +30,7 @@ import {
   generateFrontendBuilderRaw, generateFrontendBuilderReviewRaw, generateFrontendBuilderRepairRaw,
   generateFrontendBuilderDeltaRepairRaw,
   generateFrontendBuilderContractRepairRaw, WebBuildError, mapFrontendGenerationError,
+  selectBoundedRepairIssues,
 } from '@/lib/webBuildApi';
 // Owner-only DELTA quality-repair — pure, deterministic delta parser/validator/merger. No
 // network. Flag-gated + owner-gated by the caller; fail-open never triggers a second repair call.
@@ -1379,6 +1380,25 @@ export async function runFrontendBuilderQualityPipeline(
       };
     })();
 
+    // ── Bounded MAJOR-issue alignment diagnostics. Proves whether the highest-priority majors reached
+    //    the single repair (selection size + dropped majors) and how many the final review still flags,
+    //    so "score improved but majors remain" is diagnosable. Safe metadata only (counts + category:file). ──
+    const majorAlignment: NonNullable<FrontendBuilderRepairArtifact['majorAlignment']> = (() => {
+      const isMajor = (i: FrontendBuilderReviewIssue) => i.severity === 'major';
+      const initialMajors = (initialReview.issues || []).filter(isMajor);
+      const selected = selectBoundedRepairIssues(initialReview.issues || []);
+      const selectedMajorCount = selected.filter(isMajor).length;
+      const finalMajors = finalReview.status === 'completed' ? (finalReview.issues || []).filter(isMajor) : [];
+      return {
+        requiredMajors: initialMajors.length,
+        addressedMajors: Math.max(0, initialMajors.length - finalMajors.length),
+        unresolvedMajors: finalMajors.length,
+        issueSelectionCount: selected.length,
+        issueSelectionDroppedMajors: Math.max(0, initialMajors.length - selectedMajorCount),
+        finalMajorReasons: finalMajors.map((i) => `${i.category}:${(i.files && i.files[0]) || '?'}`.slice(0, 80)).slice(0, 6),
+      };
+    })();
+
     if (accept) {
       const repair = repairArtifact('accepted', `Repair accepted: score improved ${initialScore} → ${finalScore} and the post-repair review passed with no blocker/major issues and no severe quality warnings.`, {
         model: repairRaw.model, provider: repairRaw.provider, requestId: repairRaw.requestId,
@@ -1388,6 +1408,7 @@ export async function runFrontendBuilderQualityPipeline(
         initialScore, finalScore,
         ...(deltaDiagnostics ? { deltaRepair: deltaDiagnostics } : {}),
         gateAlignment,
+        majorAlignment,
         ...qcExtra(),
       });
       const acceptance = acceptanceArtifact('repaired-approved', 'repaired-model-native', {
@@ -1443,6 +1464,7 @@ export async function runFrontendBuilderQualityPipeline(
       initialScore, finalScore: finalReview.status === 'completed' ? finalScore : undefined,
       ...(deltaDiagnostics ? { deltaRepair: deltaDiagnostics } : {}),
       gateAlignment,
+      majorAlignment,
       ...qcExtra(),
     });
     const acceptance = acceptanceArtifact('manual-review-required', initialProjectName, {
