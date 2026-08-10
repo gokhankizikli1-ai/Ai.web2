@@ -203,4 +203,27 @@ describe('selectBoundedRepairIssues — priority order + bounded size', () => {
     expect(sel.length).toBe(MAX_REPAIR_ISSUES);
     expect(sel.map((i) => i.id)).toContain('cf-late'); // a contract-fidelity major is never squeezed out by minors
   });
+
+  it('keeps a late gate-critical contract-fidelity blocker ahead of earlier non-gate CF majors', () => {
+    // Deterministic gate findings are appended after model issues; without a gate-first reservation,
+    // eight earlier non-gate contract-fidelity majors would fill the budget and drop the binding
+    // obligation entirely (the failure mode #593 fixed).
+    const many: FrontendBuilderReviewIssue[] = [
+      mk({ id: 'blocker-1', severity: 'blocker', category: 'honesty' }),
+    ];
+    for (let i = 0; i < 8; i += 1) {
+      many.push(mk({ id: `cf-model-${i}`, severity: 'major', category: 'contract-fidelity' }));
+    }
+    many.push(mk({
+      id: 'binding-section-missing-1',
+      severity: 'major',
+      category: 'contract-fidelity',
+      gateCritical: true,
+    }));
+    const ids = selectBoundedRepairIssues(many).map((i) => i.id);
+    expect(ids.length).toBe(MAX_REPAIR_ISSUES);
+    expect(ids).toContain('binding-section-missing-1');
+    expect(ids[0]).toBe('blocker-1');
+    expect(ids[1]).toBe('binding-section-missing-1');
+  });
 });

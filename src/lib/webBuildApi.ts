@@ -3395,8 +3395,9 @@ export const MAX_REPAIR_ISSUES = 8;
  *  highest-value obligations are never squeezed out by lower-priority issues:
  *   0 blocker · 1 gate-critical research requirement · 2 contract-fidelity major (architecture/spec
  *   fidelity — model OR deterministic) · 3 component-composition major · 4 any OTHER gate-critical
- *   major (binding/visual-system/content/… — preserves the guarantee that every acceptance-gate
- *   blocker reaches the repair) · 5 remaining (non-gate) major · 6 minor. */
+ *   major (binding/visual-system/content/…) · 5 remaining (non-gate) major · 6 minor.
+ *  Gate-critical non-minor issues are reserved first by `selectBoundedRepairIssues` (up to 6) so a
+ *  same-tier non-gate contract-fidelity major cannot squeeze an acceptance-gate blocker out. */
 function repairIssuePriority(i: FrontendBuilderReviewIssue): number {
   if (i.severity === 'blocker') return 0;
   if (i.severity !== 'major') return 6;   // minor (and any unrecognized severity)
@@ -3408,15 +3409,25 @@ function repairIssuePriority(i: FrontendBuilderReviewIssue): number {
   return 5;                                // remaining non-gate model-review major
 }
 
-/** Select the bounded, PRIORITY-ordered actionable issues sent to the single repair. Stable within a
- *  priority tier (preserves discovery order). Exported so the quality pipeline reports which issues
- *  were selected vs dropped (major-alignment diagnostics) without re-deriving the logic. */
+/** Select the bounded, PRIORITY-ordered actionable issues sent to the single repair. Gate-critical
+ *  non-minor obligations fill first (up to 6, priority-ordered within), then remaining slots fill by
+ *  the same priority order — restoring the acceptance-gate guarantee while still preferring
+ *  contract-fidelity / composition majors among the rest. Stable within a priority tier (preserves
+ *  discovery order). Exported so the quality pipeline reports which issues were selected vs dropped
+ *  (major-alignment diagnostics) without re-deriving the logic. */
 export function selectBoundedRepairIssues(issues: FrontendBuilderReviewIssue[]): FrontendBuilderReviewIssue[] {
-  return [...(issues || [])]
-    .map((i, idx) => ({ i, idx, p: repairIssuePriority(i) }))
-    .sort((a, b) => (a.p - b.p) || (a.idx - b.idx))
-    .slice(0, MAX_REPAIR_ISSUES)
-    .map((x) => x.i);
+  const ranked = [...(issues || [])].map((i, idx) => ({
+    i,
+    idx,
+    p: repairIssuePriority(i),
+    gate: i.gateCritical === true && i.severity !== 'minor',
+  }));
+  const byPriority = (a: (typeof ranked)[number], b: (typeof ranked)[number]) =>
+    (a.p - b.p) || (a.idx - b.idx);
+  const gate = ranked.filter((x) => x.gate).sort(byPriority).slice(0, 6);
+  const gateIds = new Set(gate.map((x) => x.i.id));
+  const rest = ranked.filter((x) => !gateIds.has(x.i.id)).sort(byPriority);
+  return [...gate, ...rest].slice(0, MAX_REPAIR_ISSUES).map((x) => x.i);
 }
 
 /** Bounded, safe AUTHORITATIVE architecture-fidelity obligation for the repair: the exact ordered
@@ -3456,9 +3467,11 @@ function buildFrontendRepairInputPayload(
   deterministicWarnings?: string[],
   qualityEvidence?: FrontendRepairQualityEvidence,
 ): Record<string, unknown> {
-  // Priority-ordered, bounded selection (blocker → gate-critical research → contract-fidelity major →
-  // component-composition major → remaining major → minor), so a high-priority architecture/composition
-  // obligation is never squeezed out of the fixed 8-issue budget by a lower-priority issue.
+  // Gate-critical non-minor obligations fill first, then priority-ordered remaining issues
+  // (blocker → gate-critical research → contract-fidelity major → component-composition major →
+  // remaining major → minor), so a high-priority architecture/composition obligation is never
+  // squeezed out of the fixed 8-issue budget by a lower-priority issue — and an acceptance-gate
+  // blocker is never dropped behind earlier non-gate majors of the same category.
   const issuesToFix = selectBoundedRepairIssues(initialReview.issues || [])
     .map((i) => ({
       id: i.id, severity: i.severity, category: i.category,

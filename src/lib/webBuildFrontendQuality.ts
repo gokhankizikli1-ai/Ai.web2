@@ -1388,11 +1388,14 @@ export async function runFrontendBuilderQualityPipeline(
       const initialMajors = (initialReview.issues || []).filter(isMajor);
       const selected = selectBoundedRepairIssues(initialReview.issues || []);
       const selectedMajorCount = selected.filter(isMajor).length;
-      const finalMajors = finalReview.status === 'completed' ? (finalReview.issues || []).filter(isMajor) : [];
+      // Incomplete final review must NOT read as "all majors addressed" — treat required majors as
+      // still unresolved until a completed post-repair review can measure them.
+      const reviewCompleted = finalReview.status === 'completed';
+      const finalMajors = reviewCompleted ? (finalReview.issues || []).filter(isMajor) : [];
       return {
         requiredMajors: initialMajors.length,
-        addressedMajors: Math.max(0, initialMajors.length - finalMajors.length),
-        unresolvedMajors: finalMajors.length,
+        addressedMajors: reviewCompleted ? Math.max(0, initialMajors.length - finalMajors.length) : 0,
+        unresolvedMajors: reviewCompleted ? finalMajors.length : initialMajors.length,
         issueSelectionCount: selected.length,
         issueSelectionDroppedMajors: Math.max(0, initialMajors.length - selectedMajorCount),
         finalMajorReasons: finalMajors.map((i) => `${i.category}:${(i.files && i.files[0]) || '?'}`.slice(0, 80)).slice(0, 6),
