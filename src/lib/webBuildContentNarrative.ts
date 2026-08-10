@@ -31,6 +31,7 @@ import type {
 import type { ResearchDirectionContract } from '@/lib/webBuildResearchDirection';
 import type { CompositionContract } from '@/lib/webBuildComposition';
 import { collectSectionUnits } from '@/lib/webBuildSectionSource';
+import { detectLeakedFieldLabels as detectFieldLabelsInSource } from '@/lib/webBuildFieldLabel';
 
 /* ── Bounds (named, mandatory) ─────────────────────────────────────────────── */
 const MAX_TEXT = 160;
@@ -124,25 +125,14 @@ const INTERNAL_MARKERS = [
   'feature-mosaic', 'sequential-steps', 'gallery-strip', 'focused-tool', 'proof-ledger', 'catalog-index',
   'full-bleed-transition', 'compact-utility', 'conversion-finale', 'standard-stack',
 ];
-// Internal SPEC field-label prefixes that must NEVER be rendered as the start of visible public copy
-// (Fix B): the model sometimes echoes a `Headline:`/`Subheadline:` label from the spec structure onto
-// the page. Detection is ANCHORED to the start of a rendered text node (immediately after `>`), so
-// ordinary prose containing a colon (e.g. "Pricing: simple", "A good headline: keep it short") is
-// never flagged — the fixed label vocabulary is the filter. Case-insensitive.
-const FIELD_LABEL_PREFIXES = ['headline', 'subheadline', 'subtitle', 'eyebrow', 'cta', 'body', 'description', 'label'];
-const FIELD_LABEL_PREFIX_RE = new RegExp(`>\\s*(${FIELD_LABEL_PREFIXES.join('|')})\\s*:`, 'gi');
-
-/** Distinct internal field-label prefixes (Headline:/Subheadline:/…) that leaked as the START of a
- *  VISIBLE text node in this region. Operates on the text between `>` and the next `<` (a rendered
- *  text-node boundary), NOT attribute values or arbitrary colon-containing prose. Pure, bounded.
- *  Exported for focused regression tests. */
+/** Distinct internal field-label prefixes (Headline:/Subheadline:/…) leaked as the START of a VISIBLE
+ *  text node in this region. Strips comments/script/style, then delegates to the CANONICAL detector
+ *  (webBuildFieldLabel) — the single source of truth for the label vocabulary and the detection forms
+ *  (plain text node, start-of-node string literal, and statically-resolvable const-backed value).
+ *  Ordinary colon prose ("Pricing: simple") is never flagged. Exported for focused regression tests. */
 export function detectLeakedFieldLabels(region: string): string[] {
   const cleaned = stripComments(region || '').replace(/<(svg|script|style)\b[\s\S]*?<\/\1>/gi, ' ');
-  const found = new Set<string>();
-  let m: RegExpExecArray | null; let guard = 0;
-  FIELD_LABEL_PREFIX_RE.lastIndex = 0;
-  while ((m = FIELD_LABEL_PREFIX_RE.exec(cleaned)) && guard < 400) { guard += 1; found.add(m[1].toLowerCase()); }
-  return [...found];
+  return detectFieldLabelsInSource(cleaned);
 }
 
 function tokens(s: string): string[] {

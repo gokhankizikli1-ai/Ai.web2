@@ -25,6 +25,7 @@ import type { WebBuildLayoutPlan } from '@/lib/webBuildLayoutPlan';
 // Phase 12F — the shared product-intent authority (a leaf; no runtime cycle) for the
 // final specification contradiction guard.
 import { resolveProductIntent } from '@/lib/webBuildProductIntent';
+import { stripLeadingFieldLabel } from '@/lib/webBuildFieldLabel';
 // PR #510 — deterministic Experience Architecture planner (a leaf; pure + fail-open; reads
 // only this assembled spec + the prompt, so it introduces no runtime import cycle).
 import { deriveExperienceArchitecturePlan } from '@/lib/webBuildExperienceArchitecture';
@@ -239,10 +240,11 @@ function failedOpenSpec(input: FrontendBuildSpecInput): FrontendBuildSpecificati
     name: str(s.name) || str(s.id) || `Section ${i + 1}`,
     order: i,
     purpose: firstOf(s.purpose),
-    headline: firstOf(s.headline),
-    subheadline: firstOf(s.sub),
-    primaryCTA: firstOf(s.cta),
-    bullets: clean(s.bullets, 8),
+    // Phase 1 — strip any leaked internal field-label prefix from authoritative copy (canonical helper).
+    headline: firstOf(s.headline) ? stripLeadingFieldLabel(firstOf(s.headline)!) || undefined : undefined,
+    subheadline: firstOf(s.sub) ? stripLeadingFieldLabel(firstOf(s.sub)!) || undefined : undefined,
+    primaryCTA: firstOf(s.cta) ? stripLeadingFieldLabel(firstOf(s.cta)!) || undefined : undefined,
+    bullets: clean(s.bullets, 8).map((b) => stripLeadingFieldLabel(b)),
     interactionHints: [],
     assetSlotIds: [],
     motionLayerIds: [],
@@ -633,15 +635,32 @@ export function deriveFrontendBuildSpecification(input: FrontendBuildSpecInput):
     //    records a bounded warning. It never touches purpose/interactionHints (already
     //    internal) or copy that does not read as planning metadata.
     let copyLeaksSanitized = 0;
+    // Phase 1 — normalize the AUTHORITATIVE public copy at the producer boundary: strip any leading
+    // internal field-label prefix the copy generator echoed into the VALUE ("Headline: Foo" → "Foo")
+    // via the canonical webBuildFieldLabel helper, THEN blank anything that still reads as internal
+    // planning metadata. Stripping first means a merely-prefixed real headline is KEPT as its clean
+    // value (not blanked), while genuinely-internal copy is still removed. The label is the schema KEY;
+    // it must never survive inside the stored authoritative value, so the builder's verbatim rule can
+    // never re-render it. Undefined stays undefined (the builder then writes real copy).
+    const normLabel = (v: string | undefined): string | undefined => {
+      if (typeof v !== 'string') return v;
+      const stripped = stripLeadingFieldLabel(v);
+      return stripped === v ? v : (stripped.trim() ? stripped : undefined);
+    };
     const sanitizeSection = (s: FrontendSpecSection): FrontendSpecSection => {
-      const headline = looksLikeInternalPlanningCopy(s.headline) ? undefined : s.headline;
-      const subheadline = looksLikeInternalPlanningCopy(s.subheadline) ? undefined : s.subheadline;
-      const primaryCTA = looksLikeInternalPlanningCopy(s.primaryCTA) ? undefined : s.primaryCTA;
+      const nHeadline = normLabel(s.headline);
+      const nSubheadline = normLabel(s.subheadline);
+      const nPrimaryCTA = normLabel(s.primaryCTA);
       const srcBullets = Array.isArray(s.bullets) ? s.bullets : [];
-      const bullets = srcBullets.filter((b) => !looksLikeInternalPlanningCopy(b));
+      const nBullets = srcBullets.map((b) => normLabel(b) ?? '').map((b) => b.trim());
+      const headline = looksLikeInternalPlanningCopy(nHeadline) ? undefined : nHeadline;
+      const subheadline = looksLikeInternalPlanningCopy(nSubheadline) ? undefined : nSubheadline;
+      const primaryCTA = looksLikeInternalPlanningCopy(nPrimaryCTA) ? undefined : nPrimaryCTA;
+      const bullets = nBullets.filter((b) => b && !looksLikeInternalPlanningCopy(b));
       const changed =
         headline !== s.headline || subheadline !== s.subheadline ||
-        primaryCTA !== s.primaryCTA || bullets.length !== srcBullets.length;
+        primaryCTA !== s.primaryCTA || bullets.length !== srcBullets.length
+        || bullets.some((b, i) => b !== srcBullets[i]);
       if (!changed) return s;
       copyLeaksSanitized += 1;
       return { ...s, headline, subheadline, primaryCTA, bullets };

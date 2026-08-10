@@ -28,6 +28,7 @@ import { hasAffirmedIntent } from '@/lib/webBuildProductIntent';
 import type { WebBuildFile } from '@/lib/webBuildPayload';
 import type { CompactSourceContext } from '@/lib/webBuildQualityContext';
 import { orderFilesForReviewBounding, compactContextFromIncludedFiles, buildReviewScopedSpecProjection, buildRepairAuthorityDigest } from '@/lib/webBuildQualityContext';
+import { stripLeadingFieldLabel } from '@/lib/webBuildFieldLabel';
 import { renderBindingRequirementsBlock } from '@/lib/webBuildBindingRequirements';
 import { renderResearchDirectionBlock } from '@/lib/webBuildResearchDirection';
 import { renderCompositionBlock } from '@/lib/webBuildComposition';
@@ -4015,14 +4016,6 @@ const MAX_CRITICAL_SECTION_ID = 100;
 function copyPreview(s: string): string {
   return s.length > 60 ? `${s.slice(0, 60)}…` : s;
 }
-// Strip a leading internal SPEC field-label prefix ("Headline:", …) from an authoritative copy value
-// (Fix C), so the EXACT required-copy value sent to the single repair is the real public text ("Foo"),
-// never "Headline: Foo" — the repair is thus never told to preserve the internal prefix. Must match the
-// validator's stripped preview so recovery still matches. KEEP IN SYNC with FIELD_LABEL_PREFIXES in
-// webBuildContentNarrative.ts and stripLeadingFieldLabel in webBuildFrontendValidation.ts.
-const LEADING_FIELD_LABEL_RE = /^\s*(?:headline|subheadline|subtitle|eyebrow|cta|body|description|label)\s*:\s*/i;
-function stripLeadingFieldLabel(s: string): string { return (s || '').replace(LEADING_FIELD_LABEL_RE, ''); }
-
 /**
  * Recover the EXACT full missing critical copy (headline / primary CTA) by matching the
  * validator's bounded previews (`missingCriticalCopy`) back to the full values in
