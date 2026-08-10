@@ -48,10 +48,43 @@ export interface WebBuildPreviewData {
    *  treated as 'automatic' (the conservative cache semantics), so legacy stashes never override
    *  current persisted state. */
   handoffKind?: PreviewHandoffKind;
+  /** Deterministic identity of the UNDERLYING generated build (its latest-step file state) this preview
+   *  was produced from (Defect 2). Same-run image replacement keeps the step id but changes file content,
+   *  so runId alone cannot detect a stale handoff — this fingerprint can. Attached by every producer
+   *  (explicit handoff, automatic cache, persisted-derived) from the SAME canonical file fingerprint, so
+   *  a stash whose fingerprint differs from the current persisted source is known to be stale. Optional →
+   *  legacy stashes without it fall back to a conservative rule (see resolvePreviewSources). */
+  sourceFingerprint?: string;
 }
 
 /** How a preview stash came to exist — see WebBuildPreviewData.handoffKind. */
 export type PreviewHandoffKind = 'explicit' | 'automatic';
+
+/**
+ * Canonical, deterministic fingerprint of a Web Build file set — the single source-version identity used
+ * by project-save verification, the preview stash, and restore (Defect 1 + Defect 2). Properties:
+ *   • file-ORDER independent (paths are sorted) — reordering the array does not change the fingerprint;
+ *   • CONTENT sensitive — any path or content change (e.g. an image URL swap) changes the fingerprint;
+ *   • filters malformed entries the SAME way sanitizeFiles does, so a raw step's files and the sanitized
+ *     candidate files for the same version fingerprint identically;
+ *   • empty/missing-safe; no network, no crypto, bounded work (one pass + a 32-bit FNV-1a hash).
+ * NOT based on file count / step id / entry-file presence alone — those cannot tell VERSION A from B.
+ */
+export function canonicalWebBuildFilesFingerprint(files?: WebBuildFile[]): string {
+  const parts = (Array.isArray(files) ? files : [])
+    .filter((f): f is WebBuildFile => !!f && typeof f.path === 'string' && typeof f.content === 'string')
+    // JSON-encode [path, content] per file — an unambiguous, injective, delimiter-safe encoding
+    // (quotes/backslashes escaped) so no path/content boundary can collide with another file's.
+    .map((f) => JSON.stringify([f.path, f.content]))
+    .sort();
+  const canonical = parts.join(',');
+  let h = 0x811c9dc5 >>> 0; // FNV-1a 32-bit — deterministic, non-cryptographic, dependency-free
+  for (let i = 0; i < canonical.length; i++) {
+    h ^= canonical.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return `${parts.length}:${(h >>> 0).toString(16)}`;
+}
 
 /** Required entry files a model-native preview needs before it can run. */
 const MODEL_NATIVE_ENTRY_PATHS = ['src/main.tsx', 'src/App.tsx', 'src/styles.css'];
@@ -130,6 +163,9 @@ export function buildLatestPreviewStash(
     // This is the automatic latest-preview cache, not a user-chosen renderer handoff — so restore
     // treats it as a fallback that never overrides the authoritative persisted session/project.
     handoffKind: 'automatic',
+    // Version identity of the underlying build (its latest-step files), so a later persisted change to
+    // the same run is detectable even when the step id is unchanged (Defect 2).
+    sourceFingerprint: canonicalWebBuildFilesFingerprint(step.files),
   };
   const mn = modelNativePreviewFields(step, step.files);
   const data: WebBuildPreviewData = mn ? { ...base, ...mn } : base;
@@ -169,6 +205,25 @@ function isExplicitHandoff(d: WebBuildPreviewData | null | undefined): boolean {
   return isUsablePreviewData(d) && d.handoffKind === 'explicit';
 }
 
+/**
+ * Is an explicit handoff STALE relative to the current persisted source (Defect 2)? An explicit handoff
+ * captures the renderer the user chose for the SOURCE VERSION visible at that moment; it must not mask a
+ * newer version of the same build forever. Decision (never wall-clock based):
+ *   • current source has no fingerprint (cannot prove movement) → NOT stale (honor the explicit choice);
+ *   • handoff carries a fingerprint → stale iff it DIFFERS from the current source fingerprint
+ *     (matches ⇒ same version ⇒ honor Safe/owner-candidate/approved/provisional exactly);
+ *   • handoff has NO fingerprint (legacy stash) → conservative: treat as stale ONLY when the current
+ *     persisted source is a clearly-usable model-native representation, so an ancient legacy handoff can
+ *     never permanently mask a current model-native build; otherwise honor it.
+ */
+function isExplicitHandoffStale(stash: WebBuildPreviewData, current: WebBuildPreviewData): boolean {
+  const currentFp = current.sourceFingerprint;
+  if (!currentFp) return false;
+  const stashFp = stash.sourceFingerprint;
+  if (stashFp) return stashFp !== currentFp;
+  return previewAuthorityRank(current) >= 2;
+}
+
 /** Carry the NAVIGATION/context fields (return targets, slug, prompt) from the stash onto a chosen
  *  authoritative representation. These are navigation aids independent of render authority, so when the
  *  persisted session/project wins the render decision we must not lose the stash's fresher Back-context
@@ -188,26 +243,34 @@ function withStashContext(base: WebBuildPreviewData, ctx: WebBuildPreviewData | 
 
 /**
  * Resolve the preview representation for a run from its stash + the authoritative persisted sources
- * (saved session, saved project), honoring handoff PROVENANCE (Finding 1):
+ * (saved session, saved project), honoring handoff PROVENANCE (Finding 1) AND source VERSION (Defect 2):
  *
- *  1. A valid EXPLICIT stash is the renderer the user opened from the panel — honored exactly, so an
- *     explicit Safe or owner-candidate handoff is never overridden by a persisted model-native build.
- *     (owner-candidate stays owner-gated at the route; a cold restore never produces one because the
- *     automatic stash and persisted derivation never yield owner-candidate.)
+ *  1. A valid EXPLICIT stash is the renderer the user opened from the panel — honored exactly for the
+ *     source version it captured (Safe stays Safe; owner-candidate stays owner-gated at the route;
+ *     approved/provisional stay exact), UNLESS it is provably STALE: its source fingerprint differs from
+ *     the current persisted source's, in which case the current persisted representation wins so an old
+ *     handoff cannot mask a newer version of the same run (e.g. after a same-step image replacement).
  *  2. Otherwise the AUTOMATIC stash is only a cache/restore aid: the persisted session/project is the
  *     authoritative CURRENT state and wins whenever it is usable — so neither a section-only automatic
  *     stash NOR a stale model-native automatic stash can mask persisted state (equal or otherwise).
- *  3. When no persisted source is usable (cross-tab handoff, cold cache), fall back to the automatic
- *     stash so the preview still loads.
+ *  3. When no persisted source is usable (cross-tab handoff, cold cache), fall back to the stash so the
+ *     preview still loads.
  *
+ * When a persisted source wins the render decision, the stash's fresher Back-context is still carried.
  * Returns null when nothing is usable.
  */
 export function resolvePreviewSources(
   stash: WebBuildPreviewData | null | undefined,
   persisted: Array<WebBuildPreviewData | null | undefined>,
 ): WebBuildPreviewData | null {
-  if (isExplicitHandoff(stash)) return stash as WebBuildPreviewData;
   const authoritative = pickHighestAuthorityPreview(persisted);
+  if (isExplicitHandoff(stash)) {
+    // Honor the explicit renderer choice unless the persisted source has provably moved to a new version.
+    if (authoritative && isExplicitHandoffStale(stash as WebBuildPreviewData, authoritative)) {
+      return withStashContext(authoritative, stash);
+    }
+    return stash as WebBuildPreviewData;
+  }
   // Persisted state wins the RENDER decision, but keep the automatic stash's fresher Back-context.
   if (authoritative) return withStashContext(authoritative, stash);
   return isUsablePreviewData(stash) ? (stash as WebBuildPreviewData) : null;
@@ -268,6 +331,10 @@ function toMinimalPreview(data: WebBuildPreviewData): WebBuildPreviewData {
   // user renderer choice while treating the automatic cache as a non-masking fallback.
   if (data.handoffKind === 'explicit' || data.handoffKind === 'automatic') {
     minimal.handoffKind = data.handoffKind;
+  }
+  // Defect 2 — carry the source-version fingerprint (bounded string) so a stale handoff is detectable.
+  if (typeof data.sourceFingerprint === 'string' && data.sourceFingerprint) {
+    minimal.sourceFingerprint = data.sourceFingerprint;
   }
   // Phase 12D — for a model-native preview, carry ONLY the validated files + source
   // (already bounded by Phase 12C). Never the raw response, validation issues, full
@@ -451,8 +518,14 @@ export function openPreviewInNewTab(data: WebBuildPreviewData): boolean {
   const returnChatSessionId = safeId(data.returnChatSessionId) || safeId(prev?.returnChatSessionId);
   const returnWebBuildRunId = safeId(data.returnWebBuildRunId) || safeId(prev?.returnWebBuildRunId);
   // "Open preview" captures the renderer currently active in the panel — an EXPLICIT handoff that
-  // restore must honor exactly (Finding 1), never a cache to be overridden by persisted state.
-  const enriched: WebBuildPreviewData = { ...data, returnTo, returnChatSessionId, returnWebBuildRunId, handoffKind: 'explicit' };
+  // restore must honor exactly for the SOURCE VERSION it captured (Finding 1), never a cache to be
+  // overridden by persisted state. Stamp the source-version fingerprint so a later same-run change makes
+  // this handoff detectably stale (Defect 2): prefer the caller-computed identity (present even for a
+  // Safe handoff that carries no files), else derive it from any model-native files on the handoff.
+  const sourceFingerprint = (typeof data.sourceFingerprint === 'string' && data.sourceFingerprint)
+    ? data.sourceFingerprint
+    : (Array.isArray(data.files) && data.files.length ? canonicalWebBuildFilesFingerprint(data.files) : undefined);
+  const enriched: WebBuildPreviewData = { ...data, returnTo, returnChatSessionId, returnWebBuildRunId, handoffKind: 'explicit', sourceFingerprint };
 
   // Primary handoff: a verified localStorage stash (survives a full page reload of
   // the standalone tab). If storage is full/unavailable, fall back to a

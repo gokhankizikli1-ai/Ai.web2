@@ -13,7 +13,7 @@ import { uploadDeviceImage, ImageUploadError, type UploadErrorCode } from '@/lib
 import type { ImageReplacementInput } from '@/lib/webBuildImageReplace';
 import { useOwnerMode } from '@/hooks/useOwnerMode';
 import { useLanguageStore } from '@/stores/languageStore';
-import { openPreviewInNewTab, currentReturnTo } from '@/lib/webBuildPreviewStash';
+import { openPreviewInNewTab, currentReturnTo, canonicalWebBuildFilesFingerprint } from '@/lib/webBuildPreviewStash';
 import { resolvePreviewMode, candidateHasEntryFiles, isModelNativeRuntimeFailure, type ModelNativeCandidate, type ModelNativeRuntimeSnapshot, type OwnerPreviewSelection, type WebBuildPreviewMode } from '@/lib/webBuildRuntimePreview';
 import type { WebBuildSectionItem, WebBuildFile } from '@/lib/webBuildPayload';
 import type { WebBuildBrief } from '@/lib/webBuildApi';
@@ -456,6 +456,10 @@ export default function WebBuildPreviewPanel({
     // Open EXACTLY the renderer currently active in-panel — the Candidate/model-native
     // project when it's healthy and shown, otherwise the safe representation honestly.
     const openCandidate = activePreview === 'candidate' && nativeFiles.length > 0;
+    // Stamp the source-version identity of the UNDERLYING current build (the active model-native files)
+    // — computed even for a Safe handoff, which does not itself carry candidate files — so a later
+    // same-step change (e.g. image replacement) makes this handoff detectably stale on reopen (Defect 2).
+    const sourceFingerprint = nativeFiles.length ? canonicalWebBuildFilesFingerprint(nativeFiles) : undefined;
     const opened = openPreviewInNewTab({
       runId: runId || `preview-${Date.now().toString(36)}`,
       sectionItems: items,
@@ -463,6 +467,7 @@ export default function WebBuildPreviewPanel({
       slug: url,
       returnTo: currentReturnTo(),
       previewMode: openCandidate ? mode : 'safe-fallback',
+      sourceFingerprint,
       ...(openCandidate
         ? { files: nativeFiles, previewSource: 'model-native-sandbox' as const }
         : {}),

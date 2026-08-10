@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { saveWebBuildPayloadToProject } from '@/lib/webBuildProject';
+import { saveWebBuildPayloadToProject, upsertWebBuildSteps } from '@/lib/webBuildProject';
 import { getProject, addProject, updateProject } from '@/stores/projectStore';
+import { applyImageReplacement } from '@/lib/webBuildImageReplace';
+import { resolvePreviewSources, canonicalWebBuildFilesFingerprint, type WebBuildPreviewData } from '@/lib/webBuildPreviewStash';
 import type { Project } from '@/types/projects';
 import type { WebBuildFile, WebBuildPayload, WebBuildStep } from '@/lib/webBuildPayload';
 
@@ -194,5 +196,120 @@ describe('projectStore backend mirror gated on local write (Finding 2)', () => {
     expect(updateProject('p4', { name: 'Renamed' })).toBe(true);
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(String(fetchSpy.mock.calls[0][0])).toContain('/projects/p4');
+  });
+});
+
+/**
+ * Defect 1 — saving to an EXISTING project must UPSERT steps by id (so a same-step update, e.g. an
+ * image replacement that keeps the step id but changes file content, replaces the old step instead of
+ * being dropped), and verification must prove the persisted latest-step CONTENT — not just that the id
+ * is present. All zero-provider.
+ */
+function stepWith(id: string, files: WebBuildFile[]): WebBuildStep {
+  return { id, files } as unknown as WebBuildStep;
+}
+function payloadWith(...steps: WebBuildStep[]): WebBuildPayload {
+  return { prompt: 'a landing page', brief: { type: 'Landing' }, sectionItems: [], activity: [{ id: 'save', status: 'pending' }], steps } as unknown as WebBuildPayload;
+}
+function filesWith(appContent: string): WebBuildFile[] {
+  return [
+    { path: 'src/main.tsx', content: 'main', language: 'tsx', status: 'unchanged' as const, added: 0, removed: 0 },
+    { path: 'src/App.tsx', content: appContent, language: 'tsx', status: 'unchanged' as const, added: 0, removed: 0 },
+    { path: 'src/styles.css', content: 'body{}', language: 'css', status: 'unchanged' as const, added: 0, removed: 0 },
+  ];
+}
+
+describe('project step merge is UPSERT-by-id (Defect 1)', () => {
+  it('A: previous [A,B] upsert incoming [B(new),C] → [A, B(new), C], no duplicate ids', () => {
+    const A = stepWith('A', filesWith('A0')), Bold = stepWith('B', filesWith('B0'));
+    const Bnew = stepWith('B', filesWith('B1')), C = stepWith('C', filesWith('C0'));
+    const merged = upsertWebBuildSteps([A, Bold], [Bnew, C]);
+    expect(merged.map((s) => s.id)).toEqual(['A', 'B', 'C']);
+    expect(merged[1].files.find((f) => f.path === 'src/App.tsx')?.content).toBe('B1'); // B replaced in place
+    expect(new Set(merged.map((s) => s.id)).size).toBe(merged.length); // G: no duplicate ids
+  });
+
+  it('B: same step id with changed App.tsx → persisted project contains the NEW content', () => {
+    installStorage(); asUser('U');
+    const first = saveWebBuildPayloadToProject(payloadWith(stepWith('S', filesWith('v1'))));
+    expect(first.ok).toBe(true);
+    const second = saveWebBuildPayloadToProject(payloadWith(stepWith('S', filesWith('v2'))), first.project.id);
+    expect(second.ok).toBe(true);
+    const back = getProject(first.project.id);
+    const steps = back?.webBuild?.steps || [];
+    expect(steps.filter((s) => s.id === 'S').length).toBe(1); // not duplicated
+    expect(steps.find((s) => s.id === 'S')?.files.find((f) => f.path === 'src/App.tsx')?.content).toBe('v2');
+  });
+
+  it('C+F(save side): image replacement (same step id) survives save → read-back has the replacement URL', () => {
+    installStorage(); asUser('U');
+    const URL_A = 'https://cdn.example.com/a.jpg', URL_B = 'https://cdn.example.com/b.jpg';
+    const files = filesWith(`<img data-korvix-id="n1" src="${URL_A}" />`);
+    const p0 = { ...payloadWith(stepWith('S', files)), files } as unknown as WebBuildPayload;
+    const saved0 = saveWebBuildPayloadToProject(p0);
+    expect(saved0.ok).toBe(true);
+
+    const rep = applyImageReplacement(p0, { nodeId: 'n1', source: 'stock', url: URL_B, oldUrl: URL_A });
+    expect(rep.ok).toBe(true);
+    const saved1 = saveWebBuildPayloadToProject(rep.payload as WebBuildPayload, saved0.project.id);
+    expect(saved1.ok).toBe(true);
+
+    const back = getProject(saved0.project.id);
+    const backStep = back?.webBuild?.steps?.find((s) => s.id === 'S');
+    const backApp = backStep?.files.find((f) => f.path === 'src/App.tsx')?.content || '';
+    expect(backApp).toContain(URL_B);
+    expect(backApp).not.toContain(URL_A);
+    // persisted fingerprint equals the current live/session fingerprint (VERSION B)
+    const liveStep = (rep.payload as WebBuildPayload).steps.find((s) => s.id === 'S');
+    expect(canonicalWebBuildFilesFingerprint(backStep?.files)).toBe(canonicalWebBuildFilesFingerprint(liveStep?.files));
+    // a stale VERSION_A explicit stash cannot override the current persisted VERSION_B
+    const fpA = canonicalWebBuildFilesFingerprint(files);
+    const staleExplicit = { runId: 'S', sectionItems: [{ id: 's1' }], brief: {}, previewMode: 'safe-fallback', handoffKind: 'explicit', sourceFingerprint: fpA } as unknown as WebBuildPreviewData;
+    const persisted = { runId: 'S', sectionItems: [], brief: {}, files: backStep?.files, previewSource: 'model-native-sandbox', previewMode: 'approved-model-native', sourceFingerprint: canonicalWebBuildFilesFingerprint(backStep?.files) } as unknown as WebBuildPreviewData;
+    const resolved = resolvePreviewSources(staleExplicit, [persisted]);
+    expect(resolved?.sourceFingerprint).toBe(canonicalWebBuildFilesFingerprint(liveStep?.files)); // VERSION_B
+    expect(resolved?.previewMode).toBe('approved-model-native');
+  });
+
+  it('D: same step id but persisted contents are STALE → verification FAILS (content-mismatch)', () => {
+    // A store that persists the FIRST projects write then FREEZES it (accepts later writes but keeps
+    // the old value) — the update "succeeds" but the read-back still holds the old content.
+    (() => {
+      const m = new Map<string, string>();
+      let projectsFrozen = false;
+      const store = {
+        getItem: (k: string) => (m.has(k) ? m.get(k)! : null),
+        setItem: (k: string, v: string) => {
+          if (k.includes('projects')) { if (projectsFrozen) return; projectsFrozen = true; }
+          m.set(k, String(v));
+        },
+        removeItem: (k: string) => m.delete(k), clear: () => m.clear(), key: (i: number) => Array.from(m.keys())[i] ?? null, get length() { return m.size; },
+      } as unknown as Storage;
+      (globalThis as unknown as { localStorage: Storage }).localStorage = store;
+    })();
+    asUser('U');
+    const first = saveWebBuildPayloadToProject(payloadWith(stepWith('S', filesWith('v1'))));
+    expect(first.ok).toBe(true); // v1 persisted (first write)
+    const second = saveWebBuildPayloadToProject(payloadWith(stepWith('S', filesWith('v2'))), first.project.id);
+    expect(second.ok).toBe(false);
+    expect(second.reason).toBe('latest-step-content-mismatch'); // read-back still v1 ≠ saved v2
+  });
+
+  it('E: same step id + correct new content → verification succeeds', () => {
+    installStorage(); asUser('U');
+    const first = saveWebBuildPayloadToProject(payloadWith(stepWith('S', filesWith('v1'))));
+    const second = saveWebBuildPayloadToProject(payloadWith(stepWith('S', filesWith('v2'))), first.project.id);
+    expect(second.ok).toBe(true);
+    expect(second.reason).toBeUndefined();
+  });
+
+  it('F: a new revision (new step id) preserves prior history and appends exactly once', () => {
+    installStorage(); asUser('U');
+    const first = saveWebBuildPayloadToProject(payloadWith(stepWith('S1', filesWith('v1'))));
+    const second = saveWebBuildPayloadToProject(payloadWith(stepWith('S1', filesWith('v1')), stepWith('S2', filesWith('v2'))), first.project.id);
+    expect(second.ok).toBe(true);
+    const ids = (getProject(first.project.id)?.webBuild?.steps || []).map((s) => s.id);
+    expect(ids).toEqual(['S1', 'S2']);
+    expect(ids.filter((id) => id === 'S2').length).toBe(1);
   });
 });
