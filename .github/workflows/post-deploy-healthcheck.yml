@@ -30,8 +30,9 @@ name: post-deploy-healthcheck
 #
 # Configuration (no secrets required for the public endpoints):
 #   vars.RAILWAY_PROD_URL  — the API/web service base URL. Defaults to
-#                            https://korvixai-backend-production.up.railway.app
-#                            (the same DEFAULT_API_HOST the frontend uses).
+#                            https://aiweb2-production-1ee5.up.railway.app
+#                            (the web/API service's public domain per Railway
+#                            Settings → Networking).
 #                            Override via repo Variables → Actions if it changes.
 #                            NOTE: this must be the API/web URL, never the worker URL.
 #
@@ -66,7 +67,7 @@ jobs:
           # no HTTP server, so this must resolve to the API/web URL only.
           URL="${{ vars.RAILWAY_PROD_URL }}"
           if [ -z "$URL" ]; then
-            URL="https://korvixai-backend-production.up.railway.app"
+            URL="https://aiweb2-production-1ee5.up.railway.app"
           fi
           echo "url=$URL" >> "$GITHUB_OUTPUT"
           echo "Target (API/web service): $URL"
