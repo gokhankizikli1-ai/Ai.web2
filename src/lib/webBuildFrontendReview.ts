@@ -517,53 +517,92 @@ export function synthesizeDeterministicReviewIssues(
   return out.slice(0, MAX_ISSUES);
 }
 
-/** A stable per-issue key for de-duplicating GATE-CRITICAL deterministic issues WITHOUT collapsing
- *  two genuinely-different acceptance-gate blockers that merely share a review category. Keyed by the
- *  issue id when present (deterministic analyzers emit code-scoped ids like `research-…` / `binding-…`),
- *  else by category + first target file + a normalized instruction/evidence identity — so two distinct
- *  same-category issues in different files (or with different obligations) never collapse to one. */
+/** A stable per-issue key for de-duplicating deterministic issues WITHOUT collapsing two
+ *  genuinely-different acceptance-gate blockers that merely share a review category (or, across
+ *  analyzers, a code namespace). The key ALWAYS composes category + id + first target file +
+ *  a normalized obligation identity — never the id alone — so a latent id-namespace adjacency
+ *  (e.g. two analyzers both emitting `visual-…` ids, or the generation contract's index-less
+ *  `contract:<code>` id) can never make two distinct obligations collapse to one, while true
+ *  exact duplicates (same category, id, file and obligation) still dedupe. Bounded; deterministic. */
 function gateIssueKey(i: FrontendBuilderReviewIssue): string {
-  if (i.id && i.id.trim()) return `id:${i.id.trim()}`;
+  const id = (i.id || '').trim();
   const file = (i.files && i.files[0]) || '';
   const ident = (i.repairInstruction || i.evidence || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().slice(0, 48);
-  return `cf:${i.category}|${file}|${ident}`;
+  return `${i.category}|${id}|${file}|${ident}`;
+}
+
+/** Priority for the MERGED review artifact (lower = kept first when the bounded cap forces a choice).
+ *  Encodes the required order so a hard acceptance-gate obligation always outranks a replaceable
+ *  lower-priority model issue and can never be squeezed out at the cap:
+ *   0 gate-critical blocker · 1 other blocker · 2 gate-critical major · 3 contract-fidelity major ·
+ *   4 component-composition major · 5 other major · 6 minor/advisory. */
+function mergedIssuePriority(i: FrontendBuilderReviewIssue): number {
+  const gate = i.gateCritical === true;
+  if (i.severity === 'blocker') return gate ? 0 : 1;
+  if (i.severity === 'major') {
+    if (gate) return 2;
+    if (i.category === 'contract-fidelity') return 3;
+    if (i.category === 'component-composition') return 4;
+    return 5;
+  }
+  return 6; // minor / advisory
 }
 
 /**
- * Merge deterministic issues into an existing (healthy) model review's issues, bounded and
- * de-duplicated. ADVISORY deterministic issues collapse by CATEGORY (do not duplicate an equivalent
- * valid model issue — one per category). But a GATE-CRITICAL, non-minor deterministic issue (one that
- * maps to a hard acceptance-gate blocker) is NEVER dropped merely because its category already appears:
- * multiple DISTINCT gate blockers legitimately share a category (e.g. `binding-section-missing` and
- * `research-required-pattern-missing` are both `contract-fidelity`), and collapsing them by category
- * silently omitted a blocker from the single repair, guaranteeing a post-repair gate rejection. Such
- * issues are de-duplicated only against an EXACT prior occurrence (stable id/file key), so every
- * acceptance-gate blocker reaches the repair as its own explicit obligation. Returns the merged,
- * bounded issue list and how many deterministic issues were actually added.
+ * Merge deterministic issues into an existing (healthy) model review's issues, bounded to MAX_ISSUES
+ * and de-duplicated. ADVISORY deterministic issues collapse by CATEGORY (one per category) and only
+ * FILL remaining room — they never displace a model issue. A GATE-CRITICAL, non-minor deterministic
+ * issue (a hard acceptance-gate blocker) is de-duplicated only against an EXACT prior occurrence
+ * (stable category+id+file+obligation key), and — critically — is guaranteed a slot even when the
+ * model already returned MAX_ISSUES: the combined (model + gate) set is capped by `mergedIssuePriority`,
+ * so a gate obligation DISPLACES the lowest-priority model issue (a minor/advisory or a non-gate major)
+ * instead of being silently dropped. This closes the cap-full gap where a full model review could
+ * otherwise omit every deterministic blocker from the single repair. Displacement can only drop LOWER-
+ * priority issues, so the recomputed review is never made weaker (major/blocker counts never fall
+ * because a higher-priority obligation replaced a lower-priority one). Returns the merged, bounded
+ * issue list and how many deterministic issues actually survived into it.
  */
 export function mergeDeterministicIssues(
   modelIssues: FrontendBuilderReviewIssue[],
   deterministicIssues: FrontendBuilderReviewIssue[],
 ): { issues: FrontendBuilderReviewIssue[]; added: number } {
   const existingCategories = new Set(modelIssues.map((i) => i.category));
-  const seenGateKeys = new Set(modelIssues.map(gateIssueKey));
-  const merged = [...modelIssues];
-  let added = 0;
+  const seenKeys = new Set(modelIssues.map(gateIssueKey));
+  const gateAdds: FrontendBuilderReviewIssue[] = [];
+  const advisoryAdds: FrontendBuilderReviewIssue[] = [];
   for (const det of deterministicIssues) {
-    if (merged.length >= MAX_ISSUES) break;
     const gateCritical = det.gateCritical === true && det.severity !== 'minor';
+    const key = gateIssueKey(det);
     if (gateCritical) {
-      // Preserve distinct gate blockers even on a category collision; drop only exact duplicates.
-      if (seenGateKeys.has(gateIssueKey(det))) continue;
+      if (seenKeys.has(key)) continue;                 // drop only an EXACT duplicate obligation
     } else if (existingCategories.has(det.category)) {
-      continue;   // advisory: one issue per category
+      continue;                                         // advisory: one issue per category
     }
-    merged.push(det);
+    seenKeys.add(key);
     existingCategories.add(det.category);
-    seenGateKeys.add(gateIssueKey(det));
-    added += 1;
+    (gateCritical ? gateAdds : advisoryAdds).push(det);
   }
-  return { issues: merged.slice(0, MAX_ISSUES), added };
+
+  // Gate obligations MUST fit: cap (model + gate) by priority so a gate obligation displaces the
+  // lowest-priority MODEL issue rather than being dropped. Stable within a priority tier (idx order).
+  let base = [...modelIssues, ...gateAdds];
+  if (base.length > MAX_ISSUES) {
+    base = base
+      .map((i, idx) => ({ i, idx, p: mergedIssuePriority(i) }))
+      .sort((a, b) => (a.p - b.p) || (a.idx - b.idx))
+      .slice(0, MAX_ISSUES)
+      .map((x) => x.i);
+  }
+  // Advisory deterministic issues only FILL remaining room — never displace (unchanged behavior).
+  const finalIssues = [...base];
+  for (const adv of advisoryAdds) {
+    if (finalIssues.length >= MAX_ISSUES) break;
+    finalIssues.push(adv);
+  }
+
+  const modelSet = new Set(modelIssues);
+  const added = finalIssues.filter((i) => !modelSet.has(i)).length;
+  return { issues: finalIssues.slice(0, MAX_ISSUES), added };
 }
 
 /**

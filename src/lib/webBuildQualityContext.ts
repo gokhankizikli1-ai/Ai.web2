@@ -525,3 +525,163 @@ export function buildReviewScopedSpecProjection(spec: FrontendBuildSpecification
   if (Array.isArray(projected.missingInputs)) projected.missingInputs = (projected.missingInputs as string[]).slice(0, 4);
   return projected as unknown as FrontendBuildSpecification;
 }
+
+/* ── Repair-authority DIGEST ─────────────────────────────────────────────────────────────────────
+ * The review-scoped projection above drops the 11 heavy generator-authority fields to fit the request
+ * under the backend cap. But the SAME authorities are still evaluated by the deterministic acceptance
+ * analyzers on the ORIGINAL full spec AFTER the repair. So a size-compacted repair could regress a
+ * requirement the model never saw → a NEW post-repair blocker/major. This digest closes that gap: a
+ * BOUNDED, structured extract of the hard, acceptance-CRITICAL requirements from EACH dropped authority,
+ * built from the ORIGINAL full spec and attached to the repair request REGARDLESS of compaction — so
+ * every rule capable of blocking post-repair acceptance is visible to the single repair either as an
+ * `issuesToFix` entry (a current violation) OR here (a requirement not to regress). It is a compact
+ * requirement summary, never the full authority objects — measured at a few KB, far under the cap. */
+const MAX_DIGEST_LIST = 16;
+const MAX_DIGEST_STR = 100;
+
+function dObj(v: unknown): Record<string, unknown> | undefined {
+  return (v && typeof v === 'object' && !Array.isArray(v)) ? (v as Record<string, unknown>) : undefined;
+}
+function dArr(v: unknown): unknown[] {
+  return Array.isArray(v) ? v : [];
+}
+function dStr(v: unknown): string | undefined {
+  return (typeof v === 'string' && v.trim()) ? v.trim().slice(0, MAX_DIGEST_STR) : undefined;
+}
+function dStrList(v: unknown, n = MAX_DIGEST_LIST): string[] | undefined {
+  const out = dArr(v).map(dStr).filter((s): s is string => !!s).slice(0, n);
+  return out.length ? out : undefined;
+}
+/** Assign `value` to `target[key]` only when it is a present, non-empty value. Keeps the digest lean. */
+function dPut(target: Record<string, unknown>, key: string, value: unknown): void {
+  if (value === undefined || value === null) return;
+  if (Array.isArray(value) && value.length === 0) return;
+  if (dObj(value) && Object.keys(value as Record<string, unknown>).length === 0) return;
+  target[key] = value;
+}
+
+/**
+ * Build the bounded repair-authority digest from the ORIGINAL full spec. Pure, total, fail-open
+ * (returns undefined on any problem or when no authority carries a hard requirement). Every list is
+ * length-bounded and every string length-capped, so the digest can never reintroduce the 99k spec.
+ */
+export function buildRepairAuthorityDigest(spec: FrontendBuildSpecification): Record<string, unknown> | undefined {
+  try {
+    const s = spec as unknown as Record<string, unknown>;
+    const digest: Record<string, unknown> = {};
+
+    // 1) binding — required sections / interactions / controls / dynamic outcomes.
+    const bindingReqs = dArr(dObj(s.bindingRequirements)?.requirements)
+      .map(dObj).filter((r): r is Record<string, unknown> => !!r && r.required === true)
+      .slice(0, MAX_DIGEST_LIST)
+      .map((r) => {
+        const o: Record<string, unknown> = {};
+        dPut(o, 'kind', dStr(r.kind)); dPut(o, 'label', dStr(r.label));
+        dPut(o, 'controls', dStrList(dArr(r.controls).map((c) => dObj(c)?.label), 6));
+        dPut(o, 'dynamicOutcome', dStr(r.dynamicOutcome));
+        return o;
+      }).filter((o) => Object.keys(o).length);
+    dPut(digest, 'requiredBindings', bindingReqs.length ? bindingReqs : undefined);
+
+    // 2) research — required sector patterns + forbidden modules/claims + sector authority.
+    const rd = dObj(s.researchDirection);
+    if (rd) {
+      const research: Record<string, unknown> = {};
+      dPut(research, 'requiredPatterns', dStrList(rd.requiredPatterns));
+      dPut(research, 'forbiddenModules', dStrList(dObj(rd.artDirection)?.forbiddenModules));
+      dPut(research, 'forbiddenClaims', dStrList(rd.forbiddenClaims));
+      dPut(research, 'sector', dStr(rd.sector));
+      dPut(digest, 'research', research);
+    }
+
+    // 3) composition — per-section assigned family (anti template-collapse).
+    const comp = dArr(dObj(s.composition)?.sections).map(dObj)
+      .map((x) => ({ id: dStr(x?.id), family: dStr(x?.family) }))
+      .filter((x) => x.id).slice(0, MAX_DIGEST_LIST);
+    dPut(digest, 'sectionComposition', comp.length ? comp : undefined);
+
+    // 4) visual system — per-section composition family map.
+    const vsFam = dObj(dObj(s.visualSystem)?.sectionFamilies);
+    if (vsFam) {
+      const fams = Object.entries(vsFam).slice(0, MAX_DIGEST_LIST)
+        .map(([k, v]) => ({ section: dStr(k), family: dStr(v) })).filter((e) => e.section);
+      dPut(digest, 'visualSectionFamilies', fams.length ? fams : undefined);
+    }
+
+    // 5) content narrative — required section ids + CTA role + internal-leak prohibitions.
+    const cn = dObj(s.contentNarrative);
+    if (cn) {
+      const content: Record<string, unknown> = {};
+      dPut(content, 'requiredSectionIds', dStrList(dArr(cn.sections).map((x) => dObj(x)?.id)));
+      dPut(content, 'primaryCtaRole', dStr(cn.primaryCtaRole));
+      dPut(content, 'voiceProhibitions', dStrList(cn.voiceProhibitions));
+      dPut(digest, 'content', content);
+    }
+
+    // 6) experience quality — required interactive sections (control+state+outcome).
+    const inter = dArr(dObj(s.experienceQuality)?.sections).map(dObj)
+      .filter((x): x is Record<string, unknown> => !!x && dObj(x.interaction)?.required === true)
+      .slice(0, 10)
+      .map((x) => {
+        const it = dObj(x.interaction) || {};
+        const o: Record<string, unknown> = {};
+        dPut(o, 'id', dStr(x.id)); dPut(o, 'kind', dStr(it.kind)); dPut(o, 'requiredOutcome', dStr(it.requiredOutcome));
+        return o;
+      }).filter((o) => Object.keys(o).length);
+    dPut(digest, 'requiredInteractions', inter.length ? inter : undefined);
+
+    // 7) visual concept — required image roles + signature visual + animated-visual floor + hero anchor.
+    const vc = dObj(s.visualConcept);
+    if (vc) {
+      const visual: Record<string, unknown> = {};
+      dPut(visual, 'requiredImageRoles', dStrList(dArr(vc.imageRoles).filter((r) => dObj(r)?.required === true).map((r) => dObj(r)?.role), 10));
+      const sig = dObj(vc.signature);
+      if (sig) { const o: Record<string, unknown> = {}; dPut(o, 'family', dStr(sig.family)); dPut(o, 'medium', dStr(sig.medium)); if (typeof sig.animated === 'boolean') o.animated = sig.animated; dPut(visual, 'signature', o); }
+      if (typeof vc.requiredAnimatedVisualCount === 'number') visual.requiredAnimatedVisualCount = vc.requiredAnimatedVisualCount;
+      dPut(visual, 'peakSectionId', dStr(dObj(vc.rhythm)?.peakSectionId));
+      dPut(digest, 'visual', visual);
+    }
+
+    // 8) experience identity — regulated-stakes disclaimer floor.
+    const trust = dObj(dObj(s.experienceIdentity)?.trust);
+    if (trust && dStr(trust.stakes) === 'regulated') {
+      dPut(digest, 'regulatedDisclaimers', dStrList(trust.disclaimersRequired, 8));
+    }
+
+    // 9) motion execution — required signature scene.
+    const me = dObj(s.motionExecution);
+    if (me && me.signatureSceneRequired === true) {
+      const motion: Record<string, unknown> = { signatureSceneRequired: true };
+      dPut(motion, 'signatureSceneLocation', dStr(me.signatureSceneLocation));
+      dPut(motion, 'techniqueFamily', dStr(me.techniqueFamily));
+      dPut(motion, 'implementationMedium', dStr(me.implementationMedium));
+      dPut(digest, 'motion', motion);
+    }
+
+    // 10) execution obligations — the REQUIRED (regression-gated) obligations.
+    const required = dArr(dObj(s.executionObligations)?.obligations).map(dObj)
+      .filter((o): o is Record<string, unknown> => !!o && o.priority === 'required')
+      .slice(0, MAX_DIGEST_LIST)
+      .map((o) => { const r: Record<string, unknown> = {}; dPut(r, 'type', dStr(o.type)); dPut(r, 'requirement', dStr(o.requirement)); dPut(r, 'targetScope', dStr(o.targetScope)); return r; })
+      .filter((r) => Object.keys(r).length);
+    dPut(digest, 'requiredObligations', required.length ? required : undefined);
+
+    // 11) experience architecture — hard section-architecture / medium / proof contract.
+    const ea = dObj(s.experienceArchitecture);
+    if (ea) {
+      const arch: Record<string, unknown> = {};
+      if (typeof ea.landingRequired === 'boolean') arch.landingRequired = ea.landingRequired;
+      dPut(arch, 'entryPattern', dStr(ea.entryPattern));
+      dPut(arch, 'heroContentPriority', dStr(ea.heroContentPriority));
+      dPut(arch, 'heroPattern', dStr(ea.heroPattern));
+      dPut(arch, 'primaryVisualMedium', dStr(ea.primaryVisualMedium));
+      dPut(arch, 'sectionSequence', dStrList(ea.sectionSequence, 30));
+      dPut(arch, 'forbiddenPatterns', dStrList(ea.forbiddenPatterns));
+      dPut(digest, 'experienceArchitecture', arch);
+    }
+
+    return Object.keys(digest).length ? digest : undefined;
+  } catch {
+    return undefined;
+  }
+}

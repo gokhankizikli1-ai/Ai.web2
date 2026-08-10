@@ -47,6 +47,29 @@ describe('mergeDeterministicIssues — gate-critical blockers survive a category
     const { added } = mergeDeterministicIssues([], det);
     expect(added).toBe(1);
   });
+
+  it('a gate-critical major DISPLACES a low-priority model issue at the FULL cap (Finding 3)', () => {
+    // Model reviewer already returned MAX_ISSUES (12) low-priority issues; the deterministic gate
+    // blocker must still reach the repair by displacing the lowest-priority model issue — bounded.
+    const model: FrontendBuilderReviewIssue[] = [];
+    for (let n = 0; n < 12; n += 1) model.push(issue(`model-${n}`, { severity: 'minor', category: 'typography' }));
+    const det = [issue('research-required-pattern-missing-1', { gateCritical: true, severity: 'major' })];
+    const { issues } = mergeDeterministicIssues(model, det);
+    expect(issues.length).toBe(12);                                              // never exceeds the cap
+    expect(issues.some((i) => i.id === 'research-required-pattern-missing-1')).toBe(true); // gate survived
+    expect(issues.filter((i) => i.severity === 'minor').length).toBe(11);        // one model minor displaced
+  });
+
+  it('distinct same-category obligations in DIFFERENT files never collapse (Finding 4 hardening)', () => {
+    // Two composition majors, same category, different files, different ids/obligations — both kept.
+    const det = [
+      issue('composition-a', { gateCritical: true, category: 'component-composition', files: ['src/components/Pricing.tsx'], repairInstruction: 'recompose pricing' }),
+      issue('composition-b', { gateCritical: true, category: 'component-composition', files: ['src/components/UseCases.tsx'], repairInstruction: 'recompose use-cases' }),
+    ];
+    const { issues, added } = mergeDeterministicIssues([], det);
+    expect(added).toBe(2);
+    expect(issues.map((i) => i.id).sort()).toEqual(['composition-a', 'composition-b']);
+  });
 });
 
 /**
