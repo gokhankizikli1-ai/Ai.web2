@@ -112,6 +112,22 @@ describe('deriveModelNativeCandidate — render-safety vs approval split', () =>
     expect(c.acceptance).toBe('manual-review-required');
   });
 
+  it('legacy: consumed + unknown acceptance WITHOUT validation metadata → approved, not render-safe → still approved-model-native', () => {
+    // Pre-Phase-12E builds consumed model-native as the finished preview with no acceptance
+    // artifact and often no Phase 12C validation. approvedForUserPreview stays true; the
+    // render-safety gate must NOT regress them to safe-fallback for non-owners.
+    const c = deriveModelNativeCandidate(
+      step({ consumption: 'model-native' }),
+      entryFiles(),
+    );
+    expect(c.source).toBe('consumed-model-native');
+    expect(c.acceptance).toBe('unknown');
+    expect(c.approvedForUserPreview).toBe(true);
+    expect(c.safeToRenderModelNativePreview).toBe(false);
+    expect(resolvePreviewMode(c, false, undefined)).toBe('approved-model-native');
+    expect(resolvePreviewMode(c, true, undefined)).toBe('approved-model-native');
+  });
+
   it('C: consumed but validation INVALID → NOT render-safe → safe-fallback (structural safety intact)', () => {
     const c = deriveModelNativeCandidate(
       step({ consumption: 'model-native', validationStatus: 'invalid', readyForConsumption: true, acceptance: 'manual-review-required' }),

@@ -236,11 +236,13 @@ export function deriveModelNativeCandidate(
 /**
  * Resolve the explicit Preview mode a viewer should see. Pure.
  *
- *   • Non-owner: a structurally render-SAFE model-native project (approved → 'approved-model-native';
- *     valid-but-not-yet-approved → 'provisional-model-native'), otherwise the safe fallback. A
+ *   • Non-owner: quality-APPROVED (incl. legacy pre-Phase-12E `unknown` acceptance with no
+ *     validation metadata) → 'approved-model-native'; else a structurally render-SAFE
+ *     model-native project → 'provisional-model-native'; otherwise the safe fallback. A
  *     manual-review-required build is NO LONGER forced to safe-fallback merely because quality
- *     acceptance did not approve it — only a NON-render-safe project falls back. This decouples
- *     "safe/valid enough to render" from "approved as finished" without auto-approving anything.
+ *     acceptance did not approve it — only a NON-render-safe, NON-approved project falls back.
+ *     This decouples "safe/valid enough to render" from "approved as finished" without
+ *     auto-approving anything, while preserving legacy approved behaviour.
  *   • Owner: may inspect the candidate (default) or switch to the safe fallback (UNCHANGED).
  *
  * Runtime error/timeout/missing-entry safety is enforced downstream by the panel's candidate-failure
@@ -254,8 +256,11 @@ export function resolvePreviewMode(
 ): WebBuildPreviewMode {
   const approved = !!candidate?.approvedForUserPreview;
   if (!isOwner) {
+    // Honor quality approval FIRST so legacy consumed model-native builds (acceptance
+    // 'unknown', often missing Phase 12C validation) keep 'approved-model-native'.
+    if (approved) return 'approved-model-native';
     if (!candidate?.safeToRenderModelNativePreview) return 'safe-fallback';
-    return approved ? 'approved-model-native' : 'provisional-model-native';
+    return 'provisional-model-native';
   }
   if (!candidate?.available) return 'safe-fallback';
   const sel: OwnerPreviewSelection = selection ?? 'model-native';

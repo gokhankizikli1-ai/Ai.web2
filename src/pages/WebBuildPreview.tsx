@@ -25,14 +25,13 @@ import type { WebBuildStep } from '@/lib/webBuildPayload';
 const usablePreview = isUsablePreviewData;
 
 /** Build preview data from a saved Web Build step. Phase 13A — AUTOMATIC cold restoration
- *  honors render-SAFETY, not consumption alone, and uses the SAME authority split as the
- *  embedded panel so the two never disagree: a model-native project is restored for the user
- *  when it is render-SAFE (`safeToRenderModelNativePreview` — structurally valid, ready for
- *  consumption, all entry files, the actual consumed project). A render-safe build that quality
- *  acceptance APPROVED restores as 'approved-model-native'; a render-safe but not-yet-approved
- *  ('manual-review-required') build restores as 'provisional-model-native' (still the real
- *  project, shown pending final review — never auto-approved). A NON-render-safe build (invalid /
- *  not ready / missing entry files / internal-synthesis fallback) restores the deterministic safe
+ *  uses the SAME authority split as the embedded panel so the two never disagree: a
+ *  model-native project is restored for the user when it is quality-APPROVED
+ *  (`approvedForUserPreview` — including legacy pre-Phase-12E unknown acceptance without
+ *  validation metadata) OR render-SAFE (`safeToRenderModelNativePreview`). Approved restores
+ *  as 'approved-model-native'; render-safe but not-yet-approved ('manual-review-required')
+ *  restores as 'provisional-model-native' (still the real project, shown pending final review —
+ *  never auto-approved). A NON-approved, NON-render-safe build restores the deterministic safe
  *  fallback. An unapproved unconsumed candidate is NEVER auto-exposed here — it is reachable only
  *  through an explicit stashed owner-candidate handoff. Safety/acceptance/source are read from the
  *  derived candidate (artifact-driven), never inferred from filenames. */
@@ -44,7 +43,8 @@ function stepToPreviewData(
   if (!step) return null;
   const brief = wb.brief || {};
   const candidate = deriveModelNativeCandidate(step, step.files);
-  if (candidate.safeToRenderModelNativePreview && candidate.source === 'consumed-model-native' && hasModelNativeEntryFiles(step.files)) {
+  // Match resolvePreviewMode: approved (incl. legacy unknown) OR render-safe provisional.
+  if ((candidate.approvedForUserPreview || candidate.safeToRenderModelNativePreview) && candidate.source === 'consumed-model-native' && hasModelNativeEntryFiles(step.files)) {
     const previewMode: WebBuildPreviewMode = candidate.approvedForUserPreview
       ? 'approved-model-native'
       : 'provisional-model-native';
