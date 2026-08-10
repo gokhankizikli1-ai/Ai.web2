@@ -652,7 +652,9 @@ export function deriveFrontendBuildSpecification(input: FrontendBuildSpecInput):
       const nSubheadline = normLabel(s.subheadline);
       const nPrimaryCTA = normLabel(s.primaryCTA);
       const srcBullets = Array.isArray(s.bullets) ? s.bullets : [];
-      const nBullets = srcBullets.map((b) => normLabel(b) ?? '').map((b) => b.trim());
+      // Strip only the leaked field-label prefix from each bullet (no other whitespace change); an
+      // empty result (a bullet that was only a label) is dropped by the planning-copy filter below.
+      const nBullets = srcBullets.map((b) => normLabel(b) ?? '');
       const headline = looksLikeInternalPlanningCopy(nHeadline) ? undefined : nHeadline;
       const subheadline = looksLikeInternalPlanningCopy(nSubheadline) ? undefined : nSubheadline;
       const primaryCTA = looksLikeInternalPlanningCopy(nPrimaryCTA) ? undefined : nPrimaryCTA;
