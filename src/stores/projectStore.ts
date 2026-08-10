@@ -172,57 +172,75 @@ function loadProjects(): Project[] {
   return [];
 }
 
-function saveProjects(projects: Project[]) {
+/** Persist the project list. Returns TRUE only when the localStorage write succeeded, so callers can
+ *  detect quota/serialization failures instead of silently reporting success (Defect 3). */
+function saveProjects(projects: Project[]): boolean {
   ensureScopeMigrated();
-  try { localStorage.setItem(projectsKey(), JSON.stringify(projects)); } catch { /* ignore */ }
+  try { localStorage.setItem(projectsKey(), JSON.stringify(projects)); return true; } catch { return false; }
 }
 
 export function getProjects(): Project[] {
   return loadProjects();
 }
 
-export function addProject(project: Project) {
+/** Returns TRUE only when the durable localStorage write succeeded. The backend mirror stays
+ *  fire-and-forget and does not affect the returned value; it fires ONLY after a successful local
+ *  write (localStorage is authoritative for UI), so a failed durable save never creates server-side
+ *  state that would diverge from local on retry. */
+export function addProject(project: Project): boolean {
   const projects = loadProjects();
   projects.unshift(project);
-  saveProjects(projects);
-  // Mirror to backend (fire-and-forget). When backend has ENABLE_PROJECTS
-  // off we get a 503 — apiSafe swallows it. The localStorage write above
-  // is the authoritative one for UI purposes.
-  apiSafe(async () => {
-    await fetch(`${getApiBase()}/projects`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        user_id:     getProjectUserId(),
-        name:        project.name,
-        description: project.description || '',
-        project_id:  project.id,        // preserve client id
-        metadata:    { client_origin: 'projectStore.ts' },
-      }),
+  const wrote = saveProjects(projects);
+  // Mirror to backend (fire-and-forget) ONLY when the authoritative local write succeeded. When
+  // backend has ENABLE_PROJECTS off we get a 503 — apiSafe swallows it. Skipping the mirror on a
+  // failed local write prevents local/remote divergence (a "failed" save that still created the
+  // project server-side, then a retry creating a duplicate).
+  if (wrote) {
+    apiSafe(async () => {
+      await fetch(`${getApiBase()}/projects`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id:     getProjectUserId(),
+          name:        project.name,
+          description: project.description || '',
+          project_id:  project.id,        // preserve client id
+          metadata:    { client_origin: 'projectStore.ts' },
+        }),
+      });
     });
-  });
+  }
+  return wrote;
 }
 
 export function getProject(id: string): Project | undefined {
   return getProjects().find(p => p.id === id);
 }
 
-export function updateProject(id: string, updates: Partial<Project>) {
+/** Returns TRUE only when the durable localStorage write succeeded (FALSE when the id is unknown or the
+ *  write threw). The backend mirror stays fire-and-forget and does not affect the returned value; it
+ *  fires ONLY after a successful local write, so a failed durable save never mutates server-side state
+ *  (which would diverge from local on retry). */
+export function updateProject(id: string, updates: Partial<Project>): boolean {
   const projects = loadProjects();
   const idx = projects.findIndex(p => p.id === id);
-  if (idx < 0) return;
+  if (idx < 0) return false;
   projects[idx] = { ...projects[idx], ...updates };
-  saveProjects(projects);
-  apiSafe(async () => {
-    await fetch(`${getApiBase()}/projects/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name:        updates.name,
-        description: updates.description,
-      }),
+  const wrote = saveProjects(projects);
+  // Mirror to backend ONLY when the authoritative local write succeeded (see addProject).
+  if (wrote) {
+    apiSafe(async () => {
+      await fetch(`${getApiBase()}/projects/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name:        updates.name,
+          description: updates.description,
+        }),
+      });
     });
-  });
+  }
+  return wrote;
 }
 
 export function deleteProject(id: string) {

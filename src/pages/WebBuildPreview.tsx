@@ -5,8 +5,8 @@ import { useLanguageStore } from '@/stores/languageStore';
 import { useOwnerMode } from '@/hooks/useOwnerMode';
 import WebBuildPreviewDocument from '@/components/builder/WebBuildPreviewDocument';
 import WebBuildModelNativePreview, { CandidateUnapprovedNotice, RuntimeDiagnosticsBlock } from '@/components/builder/WebBuildModelNativePreview';
-import { readPreview, sanitizeReturnTo, requestPreviewForRun, subscribePreviewResponses, isUsablePreviewData, hasModelNativeEntryFiles, type WebBuildPreviewData } from '@/lib/webBuildPreviewStash';
-import { deriveModelNativeCandidate, resolvePreviewMode, isModelNativeRuntimeFailure, type ModelNativeCandidate, type ModelNativeRuntimeSnapshot } from '@/lib/webBuildRuntimePreview';
+import { readPreview, sanitizeReturnTo, requestPreviewForRun, subscribePreviewResponses, isUsablePreviewData, hasModelNativeEntryFiles, modelNativePreviewFields, resolvePreviewSources, type WebBuildPreviewData } from '@/lib/webBuildPreviewStash';
+import { isModelNativeRuntimeFailure, type ModelNativeCandidate, type ModelNativeRuntimeSnapshot } from '@/lib/webBuildRuntimePreview';
 import { listWebBuildSessions, getWebBuildSession } from '@/lib/webBuildSession';
 import { getProjects } from '@/stores/projectStore';
 import type { WebBuildStep } from '@/lib/webBuildPayload';
@@ -36,20 +36,19 @@ const usablePreview = isUsablePreviewData;
  *  fallback. An unapproved unconsumed candidate is NEVER auto-exposed here — it is reachable only
  *  through an explicit stashed owner-candidate handoff. Safety/acceptance/source are read from the
  *  derived candidate (artifact-driven), never inferred from filenames. */
-function stepToPreviewData(
+export function stepToPreviewData(
   runId: string,
   wb: { sectionItems?: WebBuildPreviewData['sectionItems']; brief?: WebBuildPreviewData['brief']; prompt?: string; steps?: WebBuildStep[] },
 ): WebBuildPreviewData | null {
   const step = (wb.steps || []).find((s) => s.id === runId);
   if (!step) return null;
   const brief = wb.brief || {};
-  const candidate = deriveModelNativeCandidate(step, step.files);
-  // Single source of truth: the SAME pure decision the embedded panel uses (non-owner authority —
-  // owner-candidate is reachable only via an explicit owner handoff, never on cold restore). A
-  // render-safe consumed model-native project restores as approved/provisional; everything else Safe.
-  const previewMode = resolvePreviewMode(candidate, false, undefined);
-  if (previewMode !== 'safe-fallback' && candidate.source === 'consumed-model-native' && hasModelNativeEntryFiles(step.files)) {
-    return { runId, sectionItems: wb.sectionItems || [], brief, slug: undefined, prompt: wb.prompt, files: step.files, previewSource: 'model-native-sandbox', previewMode };
+  // Single source of truth: modelNativePreviewFields derives the SAME non-owner authority the embedded
+  // panel and the stash use (owner-candidate is never produced on a cold restore). A render-safe consumed
+  // model-native step restores as approved/provisional model-native; everything else is Safe.
+  const mn = modelNativePreviewFields(step, step.files);
+  if (mn) {
+    return { runId, sectionItems: wb.sectionItems || [], brief, slug: undefined, prompt: wb.prompt, ...mn };
   }
   const fallback: WebBuildPreviewData = { runId, sectionItems: wb.sectionItems || [], brief, slug: undefined, prompt: wb.prompt, previewMode: 'safe-fallback' };
   return usablePreview(fallback) ? fallback : null;
@@ -79,23 +78,32 @@ function fromSession(runId: string): WebBuildPreviewData | null {
   return null;
 }
 
-/** Resolve preview data from the on-device sources, taking the FIRST USABLE one
- *  (non-empty sectionItems). The old `readPreview || fromSession || fromProject`
- *  chain short-circuited on a truthy-but-EMPTY stash (readPreview returns an
- *  object whenever sectionItems is an array, even []), so a stale/empty stash
- *  masked a healthy saved session/project. Skipping unusable candidates fixes it. */
-function resolveLocalPreview(runId: string): WebBuildPreviewData | null {
-  for (const get of [() => readPreview(runId), () => fromSession(runId), () => fromProject(runId)]) {
-    const d = get();
-    if (usablePreview(d)) return d;
-  }
-  return null;
+/** Resolve preview data from the on-device sources for the SAME run, honoring handoff provenance
+ *  (Defect 1 + Finding 1). The stash is passed as the (possibly EXPLICIT) handoff and the saved
+ *  session/project as the authoritative persisted sources: an explicit "Open preview" renderer choice
+ *  is honored exactly, while the automatic latest-preview cache never stale-masks persisted state — a
+ *  section-only OR a stale model-native automatic stash always yields to a usable persisted session/
+ *  project. See resolvePreviewSources for the full precedence. */
+export function resolveLocalPreview(runId: string): WebBuildPreviewData | null {
+  return resolvePreviewSources(readPreview(runId), [fromSession(runId), fromProject(runId)]);
 }
 
+/**
+ * Outer route component: every runId is an ISOLATED preview lifecycle (Defect 2). React Router keeps
+ * this component mounted across `/preview/web-build/A → …/B`, so a single-time `useState(local)` would
+ * strand run A's data, snapshot and runtime state into run B. Keying the inner component by runId forces
+ * a fresh mount per run: all state re-initializes for B, run A's runtime snapshot/error/slow-start cannot
+ * leak, run A's effect cleanup runs (unsubscribe), and a late BroadcastChannel response for A has no
+ * listener (and would be runId-filtered anyway). This is the deterministic run-identity guard.
+ */
 export default function WebBuildPreview() {
+  const { runId = '' } = useParams();
+  return <WebBuildPreviewRun key={runId} runId={runId} />;
+}
+
+function WebBuildPreviewRun({ runId }: { runId: string }) {
   const { t, lang } = useLanguageStore();
   const { isOwner } = useOwnerMode();
-  const { runId = '' } = useParams();
   const navigate = useNavigate();
   // Phase 13A — ephemeral runtime snapshot for an owner Candidate Preview (React state only).
   const [snapshot, setSnapshot] = useState<ModelNativeRuntimeSnapshot | null>(null);

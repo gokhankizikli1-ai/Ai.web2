@@ -9,6 +9,7 @@ import type { Project, ProjectMemory } from '@/types/projects';
 import { getProject, addProject, updateProject } from '@/stores/projectStore';
 import type { WebBuildResult } from '@/lib/webBuildApi';
 import { buildWebBuildPayload, type WebBuildPayload } from '@/lib/webBuildPayload';
+import { hasModelNativeEntryFiles } from '@/lib/webBuildPreviewStash';
 
 function uid(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -134,14 +135,49 @@ export function deriveWebProjectNameFromPayload(payload: WebBuildPayload): strin
   return `Website: ${label}`;
 }
 
+/** Result of a VERIFIED Web Build project save. `ok` is true ONLY when the payload actually
+ *  round-tripped into durable localStorage (write succeeded AND read-back verified). `project` is the
+ *  in-memory project either way; on failure it is NOT persisted and must not be reported as saved. */
+export interface SaveWebBuildResult {
+  ok: boolean;
+  project: Project;
+  reason?: 'write-failed' | 'project-not-persisted' | 'webbuild-missing' | 'latest-step-missing' | 'model-native-files-missing';
+}
+
+function latestStep(p: WebBuildPayload) {
+  const steps = Array.isArray(p.steps) ? p.steps : [];
+  return steps[steps.length - 1];
+}
+
+/** Read the project back from durable storage and verify the Web Build survived: same id, webBuild
+ *  present, the expected latest step id present, and — when the saved latest step is model-native — its
+ *  preview-critical entry files still present. Returns a reason on the first failed check, else null. */
+function verifyWebBuildPersisted(projectId: string, saved: WebBuildPayload): SaveWebBuildResult['reason'] | null {
+  const back = getProject(projectId);
+  if (!back) return 'project-not-persisted';
+  if (!back.webBuild) return 'webbuild-missing';
+  const backSteps = Array.isArray(back.webBuild.steps) ? back.webBuild.steps : [];
+  const savedStep = latestStep(saved);
+  const stepId = savedStep?.id;
+  if (stepId && !backSteps.some((s) => s.id === stepId)) return 'latest-step-missing';
+  if (savedStep && hasModelNativeEntryFiles(savedStep.files)) {
+    const backStep = backSteps.find((s) => s.id === savedStep.id);
+    if (!backStep || !hasModelNativeEntryFiles(backStep.files)) return 'model-native-files-missing';
+  }
+  return null;
+}
+
 /**
- * Save the page's ACCUMULATED payload (which already carries the full session
- * step history + file diffs). Creates a new project, or merges the session's
- * steps into an existing project's saved build. Returns the project.
+ * Save the page's ACCUMULATED payload (full session step history + file diffs) as a project, then
+ * VERIFY it durably persisted (Defect 3). Creates a new project, or merges the session's steps into an
+ * existing project's saved build. Returns { ok, project, reason }: `ok` is true only when the write
+ * succeeded AND the read-back verification passed. On failure the previous stored project is left
+ * untouched (the failed setItem leaves localStorage unchanged) and `ok` is false — the caller must NOT
+ * report success. Never throws.
  */
 export function saveWebBuildPayloadToProject(
   payload: WebBuildPayload, existingProjectId?: string,
-): Project {
+): SaveWebBuildResult {
   const now = new Date().toISOString();
   const saved = markSaved(payload);
 
@@ -156,11 +192,14 @@ export function saveWebBuildPayloadToProject(
         steps: [...prevSteps, ...saved.steps.filter((s) => !prevSteps.some((p) => p.id === s.id))],
         updatedAt: now,
       };
-      updateProject(existingProjectId, {
+      const project: Project = { ...existing, webBuild: merged };
+      const wrote = updateProject(existingProjectId, {
         webBuild: merged, updatedAt: 'Just now',
         progress: Math.min(100, (existing.progress || 40) + 10),
       });
-      return { ...existing, webBuild: merged };
+      if (!wrote) return { ok: false, project, reason: 'write-failed' };
+      const reason = verifyWebBuildPersisted(existingProjectId, saved);
+      return reason ? { ok: false, project, reason } : { ok: true, project };
     }
   }
 
@@ -184,6 +223,8 @@ export function saveWebBuildPayloadToProject(
     icon: 'Layout',
     webBuild: saved,
   };
-  addProject(project);
-  return project;
+  const wrote = addProject(project);
+  if (!wrote) return { ok: false, project, reason: 'write-failed' };
+  const reason = verifyWebBuildPersisted(project.id, saved);
+  return reason ? { ok: false, project, reason } : { ok: true, project };
 }

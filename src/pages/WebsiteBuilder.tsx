@@ -353,11 +353,20 @@ export default function WebsiteBuilder() {
   /* ── Save to project ──────────────────────────────────────────────── */
   const commitSave = useCallback((projectId?: string) => {
     if (!payload) return;
-    const proj = saveWebBuildPayloadToProject(payload, projectId);
-    setSavedProjectId(proj.id);
-    setSavedName(proj.name);
+    const res = saveWebBuildPayloadToProject(payload, projectId);
+    if (!res.ok) {
+      // Defect 3 — verified save did NOT durably persist. Do not claim success: keep the in-memory
+      // build, surface a bounded failure, and leave the save UI open for retry.
+      setErrorMsg(lang === 'tr'
+        ? 'Kaydedilemedi (depolama dolu olabilir). Yapı korunuyor — tekrar deneyin.'
+        : 'Could not save (storage may be full). Your build is kept — please try again.');
+      return;
+    }
+    setErrorMsg('');
+    setSavedProjectId(res.project.id);
+    setSavedName(res.project.name);
     setSaveStep('closed');
-  }, [payload]);
+  }, [payload, lang]);
 
   const existingProjects = useMemo(() => (saveStep === 'picker' ? getProjects() : []), [saveStep]);
 

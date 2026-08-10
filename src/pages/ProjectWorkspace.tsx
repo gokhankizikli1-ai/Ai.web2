@@ -41,7 +41,7 @@ import {
   type WebBuildPayload,
 } from '@/lib/webBuildPayload';
 import { saveWebBuildPayloadToProject } from '@/lib/webBuildProject';
-import { stashPreview } from '@/lib/webBuildPreviewStash';
+import { stashPreview, buildLatestPreviewStash } from '@/lib/webBuildPreviewStash';
 import { generateWebBuild, WebBuildError, webBuildErrorKeyFor } from '@/lib/webBuildApi';
 import { useLanguageStore } from '@/stores/languageStore';
 
@@ -326,8 +326,10 @@ function WebBuildProjectView({ project }: { project: Project }) {
   // Keep the preview route (/preview/web-build/:runId) loadable for this saved
   // build — stash the latest step's preview data whenever the payload changes.
   useEffect(() => {
-    const runId = payload.steps[payload.steps.length - 1]?.id;
-    if (runId) stashPreview({ runId, sectionItems: payload.sectionItems, brief: payload.brief, slug: wbSlug(project.name), prompt: payload.prompt });
+    // Preserve model-native render authority in the stash (Defect 1) so a section-only stash never
+    // masks a healthier saved project/session on the standalone preview route.
+    const data = buildLatestPreviewStash(payload, { slug: wbSlug(project.name) });
+    if (data) stashPreview(data);
   }, [payload, project.name]);
 
   // Keep the newest message in view as the conversation grows.
@@ -357,11 +359,18 @@ function WebBuildProjectView({ project }: { project: Project }) {
       });
       if (abortRef.current !== controller) return; // superseded
       const next = buildWebBuildPayload(trimmed, res, payload, lang);
-      // Persist the continuation onto the saved project.
-      saveWebBuildPayloadToProject(next, project.id);
+      // Persist the continuation onto the saved project — verified (Defect 3). Keep the revision in the
+      // live view either way; if the durable write did NOT round-trip, surface a bounded, non-fatal
+      // warning instead of silently implying it was saved to the project.
+      const saveRes = saveWebBuildPayloadToProject(next, project.id);
       setPayload(next);
       setAnimateStepId(next.steps[next.steps.length - 1]?.id);
       setLive(null);
+      if (!saveRes.ok) {
+        setErrorMsg(lang === 'tr'
+          ? 'Revizyon uygulandı ancak projeye kalıcı olarak kaydedilemedi (depolama dolu olabilir).'
+          : 'Revision applied but could not be permanently saved to the project (storage may be full).');
+      }
     } catch (err) {
       if (controller.signal.aborted) return;
       setLive(null);
