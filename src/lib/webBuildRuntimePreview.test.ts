@@ -248,3 +248,56 @@ describe('resolvePreviewMode — owner selection unchanged', () => {
     expect(resolvePreviewMode(none, true, undefined)).toBe('safe-fallback');
   });
 });
+
+describe('Phase 3 — legacy backward-compat derivation + save/reopen round-trip', () => {
+  const mode = (s: WebBuildStep, f: WebBuildFile[]) => resolvePreviewMode(deriveModelNativeCandidate(s, f), false, undefined);
+
+  it('legacy consumed model-native with NO validation artifact + entry files → renders (not Safe)', () => {
+    // A genuinely-legacy payload: consumption is model-native and all entry files are present, but the
+    // validation artifact predates the current pipeline and is absent. It must NOT demote to Safe.
+    const s = step({ consumption: 'model-native' }); // no validation AND no acceptance artifact
+    const c = deriveModelNativeCandidate(s, entryFiles());
+    expect(c.source).toBe('consumed-model-native');
+    expect(c.safeToRenderModelNativePreview).toBe(true); // legacy render-safety inferred
+    // No acceptance artifact ⇒ acceptance 'unknown' ⇒ pre-13A legacy "consumed model-native = finished"
+    // behavior is preserved (approved), NOT Safe. The fix is that it renders at all.
+    expect(mode(s, entryFiles())).toBe('approved-model-native');
+  });
+
+  it('legacy consumed model-native (no validation) that IS manual-review-required → provisional (not Safe)', () => {
+    const s = step({ consumption: 'model-native', acceptance: 'manual-review-required' });
+    expect(deriveModelNativeCandidate(s, entryFiles()).safeToRenderModelNativePreview).toBe(true);
+    expect(mode(s, entryFiles())).toBe('provisional-model-native');
+  });
+
+  it('legacy inference NEVER overrides an EXPLICITLY invalid validation artifact → Safe', () => {
+    const s = step({ consumption: 'model-native', validationStatus: 'invalid', readyForConsumption: true });
+    expect(deriveModelNativeCandidate(s, entryFiles()).safeToRenderModelNativePreview).toBe(false);
+    expect(mode(s, entryFiles())).toBe('safe-fallback');
+  });
+
+  it('legacy consumed model-native without validation still needs entry files → Safe when missing', () => {
+    const s = step({ consumption: 'model-native' });
+    expect(mode(s, entryFilesMissingOne())).toBe('safe-fallback');
+  });
+
+  it('save → serialize(JSON) → reopen preserves the exact preview mode (no drift across persistence)', () => {
+    const cases: Array<{ s: WebBuildStep; expect: WebBuildPreviewMode }> = [
+      { s: step({ consumption: 'model-native', validationStatus: 'valid', readyForConsumption: true, acceptance: 'approved' }), expect: 'approved-model-native' },
+      { s: step({ consumption: 'model-native', validationStatus: 'valid', readyForConsumption: true, acceptance: 'manual-review-required' }), expect: 'provisional-model-native' },
+      { s: step({ consumption: 'model-native', validationStatus: 'invalid', readyForConsumption: true, acceptance: 'manual-review-required' }), expect: 'safe-fallback' },
+      { s: step({ consumption: 'model-native' }), expect: 'approved-model-native' }, // legacy (no validation, no acceptance)
+      { s: step({ consumption: 'model-native', acceptance: 'manual-review-required' }), expect: 'provisional-model-native' }, // legacy, unapproved
+      { s: step({}), expect: 'safe-fallback' },
+    ];
+    for (const { s, expect: want } of cases) {
+      const files = entryFiles();
+      // live derivation
+      expect(mode(s, files)).toBe(want);
+      // round-trip the persisted artifacts exactly as Save-to-Project / session JSON does
+      const reopened = JSON.parse(JSON.stringify(s)) as WebBuildStep;
+      const reopenedFiles = JSON.parse(JSON.stringify(files)) as WebBuildFile[];
+      expect(mode(reopened, reopenedFiles)).toBe(want);
+    }
+  });
+});

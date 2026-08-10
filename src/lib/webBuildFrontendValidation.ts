@@ -29,6 +29,7 @@ import { evaluateVisualQuality } from '@/lib/webBuildVisualEvaluation';
 // PR #515 — post-generation Semantic Content Guard (a leaf; pure + fail-open; suggestions
 // only; returns undefined when its flag is off, so this file is unchanged then).
 import { evaluateSemanticContent } from '@/lib/webBuildSemanticContentGuard';
+import { stripLeadingFieldLabel } from '@/lib/webBuildFieldLabel';
 
 /* ── Bounds (safe against untrusted model output) ───────────────────────────── */
 const MAX_GENERATED_FILES = 80;
@@ -495,15 +496,6 @@ function normCopy(s: string): string {
     .replace(/\s+/g, ' ')
     .trim();
 }
-
-// Strip a leading internal SPEC field-label prefix ("Headline:", "Subheadline:", …) from an
-// AUTHORITATIVE copy value before the verbatim fidelity comparison (Fix C). If a spec value is
-// written as "Headline: Foo", fidelity must require only the real public text "Foo" — never the
-// internal prefix — so fidelity can never FORCE the very leak the content analyzer forbids. This
-// only ever RELAXES the required substring (the real copy is still enforced), never real-copy
-// fidelity. KEEP IN SYNC with FIELD_LABEL_PREFIXES in webBuildContentNarrative.ts.
-const LEADING_FIELD_LABEL_RE = /^\s*(?:headline|subheadline|subtitle|eyebrow|cta|body|description|label)\s*:\s*/i;
-function stripLeadingFieldLabel(s: string): string { return (s || '').replace(LEADING_FIELD_LABEL_RE, ''); }
 
 /**
  * Extract only comment text from TypeScript and TSX files: line comments, block

@@ -28,6 +28,7 @@ import { hasAffirmedIntent } from '@/lib/webBuildProductIntent';
 import type { WebBuildFile } from '@/lib/webBuildPayload';
 import type { CompactSourceContext } from '@/lib/webBuildQualityContext';
 import { orderFilesForReviewBounding, compactContextFromIncludedFiles, buildReviewScopedSpecProjection, buildRepairAuthorityDigest } from '@/lib/webBuildQualityContext';
+import { stripLeadingFieldLabel } from '@/lib/webBuildFieldLabel';
 import { renderBindingRequirementsBlock } from '@/lib/webBuildBindingRequirements';
 import { renderResearchDirectionBlock } from '@/lib/webBuildResearchDirection';
 import { renderCompositionBlock } from '@/lib/webBuildComposition';
@@ -3458,6 +3459,10 @@ function buildFrontendRepairInputPayload(
   // Bounded acceptance-authority digest built from the ORIGINAL full spec (passed in so it survives
   // spec compaction — `spec` here may be the review-scoped projection at the spec-compacted fit level).
   repairAuthorityDigest?: Record<string, unknown>,
+  // The architecture-fidelity obligation precomputed from the ORIGINAL full spec (same reason as the
+  // digest): the remove-unplanned-section rule must survive spec projection. When absent, we fall back
+  // to deriving it from `spec` (backward compatible), which may be the compacted projection.
+  architectureFidelityObligation?: Record<string, unknown>,
 ): Record<string, unknown> {
   // Priority-ordered, bounded selection (blocker → gate-critical research → contract-fidelity major →
   // component-composition major → remaining major → minor), so a high-priority architecture/composition
@@ -3476,8 +3481,9 @@ function buildFrontendRepairInputPayload(
     strengthsToPreserve: (initialReview.strengths || []).slice(0, 6),
   };
   // Authoritative page-architecture fidelity obligation (exact ordered sections + remove-unplanned +
-  // distinct-composition rule). Absent when the spec has no usable section list (fail-safe).
-  const architectureFidelity = buildArchitectureFidelityObligation(spec);
+  // distinct-composition rule). Prefer the precomputed original-spec obligation (survives projection);
+  // fall back to deriving from `spec`. Absent when the spec has no usable section list (fail-safe).
+  const architectureFidelity = architectureFidelityObligation ?? buildArchitectureFidelityObligation(spec);
   if (architectureFidelity) input.architectureFidelity = architectureFidelity;
   // Bounded acceptance-authority digest from the ORIGINAL full spec — carries the hard requirements
   // (binding / research / composition / content / visual / motion / execution / architecture) the
@@ -3514,8 +3520,9 @@ export function buildFrontendBuilderRepairRequest(
   deterministicWarnings?: string[],
   qualityEvidence?: FrontendRepairQualityEvidence,
   repairAuthorityDigest?: Record<string, unknown>,
+  architectureFidelityObligation?: Record<string, unknown>,
 ): string {
-  const input = buildFrontendRepairInputPayload(spec, files, initialReview, deterministicWarnings, qualityEvidence, repairAuthorityDigest);
+  const input = buildFrontendRepairInputPayload(spec, files, initialReview, deterministicWarnings, qualityEvidence, repairAuthorityDigest, architectureFidelityObligation);
   return [
     '[FRONTEND BUILDER REQUEST]',
     '[FRONTEND REPAIR REQUEST]',
@@ -3571,8 +3578,11 @@ export async function generateFrontendBuilderRepairRaw(
   // Digest built from the ORIGINAL full spec BEFORE fitting, so the acceptance authorities survive even
   // when the fitter compacts `useSpec` (which drops those very authorities).
   const authorityDigest = buildRepairAuthorityDigest(spec);
+  // Same survival reason as the digest: derive the architecture-fidelity obligation from the ORIGINAL
+  // spec so the remove-unplanned rule is not lost when the fitter compacts `useSpec`.
+  const archFidelity = buildArchitectureFidelityObligation(spec);
   const fit = fitStructuredBuilderRequestUnderCap(spec, files, allFilePaths, undefined, (useSpec) =>
-    buildFrontendBuilderRepairRequest(useSpec, files, initialReview, opts?.deterministicWarnings, opts?.qualityEvidence, authorityDigest));
+    buildFrontendBuilderRepairRequest(useSpec, files, initialReview, opts?.deterministicWarnings, opts?.qualityEvidence, authorityDigest, archFidelity));
   const message = fit.message;
   if (message.length > MAX_FRONTEND_TASK_REQUEST_CHARS) {
     return frontendBuilderArtifact('failed', `The repair request (${message.length} chars) exceeds the safe request limit (${MAX_FRONTEND_TASK_REQUEST_CHARS}).`);
@@ -3641,8 +3651,9 @@ export function buildFrontendBuilderDeltaRepairRequest(
   qualityEvidence?: FrontendRepairQualityEvidence,
   compact?: CompactSourceContext,
   repairAuthorityDigest?: Record<string, unknown>,
+  architectureFidelityObligation?: Record<string, unknown>,
 ): string {
-  const input = buildFrontendRepairInputPayload(spec, files, initialReview, deterministicWarnings, qualityEvidence, repairAuthorityDigest);
+  const input = buildFrontendRepairInputPayload(spec, files, initialReview, deterministicWarnings, qualityEvidence, repairAuthorityDigest, architectureFidelityObligation);
   // The model receives the SAME bounded repair input; only the requested response shape differs.
   input.responseContract = 'frontend-delta-v1';
   // Owner-compact repair: replace the full source with the selected target/dependency/root files
@@ -3737,8 +3748,10 @@ export async function generateFrontendBuilderDeltaRepairRaw(
   // Digest built from the ORIGINAL full spec BEFORE fitting, so the acceptance authorities survive even
   // when the fitter compacts `useSpec` (spec-compacted level drops those authorities from the spec).
   const authorityDigest = buildRepairAuthorityDigest(spec);
+  // Original-spec architecture obligation (survives projection like the digest).
+  const archFidelity = buildArchitectureFidelityObligation(spec);
   const fit = fitStructuredBuilderRequestUnderCap(spec, files, priorityPaths, opts?.compact, (useSpec, useCompact) =>
-    buildFrontendBuilderDeltaRepairRequest(useSpec, files, initialReview, opts?.deterministicWarnings, opts?.qualityEvidence, useCompact, authorityDigest));
+    buildFrontendBuilderDeltaRepairRequest(useSpec, files, initialReview, opts?.deterministicWarnings, opts?.qualityEvidence, useCompact, authorityDigest, archFidelity));
   const message = fit.message;
   if (message.length > MAX_FRONTEND_TASK_REQUEST_CHARS) {
     return frontendBuilderArtifact('failed', `The delta repair request (${message.length} chars) exceeds the safe request limit (${MAX_FRONTEND_TASK_REQUEST_CHARS}).`);
@@ -4015,14 +4028,6 @@ const MAX_CRITICAL_SECTION_ID = 100;
 function copyPreview(s: string): string {
   return s.length > 60 ? `${s.slice(0, 60)}…` : s;
 }
-// Strip a leading internal SPEC field-label prefix ("Headline:", …) from an authoritative copy value
-// (Fix C), so the EXACT required-copy value sent to the single repair is the real public text ("Foo"),
-// never "Headline: Foo" — the repair is thus never told to preserve the internal prefix. Must match the
-// validator's stripped preview so recovery still matches. KEEP IN SYNC with FIELD_LABEL_PREFIXES in
-// webBuildContentNarrative.ts and stripLeadingFieldLabel in webBuildFrontendValidation.ts.
-const LEADING_FIELD_LABEL_RE = /^\s*(?:headline|subheadline|subtitle|eyebrow|cta|body|description|label)\s*:\s*/i;
-function stripLeadingFieldLabel(s: string): string { return (s || '').replace(LEADING_FIELD_LABEL_RE, ''); }
-
 /**
  * Recover the EXACT full missing critical copy (headline / primary CTA) by matching the
  * validator's bounded previews (`missingCriticalCopy`) back to the full values in

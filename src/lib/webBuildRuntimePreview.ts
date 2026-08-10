@@ -183,9 +183,18 @@ export function deriveModelNativeCandidate(
       // the consumed model-native project (not the deterministic fallback), Phase 12C validation is
       // 'valid' (⇒ no structural errors and no forbidden runtime/security patterns) and ready for
       // consumption, and the three entry files are present. Never inferred from the acceptance score.
-      const safeToRender = validation?.status === 'valid'
-        && validation?.readyForConsumption === true
-        && candidateHasEntryFiles(active);
+      //
+      // LEGACY BACKWARD-COMPAT (Phase 3): a genuinely-legacy saved payload may carry the consumed
+      // model-native files (and all three entry files) but NO validation artifact at all. Reaching
+      // consumption 'model-native' historically REQUIRED validation.status==='valid' &&
+      // readyForConsumption===true (webBuildPayload consumption gate), and both artifacts were written
+      // together, so a consumed model-native build missing ONLY the validation artifact is safe to infer
+      // as structurally valid rather than demoting a real, present, runnable project to Safe on reopen.
+      // This inference applies ONLY when the validation artifact is entirely ABSENT — an artifact that is
+      // PRESENT but not 'valid'/ready is respected as NOT render-safe (never overridden).
+      const validationValidOrLegacy = (validation?.status === 'valid' && validation?.readyForConsumption === true)
+        || (!validation && consumption?.status === 'model-native');
+      const safeToRender = validationValidOrLegacy && candidateHasEntryFiles(active);
       return {
         available: true,
         source: 'consumed-model-native',

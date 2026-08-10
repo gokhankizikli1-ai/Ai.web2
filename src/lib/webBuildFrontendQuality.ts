@@ -1470,7 +1470,7 @@ export async function runFrontendBuilderQualityPipeline(
     const acceptance = acceptanceArtifact('manual-review-required', initialProjectName, {
       initialReviewPassed: false, repairAttempted: true, repairAccepted: false,
       finalReviewPassed: finalReview.passed,
-      reason: `${rejectReason} The initial validated project stays active for owner inspection; normal users continue to see Safe Preview. Manual rendered review required.`,
+      reason: `${rejectReason} The initial validated project stays active; a structurally valid, consumed, runnable model-native project is shown to users as a PROVISIONAL preview pending final approval (not as an approved site), and only a genuinely non-render-safe project falls back to Safe Preview. Manual rendered review required.`,
     }, { usedDeterministicFallback, repairTriggeredByShallowQuality, severeWarningsBeforeRepair, severeWarningsAfterRepair, renderedVisualEvaluation, renderedVisionReview: renderedVisionReviewArtifact, acceptanceGate: gate.diagnostics, ...bindingExtra() });
     emit('quality-repair', 'completed', [{ label: 'result', value: 'rejected' }]);
     emit('acceptance', 'completed', acceptanceRows('manual-review-required', initialProjectName, gate.reasonCode));
