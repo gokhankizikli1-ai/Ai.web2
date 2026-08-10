@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { saveWebBuildPayloadToProject } from '@/lib/webBuildProject';
-import { getProject, addProject } from '@/stores/projectStore';
+import { getProject, addProject, updateProject } from '@/stores/projectStore';
 import type { Project } from '@/types/projects';
 import type { WebBuildFile, WebBuildPayload, WebBuildStep } from '@/lib/webBuildPayload';
 
@@ -117,5 +117,82 @@ describe('saveWebBuildPayloadToProject — verified persistence (Defect 3)', () 
     expect(res.ok).toBe(false);
     expect(JSON.stringify(getProject('proj-keep'))).toBe(before); // prior project intact
     expect(getProject('proj-keep')?.webBuild?.steps?.length).toBe(1);
+  });
+});
+
+/**
+ * Finding 2 — the backend mirror (POST /projects, PATCH /projects/:id) must fire ONLY after the
+ * authoritative local write succeeded. A failed local durable write that still hit the backend would
+ * create local/remote divergence (a "failed" save that nonetheless created the project server-side,
+ * then a retry creating a duplicate). These assert the mirror call count against local write outcome.
+ */
+function installStore(failProjectsWrite = false): void {
+  const m = new Map<string, string>();
+  const store = {
+    getItem: (k: string) => (m.has(k) ? m.get(k)! : null),
+    setItem: (k: string, v: string) => {
+      // Fail ONLY the durable project-list write, so auth/user-id writes still succeed and the
+      // failure is isolated to exactly the persistence Finding 2 cares about.
+      if (failProjectsWrite && k.includes('projects')) { const e = new Error('QuotaExceededError'); e.name = 'QuotaExceededError'; throw e; }
+      m.set(k, String(v));
+    },
+    removeItem: (k: string) => { m.delete(k); },
+    clear: () => m.clear(),
+    key: (i: number) => Array.from(m.keys())[i] ?? null,
+    get length() { return m.size; },
+  } as unknown as Storage;
+  (globalThis as unknown as { localStorage: Storage }).localStorage = store;
+}
+const seedProject = (id: string): Project => ({
+  id, name: 'Website: Landing', description: '', category: 'Website', status: 'active',
+  progress: 40, agents: [], tasks: [], memory: [], files: [], createdAt: 'x', updatedAt: 'x',
+  color: 'slate', gradient: '', icon: 'Layout',
+} as unknown as Project);
+
+describe('projectStore backend mirror gated on local write (Finding 2)', () => {
+  let fetchSpy: ReturnType<typeof vi.fn>;
+  beforeEach(() => {
+    fetchSpy = vi.fn(() => Promise.resolve({ ok: true, json: async () => ({}) } as Response));
+    (globalThis as unknown as { fetch: typeof fetch }).fetch = fetchSpy as unknown as typeof fetch;
+  });
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  it('failed local add → no backend mirror POST', () => {
+    installStore(true); asUser('U');
+    expect(addProject(seedProject('p1'))).toBe(false);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('failed local update → no backend mirror PATCH (existing project, write-back fails)', () => {
+    // A store that HOLDS the project (so updateProject's findIndex succeeds) but rejects any
+    // projects write-back — isolating "the project exists locally but the durable update failed".
+    (globalThis as unknown as { localStorage: Storage }).localStorage = (() => {
+      const m = new Map<string, string>();
+      m.set('korvix-auth', JSON.stringify({ state: { user: { id: 'U' } } }));
+      return {
+        getItem: (k: string) => (m.has(k) ? m.get(k)! : (k.includes('projects') ? JSON.stringify([seedProject('p2')]) : null)),
+        setItem: (k: string, v: string) => { if (k.includes('projects')) { const e = new Error('QuotaExceededError'); e.name = 'QuotaExceededError'; throw e; } m.set(k, String(v)); },
+        removeItem: (k: string) => m.delete(k), clear: () => m.clear(), key: (i: number) => Array.from(m.keys())[i] ?? null, get length() { return m.size; },
+      } as unknown as Storage;
+    })();
+    fetchSpy.mockClear();
+    expect(updateProject('p2', { name: 'Renamed' })).toBe(false); // project found, but write-back fails
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('successful local add fires the mirror POST exactly once', () => {
+    installStore(); asUser('U');
+    expect(addProject(seedProject('p3'))).toBe(true);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(String(fetchSpy.mock.calls[0][0])).toContain('/projects');
+  });
+
+  it('successful local update fires the mirror PATCH', () => {
+    installStore(); asUser('U');
+    addProject(seedProject('p4'));
+    fetchSpy.mockClear();
+    expect(updateProject('p4', { name: 'Renamed' })).toBe(true);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(String(fetchSpy.mock.calls[0][0])).toContain('/projects/p4');
   });
 });

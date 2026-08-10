@@ -41,7 +41,17 @@ export interface WebBuildPreviewData {
    *  project pending final quality review) both render for everyone; 'safe-fallback' carries
    *  section data only. Optional → old stashes without it keep loading. */
   previewMode?: WebBuildPreviewMode;
+  /** Provenance of this stash (Finding 1). 'explicit' = a user-triggered "Open preview" handoff that
+   *  captures the renderer currently selected in the embedded panel — it must be honored exactly on
+   *  restore (owner-candidate stays owner-gated at the route). 'automatic' = the latest-preview cache,
+   *  a restore aid that must never stale-mask the authoritative persisted session/project. Absent is
+   *  treated as 'automatic' (the conservative cache semantics), so legacy stashes never override
+   *  current persisted state. */
+  handoffKind?: PreviewHandoffKind;
 }
+
+/** How a preview stash came to exist — see WebBuildPreviewData.handoffKind. */
+export type PreviewHandoffKind = 'explicit' | 'automatic';
 
 /** Required entry files a model-native preview needs before it can run. */
 const MODEL_NATIVE_ENTRY_PATHS = ['src/main.tsx', 'src/App.tsx', 'src/styles.css'];
@@ -117,6 +127,9 @@ export function buildLatestPreviewStash(
     returnTo: opts?.returnTo,
     returnChatSessionId: opts?.returnChatSessionId,
     returnWebBuildRunId: opts?.returnWebBuildRunId,
+    // This is the automatic latest-preview cache, not a user-chosen renderer handoff — so restore
+    // treats it as a fallback that never overrides the authoritative persisted session/project.
+    handoffKind: 'automatic',
   };
   const mn = modelNativePreviewFields(step, step.files);
   const data: WebBuildPreviewData = mn ? { ...base, ...mn } : base;
@@ -134,10 +147,10 @@ export function previewAuthorityRank(d: WebBuildPreviewData | null | undefined):
 }
 
 /**
- * Pick the HIGHEST-authority usable representation among candidate sources for the same run (stash,
- * saved session, saved project). Strictly-greater comparison keeps source order on ties, so the stash
- * (passed first) wins an equal-authority tie and its fresher return-context is preserved. Null if none
- * are usable. This is what prevents a stale lower-authority stash from masking a model-native build.
+ * Pick the HIGHEST-authority usable representation among candidate sources. Strictly-greater
+ * comparison keeps source order on ties (the first candidate wins an equal-authority tie). Null if
+ * none are usable. This is the pure authority primitive; provenance-aware resolution across a
+ * stash + persisted sources lives in resolvePreviewSources.
  */
 export function pickHighestAuthorityPreview(
   candidates: Array<WebBuildPreviewData | null | undefined>,
@@ -149,6 +162,55 @@ export function pickHighestAuthorityPreview(
     if (r > bestRank) { best = c as WebBuildPreviewData; bestRank = r; }
   }
   return best;
+}
+
+/** A stash represents the user's active in-panel renderer choice (Finding 1). */
+function isExplicitHandoff(d: WebBuildPreviewData | null | undefined): boolean {
+  return isUsablePreviewData(d) && d.handoffKind === 'explicit';
+}
+
+/** Carry the NAVIGATION/context fields (return targets, slug, prompt) from the stash onto a chosen
+ *  authoritative representation. These are navigation aids independent of render authority, so when the
+ *  persisted session/project wins the render decision we must not lose the stash's fresher Back-context
+ *  (returnTo / owning chat + web-build session ids). The authoritative render fields are untouched. */
+function withStashContext(base: WebBuildPreviewData, ctx: WebBuildPreviewData | null | undefined): WebBuildPreviewData {
+  if (!ctx || ctx === base) return base;
+  const merged: WebBuildPreviewData = {
+    ...base,
+    returnTo: base.returnTo ?? ctx.returnTo,
+    returnChatSessionId: base.returnChatSessionId ?? ctx.returnChatSessionId,
+    returnWebBuildRunId: base.returnWebBuildRunId ?? ctx.returnWebBuildRunId,
+    slug: base.slug ?? ctx.slug,
+    prompt: base.prompt ?? ctx.prompt,
+  };
+  return merged;
+}
+
+/**
+ * Resolve the preview representation for a run from its stash + the authoritative persisted sources
+ * (saved session, saved project), honoring handoff PROVENANCE (Finding 1):
+ *
+ *  1. A valid EXPLICIT stash is the renderer the user opened from the panel — honored exactly, so an
+ *     explicit Safe or owner-candidate handoff is never overridden by a persisted model-native build.
+ *     (owner-candidate stays owner-gated at the route; a cold restore never produces one because the
+ *     automatic stash and persisted derivation never yield owner-candidate.)
+ *  2. Otherwise the AUTOMATIC stash is only a cache/restore aid: the persisted session/project is the
+ *     authoritative CURRENT state and wins whenever it is usable — so neither a section-only automatic
+ *     stash NOR a stale model-native automatic stash can mask persisted state (equal or otherwise).
+ *  3. When no persisted source is usable (cross-tab handoff, cold cache), fall back to the automatic
+ *     stash so the preview still loads.
+ *
+ * Returns null when nothing is usable.
+ */
+export function resolvePreviewSources(
+  stash: WebBuildPreviewData | null | undefined,
+  persisted: Array<WebBuildPreviewData | null | undefined>,
+): WebBuildPreviewData | null {
+  if (isExplicitHandoff(stash)) return stash as WebBuildPreviewData;
+  const authoritative = pickHighestAuthorityPreview(persisted);
+  // Persisted state wins the RENDER decision, but keep the automatic stash's fresher Back-context.
+  if (authoritative) return withStashContext(authoritative, stash);
+  return isUsablePreviewData(stash) ? (stash as WebBuildPreviewData) : null;
 }
 
 /** A stash id must be a plain, non-empty string (never a URL). */
@@ -201,6 +263,11 @@ function toMinimalPreview(data: WebBuildPreviewData): WebBuildPreviewData {
   // non-'safe-fallback' model-native mode).
   if (data.previewMode === 'approved-model-native' || data.previewMode === 'provisional-model-native' || data.previewMode === 'owner-candidate' || data.previewMode === 'safe-fallback') {
     minimal.previewMode = data.previewMode;
+  }
+  // Finding 1 — carry the handoff provenance (bounded enum) so restore can honor an explicit
+  // user renderer choice while treating the automatic cache as a non-masking fallback.
+  if (data.handoffKind === 'explicit' || data.handoffKind === 'automatic') {
+    minimal.handoffKind = data.handoffKind;
   }
   // Phase 12D — for a model-native preview, carry ONLY the validated files + source
   // (already bounded by Phase 12C). Never the raw response, validation issues, full
@@ -383,7 +450,9 @@ export function openPreviewInNewTab(data: WebBuildPreviewData): boolean {
   const returnTo = sanitizeReturnTo(data.returnTo) || sanitizeReturnTo(prev?.returnTo) || currentReturnTo();
   const returnChatSessionId = safeId(data.returnChatSessionId) || safeId(prev?.returnChatSessionId);
   const returnWebBuildRunId = safeId(data.returnWebBuildRunId) || safeId(prev?.returnWebBuildRunId);
-  const enriched: WebBuildPreviewData = { ...data, returnTo, returnChatSessionId, returnWebBuildRunId };
+  // "Open preview" captures the renderer currently active in the panel — an EXPLICIT handoff that
+  // restore must honor exactly (Finding 1), never a cache to be overridden by persisted state.
+  const enriched: WebBuildPreviewData = { ...data, returnTo, returnChatSessionId, returnWebBuildRunId, handoffKind: 'explicit' };
 
   // Primary handoff: a verified localStorage stash (survives a full page reload of
   // the standalone tab). If storage is full/unavailable, fall back to a

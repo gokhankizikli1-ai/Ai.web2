@@ -5,7 +5,7 @@ import { useLanguageStore } from '@/stores/languageStore';
 import { useOwnerMode } from '@/hooks/useOwnerMode';
 import WebBuildPreviewDocument from '@/components/builder/WebBuildPreviewDocument';
 import WebBuildModelNativePreview, { CandidateUnapprovedNotice, RuntimeDiagnosticsBlock } from '@/components/builder/WebBuildModelNativePreview';
-import { readPreview, sanitizeReturnTo, requestPreviewForRun, subscribePreviewResponses, isUsablePreviewData, hasModelNativeEntryFiles, modelNativePreviewFields, pickHighestAuthorityPreview, type WebBuildPreviewData } from '@/lib/webBuildPreviewStash';
+import { readPreview, sanitizeReturnTo, requestPreviewForRun, subscribePreviewResponses, isUsablePreviewData, hasModelNativeEntryFiles, modelNativePreviewFields, resolvePreviewSources, type WebBuildPreviewData } from '@/lib/webBuildPreviewStash';
 import { isModelNativeRuntimeFailure, type ModelNativeCandidate, type ModelNativeRuntimeSnapshot } from '@/lib/webBuildRuntimePreview';
 import { listWebBuildSessions, getWebBuildSession } from '@/lib/webBuildSession';
 import { getProjects } from '@/stores/projectStore';
@@ -78,14 +78,14 @@ function fromSession(runId: string): WebBuildPreviewData | null {
   return null;
 }
 
-/** Resolve preview data from the on-device sources, preferring the HIGHEST render-authority usable
- *  representation for the SAME run (Defect 1). Previously this took the FIRST usable source, so a
- *  section-only / stale stash could mask a healthier model-native saved session/project. Now all three
- *  sources are resolved and pickHighestAuthorityPreview returns the strongest: a render-safe model-native
- *  representation always outranks a section-only / Safe one; ties keep source order (stash first, so its
- *  fresh return-context is preserved). Unusable/empty candidates rank 0 and are skipped. */
+/** Resolve preview data from the on-device sources for the SAME run, honoring handoff provenance
+ *  (Defect 1 + Finding 1). The stash is passed as the (possibly EXPLICIT) handoff and the saved
+ *  session/project as the authoritative persisted sources: an explicit "Open preview" renderer choice
+ *  is honored exactly, while the automatic latest-preview cache never stale-masks persisted state — a
+ *  section-only OR a stale model-native automatic stash always yields to a usable persisted session/
+ *  project. See resolvePreviewSources for the full precedence. */
 export function resolveLocalPreview(runId: string): WebBuildPreviewData | null {
-  return pickHighestAuthorityPreview([readPreview(runId), fromSession(runId), fromProject(runId)]);
+  return resolvePreviewSources(readPreview(runId), [fromSession(runId), fromProject(runId)]);
 }
 
 /**
