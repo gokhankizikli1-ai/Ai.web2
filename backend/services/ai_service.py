@@ -14,6 +14,8 @@ from ai_client import (
     start_openai_background_structured, cancel_openai_background_response,
     # Phase 13F.2 — task-specific full-source output budget resolver.
     frontend_task_max_output_tokens,
+    # Contract-aware repair budget — parse the explicit frontend-files-v1 / frontend-delta-v1 signal.
+    _frontend_repair_contract,
 )
 from ai_router import get_model_config, detect_mode
 from agent import run_tools, build_context_for_ai, detect_research_depth, DEPTH_CONFIG, RESEARCH_INTENTS
@@ -392,7 +394,11 @@ async def process_chat(
                     if _build_routing is not None:
                         _build_routing.note_web_build_frontend_task(_fb_kind, executed_model=cfg["model"])
                     _fb_use_bg = _frontend_task_is_background(_fb_kind)
-                    _fb_max_tokens = frontend_task_max_output_tokens(_fb_kind, cfg["max_tokens"])
+                    # Contract-aware budget: a quality-repair emitting the bounded frontend-delta-v1
+                    # upsert set is right-sized to 16k; full re-emit / unknown stay 30k (conservative).
+                    _fb_max_tokens = frontend_task_max_output_tokens(
+                        _fb_kind, cfg["max_tokens"], _frontend_repair_contract(message),
+                    )
 
                     if _fb_use_bg:
                         # Truthful async probe of the shared store BEFORE any OpenAI generation.

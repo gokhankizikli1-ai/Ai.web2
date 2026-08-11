@@ -3526,6 +3526,9 @@ export function buildFrontendBuilderRepairRequest(
   return [
     '[FRONTEND BUILDER REQUEST]',
     '[FRONTEND REPAIR REQUEST]',
+    // Explicit RESPONSE-contract signal for the backend budget resolver (never alters repair
+    // semantics; the backend sizes a full re-emit at 30k). Machine-generated header line only.
+    '[FRONTEND REPAIR CONTRACT: frontend-files-v1]',
     'Task: apply the bounded review fixes and return the COMPLETE repaired project.',
     'Preserve required public copy, required section order, the primary concept identity,',
     'the website language and the listed strengths. EXPAND shallow sections into fully',
@@ -3666,6 +3669,9 @@ export function buildFrontendBuilderDeltaRepairRequest(
   return [
     '[FRONTEND BUILDER REQUEST]',
     '[FRONTEND REPAIR REQUEST]',
+    // Explicit RESPONSE-contract signal for the backend budget resolver: the bounded delta upsert set
+    // is right-sized to 16k output. Never alters repair semantics; machine-generated header line only.
+    '[FRONTEND REPAIR CONTRACT: frontend-delta-v1]',
     'Task: apply the bounded review fixes, then return ONLY the files you actually change or add',
     'as a delta of COMPLETE-file upserts — do NOT re-emit unchanged files.',
     'Preserve required public copy, required section order, the primary concept identity, the',
