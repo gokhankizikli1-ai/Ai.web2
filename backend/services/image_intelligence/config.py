@@ -60,6 +60,33 @@ def is_enabled() -> bool:
     return (os.getenv("ENABLE_SMART_IMAGES", "false") or "").strip().lower() == "true"
 
 
+def visual_rerank_enabled() -> bool:
+    """True only when ``ENABLE_SMART_IMAGE_VISUAL_RERANK`` is explicitly ``"true"`` (Phase 1 visual
+    rerank of high-impact photographic slots). Default OFF ⇒ the smart path is byte-identical when
+    unset. Per-call read so a deploy can flip it without a redeploy (mirrors ``is_enabled``)."""
+    return (os.getenv("ENABLE_SMART_IMAGE_VISUAL_RERANK", "false") or "").strip().lower() == "true"
+
+
+def visual_rerank_topn() -> int:
+    """How many TOP metadata-ranked candidates a high-impact slot's single vision call inspects.
+    Bounded to [2, 5]; default 3. Never grows the candidate pool (it only re-orders the top-N)."""
+    try:
+        n = int(os.getenv("SMART_IMAGE_VISUAL_RERANK_TOPN", "3"))
+    except (TypeError, ValueError):
+        n = 3
+    return max(2, min(5, n))
+
+
+def visual_rerank_budget() -> int:
+    """Maximum vision calls per build (high-impact slots only). Bounded to [0, 4]; default 2 — enough
+    for a hero (+ background / primary-about) without a per-candidate cost explosion."""
+    try:
+        b = int(os.getenv("SMART_IMAGE_VISUAL_RERANK_BUDGET", "2"))
+    except (TypeError, ValueError):
+        b = 2
+    return max(0, min(4, b))
+
+
 def _read_weight(dimension: str) -> float:
     raw = os.getenv(f"{_ENV_WEIGHT_PREFIX}{dimension.upper()}")
     if raw is None:
@@ -95,4 +122,12 @@ def load_weights() -> RankingWeights:
     return RankingWeights(weights={dim: value / total for dim, value in raw.items()})
 
 
-__all__ = ["RANKING_DIMENSIONS", "RankingWeights", "is_enabled", "load_weights"]
+__all__ = [
+    "RANKING_DIMENSIONS",
+    "RankingWeights",
+    "is_enabled",
+    "load_weights",
+    "visual_rerank_enabled",
+    "visual_rerank_topn",
+    "visual_rerank_budget",
+]
