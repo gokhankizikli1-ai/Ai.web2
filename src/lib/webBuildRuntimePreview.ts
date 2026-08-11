@@ -130,6 +130,29 @@ function sanitizeFiles(files: WebBuildFile[] | undefined): WebBuildFile[] {
     : [];
 }
 
+/**
+ * PROVENANCE (source distinction) — true when the ACTIVE entry files are byte-for-byte the model
+ * output that Phase 12C validation parsed, i.e. the active files ARE the consumed model-native project
+ * and NOT the deterministic internal-synthesis fallback. The synthesis fallback emits the SAME entry
+ * PATHS (src/main.tsx, src/App.tsx, src/styles.css) but its deterministically-generated CONTENT never
+ * equals the validated model output — so this content match cannot be satisfied by synthesis, and it
+ * does not depend on the (drift-prone) consumption artifact. Pure; never mutates. `validationFiles`
+ * are the Phase 12C generated files (already persisted alongside validation).
+ */
+function activeEntryFilesMatchValidated(
+  active: WebBuildFile[], validationFiles: FrontendGeneratedFile[] | undefined,
+): boolean {
+  if (!Array.isArray(validationFiles) || validationFiles.length === 0) return false;
+  const validated = new Map<string, string>();
+  for (const f of validationFiles) {
+    if (f && typeof f.path === 'string' && typeof f.content === 'string') validated.set(f.path, f.content);
+  }
+  return MODEL_NATIVE_ENTRY_PATHS.every((p) => {
+    const a = active.find((x) => x && x.path === p);
+    return !!a && typeof a.content === 'string' && validated.get(p) === a.content;
+  });
+}
+
 /** Map Phase 12C validation files (read-only parsed candidate) to WebBuildFile values.
  *  Content is passed byte-for-byte; diff status is a neutral 'unchanged' record. */
 function mapValidationFiles(files: FrontendGeneratedFile[] | undefined): WebBuildFile[] {
@@ -172,29 +195,46 @@ export function deriveModelNativeCandidate(
     const consumption = artifacts?.frontendBuilderConsumption;
     const validation = artifacts?.frontendBuilderValidation;
     const active = sanitizeFiles(activeFiles);
+    const hasEntry = candidateHasEntryFiles(active);
+    const validationInvalid = validation?.status === 'invalid';
+    const validationValidReady = validation?.status === 'valid' && validation?.readyForConsumption === true;
+
+    // ── PROVENANCE: are the ACTIVE files the real model-native project, or the deterministic
+    // internal-synthesis fallback? The two share the same entry PATHS, so filenames can never decide
+    // this. We DO NOT rely SOLELY on the (drift-prone) consumption artifact. The active files ARE the
+    // consumed model-native project when EITHER:
+    //   • the consumption artifact records model-native (the original signal), OR
+    //   • Phase 12C validation proves the model output was valid + ready-to-consume — the EXACT gate
+    //     the build consumes files on (webBuildPayload canConsume) — AND the active entry files are
+    //     byte-for-byte that validated output. The build replaces the synthesis fallback with the
+    //     model-native files precisely when that gate holds, so this recovers a healthy generated site
+    //     whose consumption artifact is MISSING or STALE, WITHOUT ever matching synthesis (whose
+    //     content differs and which is never valid+ready-active). This strengthens the source
+    //     distinction (a positive content proof) rather than weakening it.
+    const activeIsValidatedModelNative = validationValidReady && activeEntryFilesMatchValidated(active, validation?.files);
+    const consumedModelNative = hasEntry && (consumption?.status === 'model-native' || activeIsValidatedModelNative);
 
     // 1) CONSUMED model-native project (the active files ARE the model-native project).
-    if (consumption?.status === 'model-native' && candidateHasEntryFiles(active)) {
+    if (consumedModelNative) {
       const approving = acceptance === 'approved' || acceptance === 'repaired-approved'
         // Legacy: a pre-Phase-12E build has no acceptance artifact but already consumed
         // model-native as its finished preview — preserve that behaviour.
         || acceptance === 'unknown';
-      // Render-SAFETY is a STRUCTURAL fact, independent of quality acceptance: the active files are
-      // the consumed model-native project (not the deterministic fallback), Phase 12C validation is
-      // 'valid' (⇒ no structural errors and no forbidden runtime/security patterns) and ready for
-      // consumption, and the three entry files are present. Never inferred from the acceptance score.
+      // Render-SAFETY is a STRUCTURAL fact, independent of quality acceptance: the active files are the
+      // consumed model-native project (not the fallback), and validation is 'valid' + ready (⇒ no
+      // structural errors and no forbidden runtime/security patterns). An EXPLICITLY invalid validation
+      // ALWAYS forces Safe (never render-safe), even when consumption still claims model-native.
       //
       // LEGACY BACKWARD-COMPAT (Phase 3): a genuinely-legacy saved payload may carry the consumed
       // model-native files (and all three entry files) but NO validation artifact at all. Reaching
-      // consumption 'model-native' historically REQUIRED validation.status==='valid' &&
-      // readyForConsumption===true (webBuildPayload consumption gate), and both artifacts were written
-      // together, so a consumed model-native build missing ONLY the validation artifact is safe to infer
-      // as structurally valid rather than demoting a real, present, runnable project to Safe on reopen.
-      // This inference applies ONLY when the validation artifact is entirely ABSENT — an artifact that is
-      // PRESENT but not 'valid'/ready is respected as NOT render-safe (never overridden).
-      const validationValidOrLegacy = (validation?.status === 'valid' && validation?.readyForConsumption === true)
+      // consumption 'model-native' historically REQUIRED validation valid + ready (the consumption
+      // gate), so a consumed model-native build missing ONLY the validation artifact is inferred
+      // structurally valid rather than demoted to Safe on reopen. This inference applies ONLY when the
+      // validation artifact is entirely ABSENT — a PRESENT-but-not-'valid'/ready artifact is respected
+      // as NOT render-safe (never overridden).
+      const validationValidOrLegacy = validationValidReady
         || (!validation && consumption?.status === 'model-native');
-      const safeToRender = validationValidOrLegacy && candidateHasEntryFiles(active);
+      const safeToRender = validationValidOrLegacy && !validationInvalid && hasEntry;
       return {
         available: true,
         source: 'consumed-model-native',
