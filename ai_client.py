@@ -320,9 +320,19 @@ def _sanitize_error_text(msg, limit: int = _MAX_ERR_MSG_CHARS) -> Optional[str]:
 
 
 def _frontend_reasoning_effort(prompt: str) -> str:
-    """Deterministic reasoning effort from the leading task marker. The static review
-    is cheaper (low); every build/repair task uses medium. Bounded to documented values."""
-    return "low" if "[FRONTEND REVIEW REQUEST]" in (prompt or "") else "medium"
+    """Deterministic reasoning effort from the task marker. A static review is a read, and a
+    quality-repair is a BOUNDED, instruction-driven transformation (the review already supplied the
+    concrete issues, severities, files, repair instructions, architecture-fidelity obligation and
+    authority digest), so BOTH use LOW hidden reasoning. Initial generation, contract-repair, revision
+    and any unknown marker keep MEDIUM (unchanged). Bounded to documented values."""
+    p = prompt or ""
+    if "[FRONTEND REVIEW REQUEST]" in p:
+        return "low"  # review — byte-for-byte unchanged
+    # A quality-repair (delta OR full re-emit) is instruction-driven, not a new planning task → low.
+    # Uses the canonical classifier so contract-repair / revision / initial-generation stay MEDIUM.
+    if _frontend_task_kind(p) == "quality-repair":
+        return "low"
+    return "medium"
 
 
 def _extract_responses_output_text(data: dict) -> str:
@@ -594,11 +604,43 @@ def _frontend_task_is_background(kind: str) -> bool:
 # task falls back to the registered budget (never silently promoted to the large budget).
 FRONTEND_FULL_SOURCE_MAX_OUTPUT_TOKENS = 30_000
 
+# Contract-aware — a quality-repair whose EXPLICIT response contract is the BOUNDED frontend-delta-v1
+# upsert set emits ONLY changed/added files (never the whole project), so it does not need the
+# full-source project budget. Every other repair contract (frontend-files-v1 full re-emit) and any
+# missing/unknown signal keep the full 30,000 (conservative). This does NOT change
+# FRONTEND_FULL_SOURCE_MAX_OUTPUT_TOKENS or any other task's budget.
+FRONTEND_DELTA_REPAIR_MAX_OUTPUT_TOKENS = 16_000
 
-def frontend_task_max_output_tokens(task_kind: str, registered_max_tokens: int) -> int:
-    """Pure resolver: full-source frontend tasks → 30,000; reviews/unknown → the registered
-    budget. Never changes website planning or any other mode budget."""
+# Explicit repair response-contract markers emitted by the two repair request builders (webBuildApi.ts).
+_REPAIR_CONTRACT_FILES = "[FRONTEND REPAIR CONTRACT: frontend-files-v1]"
+_REPAIR_CONTRACT_DELTA = "[FRONTEND REPAIR CONTRACT: frontend-delta-v1]"
+
+
+def _frontend_repair_contract(prompt: str) -> Optional[str]:
+    """Parse the EXPLICIT repair response-contract signal the repair request builders emit on their own
+    header line. Returns 'frontend-files-v1' or 'frontend-delta-v1', or None when absent/unknown.
+    frontend-files-v1 takes PRECEDENCE over frontend-delta-v1 so an ambiguous/injected signal can never
+    accidentally downgrade a full re-emit to the smaller delta budget — the smaller budget requires the
+    delta marker AND the absence of the files marker. Pure; the ONLY canonical parser for this signal."""
+    p = prompt or ""
+    if _REPAIR_CONTRACT_FILES in p:
+        return "frontend-files-v1"
+    if _REPAIR_CONTRACT_DELTA in p:
+        return "frontend-delta-v1"
+    return None
+
+
+def frontend_task_max_output_tokens(
+    task_kind: str, registered_max_tokens: int, repair_contract: Optional[str] = None,
+) -> int:
+    """Pure resolver: full-source frontend tasks → 30,000; a quality-repair whose response contract is
+    frontend-delta-v1 → 16,000; reviews/unknown → the registered budget. `repair_contract` is the
+    explicit signal parsed from the request (see _frontend_repair_contract); None / unknown /
+    frontend-files-v1 is treated CONSERVATIVELY as the full 30,000 (never the smaller delta budget).
+    Never changes website planning, initial generation, or any other mode budget."""
     if _frontend_task_is_background(task_kind):
+        if task_kind == "quality-repair" and repair_contract == "frontend-delta-v1":
+            return FRONTEND_DELTA_REPAIR_MAX_OUTPUT_TOKENS
         return FRONTEND_FULL_SOURCE_MAX_OUTPUT_TOKENS
     return registered_max_tokens
 

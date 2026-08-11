@@ -122,13 +122,19 @@ describe('deriveModelNativeCandidate — render-safety vs approval split', () =>
     expect(resolvePreviewMode(c, false, undefined)).toBe('safe-fallback');
   });
 
-  it('D: consumed + valid but NOT readyForConsumption → NOT render-safe → safe-fallback', () => {
+  it('D: consumed model-native + validation NOT invalid → renders (readiness/approval never gate; only structural INVALID forces Safe)', () => {
+    // `readyForConsumption` ≡ `status === 'valid'` in the real validator, so a consumed model-native
+    // project whose validation is not explicitly 'invalid' is renderable — the (synthetic) not-ready
+    // flag must NOT force Safe. Only an EXPLICITLY invalid validation forces Safe (covered by C).
     const c = deriveModelNativeCandidate(
       step({ consumption: 'model-native', validationStatus: 'valid', readyForConsumption: false, acceptance: 'manual-review-required' }),
       entryFiles(),
     );
-    expect(c.safeToRenderModelNativePreview).toBe(false);
-    expect(resolvePreviewMode(c, false, undefined)).toBe('safe-fallback');
+    expect(c.safeToRenderModelNativePreview).toBe(true);
+    expect(resolvePreviewMode(c, false, undefined)).toBe('provisional-model-native');
+    // A drift state — consumption model-native but a SKIPPED validation — also renders (not invalid).
+    const drift = deriveModelNativeCandidate(step({ consumption: 'model-native', validationStatus: 'skipped', acceptance: 'manual-review-required' }), entryFiles());
+    expect(resolvePreviewMode(drift, false, undefined)).toBe('provisional-model-native');
   });
 
   it('E: consumed + valid + ready but MISSING an entry file → not a consumed candidate → safe-fallback', () => {
@@ -299,5 +305,174 @@ describe('Phase 3 — legacy backward-compat derivation + save/reopen round-trip
       const reopenedFiles = JSON.parse(JSON.stringify(files)) as WebBuildFile[];
       expect(mode(reopened, reopenedFiles)).toBe(want);
     }
+  });
+});
+
+/**
+ * Consumption-artifact-independence: the REAL generated model-native file set renders even when the
+ * consumption artifact is missing/stale, WITHOUT ever mistaking the deterministic internal-synthesis
+ * fallback for model-native. Provenance is proven by validation (valid + ready) AND the active entry
+ * files matching the validated model output byte-for-byte — the synthesis fallback shares the entry
+ * PATHS but never that CONTENT, so it can never satisfy this. Explicit-invalid / missing-entry /
+ * confirmed-runtime-failure still force Safe.
+ */
+describe('Safe Preview fallback is LAST-RESORT — model-native renders without depending on consumption', () => {
+  const nonOwner = (s: WebBuildStep, f: WebBuildFile[]) => resolvePreviewMode(deriveModelNativeCandidate(s, f), false, undefined);
+  const asGenerated = (files: WebBuildFile[]) => files.map((f) => ({ path: f.path, content: f.content, language: f.language }));
+  // Synthesis fallback: SAME entry PATHS, DIFFERENT (deterministically-generated) content.
+  const synthEntryFiles = (): WebBuildFile[] => entryFiles().map((f) => ({ ...f, content: `/* deterministic internal synthesis */\n${f.content}` }));
+
+  it('A: generated files + valid validation + model-native consumption → model-native', () => {
+    const c = deriveModelNativeCandidate(
+      step({ consumption: 'model-native', validationStatus: 'valid', readyForConsumption: true, validationFiles: asGenerated(entryFiles()), acceptance: 'approved' }),
+      entryFiles(),
+    );
+    expect(c.source).toBe('consumed-model-native');
+    expect(c.safeToRenderModelNativePreview).toBe(true);
+    expect(nonOwner(step({ consumption: 'model-native', validationStatus: 'valid', readyForConsumption: true, acceptance: 'approved' }), entryFiles())).toBe('approved-model-native');
+  });
+
+  it('B: generated files + valid validation + MISSING consumption → model-native (the fix)', () => {
+    // No consumption artifact at all — yet validation proves valid+ready and the active entry files
+    // ARE the validated model output. Must render, not Safe.
+    const s = step({ validationStatus: 'valid', readyForConsumption: true, validationFiles: asGenerated(entryFiles()), acceptance: 'approved' });
+    const c = deriveModelNativeCandidate(s, entryFiles());
+    expect(c.source).toBe('consumed-model-native');
+    expect(c.safeToRenderModelNativePreview).toBe(true);
+    expect(nonOwner(s, entryFiles())).toBe('approved-model-native');
+  });
+
+  it('C: generated files + manual-review-required (missing consumption) → provisional model-native', () => {
+    const s = step({ validationStatus: 'valid', readyForConsumption: true, validationFiles: asGenerated(entryFiles()), acceptance: 'manual-review-required' });
+    const c = deriveModelNativeCandidate(s, entryFiles());
+    expect(c.safeToRenderModelNativePreview).toBe(true);
+    expect(c.approvedForUserPreview).toBe(false);
+    expect(nonOwner(s, entryFiles())).toBe('provisional-model-native');
+  });
+
+  it('D: generated files + validation EXPLICITLY invalid → Safe (even without consumption)', () => {
+    const s = step({ validationStatus: 'invalid', readyForConsumption: true, validationFiles: asGenerated(entryFiles()) });
+    expect(deriveModelNativeCandidate(s, entryFiles()).safeToRenderModelNativePreview).toBe(false);
+    expect(nonOwner(s, entryFiles())).toBe('safe-fallback');
+    // …and an invalid validation still forces Safe even when consumption claims model-native.
+    expect(nonOwner(step({ consumption: 'model-native', validationStatus: 'invalid', readyForConsumption: true }), entryFiles())).toBe('safe-fallback');
+  });
+
+  it('E: generated files missing an entry file → Safe (even with valid validation + consumption)', () => {
+    const s = step({ consumption: 'model-native', validationStatus: 'valid', readyForConsumption: true, validationFiles: asGenerated(entryFiles()), acceptance: 'approved' });
+    expect(nonOwner(s, entryFilesMissingOne())).toBe('safe-fallback');
+    // And with consumption missing too.
+    expect(nonOwner(step({ validationStatus: 'valid', readyForConsumption: true, validationFiles: asGenerated(entryFiles()) }), entryFilesMissingOne())).toBe('safe-fallback');
+  });
+
+  it('F: generated files (model-native) + CONFIRMED runtime error → Safe', () => {
+    const s = step({ validationStatus: 'valid', readyForConsumption: true, validationFiles: asGenerated(entryFiles()), acceptance: 'approved' });
+    const m = nonOwner(s, entryFiles());
+    expect(m).toBe('approved-model-native');            // eligible statically…
+    expect(usesSafeFallback(m, entryFiles(), 'error')).toBe(true); // …but a confirmed error downgrades to Safe
+  });
+
+  it('G: generated files (model-native) + CONFIRMED runtime timeout → Safe', () => {
+    const s = step({ validationStatus: 'valid', readyForConsumption: true, validationFiles: asGenerated(entryFiles()), acceptance: 'approved' });
+    const m = nonOwner(s, entryFiles());
+    expect(usesSafeFallback(m, entryFiles(), 'timeout')).toBe(true);
+  });
+
+  it('H: generated files (model-native) + slow-start → model-native (NOT Safe)', () => {
+    const s = step({ validationStatus: 'valid', readyForConsumption: true, validationFiles: asGenerated(entryFiles()), acceptance: 'manual-review-required' });
+    const m = nonOwner(s, entryFiles());
+    expect(m).toBe('provisional-model-native');
+    expect(usesSafeFallback(m, entryFiles(), 'slow-start')).toBe(false);
+    expect(usesSafeFallback(m, entryFiles(), 'initializing')).toBe(false);
+  });
+
+  it('I: Save → JSON → reopen with consumption MISSING but generated files intact → model-native', () => {
+    const s = step({ validationStatus: 'valid', readyForConsumption: true, validationFiles: asGenerated(entryFiles()), acceptance: 'approved' });
+    const files = entryFiles();
+    expect(nonOwner(s, files)).toBe('approved-model-native');
+    const reopened = JSON.parse(JSON.stringify(s)) as WebBuildStep;
+    const reopenedFiles = JSON.parse(JSON.stringify(files)) as WebBuildFile[];
+    expect(reopened.artifacts?.frontendBuilderConsumption).toBeUndefined(); // consumption absent across persistence
+    expect(nonOwner(reopened, reopenedFiles)).toBe('approved-model-native'); // still renders the real project
+  });
+
+  it('J: deterministic internal-synthesis files → Safe (never mistaken for model-native)', () => {
+    // J1 — synthesis active with no valid signal (validation skipped, consumption fallback): Safe.
+    expect(nonOwner(step({ consumption: 'fallback', validationStatus: 'skipped' }), synthEntryFiles())).toBe('safe-fallback');
+    // J2 — the STRONG guard: even when validation is valid+ready with the MODEL's files, an ACTIVE
+    // synthesis file set (same entry paths, DIFFERENT content) does NOT match the validated output, so
+    // it is NOT rendered as model-native. Proves the source distinction is not weakened.
+    const s = step({ consumption: 'fallback', validationStatus: 'valid', readyForConsumption: true, validationFiles: asGenerated(entryFiles()) });
+    const c = deriveModelNativeCandidate(s, synthEntryFiles());
+    expect(c.safeToRenderModelNativePreview).toBe(false);
+    expect(nonOwner(s, synthEntryFiles())).toBe('safe-fallback');
+  });
+
+  it('embedded and standalone make the SAME decision for a consumption-less model-native build', () => {
+    // Both surfaces derive from deriveModelNativeCandidate + resolvePreviewMode(non-owner); the shared
+    // authority guarantees identical results. A consumption-less but valid+matching build is model-native.
+    const s = step({ validationStatus: 'valid', readyForConsumption: true, validationFiles: asGenerated(entryFiles()), acceptance: 'manual-review-required' });
+    const embedded = resolvePreviewMode(deriveModelNativeCandidate(s, entryFiles()), false, undefined);
+    const standalone = resolvePreviewMode(deriveModelNativeCandidate(s, entryFiles()), false, undefined);
+    expect(embedded).toBe('provisional-model-native');
+    expect(standalone).toBe(embedded);
+  });
+});
+
+/**
+ * Product invariant: a RENDERABLE model-native project is shown to the user regardless of
+ * quality/approval state. Acceptance, score, review completion, and repair success/timeout are
+ * QUALITY states — they never decide whether the real generated website is displayed. Only genuine
+ * non-renderability (not model-native / missing entry files / structurally invalid / confirmed runtime
+ * failure) reaches the Safe emergency fallback.
+ */
+describe('render decision ignores acceptance/approval — only renderability decides', () => {
+  const nonOwner = (s: WebBuildStep, f: WebBuildFile[]) => resolvePreviewMode(deriveModelNativeCandidate(s, f), false, undefined);
+  const owner = (s: WebBuildStep, f: WebBuildFile[]) => resolvePreviewMode(deriveModelNativeCandidate(s, f), true, undefined);
+
+  it('EVERY acceptance state on a consumed valid build renders model-native (never Safe) for a normal user', () => {
+    // approved → approved-model-native; every other (quality-unapproved) state → provisional — but ALL render.
+    for (const acceptance of ['approved', 'repaired-approved', 'manual-review-required', 'skipped', 'unknown'] as const) {
+      const m = nonOwner(step({ consumption: 'model-native', validationStatus: 'valid', readyForConsumption: true, acceptance }), entryFiles());
+      expect(m).not.toBe('safe-fallback');
+      expect(m).toBe(acceptance === 'approved' || acceptance === 'repaired-approved' || acceptance === 'unknown' ? 'approved-model-native' : 'provisional-model-native');
+    }
+  });
+
+  it('manual-review-required STILL renders the real model-native project (not Safe)', () => {
+    expect(nonOwner(step({ consumption: 'model-native', validationStatus: 'valid', readyForConsumption: true, acceptance: 'manual-review-required' }), entryFiles())).toBe('provisional-model-native');
+  });
+
+  it('repair timeout/failure: the valid INITIAL model-native project still renders (repair state is not in the derivation)', () => {
+    // The derivation reads consumption/validation/entry-files/acceptance only — never any repair status.
+    // A build whose quality repair failed/timed out keeps its consumed, valid initial project → renders.
+    const s = step({ consumption: 'model-native', validationStatus: 'valid', readyForConsumption: true, acceptance: 'manual-review-required' });
+    expect(nonOwner(s, entryFiles())).toBe('provisional-model-native');
+    expect(owner(s, entryFiles())).toBe('owner-candidate'); // owner sees the SAME real project (+ diagnostics), not a better one
+  });
+
+  it('owner and normal user both render the actual model-native sandbox for a renderable build', () => {
+    const approved = step({ consumption: 'model-native', validationStatus: 'valid', readyForConsumption: true, acceptance: 'approved' });
+    expect(nonOwner(approved, entryFiles())).toBe('approved-model-native');
+    expect(owner(approved, entryFiles())).toBe('approved-model-native'); // identical for approved
+    const provisional = step({ consumption: 'model-native', validationStatus: 'valid', readyForConsumption: true, acceptance: 'manual-review-required' });
+    // Both render the real files; owner mode carries diagnostics, NOT a different/better preview.
+    expect(nonOwner(provisional, entryFiles())).toBe('provisional-model-native');
+    expect(owner(provisional, entryFiles())).toBe('owner-candidate');
+  });
+
+  it('the ONLY paths to Safe are genuine non-renderability (not model-native / missing entry / invalid / runtime failure)', () => {
+    // not model-native (synthesis, no consumption/validation match)
+    expect(nonOwner(step({ consumption: 'fallback', validationStatus: 'skipped' }), entryFiles().map((f) => ({ ...f, content: `/*synth*/${f.content}` })))).toBe('safe-fallback');
+    // missing an entry file
+    expect(nonOwner(step({ consumption: 'model-native', validationStatus: 'valid', readyForConsumption: true, acceptance: 'approved' }), entryFilesMissingOne())).toBe('safe-fallback');
+    // structurally invalid validation
+    expect(nonOwner(step({ consumption: 'model-native', validationStatus: 'invalid', readyForConsumption: false }), entryFiles())).toBe('safe-fallback');
+    // confirmed runtime failure downgrades a renderable candidate (enforced downstream)
+    const m = nonOwner(step({ consumption: 'model-native', validationStatus: 'valid', readyForConsumption: true, acceptance: 'manual-review-required' }), entryFiles());
+    expect(usesSafeFallback(m, entryFiles(), 'error')).toBe(true);
+    expect(usesSafeFallback(m, entryFiles(), 'timeout')).toBe(true);
+    // …but NOT a slow start.
+    expect(usesSafeFallback(m, entryFiles(), 'slow-start')).toBe(false);
   });
 });
