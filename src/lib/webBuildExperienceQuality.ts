@@ -631,7 +631,9 @@ export type ExperienceIssueCode =
   | 'experience-clickable-div' | 'experience-input-unlabeled' | 'experience-menu-no-control' | 'experience-a11y-warn'
   // Phase 5 — performance
   | 'experience-all-eager' | 'experience-hero-lazy'
-  | 'experience-unbounded-motion' | 'experience-huge-inline' | 'experience-perf-warn';
+  | 'experience-unbounded-motion' | 'experience-huge-inline' | 'experience-perf-warn'
+  // Source-output efficiency (spend output tokens on visible quality, not redundant source)
+  | 'experience-repeated-jsx' | 'experience-unused-state';
 
 export interface ExperienceIssue {
   code: ExperienceIssueCode;
@@ -652,6 +654,16 @@ export interface ExperienceAcceptanceResult {
   interactionFindingCount: number;
   accessibilityFindingCount: number;
   performanceFindingCount: number;
+  /** Bounded, numeric-only source-efficiency signals (no source text). Present on fresh analyses. */
+  sourceEfficiency?: {
+    sourceChars: number;
+    tsxChars: number;
+    cssChars: number;
+    repeatedStructureCount: number;   // sections flagged for hand-duplicated repeated blocks
+    largeLiteralCount: number;        // large inline base64 payloads
+    unusedStateSignals: number;       // sections flagged for dead React state
+    largeSvgSignal: number;           // giant inline SVG path payloads
+  };
   issues: ExperienceIssue[];
 }
 const LEGACY_EXPERIENCE: ExperienceAcceptanceResult = {
@@ -704,18 +716,32 @@ export function analyzeExperienceQuality(
     accessibilityCheck(byId, factById, push);
     // ── Phase 5 — performance, media delivery & runtime resilience. ──
     performanceCheck(facts, byId, factById, push);
+    // ── Source-output efficiency — redundant source waste (repeated JSX, dead state). ──
+    sourceEfficiencyCheck(facts, push);
 
     const coherenceFindingCount = issues.filter((i) => i.subPolicy === 'coherence').length;
     const responsiveFindingCount = issues.filter((i) => i.subPolicy === 'responsive').length;
     const interactionFindingCount = issues.filter((i) => i.subPolicy === 'interaction').length;
     const accessibilityFindingCount = issues.filter((i) => i.subPolicy === 'accessibility').length;
     const performanceFindingCount = issues.filter((i) => i.subPolicy === 'performance').length;
+    // Bounded numeric source-efficiency diagnostics (no source text) — observability, never a blocker.
+    const tsxChars = list.filter((f) => /\.(?:tsx|jsx|ts|js)$/i.test(f.path)).reduce((n, f) => n + (f.content || '').length, 0);
+    const cssChars = list.filter((f) => /\.css$/i.test(f.path)).reduce((n, f) => n + (f.content || '').length, 0);
+    const sourceEfficiency = {
+      sourceChars: list.reduce((n, f) => n + (f.content || '').length, 0),
+      tsxChars, cssChars,
+      repeatedStructureCount: issues.filter((i) => i.code === 'experience-repeated-jsx').length,
+      largeLiteralCount: facts.reduce((n, f) => n + (f.clean.match(/data:(?:image|font)\/[^;]{1,20};base64,[A-Za-z0-9+/=]{8000,}/gi) || []).length, 0),
+      unusedStateSignals: issues.filter((i) => i.code === 'experience-unused-state').length,
+      largeSvgSignal: facts.reduce((n, f) => n + (f.clean.match(/\bd=["'][^"']{3000,}["']/gi) || []).length, 0),
+    };
     const blocking = issues.some((i) => i.severity !== 'minor');
     const warned = issues.some((i) => i.severity === 'minor');
     const status: ExperienceAcceptanceResult['status'] = blocking ? 'fail' : warned ? 'warning' : 'pass';
     return {
       status, legacy: false, analyzedSectionCount: facts.length, ambiguousSectionCount: ambiguous,
       coherenceFindingCount, responsiveFindingCount, interactionFindingCount, accessibilityFindingCount, performanceFindingCount,
+      sourceEfficiency,
       issues: issues.slice(0, MAX_ISSUES),
     };
   } catch {
@@ -1284,15 +1310,20 @@ function performanceCheck(
       evidence: capEv(`${infinite} continuous/infinite animations run with no prefers-reduced-motion handling anywhere — this wastes runtime and ignores motion sensitivity`),
       repairInstruction: capEv('Gate continuous animations behind prefers-reduced-motion (motion-reduce:) and avoid unbounded animation on content.') });
   }
-  // 4. Giant or repeated inline base64 payloads (blocker).
+  // 4. Giant or repeated inline base64 payloads, OR a giant inline SVG path (blocker). Both spend
+  //    large amounts of output source on decorative bytes rather than visible quality.
   const base64 = facts.flatMap((f) => f.clean.match(/data:(?:image|font)\/[^;]{1,20};base64,[A-Za-z0-9+/=]{2000,}/gi) || []);
   const huge = base64.filter((b) => b.length >= 40000);
   const repeated = base64.filter((b) => b.length >= 8000);
   const repeatedDup = new Set(repeated).size < repeated.length && repeated.length >= 3;
-  if (huge.length >= 1 || repeatedDup) {
+  const giantSvgPath = facts.flatMap((f) => f.clean.match(/\bd=["'][^"']{3000,}["']/gi) || []);
+  if (huge.length >= 1 || repeatedDup || giantSvgPath.length >= 1) {
+    const svgKb = Math.round((giantSvgPath[0]?.length || 0) / 1000);
     push({ code: 'experience-huge-inline', severity: 'major', subPolicy: 'performance', label: 'huge/duplicated inline media', files: [],
-      evidence: capEv(`${huge.length ? `a ${Math.round((huge[0]?.length || 0) / 1000)}KB inline base64 payload is embedded` : `${repeated.length} large inline base64 payloads (some duplicated) are embedded`} — inline media bloats the bundle and blocks parsing`),
-      repairInstruction: capEv('Serve media as real image files (reuse the sourced assets) instead of embedding large/duplicated base64 inline.') });
+      evidence: capEv(giantSvgPath.length
+        ? `a giant inline SVG path (~${svgKb}KB of path data) is embedded in source — decorative vector bytes crowd out visible-quality source`
+        : (huge.length ? `a ${Math.round((huge[0]?.length || 0) / 1000)}KB inline base64 payload is embedded` : `${repeated.length} large inline base64 payloads (some duplicated) are embedded`) + ' — inline media bloats the bundle and blocks parsing'),
+      repairInstruction: capEv('Serve media as real image files (reuse the sourced assets) and simplify/extract oversized inline SVG; do not embed large/duplicated base64 or giant vector paths inline.') });
   }
   // 5. Duplicate heavy media reused across many sections (warning — often intentional, e.g. logos).
   const srcCount = new Map<string, number>();
@@ -1302,6 +1333,48 @@ function performanceCheck(
     push({ code: 'experience-perf-warn', severity: 'minor', subPolicy: 'performance', label: 'repeated large media', files: [],
       evidence: capEv(`${dup.length} image source(s) are reused in 3+ places — verify this is intentional (a shared asset), not duplicated heavy media`),
       repairInstruction: capEv('Reuse a single optimized asset reference; avoid loading the same heavy image many times unnecessarily.') });
+  }
+}
+
+/** Source-output efficiency — spend output tokens on visible quality, not redundant source. Flags
+ *  STRONG, proven waste only: many hand-duplicated near-identical sibling blocks that should be
+ *  data-driven, and obviously-dead React state. Reuse must stay LOCAL and semantics-aware, so a
+ *  bespoke/varied section is never treated as duplication, and a working interaction is never
+ *  penalized. Dynamic (`.map`) lists and child-hosted regions fail open. */
+function sourceEfficiencyCheck(facts: SectionFacts[], push: (x: ExperienceIssue) => void): void {
+  for (const f of facts) {
+    if (f.hasChildComponent) continue;
+    // A) Repeated hand-written blocks — ≥6 sibling elements sharing an identical non-trivial class
+    //    structure, with NO data-driven .map in the section → should be a data array + one template.
+    if (!/\.\s*map\s*\(/.test(f.clean)) {
+      const byClass = new Map<string, number>();
+      for (const el of f.elements) {
+        const key = el.classes.trim();
+        if (key.length >= 12) byClass.set(key, (byClass.get(key) || 0) + 1);
+      }
+      const maxRepeat = byClass.size ? Math.max(...byClass.values()) : 0;
+      if (maxRepeat >= 6) {
+        push({ code: 'experience-repeated-jsx', severity: 'major', subPolicy: 'performance', label: 'hand-duplicated repeated blocks', files: [f.path],
+          evidence: capEv(`section "${f.id}" hand-writes ${maxRepeat} near-identical sibling blocks (same class structure, no .map) — the repeated markup spends output source on duplication instead of visible quality`),
+          repairInstruction: capEv(`Drive the repeated units in "${f.id}" from a small local data array rendered with one template (data.map(...)); keep bespoke/unique sections hand-written. Do not over-componentize one-off layout.`) });
+      }
+    }
+    // B) Obviously-dead React state — declared but never read AND never set anywhere in the file.
+    const stateRe = /const\s*\[\s*(\w+)\s*,\s*(set\w+)\s*\]\s*=\s*(?:React\.)?useState/g;
+    let sm: RegExpExecArray | null; let guard = 0;
+    while ((sm = stateRe.exec(f.clean)) && guard < 40) {
+      guard += 1;
+      const v = sm[1]; const setter = sm[2];
+      if (!v || !setter) continue;
+      const vCount = (f.clean.match(new RegExp(`\\b${v}\\b`, 'g')) || []).length;
+      const setCount = (f.clean.match(new RegExp(`\\b${setter}\\b`, 'g')) || []).length;
+      if (vCount <= 1 && setCount <= 1) {          // only the destructuring occurrence → dead
+        push({ code: 'experience-unused-state', severity: 'minor', subPolicy: 'performance', label: 'unused React state', files: [f.path],
+          evidence: capEv(`section "${f.id}" declares useState "${v}" that is never read or updated — dead state spends source with no visible effect`),
+          repairInstruction: capEv(`Remove the unused "${v}" state (and any effect that only maintains it); keep state that drives a visible outcome.`) });
+        break;                                     // one signal per section is enough
+      }
+    }
   }
 }
 
@@ -1332,6 +1405,8 @@ const EXPERIENCE_CATEGORY: Record<ExperienceIssueCode, FrontendBuilderReviewCate
   'experience-unbounded-motion': 'motion-and-interaction',
   'experience-huge-inline': 'maintainability',
   'experience-perf-warn': 'maintainability',
+  'experience-repeated-jsx': 'maintainability',
+  'experience-unused-state': 'maintainability',
 };
 
 export function experienceToReviewIssues(result: ExperienceAcceptanceResult | undefined): FrontendBuilderReviewIssue[] {

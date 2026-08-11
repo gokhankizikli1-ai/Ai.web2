@@ -20,7 +20,7 @@ function file(path: string, content: string): FrontendGeneratedFile {
 function eq(sections: FrontendSpecSection[], files: FrontendGeneratedFile[]) {
   const c = deriveExperienceQualityContract({ identity: { siteType: 's', sector: 'general' } as never, sections } as never);
   const r = analyzeExperienceQuality(files, c);
-  return { status: r.status, codes: r.issues.map((i) => `${i.code}:${i.severity}`) };
+  return { status: r.status, codes: r.issues.map((i) => `${i.code}:${i.severity}`), eff: r.sourceEfficiency };
 }
 
 describe('substance-to-space fit — whitespace must be earned', () => {
@@ -85,5 +85,44 @@ describe('domain-native public labels', () => {
       [file('Work.tsx', '<section id="work"><h2>Selected Work</h2><ul><li>Project A</li><li>Project B</li></ul></section>')]);
     expect(r.portfolio).toBe(true);
     expect(r.codes.some((x) => x.includes('content-domain-label'))).toBe(false);
+  });
+});
+
+describe('source-output efficiency — spend tokens on visible quality, not redundant source', () => {
+  const card = '<div className="rounded-lg border p-6 shadow-sm">x</div>';
+  it('A: ≥6 hand-written near-identical sibling blocks (no .map) are flagged', () => {
+    const cards = Array.from({ length: 8 }, () => card).join('');
+    const r = eq([sec('programs', 0, 'programs')], [file('P.tsx', `<section id="programs"><div className="grid">${cards}</div></section>`)]);
+    expect(r.codes).toContain('experience-repeated-jsx:major');
+  });
+  it('B: the same cards rendered data-driven (.map) are NOT flagged', () => {
+    const r = eq([sec('programs', 0, 'programs')], [file('P.tsx',
+      'export default function P(){const items=[1,2,3,4,5,6,7,8];return(<section id="programs"><div className="grid">{items.map(i=><div key={i} className="rounded-lg border p-6 shadow-sm">{i}</div>)}</div></section>);}')]);
+    expect(r.codes.some((x) => x.includes('repeated-jsx'))).toBe(false);
+  });
+  it('C: bespoke varied sections are not falsely treated as duplication', () => {
+    const r = eq([sec('hero', 0, 'hero'), sec('story', 1, 'story'), sec('cta', 2, 'cta')], [
+      file('Hero.tsx', '<section id="hero"><h1 className="text-6xl">Big</h1><img src="/a.jpg"/></section>'),
+      file('Story.tsx', '<section id="story"><div className="flex gap-8"><img src="/b.jpg"/><p className="prose">A long bespoke story paragraph with real substance and detail written here.</p></div></section>'),
+      file('Cta.tsx', '<section id="cta"><h2 className="text-3xl">Join</h2><a className="px-6 py-3 bg-black rounded">Sign up</a></section>'),
+    ]);
+    expect(r.codes.some((x) => x.includes('repeated-jsx'))).toBe(false);
+  });
+  it('D: a giant inline SVG path is flagged (huge-inline) and counted', () => {
+    const bigPath = 'M' + '1 2 3 4 5 '.repeat(700);
+    const r = eq([sec('deco', 0, 'decoration')], [file('D.tsx',
+      `<section id="deco"><svg><path d="${bigPath}"/></svg><p>Real content padding padding padding padding padding padding padding padding padding padding padding.</p></section>`)]);
+    expect(r.codes).toContain('experience-huge-inline:major');
+    expect((r.eff?.largeSvgSignal ?? 0)).toBeGreaterThanOrEqual(1);
+  });
+  it('E: obviously-dead React state is flagged', () => {
+    const r = eq([sec('x', 0, 'section')], [file('X.tsx',
+      'export default function X(){const [open,setOpen]=useState(false);return(<section id="x"><p>Content with plenty of words here so it is not flagged as dead space at all really truly indeed.</p></section>);}')]);
+    expect(r.codes).toContain('experience-unused-state:minor');
+  });
+  it('F: a working interaction state is NOT penalized as unused', () => {
+    const r = eq([sec('x', 0, 'faq accordion')], [file('X.tsx',
+      'export default function X(){const [open,setOpen]=useState(false);return(<section id="x"><button onClick={()=>setOpen(!open)} aria-expanded={open}>Q</button>{open&&<p>A</p>}</section>);}')]);
+    expect(r.codes.some((x) => x.includes('unused-state'))).toBe(false);
   });
 });
