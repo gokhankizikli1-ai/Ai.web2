@@ -78,6 +78,12 @@ export interface ExperienceSectionObligation {
   interaction?: {
     kind: InteractionKind;
     required: boolean;                 // #558: an authoritative interactive/dynamic-outcome requirement maps here
+    /** Phase 3 (module-derived) — the MODULE itself semantically requires frontend interaction (mobile/
+     *  hamburger nav, accordion/FAQ, tabs, gallery/carousel, filter/sort, modal/lightbox, frontend-only
+     *  form), independent of any explicit binding requirement. When true, acceptance enforces the
+     *  dead-control lifecycle (control→handler→state→visible consumption→feedback) for a control that IS
+     *  present — but never forces controls onto a genuinely static section. */
+    semanticInteraction: boolean;
     requiredControls: string[];        // #558: BindingControl labels the section must render
     requiredOutcome: string;           // #558: the visible outcome that must change (empty if none)
     frontendOnly: boolean;             // #558: frontend-only vs backend-required
@@ -173,14 +179,20 @@ function correlateBinding(s: FrontendSpecSection, binding: FrontendBindingRequir
 function deriveInteraction(s: FrontendSpecSection, family: string, req: BindingInteraction): ExperienceSectionObligation['interaction'] {
   const hay = sectionText(s);
   let kind: InteractionKind = 'none';
+  // A MODULE can semantically REQUIRE frontend interaction on its own (independent of an explicit binding
+  // requirement): a mobile/hamburger nav, an accordion/FAQ, category/menu tabs, a gallery/carousel, a
+  // filter/sort surface, a modal/lightbox, or a frontend-only form. Those explicit patterns set
+  // `semantic`; a weak fallback (bare interactionHints) does NOT — so we never force a static section
+  // to be interactive on a guess.
+  let semantic = false;
   // A binding-required interactive experience is authoritatively a tool/form; otherwise infer conservatively.
   if (req.required) kind = /\bform\b|contact|newsletter|subscribe|sign ?up|booking|enquir|register/.test(hay) ? 'form' : 'tool';
-  else if (family === 'focused-tool' || /finder|calculat|configurat|quiz|estimat|planner|builder|\btool\b|selector/.test(hay)) kind = 'tool';
-  else if (/\bform\b|contact|newsletter|subscribe|sign ?up|booking|enquir|\bquote\b|register/.test(hay)) kind = 'form';
-  else if (/\btab\b|accordion|\bfaq\b|toggle|expand|disclosure|collaps/.test(hay)) kind = 'disclosure';
-  else if (/filter|sort|carousel|slider|gallery|lightbox|\bslide\b/.test(hay)) kind = 'gallery';
-  else if (/\bnav\b|menu|hamburger/.test(hay)) kind = 'navigation';
-  else if ((s.interactionHints || []).length > 0) kind = 'tool';
+  else if (family === 'focused-tool' || /finder|calculat|configurat|quiz|estimat|planner|builder|\btool\b|selector/.test(hay)) { kind = 'tool'; semantic = true; }
+  else if (/\bform\b|contact|newsletter|subscribe|sign ?up|booking|enquir|\bquote\b|register/.test(hay)) { kind = 'form'; semantic = true; }
+  else if (/\btab\b|\btabs\b|accordion|\bfaq\b|toggle|expand|disclosure|collaps|modal|dialog/.test(hay)) { kind = 'disclosure'; semantic = true; }
+  else if (/filter|sort|carousel|slider|gallery|lightbox|\bslide\b/.test(hay)) { kind = 'gallery'; semantic = true; }
+  else if (/\bnav\b|navbar|navigation|\bmenu\b|hamburger/.test(hay)) { kind = 'navigation'; semantic = true; }
+  else if ((s.interactionHints || []).length > 0) kind = 'tool';   // weak fallback — NOT treated as semantic
   if (kind === 'none' && !req.required) return undefined;
   if (kind === 'none') kind = 'tool';
   const states: Record<InteractionKind, string[]> = {
@@ -198,6 +210,7 @@ function deriveInteraction(s: FrontendSpecSection, family: string, req: BindingI
   return {
     kind,
     required: req.required,
+    semanticInteraction: semantic,
     requiredControls: req.controls,
     requiredOutcome: req.outcome,
     frontendOnly: req.frontendOnly,
@@ -600,7 +613,7 @@ export type ExperienceIssueCode =
   | 'experience-desktop-only' | 'experience-harmful-clip'
   | 'experience-cta-hidden-mobile' | 'experience-responsive-warn'
   // Phase 3 — interaction
-  | 'experience-interaction-no-feedback' | 'experience-interaction-warn'
+  | 'experience-interaction-no-feedback' | 'experience-interaction-warn' | 'experience-nav-dead-target'
   // Phase 4 — accessibility
   | 'experience-clickable-div' | 'experience-input-unlabeled' | 'experience-menu-no-control' | 'experience-a11y-warn'
   // Phase 5 — performance
@@ -668,7 +681,8 @@ export function analyzeExperienceQuality(
     // ── Phase 2 — responsive layout & content-fit. ──
     responsiveCheck(facts, byId, factById, push);
     // ── Phase 3 — interaction depth & state-feedback integrity. ──
-    interactionCheck(byId, factById, push);
+    const allAnchorIds = collectAllAnchorIds(list, contract.sections.map((s) => s.id));
+    interactionCheck(byId, factById, allAnchorIds, push);
     // ── Phase 4 — accessibility & keyboard usability. ──
     accessibilityCheck(byId, factById, push);
     // ── Phase 5 — performance, media delivery & runtime resilience. ──
@@ -875,13 +889,58 @@ function readBackIntoRender(v: string, f: SectionFacts): boolean {
   while (re.exec(f.clean) && guard < 2000) { guard += 1; count += 1; if (count > 1) return true; }
   return false;
 }
-/** Phase 3 — interaction: for every BINDING-REQUIRED interaction (#558 owns the requirement), correlate a
- *  rendered control → its handler → the state it writes → a rendered dynamic outcome. A required
- *  frontend-only tool/form whose controls write no state that is read back (and has no aria-live) is a dead
- *  control → block. Backend-required, non-required, or child-hosted regions warn / fail open — never block. */
+/** Collect every statically-declared element id / section anchor across ALL files — the resolvable
+ *  targets an in-page nav anchor (`href="#id"`) may legitimately point at. Bounded; fail-open (broad). */
+function collectAllAnchorIds(list: FrontendGeneratedFile[], sectionIds: string[]): Set<string> {
+  const ids = new Set<string>();
+  for (const sid of sectionIds) { const v = normId(sid); if (v) ids.add(v); }
+  const re = /\b(?:id|data-korvix-section)\s*=\s*(?:"([^"]{1,80})"|'([^']{1,80})')/g;
+  for (const f of list) {
+    const src = (f.content || '').slice(0, MAX_SCAN);
+    re.lastIndex = 0; let m: RegExpExecArray | null; let g = 0;
+    while ((m = re.exec(src)) && g < 4000) { g += 1; const v = normId(m[1] ?? m[2] ?? ''); if (v) ids.add(v); }
+  }
+  return ids;
+}
+
+/** Phase 3 (nav integrity) — an in-page navigation anchor whose STATIC `href="#…"` target does not exist
+ *  anywhere in the site (and which carries no click handler to drive navigation in JS) goes nowhere. That
+ *  is a dead control by definition. Dynamic hrefs, JS-handled anchors, external/route hrefs and the
+ *  conventional `#top`/`#main` targets are all skipped (fail open). */
+function checkNavTargets(id: string, f: SectionFacts, allIds: Set<string>, push: (x: ExperienceIssue) => void): void {
+  const dead: string[] = [];
+  for (const el of f.elements) {
+    if (el.tag !== 'a') continue;
+    const attr = el.attr;
+    const hrefStat = /\bhref\s*=\s*(?:"([^"]*)"|'([^']*)')/.exec(attr);
+    if (!hrefStat) continue;                                    // dynamic href={…} → fail open
+    const href = (hrefStat[1] ?? hrefStat[2] ?? '').trim();
+    if (!href.startsWith('#')) continue;                        // external / route / mailto → not an in-page anchor
+    const hasHandler = /\bon(?:Click|KeyDown|KeyUp|KeyPress)\s*=/.test(attr);
+    const target = normId(href.slice(1));
+    if (!target) { if (!hasHandler) dead.push('#'); continue; } // href="#" with no handler → goes nowhere
+    if (target === 'top' || target === 'main') continue;        // conventional page-top / main-landmark
+    if (!allIds.has(target) && !hasHandler) dead.push(href);    // points at an id that exists nowhere
+    if (dead.length >= 6) break;
+  }
+  if (dead.length) {
+    push({ code: 'experience-nav-dead-target', severity: 'major', subPolicy: 'interaction', label: 'nav link goes nowhere', files: [f.path],
+      evidence: capEv(`navigation section "${id}" has ${dead.length} in-page link(s) whose target does not exist and has no click handler (${uniq(dead).slice(0, 4).join(', ')}) — the link goes nowhere`),
+      repairInstruction: capEv('Point each in-page nav link at a real existing section id (href="#realSectionId"), or wire an onClick that performs the navigation; remove dead href="#" placeholders.') });
+  }
+}
+
+/** Phase 3 — interaction: correlate a rendered control → its handler → the state it writes → a rendered
+ *  dynamic outcome. Enforced for BOTH a BINDING-REQUIRED interaction (#558) AND a MODULE that semantically
+ *  requires interaction on its own (mobile nav, accordion/FAQ, tabs, gallery/carousel, filter/sort,
+ *  modal/lightbox, frontend-only form). A frontend-only interactive control whose handler writes no state
+ *  read back (and exposes no aria/live feedback) is a DEAD control → block. We only judge a control that is
+ *  ACTUALLY PRESENT: a genuinely static section with no live control is never forced interactive.
+ *  Backend-required, weakly-inferred, or child-hosted regions warn / fail open — never block. */
 function interactionCheck(
   byId: Map<string, ExperienceSectionObligation>,
   factById: Map<string, SectionFacts>,
+  allIds: Set<string>,
   push: (x: ExperienceIssue) => void,
 ): void {
   for (const [id, ob] of byId) {
@@ -890,6 +949,10 @@ function interactionCheck(
     if (!it || !kind || kind === 'none') continue;
     const f = factById.get(id);
     if (!f) continue;
+
+    // Nav-target integrity is judged from the anchor markup itself (independent of child components).
+    if (kind === 'navigation' && (it.required || it.semanticInteraction)) checkNavTargets(id, f, allIds, push);
+
     if (f.hasChildComponent) continue;                          // control/state may live in a child → fail open
     const { controlWithHandler, controlCount, writtenVars } = correlateControls(f);
     const outcomeWired = writtenVars.some((v) => readBackIntoRender(v, f));
@@ -921,7 +984,29 @@ function interactionCheck(
       continue;
     }
 
-    // ── Non-required interactions inferred from family/hints: warn only, never block. ──
+    // ── Module-SEMANTIC interactions (derived from the module itself, not a binding requirement). Enforce
+    //    the dead-control lifecycle for a control that IS present; never force a static section to add one. ──
+    if (it.semanticInteraction) {
+      if (!controlWithHandler) continue;                        // no live control present → respect a static implementation
+      if (feedbackWired) continue;                              // control → state / aria / data-state → visible outcome
+      // A real control with a handler that writes nothing read back and exposes no aria/live/data-state
+      // feedback is a DEAD, decorative control. For the inherently frontend-only interactive modules
+      // (disclosure/gallery/nav) — and for a frontend-only tool/form — that is a strongly-proven block.
+      const frontendDriven = kind === 'disclosure' || kind === 'gallery' || kind === 'navigation'
+        || ((kind === 'tool' || kind === 'form') && it.frontendOnly);
+      if (frontendDriven) {
+        push({ code: 'experience-interaction-no-feedback', severity: 'major', subPolicy: 'interaction', label: `dead ${kind} control`, files: [f.path],
+          evidence: capEv(`the ${kind} module "${id}" renders an interactive control with a handler, but nothing it does is perceivable — no state read back into the UI, no aria-expanded/selected/pressed, no data-state, no aria-live — the control is decorative/dead`),
+          repairInstruction: capEv(`Make the ${kind} actually work: drive a visible state change from the control (toggle/expand, active item, filtered results, or open/close) and reflect it with a controlled render or an aria/data-state attribute. Keep it keyboard-operable.`) });
+      } else {
+        push({ code: 'experience-interaction-warn', severity: 'minor', subPolicy: 'interaction', label: `${kind} feedback unclear`, files: [f.path],
+          evidence: capEv(`the ${kind} module "${id}" wires a control but its outcome is not locally perceivable — verify it produces visible feedback`),
+          repairInstruction: capEv('Ensure the interaction produces perceivable feedback (result, selection, or a success/error message) at the control.') });
+      }
+      continue;
+    }
+
+    // ── Weakly-inferred (non-semantic, non-required) interactions: warn only, never block. ──
     if (!controlWithHandler) continue;
     if (!feedbackWired && (kind === 'tool' || kind === 'form')) {
       push({ code: 'experience-interaction-warn', severity: 'minor', subPolicy: 'interaction', label: `${kind} feedback unclear`, files: [f.path],
@@ -1106,6 +1191,7 @@ const EXPERIENCE_CATEGORY: Record<ExperienceIssueCode, FrontendBuilderReviewCate
   'experience-responsive-warn': 'responsive-intent',
   'experience-interaction-no-feedback': 'motion-and-interaction',
   'experience-interaction-warn': 'motion-and-interaction',
+  'experience-nav-dead-target': 'motion-and-interaction',
   'experience-clickable-div': 'accessibility-intent',
   'experience-input-unlabeled': 'accessibility-intent',
   'experience-menu-no-control': 'accessibility-intent',
