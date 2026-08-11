@@ -32,6 +32,7 @@ import type { ResearchDirectionContract } from '@/lib/webBuildResearchDirection'
 import type { CompositionContract } from '@/lib/webBuildComposition';
 import { collectSectionUnits } from '@/lib/webBuildSectionSource';
 import { detectLeakedFieldLabels as detectFieldLabelsInSource } from '@/lib/webBuildFieldLabel';
+import { isNavigationText } from '@/lib/webBuildInteraction';
 
 /* ── Bounds (named, mandatory) ─────────────────────────────────────────────── */
 const MAX_TEXT = 160;
@@ -935,9 +936,10 @@ function deriveArchetype(input: ContentNarrativeInput): ArchetypeDecision {
 function sectionIsBrowseSurface(s: FrontendSpecSection, compRole: string | undefined): boolean {
   const p = lc(`${s.purpose || ''} ${s.name || ''} ${(s.interactionHints || []).join(' ')} ${s.componentHint || ''} ${s.visualModule || ''}`);
   // A site navigation is NOT a browse/decision surface even though a "nav menu" carries the token
-  // "menu" — it routes to content, it is not itself the content to browse. Exclude it explicitly so a
-  // nav is never counted as a core decision surface (that misread would fault a perfectly good nav).
-  if (/\bnav\b|navbar|navigation|hamburger/.test(p)) return false;
+  // "menu" — it routes to content, it is not itself the content to browse. Use the CANONICAL nav
+  // classifier (shared with the interaction authority) so a real food/content menu is still a browse
+  // surface while a site/mobile menu is excluded. One source of truth — no duplicated nav regex.
+  if (isNavigationText(p)) return false;
   if (compRole === 'enable-decision' || compRole === 'compare') return true;
   return BROWSE_SURFACE_TOKENS.some((t) => p.includes(t));
 }

@@ -93,14 +93,16 @@ describe('site depth — GENERAL site-type-aware profiles (not a universal secti
     expect(JSON.stringify(deriveSiteDepthContract(SAAS()))).toBe(JSON.stringify(deriveSiteDepthContract(SAAS())));
   });
 
-  it('does NOT count a navigation "menu" as a core browse/decision surface', () => {
-    // A nav module carries the token "menu" but routes to content — it is not itself a browse surface.
+  it('does NOT count site navigation as a core browse/decision surface, but DOES count a food menu', () => {
+    // Uses the canonical nav classifier shared with the interaction authority: a "mobile menu" /
+    // "navigation" routes to content (excluded), while a "coffee menu" is real browse content (kept).
     const c = deriveSiteDepthContract(input(
       { siteType: 'coffee shop', sector: 'restaurant-hospitality', businessModel: 'reservation-led' },
-      [sec('hero', 0, 'hero'), sec('nav', 1, 'mobile navigation menu'), sec('menu', 2, 'coffee menu drinks')],
+      [sec('hero', 0, 'hero'), sec('nav', 1, 'mobile menu'), sec('primaryNav', 2, 'primary navigation'), sec('menu', 3, 'coffee menu drinks')],
     ))!;
-    expect(c.coreDecisionSurfaces).toContain('menu');
-    expect(c.coreDecisionSurfaces).not.toContain('nav');
+    expect(c.coreDecisionSurfaces).toContain('menu');          // food menu IS a browse surface
+    expect(c.coreDecisionSurfaces).not.toContain('nav');       // site navigation is NOT
+    expect(c.coreDecisionSurfaces).not.toContain('primaryNav');
   });
 
   it('renders a bounded, implementable builder block for a developed site', () => {

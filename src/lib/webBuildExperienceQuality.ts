@@ -23,6 +23,7 @@ import type { ContentNarrativeContract } from '@/lib/webBuildContentNarrative';
 import type { VisualSystemContract } from '@/lib/webBuildVisualSystem';
 import type { ImageCoverageRequirement } from '@/lib/webBuildImageCoverage';
 import { collectSectionUnits, normId } from '@/lib/webBuildSectionSource';
+import { isNavigationText } from '@/lib/webBuildInteraction';
 
 /* ── Bounds (named, mandatory) ─────────────────────────────────────────────── */
 const MAX_TEXT = 140;
@@ -191,7 +192,9 @@ function deriveInteraction(s: FrontendSpecSection, family: string, req: BindingI
   else if (/\bform\b|contact|newsletter|subscribe|sign ?up|booking|enquir|\bquote\b|register/.test(hay)) { kind = 'form'; semantic = true; }
   else if (/\btab\b|\btabs\b|accordion|\bfaq\b|toggle|expand|disclosure|collaps|modal|dialog/.test(hay)) { kind = 'disclosure'; semantic = true; }
   else if (/filter|sort|carousel|slider|gallery|lightbox|\bslide\b/.test(hay)) { kind = 'gallery'; semantic = true; }
-  else if (/\bnav\b|navbar|navigation|\bmenu\b|hamburger/.test(hay)) { kind = 'navigation'; semantic = true; }
+  // Navigation is decided by the CANONICAL classifier — a content menu (coffee/food/service menu,
+  // menu categories) must NOT be read as site navigation just because it contains the word "menu".
+  else if (isNavigationText(hay)) { kind = 'navigation'; semantic = true; }
   else if ((s.interactionHints || []).length > 0) kind = 'tool';   // weak fallback — NOT treated as semantic
   if (kind === 'none' && !req.required) return undefined;
   if (kind === 'none') kind = 'tool';

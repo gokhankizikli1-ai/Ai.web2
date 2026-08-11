@@ -9,6 +9,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { deriveExperienceQualityContract, analyzeExperienceQuality } from '@/lib/webBuildExperienceQuality';
+import { isNavigationText } from '@/lib/webBuildInteraction';
 import type { FrontendGeneratedFile, FrontendSpecSection } from '@/lib/webBuildAgents';
 
 function sec(id: string, order: number, purpose: string, over: Partial<FrontendSpecSection> = {}): FrontendSpecSection {
@@ -26,6 +27,48 @@ function analyze(sections: FrontendSpecSection[], files: FrontendGeneratedFile[]
 function codes(res: ReturnType<typeof analyzeExperienceQuality>): string[] {
   return res.issues.map((i) => `${i.code}:${i.severity}`);
 }
+function kindOf(section: FrontendSpecSection): string | undefined {
+  const c = contractFor([section])!;
+  return (c.sections || [])[0]?.interaction?.kind;
+}
+
+/* ── Canonical navigation classifier — a CONTENT menu must never be read as site navigation
+ *    solely because it contains the word "menu" (Bugbot HIGH severity, PR #608). ── */
+describe('navigation vs content-menu classification (canonical isNavigationText)', () => {
+  it('does NOT treat content/business menus as navigation', () => {
+    for (const t of ['coffee menu drinks', 'restaurant food menu', 'drinks menu', 'dessert menu',
+      'service menu', 'product menu', 'menu categories', 'wine menu', 'lunch menu']) {
+      expect(isNavigationText(t)).toBe(false);
+    }
+  });
+  it('DOES treat real site navigation as navigation', () => {
+    for (const t of ['nav', 'navbar', 'navigation', 'mobile menu', 'hamburger menu', 'site menu',
+      'primary navigation', 'sidebar navigation', 'menu bar', 'menu toggle']) {
+      expect(isNavigationText(t)).toBe(true);
+    }
+  });
+  it('A/B: a coffee/food menu section is NOT classified as navigation', () => {
+    expect(kindOf(sec('menu', 1, 'coffee menu drinks'))).not.toBe('navigation');
+    expect(kindOf(sec('menu', 1, 'restaurant food menu'))).not.toBe('navigation');
+  });
+  it('C/D/E: mobile menu, hamburger menu and primary navigation ARE navigation', () => {
+    expect(kindOf(sec('nav', 1, 'mobile menu'))).toBe('navigation');
+    expect(kindOf(sec('nav', 1, 'hamburger menu'))).toBe('navigation');
+    expect(kindOf(sec('nav', 1, 'primary navigation'))).toBe('navigation');
+  });
+  it('F: a food-menu section with hash-like item controls does NOT emit experience-nav-dead-target', () => {
+    const res = analyze([sec('menu', 0, 'coffee menu drinks')], [file('Menu.tsx',
+      '<section id="menu"><h2>Coffee Menu</h2><a href="#">Espresso</a><a href="#">Latte</a><ul><li>Espresso</li><li>Latte</li></ul></section>')]);
+    expect(codes(res).some((x) => x.includes('nav-dead-target'))).toBe(false);
+  });
+  it('G: an actual nav with a dead href="#missing" STILL emits the major finding', () => {
+    const res = analyze([sec('nav', 0, 'primary navigation menu bar')], [
+      file('Nav.tsx', '<nav id="nav"><a href="#about">About</a><a href="#missing">Gone</a></nav>'),
+      file('About.tsx', '<section id="about"></section>'),
+    ]);
+    expect(codes(res)).toContain('experience-nav-dead-target:major');
+  });
+});
 
 describe('experience interaction — module-derived obligations', () => {
   it('marks module-semantic interactions from the module itself (no binding requirement)', () => {

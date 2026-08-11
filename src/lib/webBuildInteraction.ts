@@ -24,6 +24,29 @@ export interface InteractionContext {
   artMode: ArtRenderMode;
 }
 
+/* ── Canonical navigation-intent classifier ─────────────────────────────────────
+ * The word "menu" is ambiguous: a SITE MENU (mobile/hamburger/site menu) is navigation,
+ * but a CONTENT MENU (restaurant/coffee/food/drinks/service/product menu, menu categories)
+ * is browse content that merely contains the word. Several authorities (interaction-kind
+ * inference, site-depth browse-surface detection) must agree on which is which, so this is
+ * the ONE place that decides. Reused instead of duplicated per-file regex so the two never
+ * drift. Pure, case-insensitive, deterministic. */
+// Unambiguous navigation words (nav / navbar / navigation / hamburger).
+const NAV_STRONG_RE = /\bnav\b|\bnavbar\b|\bnavigation\b|\bhamburger\b/;
+// "menu" is navigation ONLY when a NAV qualifier accompanies it (mobile/site/main/primary/header/
+// footer/top/sidebar/nav/hamburger/slide-out/off-canvas/drop-down menu) or it names a menu CONTROL
+// affordance (menu bar/toggle/button/drawer/icon). A bare or food/business-qualified "menu"
+// (coffee menu, food menu, menu categories) is CONTENT and deliberately does NOT match.
+const NAV_MENU_RE = /(?:mobile|site|main|primary|header|footer|top|side\s*bar|sidebar|hamburger|slide[-\s]?out|off[-\s]?canvas|drop[-\s]?down|nav)\s*menu\b|\bmenu\s*(?:bar|toggle|button|drawer|icon)\b/;
+
+/** True when the text denotes SITE NAVIGATION (a nav module) rather than a content/business menu.
+ *  The single source of truth for "is this navigation?" across the Web Build authorities. */
+export function isNavigationText(text: string | undefined | null): boolean {
+  const t = (typeof text === 'string' ? text : '').toLowerCase();
+  if (!t) return false;
+  return NAV_STRONG_RE.test(t) || NAV_MENU_RE.test(t);
+}
+
 /** Normalize any section id/name into a safe, stable anchor id. */
 export function anchorId(id: string): string {
   return (id || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'section';
