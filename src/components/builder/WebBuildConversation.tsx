@@ -1438,7 +1438,12 @@ function CompletedPlanSummary({ step }: { step: WebBuildStep }) {
         })()}
       </div>
       <p className="text-[11px] leading-relaxed text-[#64748B]">{quality}</p>
-      {gateReason && (
+      {gateReason && !renderSafeModelNative && (
+        // The acceptance "why it fell to Safe" reason is shown ONLY when the build is genuinely NOT
+        // render-safe (invalid / unconsumed / missing entry) and the Safe emergency renderer is active.
+        // A render-safe model-native build that merely lacks final quality approval renders the REAL
+        // project (provisional) — it did NOT fall to Safe — so this reason is suppressed (the panel's
+        // subtle "final quality review pending" note communicates the approval state instead).
         <p className="rounded-md border border-[#E0A35B]/25 bg-[#E0A35B]/[0.06] px-2 py-1 text-[11px] leading-relaxed text-[#E0A35B]">
           {L(gateReason.en, gateReason.tr)}
         </p>

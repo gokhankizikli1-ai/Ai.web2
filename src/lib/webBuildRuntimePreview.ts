@@ -220,21 +220,18 @@ export function deriveModelNativeCandidate(
         // Legacy: a pre-Phase-12E build has no acceptance artifact but already consumed
         // model-native as its finished preview — preserve that behaviour.
         || acceptance === 'unknown';
-      // Render-SAFETY is a STRUCTURAL fact, independent of quality acceptance: the active files are the
-      // consumed model-native project (not the fallback), and validation is 'valid' + ready (⇒ no
-      // structural errors and no forbidden runtime/security patterns). An EXPLICITLY invalid validation
-      // ALWAYS forces Safe (never render-safe), even when consumption still claims model-native.
-      //
-      // LEGACY BACKWARD-COMPAT (Phase 3): a genuinely-legacy saved payload may carry the consumed
-      // model-native files (and all three entry files) but NO validation artifact at all. Reaching
-      // consumption 'model-native' historically REQUIRED validation valid + ready (the consumption
-      // gate), so a consumed model-native build missing ONLY the validation artifact is inferred
-      // structurally valid rather than demoted to Safe on reopen. This inference applies ONLY when the
-      // validation artifact is entirely ABSENT — a PRESENT-but-not-'valid'/ready artifact is respected
-      // as NOT render-safe (never overridden).
-      const validationValidOrLegacy = validationValidReady
-        || (!validation && consumption?.status === 'model-native');
-      const safeToRender = validationValidOrLegacy && !validationInvalid && hasEntry;
+      // Render-SAFETY is pure RENDERABILITY of the consumed model-native project, and is DELIBERATELY
+      // INDEPENDENT of every quality/approval signal — acceptance, score, review completion, and whether
+      // a quality repair ran/failed/timed out NEVER participate here. The project renders whenever its
+      // files ARE the model-native project (consumedModelNative, already gated on the three entry files)
+      // and validation does NOT mark it structurally invalid/unsafe. Only that structural invalidity
+      // forces Safe from this pure decision; a CONFIRMED runtime error/timeout is enforced separately by
+      // the panel/route (isModelNativeRuntimeFailure). `readyForConsumption` ≡ `status === 'valid'`
+      // (validation sets ready = status==='valid'; quality WARNINGS never change it), so requiring
+      // valid+ready would ALSO reject a drift state — consumption model-native but a skipped/absent
+      // validation whose files are present and not invalid — which must still render. Hence the gate is
+      // simply "the model-native project is present AND validation is not explicitly invalid".
+      const safeToRender = !validationInvalid;
       return {
         available: true,
         source: 'consumed-model-native',
