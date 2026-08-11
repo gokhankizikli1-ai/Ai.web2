@@ -320,17 +320,20 @@ def _sanitize_error_text(msg, limit: int = _MAX_ERR_MSG_CHARS) -> Optional[str]:
 
 
 def _frontend_reasoning_effort(prompt: str) -> str:
-    """Deterministic reasoning effort from the task marker. A static review is a read, and a
-    quality-repair is a BOUNDED, instruction-driven transformation (the review already supplied the
-    concrete issues, severities, files, repair instructions, architecture-fidelity obligation and
-    authority digest), so BOTH use LOW hidden reasoning. Initial generation, contract-repair, revision
-    and any unknown marker keep MEDIUM (unchanged). Bounded to documented values."""
+    """Deterministic reasoning effort from the task marker. A static review is a read; a quality-repair
+    is a BOUNDED, instruction-driven transformation; and INITIAL GENERATION is the faithful IMPLEMENTATION
+    of an already-authoritative specification (research + website planning + build spec + visual direction
+    + content narrative + site-depth planning + experience quality + binding requirements all decided
+    upstream), NOT an independent re-planning task — so all three use LOW hidden reasoning. Contract-repair,
+    revision and any unknown marker keep MEDIUM (unchanged) — a conservative first optimization that does
+    not touch none/minimal. Bounded to documented values."""
     p = prompt or ""
     if "[FRONTEND REVIEW REQUEST]" in p:
         return "low"  # review — byte-for-byte unchanged
-    # A quality-repair (delta OR full re-emit) is instruction-driven, not a new planning task → low.
-    # Uses the canonical classifier so contract-repair / revision / initial-generation stay MEDIUM.
-    if _frontend_task_kind(p) == "quality-repair":
+    # A quality-repair (delta OR full re-emit) is instruction-driven and initial-generation is
+    # spec-implementation — neither is a new planning task → LOW. The canonical classifier keeps
+    # contract-repair / revision / unknown at MEDIUM.
+    if _frontend_task_kind(p) in ("quality-repair", "initial-generation"):
         return "low"
     return "medium"
 
@@ -597,12 +600,37 @@ def _frontend_task_is_background(kind: str) -> bool:
     return kind in _FRONTEND_BACKGROUND_TASK_KINDS
 
 
+# Diagnostic MIRROR of the browser's overall workflow polling budget (authoritatively owned by the
+# client, src/lib/webBuildApi.ts). NOT authoritative and NOT a deadline the backend enforces — it is
+# emitted ONLY so the start diagnostic records which budget the browser will apply for this task kind,
+# so the NEXT smoke build can be measured against it. The full-project kinds (initial-generation,
+# quality-repair) get the extended budget; every other kind gets the default. Changing these does NOT
+# change any real timeout.
+FRONTEND_CLIENT_WORKFLOW_BUDGET_LONG_MS = 720_000
+FRONTEND_CLIENT_WORKFLOW_BUDGET_DEFAULT_MS = 540_000
+
+
+def _frontend_client_workflow_budget_ms(task_kind: str) -> int:
+    """The browser workflow budget (ms) the client will apply for this task kind — diagnostic mirror."""
+    if task_kind in ("initial-generation", "quality-repair"):
+        return FRONTEND_CLIENT_WORKFLOW_BUDGET_LONG_MS
+    return FRONTEND_CLIENT_WORKFLOW_BUDGET_DEFAULT_MS
+
+
 # Phase 13F.2 — a full-source frontend task must budget for hidden reasoning + visible
 # multi-file source + formatting inside ONE Responses `max_output_tokens`. Production showed
 # 12,000 exhausting on `max_output_tokens` before the envelope completed, so full-source tasks
 # get a dedicated 30,000-token budget. Static reviews keep their registered budget; an unknown
 # task falls back to the registered budget (never silently promoted to the large budget).
 FRONTEND_FULL_SOURCE_MAX_OUTPUT_TOKENS = 30_000
+
+# Latency/cost optimization — INITIAL GENERATION gets its OWN, materially lower ceiling. It runs
+# downstream of all planning (it IMPLEMENTS the authoritative spec, it does not re-plan) and now
+# uses LOW reasoning, so it needs far less of the envelope for hidden reasoning and can leave more
+# for visible project source at a lower ceiling. 24,000 is a conservative first production cap:
+# materially below the 30,000 full-source budget, yet still 2× the previously-insufficient 12,000
+# registered budget (which exhausted before the envelope completed) — so we do NOT regress to 12k.
+FRONTEND_INITIAL_GENERATION_MAX_OUTPUT_TOKENS = 24_000
 
 # Contract-aware — a quality-repair whose EXPLICIT response contract is the BOUNDED frontend-delta-v1
 # upsert set emits ONLY changed/added files (never the whole project), so it does not need the
@@ -633,14 +661,21 @@ def _frontend_repair_contract(prompt: str) -> Optional[str]:
 def frontend_task_max_output_tokens(
     task_kind: str, registered_max_tokens: int, repair_contract: Optional[str] = None,
 ) -> int:
-    """Pure resolver: full-source frontend tasks → 30,000; a quality-repair whose response contract is
-    frontend-delta-v1 → 16,000; reviews/unknown → the registered budget. `repair_contract` is the
-    explicit signal parsed from the request (see _frontend_repair_contract); None / unknown /
-    frontend-files-v1 is treated CONSERVATIVELY as the full 30,000 (never the smaller delta budget).
-    Never changes website planning, initial generation, or any other mode budget."""
+    """Pure resolver: task-specific full-source output budgets.
+      - initial-generation                         → 24,000 (dedicated, lower — LOW reasoning + spec impl)
+      - quality-repair with frontend-delta-v1      → 16,000 (bounded upsert set)
+      - every other background full-source case
+        (contract-repair, revision, quality-repair
+        with frontend-files-v1 / unknown contract) → 30,000 (conservative, unchanged)
+      - reviews / unknown (non-background)         → the registered budget (never silently promoted)
+    `repair_contract` is the explicit signal parsed from the request (see _frontend_repair_contract);
+    None / unknown / frontend-files-v1 is treated CONSERVATIVELY as the full 30,000 for a repair (never
+    the smaller delta budget). Never changes website planning or any other mode budget."""
     if _frontend_task_is_background(task_kind):
         if task_kind == "quality-repair" and repair_contract == "frontend-delta-v1":
             return FRONTEND_DELTA_REPAIR_MAX_OUTPUT_TOKENS
+        if task_kind == "initial-generation":
+            return FRONTEND_INITIAL_GENERATION_MAX_OUTPUT_TOKENS
         return FRONTEND_FULL_SOURCE_MAX_OUTPUT_TOKENS
     return registered_max_tokens
 
