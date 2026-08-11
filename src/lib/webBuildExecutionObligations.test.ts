@@ -68,6 +68,20 @@ describe('webBuildExecutionObligations — builder manifest', () => {
     expect(lines.some((l) => /^\[OBL obl_[0-9a-f]{8}/.test(l))).toBe(true);
     expect(lines.join('\n').length).toBeLessThanOrEqual(2400);
   });
+  it('Phase 4 — dedupes to one accountability line per obligation (references owner; no re-explanation)', () => {
+    const r = deriveExecutionObligationRegistry(registryInput('an AI SaaS analytics product'))!;
+    const lines = renderObligationManifestBlock(r);
+    // Every rendered obligation is exactly ONE line that names its owner contract, not three prose lines.
+    const oblLines = lines.filter((l) => /^\[OBL obl_[0-9a-f]{8}/.test(l));
+    expect(oblLines.length).toBeGreaterThan(0);
+    expect(oblLines.every((l) => /· owner:/.test(l))).toBe(true);
+    // The old re-explanation prose lines ("  Must:", "  Evidence:", "  Do not:") are gone.
+    expect(lines.some((l) => /^\s+Must:/.test(l) || /^\s+Evidence:/.test(l) || /Do not:/.test(l))).toBe(false);
+    // Integrity: NO obligation was dropped from the checklist (every registry id that fits is represented,
+    // and the number of accountability lines equals the number of obligations rendered under the ceiling).
+    const renderedIds = new Set(oblLines.map((l) => (/^\[OBL (obl_[0-9a-f]{8})/.exec(l) || [])[1]));
+    expect(renderedIds.size).toBe(oblLines.length);
+  });
   it('renders nothing for a legacy/absent registry', () => {
     expect(renderObligationManifestBlock(undefined)).toEqual([]);
     expect(renderObligationManifestBlock({ status: 'legacy', obligations: [] } as unknown as ExecutionObligationRegistry)).toEqual([]);

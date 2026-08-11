@@ -349,11 +349,14 @@ export function renderObligationManifestBlock(registry: ExecutionObligationRegis
   if (!registry || registry.status !== 'derived' || !registry.obligations.length) return [];
   const ranked = [...registry.obligations].sort((a, b) => (PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority]) || (Number(b.blockerEligible) - Number(a.blockerEligible)));
   const out: string[] = [];
-  out.push('EXECUTION OBLIGATION MANIFEST (each item WILL be checked by obligation id after generation — fulfil the intent, not just the presence; upstream authorities own the visual/story/token details):');
+  // Phase 4 — this DOWNSTREAM accountability block references each obligation by id + owner + a concise
+  // requirement; it does NOT re-explain the paragraphs the OWNER contract above already states in full,
+  // and the evidence/forbidden-shortcut detail is checked DETERMINISTICALLY by acceptance (it lives in
+  // the persisted registry, not re-emitted to the model). This keeps the checklist authoritative while
+  // removing duplicated model-facing prose.
+  out.push('EXECUTION OBLIGATION MANIFEST (each id WILL be checked after generation — fulfil the intent; the OWNER contract above states the full detail, this is the accountability checklist, not a re-explanation):');
   for (const o of ranked.slice(0, MAX_MANIFEST)) {
-    out.push(`[OBL ${o.obligationId} · ${o.type}${o.sectionId ? ` · ${clip(o.sectionId, 24)}` : ''} · ${o.priority}]`);
-    out.push(`  Must: ${clip(o.requirement, 150)}`);
-    out.push(`  Evidence: ${clip(o.evidenceExpected, 90)}; Do not: ${clip(o.forbiddenShortcut, 70)}`);
+    out.push(`[OBL ${o.obligationId} · ${o.type}${o.sectionId ? ` · ${clip(o.sectionId, 24)}` : ''} · ${o.priority} · owner:${o.ownerContract}] ${clip(o.requirement, 130)}`);
   }
   out.push('Report the obligation ids you addressed. Preserve every already-correct section; do not collapse distinct obligations into one generic block.');
   let total = 0; const bounded: string[] = [];
