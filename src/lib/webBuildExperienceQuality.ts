@@ -435,6 +435,13 @@ export function renderExperienceQualityBlock(contract: ExperienceQualityContract
     ...(contract.globalResponsive.length ? [`Responsive: ${contract.globalResponsive.slice(0, 5).join('; ')}.`] : []),
     ...(contract.globalAccessibility.length ? [`Accessibility: ${contract.globalAccessibility.slice(0, 5).join('; ')}.`] : []),
     ...(contract.globalPerformance.length ? [`Performance/media: ${contract.globalPerformance.slice(0, 5).join('; ')}.`] : []),
+    // UI polish — whitespace must be EARNED; vary composition; make CTA hierarchy visible.
+    'Whitespace must be EARNED: a generous/full-height section needs a real anchor (dominant photography,',
+    'a strong typographic statement, real browse/catalog items, a meaningful interaction, or substantive',
+    'content). Do NOT manufacture page length with tall empty sections or filler; tighten spacing instead.',
+    'Vary composition: unrelated top-level sections must NOT all render as the same card grid; give the',
+    'page rhythm and 1–2 dominant moments. Make CTA hierarchy visible — ONE dominant primary action per',
+    'conversion context; keep secondary actions subordinate; do not render every CTA with equal weight.',
     'Per-section experience obligations (by section id):',
     ...secLines,
     '',
@@ -612,6 +619,9 @@ export function factsFor(id: string, path: string, content: string): SectionFact
 export type ExperienceIssueCode =
   // Phase 1 — coherence
   | 'experience-flat-rhythm' | 'experience-content-layout-tight'
+  // UI polish (substance-to-space fit, composition variety, CTA visual hierarchy)
+  | 'experience-dead-space' | 'experience-thin-section'
+  | 'experience-repeated-composition' | 'experience-cta-weight'
   // Phase 2 — responsive
   | 'experience-desktop-only' | 'experience-harmful-clip'
   | 'experience-cta-hidden-mobile' | 'experience-responsive-warn'
@@ -681,6 +691,10 @@ export function analyzeExperienceQuality(
         repairInstruction: capEv('Give dense/proof sections a layout with room (columns/structure) matching their content; do not cram them into a minimal centered block.') });
     }
     coherenceRhythmCheck(contract, facts, push);
+    // ── UI polish — whitespace must be earned; composition variety; CTA visual hierarchy. ──
+    substanceToSpaceCheck(facts, byId, push);
+    compositionVarietyCheck(facts, push);
+    ctaHierarchyCheck(facts, push);
     // ── Phase 2 — responsive layout & content-fit. ──
     responsiveCheck(facts, byId, factById, push);
     // ── Phase 3 — interaction depth & state-feedback integrity. ──
@@ -718,6 +732,116 @@ function coherenceRhythmCheck(contract: ExperienceQualityContract, facts: Sectio
       repairInstruction: capEv('Vary section structure/weight so the page has rhythm and 1–2 dominant moments, not one repeated centered column.') });
   }
   void contract;
+}
+
+/* ── UI polish helpers (whitespace must be EARNED; variety; CTA weight) ── */
+// A visually GENEROUS/sparse vertical treatment (large vertical padding, full-viewport height, or big
+// vertical rhythm). Whitespace is welcome — but only when the section earns it with a real anchor.
+const _GENEROUS_SPACE_RE = /\bpy-(?:2[4-9]|[3-9]\d)\b|\bmin-h-screen\b|\bh-screen\b|\bmin-h-\[|\bspace-y-(?:1[6-9]|[2-9]\d)\b|\bgap-(?:1[6-9]|[2-9]\d)\b/;
+// A dominant real MEDIA anchor (photo / video / poster / background image).
+const _DOMINANT_MEDIA_RE = /<img\b|<video\b|<picture\b|<Image\b|background-image|bg-\[url|bg-\[image/i;
+// A strong TYPOGRAPHIC statement (a genuinely large display size — a legitimate sparse anchor).
+const _STRONG_TYPE_RE = /\btext-(?:5xl|6xl|7xl|8xl|9xl)\b|\btext-\[(?:[6-9]\d|\d{3})/;
+// PROOF/trust surface tokens (a real reason for a calm, spacious treatment).
+const _PROOF_RE = /testimonial|review|rating|\bstars?\b|\blogos?\b|award|accredit|certif|trusted|as seen/i;
+
+/** Count real, repeated item-like units rendered in a section (browse/catalog density). */
+function itemDensity(f: SectionFacts): number {
+  const li = f.elements.filter((e) => e.tag === 'li' || e.tag === 'article' || e.tag === 'figure').length;
+  const cardish = f.elements.filter((e) => /\b(?:card|tile|product|plan|listing|item|cell)\b/.test(e.classes)).length;
+  const mapped = /\.\s*map\s*\(/.test(f.clean) ? 3 : 0;   // a dynamic list renders many items
+  return Math.max(li, cardish, mapped);
+}
+
+/** Substance-to-space fit — a visually generous/sparse section is justified ONLY by a strong anchor:
+ *  dominant media, a strong typographic statement, real browse/catalog density, a meaningful interactive
+ *  focal point, a proof/trust surface, or substantial narrative content. A generous section with none of
+ *  those and almost no content is manufactured page length → flag (reduce spacing OR add substance).
+ *  Never requires filler; never forces dense layouts; dynamic/child regions fail open. */
+function substanceToSpaceCheck(
+  facts: SectionFacts[], byId: Map<string, ExperienceSectionObligation>, push: (x: ExperienceIssue) => void,
+): void {
+  for (const f of facts) {
+    if (f.hasDynamic || f.hasChildComponent) continue;                 // content may live elsewhere → fail open
+    if (!_GENEROUS_SPACE_RE.test(f.render)) continue;                  // not a generous/sparse section
+    const ob = byId.get(f.id);
+    const hasMedia = _DOMINANT_MEDIA_RE.test(f.clean);
+    const hasInteraction = (ob?.interaction && ob.interaction.kind !== 'none') || f.elements.some(isControlEl);
+    const hasBrowse = itemDensity(f) >= 3;
+    const hasProof = _PROOF_RE.test(f.clean);
+    const strongType = _STRONG_TYPE_RE.test(f.render) && f.words >= 3;
+    const substantialCopy = f.words >= 40;
+    const anchored = hasMedia || hasInteraction || hasBrowse || hasProof || strongType || substantialCopy;
+    if (anchored) continue;
+    if (f.words < 8) {
+      // Generous vertical space + no anchor + almost no content → dead space (strong evidence).
+      push({ code: 'experience-dead-space', severity: 'major', subPolicy: 'coherence', label: 'unearned whitespace', files: [f.path],
+        evidence: capEv(`section "${f.id}" uses a generous/full-height vertical treatment but has no dominant media, no meaningful interaction, no browse/proof content and only ${f.words} words — the vertical space is not earned (manufactured page length)`),
+        repairInstruction: capEv(`Either reduce the unnecessary vertical spacing for "${f.id}" OR give it a real anchor (dominant photography, a strong typographic statement, real browse items, a meaningful interaction, or substantive content). Do not add filler text.`) });
+    } else if (f.words < 20) {
+      // Generous but thin — advisory (manual review), never a hard block.
+      push({ code: 'experience-thin-section', severity: 'minor', subPolicy: 'coherence', label: 'thin spacious section', files: [f.path],
+        evidence: capEv(`section "${f.id}" is visually generous but light on substance (${f.words} words, no dominant anchor) — verify the whitespace is earned`),
+        repairInstruction: capEv('Tighten the spacing or strengthen the section anchor (media / typography / browse / interaction / content).') });
+    }
+  }
+}
+
+/** Composition variety — detect page depth manufactured by repeated structure: the SAME card-grid
+ *  silhouette across ≥3 distinct top-level sections. Conservative; static regions only. */
+function compositionVarietyCheck(facts: SectionFacts[], push: (x: ExperienceIssue) => void): void {
+  const gridSig = new Map<string, Set<string>>();     // "grid-N" → set of section paths
+  for (const f of facts) {
+    if (f.hasChildComponent) continue;
+    const cols = new Set<number>();
+    for (const el of f.elements) {
+      const m = /grid-cols-(\d+)/.exec(el.classes);
+      if (m && m[1]) cols.add(parseInt(m[1], 10));
+    }
+    for (const n of cols) {
+      if (n < 2) continue;                            // a single-column stack is not a repeated card grid
+      const key = `grid-${n}`;
+      if (!gridSig.has(key)) gridSig.set(key, new Set());
+      gridSig.get(key)!.add(f.id);
+    }
+  }
+  for (const [key, ids] of gridSig) {
+    if (ids.size >= 3) {
+      push({ code: 'experience-repeated-composition', severity: 'minor', subPolicy: 'coherence', label: 'repeated card-grid silhouette', files: [],
+        evidence: capEv(`${ids.size} distinct top-level sections (${[...ids].slice(0, 5).join(', ')}) share the same ${key} card-grid silhouette — the page reads template-like and page depth comes from repeated structure`),
+        repairInstruction: capEv('Differentiate the composition of unrelated sections (vary layout, media role, rhythm) so distinct sections do not all render as the same card grid.') });
+      break;                                          // one systemic finding is enough
+    }
+  }
+}
+
+/** CTA visual hierarchy — a conversion page needs ONE dominant primary action. When ≥2 call-to-action
+ *  elements share the SAME visual treatment (identical class strings) with no dominant one, the hierarchy
+ *  is flat. Surfaced as a WARNING (no universal button style is imposed). */
+function ctaHierarchyCheck(facts: SectionFacts[], push: (x: ExperienceIssue) => void): void {
+  const ctaClasses: string[] = [];
+  for (const f of facts) {
+    if (f.hasChildComponent) continue;
+    for (const el of f.elements) {
+      if (el.tag !== 'button' && el.tag !== 'a') continue;
+      if (!el.classes) continue;
+      // Heuristic: a styled CTA has button-ish utility classes (padding + background/border/rounded).
+      if (/\bp[xy]?-\d|\bpx-\d/.test(el.classes) && /\b(?:bg-|border|rounded)/.test(el.classes)) {
+        ctaClasses.push(el.classes.split(/\s+/).sort().join(' '));
+      }
+    }
+  }
+  if (ctaClasses.length < 3) return;                  // too few CTAs to judge a hierarchy
+  const counts = new Map<string, number>();
+  for (const c of ctaClasses) counts.set(c, (counts.get(c) || 0) + 1);
+  const distinct = counts.size;
+  const dominantShare = Math.max(...counts.values()) / ctaClasses.length;
+  // Flat hierarchy: essentially every CTA looks the same (one identical treatment dominates all of them).
+  if (distinct === 1 || dominantShare >= 0.9) {
+    push({ code: 'experience-cta-weight', severity: 'minor', subPolicy: 'coherence', label: 'flat CTA hierarchy', files: [],
+      evidence: capEv(`${ctaClasses.length} call-to-action elements share one identical visual treatment with no dominant primary — CTA hierarchy is flat and the primary action does not stand out`),
+      repairInstruction: capEv('Give the primary action dominant visual weight (size/colour/contrast) and keep secondary actions subordinate; do not render every CTA with the same emphasis.') });
+  }
 }
 
 /** Parse one container's className tokens into the BASE (unprefixed = mobile) grid columns and whether
@@ -1188,6 +1312,10 @@ export function hasBlockingExperienceFindings(result: ExperienceAcceptanceResult
 const EXPERIENCE_CATEGORY: Record<ExperienceIssueCode, FrontendBuilderReviewCategory> = {
   'experience-flat-rhythm': 'layout-rhythm',
   'experience-content-layout-tight': 'layout-rhythm',
+  'experience-dead-space': 'layout-rhythm',
+  'experience-thin-section': 'layout-rhythm',
+  'experience-repeated-composition': 'layout-rhythm',
+  'experience-cta-weight': 'visual-hierarchy',
   'experience-desktop-only': 'responsive-intent',
   'experience-harmful-clip': 'responsive-intent',
   'experience-cta-hidden-mobile': 'responsive-intent',
