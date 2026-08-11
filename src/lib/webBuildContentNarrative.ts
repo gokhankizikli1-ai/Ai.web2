@@ -933,8 +933,12 @@ function deriveArchetype(input: ContentNarrativeInput): ArchetypeDecision {
 }
 
 function sectionIsBrowseSurface(s: FrontendSpecSection, compRole: string | undefined): boolean {
-  if (compRole === 'enable-decision' || compRole === 'compare') return true;
   const p = lc(`${s.purpose || ''} ${s.name || ''} ${(s.interactionHints || []).join(' ')} ${s.componentHint || ''} ${s.visualModule || ''}`);
+  // A site navigation is NOT a browse/decision surface even though a "nav menu" carries the token
+  // "menu" — it routes to content, it is not itself the content to browse. Exclude it explicitly so a
+  // nav is never counted as a core decision surface (that misread would fault a perfectly good nav).
+  if (/\bnav\b|navbar|navigation|hamburger/.test(p)) return false;
+  if (compRole === 'enable-decision' || compRole === 'compare') return true;
   return BROWSE_SURFACE_TOKENS.some((t) => p.includes(t));
 }
 function sectionIsDecisionSupport(s: FrontendSpecSection): boolean {

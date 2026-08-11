@@ -93,6 +93,16 @@ describe('site depth — GENERAL site-type-aware profiles (not a universal secti
     expect(JSON.stringify(deriveSiteDepthContract(SAAS()))).toBe(JSON.stringify(deriveSiteDepthContract(SAAS())));
   });
 
+  it('does NOT count a navigation "menu" as a core browse/decision surface', () => {
+    // A nav module carries the token "menu" but routes to content — it is not itself a browse surface.
+    const c = deriveSiteDepthContract(input(
+      { siteType: 'coffee shop', sector: 'restaurant-hospitality', businessModel: 'reservation-led' },
+      [sec('hero', 0, 'hero'), sec('nav', 1, 'mobile navigation menu'), sec('menu', 2, 'coffee menu drinks')],
+    ))!;
+    expect(c.coreDecisionSurfaces).toContain('menu');
+    expect(c.coreDecisionSurfaces).not.toContain('nav');
+  });
+
   it('renders a bounded, implementable builder block for a developed site', () => {
     const block = renderSiteDepthBlock(deriveSiteDepthContract(RESTAURANT()));
     expect(block.length).toBeGreaterThan(0);
