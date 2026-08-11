@@ -126,3 +126,41 @@ describe('source-output efficiency — spend tokens on visible quality, not redu
     expect(r.codes.some((x) => x.includes('unused-state'))).toBe(false);
   });
 });
+
+describe('review fixes — vertical-space axis + hook/component scope', () => {
+  // FINDING 2 — a horizontal/generic gap must NEVER count as vertical whitespace.
+  it('2A/2B/2C: generic gap / gap-x in grid/flex is not dead-space', () => {
+    expect(eq([sec('a', 0, 'programs')], [file('A.tsx', '<section id="a" className="py-8"><div className="grid grid-cols-3 gap-12"><p>a</p></div></section>')]).codes.some((x) => x.includes('dead-space'))).toBe(false);
+    expect(eq([sec('a', 0, 'row')], [file('A.tsx', '<section id="a" className="py-6"><div className="flex flex-row gap-16"><p>a</p></div></section>')]).codes.some((x) => x.includes('dead-space'))).toBe(false);
+    expect(eq([sec('a', 0, 'x')], [file('A.tsx', '<section id="a" className="py-4"><div className="grid gap-x-16"><p>a</p></div></section>')]).codes.some((x) => x.includes('dead-space'))).toBe(false);
+  });
+  it('2D: gap-y-16 with thin content is at most an advisory warning, never a major dead-space', () => {
+    const r = eq([sec('a', 0, 'y')], [file('A.tsx', '<section id="a" className="py-6"><div className="grid gap-y-16"><h2 className="text-2xl">Hi</h2></div></section>')]);
+    expect(r.codes.some((x) => x.includes('dead-space'))).toBe(false);
+    expect(r.codes.some((x) => x.includes('thin-section'))).toBe(true);
+  });
+  it('2E/2F: a genuinely tall footprint (py-32 / min-h-screen) with no anchor is still dead-space (major)', () => {
+    expect(eq([sec('a', 0, 'spacer')], [file('A.tsx', '<section id="a" className="py-32"><h2 className="text-2xl">Elevate</h2></section>')]).codes).toContain('experience-dead-space:major');
+    expect(eq([sec('a', 0, 'spacer')], [file('A.tsx', '<section id="a" className="min-h-screen"><h2 className="text-2xl">X</h2></section>')]).codes).toContain('experience-dead-space:major');
+  });
+  it('2G/2H: a tall image-led hero or a justified focal-typography section is not penalized', () => {
+    expect(eq([sec('hero', 0, 'hero')], [file('H.tsx', '<section id="hero" className="min-h-screen"><img src="/h.jpg"/><h1 className="text-6xl">Move</h1></section>')]).codes.some((x) => x.includes('dead-space'))).toBe(false);
+    expect(eq([sec('m', 0, 'editorial')], [file('M.tsx', '<section id="m" className="py-40"><h1 className="text-7xl">A Bold Statement</h1></section>')]).codes.some((x) => x.includes('dead-space'))).toBe(false);
+  });
+
+  // FINDING 1 — dead-state detection at file/component scope (hooks live above the section markup).
+  it('1A: a hook declared ABOVE the section and totally unused is detected', () => {
+    const r = eq([sec('programs', 0, 'programs')], [file('P.tsx',
+      'export default function Programs(){const [selected,setSelected]=useState(0);return(<section id="programs"><h2>Programs</h2><p>Real content words padding padding padding padding padding padding padding padding.</p></section>);}')]);
+    expect(r.codes).toContain('experience-unused-state:minor');
+  });
+  it('1B/1C/1D: a hook used (rendered / child prop / aria/class) is NOT flagged', () => {
+    expect(eq([sec('p', 0, 'p')], [file('P.tsx', 'export default function P(){const [selected,setSelected]=useState(0);return(<section id="p"><button onClick={()=>setSelected(1)}>Pick</button>{selected===1&&<p>One</p>}</section>);}')]).codes.some((x) => x.includes('unused-state'))).toBe(false);
+    expect(eq([sec('p', 0, 'p')], [file('P.tsx', 'export default function P(){const [selected,setSelected]=useState(0);return(<section id="p"><Child value={selected} onChange={setSelected}/></section>);}')]).codes.some((x) => x.includes('unused-state'))).toBe(false);
+    expect(eq([sec('n', 0, 'nav')], [file('N.tsx', 'export default function N(){const [open,setOpen]=useState(false);return(<section id="n"><button onClick={()=>setOpen(!open)} aria-expanded={open} className={open?"is-open":"is-closed"}>M</button></section>);}')]).codes.some((x) => x.includes('unused-state'))).toBe(false);
+  });
+  it('1E/1F: multi-component files stay conservative; a section with no hook flags nothing', () => {
+    expect(eq([sec('a', 0, 'a')], [file('Multi.tsx', 'function A(){const [x,setX]=useState(0);return <div onClick={()=>setX(x+1)}>{x}</div>;} export default function A2(){const [dead,setDead]=useState(0);return(<section id="a"><A/><p>content words padding padding padding padding padding padding.</p></section>);}')]).codes).toContain('experience-unused-state:minor');
+    expect(eq([sec('a', 0, 'a')], [file('A.tsx', '<section id="a"><p>content words padding padding padding padding padding padding padding.</p></section>')]).codes.some((x) => x.includes('unused-state'))).toBe(false);
+  });
+});

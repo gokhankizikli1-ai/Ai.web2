@@ -716,8 +716,10 @@ export function analyzeExperienceQuality(
     accessibilityCheck(byId, factById, push);
     // ── Phase 5 — performance, media delivery & runtime resilience. ──
     performanceCheck(facts, byId, factById, push);
-    // ── Source-output efficiency — redundant source waste (repeated JSX, dead state). ──
-    sourceEfficiencyCheck(facts, push);
+    // ── Source-output efficiency — redundant source waste (repeated JSX at section scope; dead state at
+    //    FILE/component scope, since hooks live above the section markup). Full source stripped once. ──
+    const fileByPath = new Map(list.map((f) => [f.path, stripComments((f.content || '').slice(0, MAX_SCAN))]));
+    sourceEfficiencyCheck(facts, fileByPath, push);
 
     const coherenceFindingCount = issues.filter((i) => i.subPolicy === 'coherence').length;
     const responsiveFindingCount = issues.filter((i) => i.subPolicy === 'responsive').length;
@@ -761,9 +763,26 @@ function coherenceRhythmCheck(contract: ExperienceQualityContract, facts: Sectio
 }
 
 /* ── UI polish helpers (whitespace must be EARNED; variety; CTA weight) ── */
-// A visually GENEROUS/sparse vertical treatment (large vertical padding, full-viewport height, or big
-// vertical rhythm). Whitespace is welcome — but only when the section earns it with a real anchor.
-const _GENEROUS_SPACE_RE = /\bpy-(?:2[4-9]|[3-9]\d)\b|\bmin-h-screen\b|\bh-screen\b|\bmin-h-\[|\bspace-y-(?:1[6-9]|[2-9]\d)\b|\bgap-(?:1[6-9]|[2-9]\d)\b/;
+// Direction-aware VERTICAL footprint of a section — the ONLY axis that proves generous vertical space.
+// A generic `gap-*` (or `gap-x-*`) applies horizontally in grid/flex and NEVER counts as vertical space.
+//   'strong'  → a genuinely tall section (full viewport height, a large explicit vh min-height, large
+//               vertical padding py-*, or pt-* AND pb-* both materially large). Only 'strong' can raise
+//               the MAJOR dead-space finding.
+//   'weak'    → vertical rhythm between children (space-y-* / gap-y-*, i.e. row gap) that is large but is
+//               NOT by itself proof of a tall footprint → at most an advisory warning.
+//   'none'    → no vertical-space evidence (generic gap-*, gap-x-*, horizontal-only spacing).
+function verticalFootprint(render: string): 'strong' | 'weak' | 'none' {
+  const strong =
+    /\bmin-h-screen\b|\bh-screen\b/.test(render)                       // full-viewport height
+    || /\bmin-h-\[[^\]]*vh\b/.test(render)                             // large explicit viewport-height min
+    || /\b(?:sm:|md:|lg:|xl:|2xl:)?py-(?:2[4-9]|[3-9]\d)\b/.test(render) // large vertical padding
+    || (/\b(?:sm:|md:|lg:|xl:|2xl:)?pt-(?:1[6-9]|[2-9]\d)\b/.test(render)
+        && /\b(?:sm:|md:|lg:|xl:|2xl:)?pb-(?:1[6-9]|[2-9]\d)\b/.test(render)); // pt AND pb both large
+  if (strong) return 'strong';
+  // Vertical rhythm ONLY (row gap / vertical child spacing) — never a horizontal or generic gap.
+  const weak = /\bspace-y-(?:1[6-9]|[2-9]\d)\b/.test(render) || /\bgap-y-(?:1[6-9]|[2-9]\d)\b/.test(render);
+  return weak ? 'weak' : 'none';
+}
 // A dominant real MEDIA anchor (photo / video / poster / background image).
 const _DOMINANT_MEDIA_RE = /<img\b|<video\b|<picture\b|<Image\b|background-image|bg-\[url|bg-\[image/i;
 // A strong TYPOGRAPHIC statement (a genuinely large display size — a legitimate sparse anchor).
@@ -789,7 +808,8 @@ function substanceToSpaceCheck(
 ): void {
   for (const f of facts) {
     if (f.hasDynamic || f.hasChildComponent) continue;                 // content may live elsewhere → fail open
-    if (!_GENEROUS_SPACE_RE.test(f.render)) continue;                  // not a generous/sparse section
+    const footprint = verticalFootprint(f.render);
+    if (footprint === 'none') continue;                                // no VERTICAL space evidence (gap-x/generic gap never counts)
     const ob = byId.get(f.id);
     const hasMedia = _DOMINANT_MEDIA_RE.test(f.clean);
     const hasInteraction = (ob?.interaction && ob.interaction.kind !== 'none') || f.elements.some(isControlEl);
@@ -799,13 +819,13 @@ function substanceToSpaceCheck(
     const substantialCopy = f.words >= 40;
     const anchored = hasMedia || hasInteraction || hasBrowse || hasProof || strongType || substantialCopy;
     if (anchored) continue;
-    if (f.words < 8) {
-      // Generous vertical space + no anchor + almost no content → dead space (strong evidence).
+    if (footprint === 'strong' && f.words < 8) {
+      // Genuinely TALL vertical footprint + no anchor + almost no content → dead space (strong evidence).
       push({ code: 'experience-dead-space', severity: 'major', subPolicy: 'coherence', label: 'unearned whitespace', files: [f.path],
-        evidence: capEv(`section "${f.id}" uses a generous/full-height vertical treatment but has no dominant media, no meaningful interaction, no browse/proof content and only ${f.words} words — the vertical space is not earned (manufactured page length)`),
+        evidence: capEv(`section "${f.id}" uses a tall/full-height vertical treatment but has no dominant media, no meaningful interaction, no browse/proof content and only ${f.words} words — the vertical space is not earned (manufactured page length)`),
         repairInstruction: capEv(`Either reduce the unnecessary vertical spacing for "${f.id}" OR give it a real anchor (dominant photography, a strong typographic statement, real browse items, a meaningful interaction, or substantive content). Do not add filler text.`) });
     } else if (f.words < 20) {
-      // Generous but thin — advisory (manual review), never a hard block.
+      // Weak vertical evidence, OR a tall section with only slightly-thin content → advisory (never a block).
       push({ code: 'experience-thin-section', severity: 'minor', subPolicy: 'coherence', label: 'thin spacious section', files: [f.path],
         evidence: capEv(`section "${f.id}" is visually generous but light on substance (${f.words} words, no dominant anchor) — verify the whitespace is earned`),
         repairInstruction: capEv('Tighten the spacing or strengthen the section anchor (media / typography / browse / interaction / content).') });
@@ -1341,38 +1361,49 @@ function performanceCheck(
  *  data-driven, and obviously-dead React state. Reuse must stay LOCAL and semantics-aware, so a
  *  bespoke/varied section is never treated as duplication, and a working interaction is never
  *  penalized. Dynamic (`.map`) lists and child-hosted regions fail open. */
-function sourceEfficiencyCheck(facts: SectionFacts[], push: (x: ExperienceIssue) => void): void {
+function sourceEfficiencyCheck(
+  facts: SectionFacts[], fileByPath: Map<string, string>, push: (x: ExperienceIssue) => void,
+): void {
+  // A) Repeated hand-written blocks — SECTION scope (the duplicated markup lives in the section return).
   for (const f of facts) {
     if (f.hasChildComponent) continue;
-    // A) Repeated hand-written blocks — ≥6 sibling elements sharing an identical non-trivial class
-    //    structure, with NO data-driven .map in the section → should be a data array + one template.
-    if (!/\.\s*map\s*\(/.test(f.clean)) {
-      const byClass = new Map<string, number>();
-      for (const el of f.elements) {
-        const key = el.classes.trim();
-        if (key.length >= 12) byClass.set(key, (byClass.get(key) || 0) + 1);
-      }
-      const maxRepeat = byClass.size ? Math.max(...byClass.values()) : 0;
-      if (maxRepeat >= 6) {
-        push({ code: 'experience-repeated-jsx', severity: 'major', subPolicy: 'performance', label: 'hand-duplicated repeated blocks', files: [f.path],
-          evidence: capEv(`section "${f.id}" hand-writes ${maxRepeat} near-identical sibling blocks (same class structure, no .map) — the repeated markup spends output source on duplication instead of visible quality`),
-          repairInstruction: capEv(`Drive the repeated units in "${f.id}" from a small local data array rendered with one template (data.map(...)); keep bespoke/unique sections hand-written. Do not over-componentize one-off layout.`) });
-      }
+    if (/\.\s*map\s*\(/.test(f.clean)) continue;                       // already data-driven
+    const byClass = new Map<string, number>();
+    for (const el of f.elements) {
+      const key = el.classes.trim();
+      if (key.length >= 12) byClass.set(key, (byClass.get(key) || 0) + 1);
     }
-    // B) Obviously-dead React state — declared but never read AND never set anywhere in the file.
+    const maxRepeat = byClass.size ? Math.max(...byClass.values()) : 0;
+    if (maxRepeat >= 6) {
+      push({ code: 'experience-repeated-jsx', severity: 'major', subPolicy: 'performance', label: 'hand-duplicated repeated blocks', files: [f.path],
+        evidence: capEv(`section "${f.id}" hand-writes ${maxRepeat} near-identical sibling blocks (same class structure, no .map) — the repeated markup spends output source on duplication instead of visible quality`),
+        repairInstruction: capEv(`Drive the repeated units in "${f.id}" from a small local data array rendered with one template (data.map(...)); keep bespoke/unique sections hand-written. Do not over-componentize one-off layout.`) });
+    }
+  }
+
+  // B) Obviously-dead React state — FILE/COMPONENT scope. Hooks idiomatically live ABOVE the <section>
+  //    markup (in the component body), so a section-slice scan misses them. Correlate a useState to a
+  //    section in its file, then judge USAGE across the WHOLE file: a value/setter referenced ANYWHERE
+  //    (rendered, in a handler, a derived value, a child prop, a class/aria/style) counts as used —
+  //    we FAIL OPEN toward "used" and flag only when the pair appears exactly once (its declaration).
+  const sectionIdByPath = new Map<string, string>();
+  for (const f of facts) { if (!sectionIdByPath.has(f.path)) sectionIdByPath.set(f.path, f.id); }
+  for (const [path, sid] of sectionIdByPath) {
+    const src = fileByPath.get(path);
+    if (!src) continue;                                                // no full source available → fail open
     const stateRe = /const\s*\[\s*(\w+)\s*,\s*(set\w+)\s*\]\s*=\s*(?:React\.)?useState/g;
     let sm: RegExpExecArray | null; let guard = 0;
-    while ((sm = stateRe.exec(f.clean)) && guard < 40) {
+    while ((sm = stateRe.exec(src)) && guard < 40) {
       guard += 1;
       const v = sm[1]; const setter = sm[2];
       if (!v || !setter) continue;
-      const vCount = (f.clean.match(new RegExp(`\\b${v}\\b`, 'g')) || []).length;
-      const setCount = (f.clean.match(new RegExp(`\\b${setter}\\b`, 'g')) || []).length;
-      if (vCount <= 1 && setCount <= 1) {          // only the destructuring occurrence → dead
-        push({ code: 'experience-unused-state', severity: 'minor', subPolicy: 'performance', label: 'unused React state', files: [f.path],
-          evidence: capEv(`section "${f.id}" declares useState "${v}" that is never read or updated — dead state spends source with no visible effect`),
+      const vCount = (src.match(new RegExp(`\\b${v}\\b`, 'g')) || []).length;
+      const setCount = (src.match(new RegExp(`\\b${setter}\\b`, 'g')) || []).length;
+      if (vCount <= 1 && setCount <= 1) {                              // only the destructuring occurrence → dead
+        push({ code: 'experience-unused-state', severity: 'minor', subPolicy: 'performance', label: 'unused React state', files: [path],
+          evidence: capEv(`the component in "${path}" (section "${sid}") declares useState "${v}" that is never read or updated anywhere in the file — dead state spends source with no visible effect`),
           repairInstruction: capEv(`Remove the unused "${v}" state (and any effect that only maintains it); keep state that drives a visible outcome.`) });
-        break;                                     // one signal per section is enough
+        break;                                                        // one advisory signal per file is enough
       }
     }
   }
