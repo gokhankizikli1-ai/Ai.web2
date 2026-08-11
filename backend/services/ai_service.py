@@ -14,6 +14,8 @@ from ai_client import (
     start_openai_background_structured, cancel_openai_background_response,
     # Phase 13F.2 — task-specific full-source output budget resolver.
     frontend_task_max_output_tokens,
+    # Latency/cost observability — diagnostic mirror of the client workflow budget (numbers only).
+    _frontend_client_workflow_budget_ms,
     # Contract-aware repair budget — parse the explicit frontend-files-v1 / frontend-delta-v1 signal.
     _frontend_repair_contract,
 )
@@ -399,6 +401,14 @@ async def process_chat(
                     _fb_max_tokens = frontend_task_max_output_tokens(
                         _fb_kind, cfg["max_tokens"], _frontend_repair_contract(message),
                     )
+                    # Resolve reasoning effort ONCE so the SAME value is sent to the provider AND
+                    # surfaced in the start diagnostic (no divergence, no second computation).
+                    _fb_reasoning = _frontend_reasoning_effort(message)
+                    # Bounded, numeric-only start diagnostics (no raw prompt/system/spec/copy/research):
+                    # request + system CHAR COUNTS only, plus the diagnostic mirror of the client budget.
+                    _fb_request_chars = len(message or "")
+                    _fb_system_chars = len(sys_p or "")
+                    _fb_client_budget_ms = _frontend_client_workflow_budget_ms(_fb_kind)
 
                     if _fb_use_bg:
                         # Truthful async probe of the shared store BEFORE any OpenAI generation.
@@ -433,7 +443,7 @@ async def process_chat(
                         _bg = await start_openai_background_structured(
                             prompt=message, system=sys_p, model=cfg["model"],
                             max_output_tokens=_fb_max_tokens,
-                            reasoning_effort=_frontend_reasoning_effort(message),
+                            reasoning_effort=_fb_reasoning,
                             operation="frontend " + _fb_kind,
                         )
                         # Started (queued/in_progress) → create the opaque per-user job record.
@@ -459,8 +469,9 @@ async def process_chat(
                                     }},
                                 }
                             logger.info(
-                                "process_chat | frontend_builder | bg started | kind=%s | job=%s | budget=%d | store=%s | ms=%d",
-                                _fb_kind, _job_id[:12], _fb_max_tokens, _probe.status, _bg.latency_ms,
+                                "process_chat | frontend_builder | bg started | kind=%s | job=%s | effort=%s | budget=%d | req_chars=%d | sys_chars=%d | store=%s | ms=%d",
+                                _fb_kind, _job_id[:12], _fb_reasoning, _fb_max_tokens,
+                                _fb_request_chars, _fb_system_chars, _probe.status, _bg.latency_ms,
                             )
                             return {
                                 "reply": "", "intent": canonical, "model": _bg.model,
@@ -475,6 +486,12 @@ async def process_chat(
                                     "expires_in_ms": job_expires_in_ms(), "store_required": True,
                                     "background_store_available": True, "background_store_status": _probe.status,
                                     "configured_max_output_tokens": _fb_max_tokens,
+                                    # Latency/cost start diagnostics — numbers/enums only (no raw prompt/
+                                    # system/spec/copy/research). Lets the NEXT smoke build be measured.
+                                    "reasoning_effort": _fb_reasoning,
+                                    "request_char_count": _fb_request_chars,
+                                    "system_char_count": _fb_system_chars,
+                                    "workflow_client_budget_ms": _fb_client_budget_ms,
                                     # Owner-only task-scoped system-prompt diagnostics (bounded numeric).
                                     **(_fb_prompt_diag or {}),
                                 }},
