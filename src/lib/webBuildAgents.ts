@@ -2943,6 +2943,11 @@ export interface FrontendBuilderAcceptanceArtifact {
    *    All OPTIONAL/additive. ── */
   contentNarrative?: import('@/lib/webBuildContentNarrative').ContentNarrativeDiagnostics;
 
+  /* ── Phase 2 (site depth & completeness) — bounded owner diagnostics (archetype + depth-profile
+   *    levels + core-surface / thin counts + issue codes only; never raw source, prompts or secrets).
+   *    All OPTIONAL/additive. ── */
+  siteDepth?: import('@/lib/webBuildContentNarrative').SiteDepthDiagnostics;
+
   /* ── Phase (integrated experience quality) — bounded owner diagnostics (sub-policy presence +
    *    per-dimension finding counts + issue codes only; never raw source, prompts or secrets).
    *    All OPTIONAL/additive. ── */
