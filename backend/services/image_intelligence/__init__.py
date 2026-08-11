@@ -131,40 +131,98 @@ async def select_assets(
         # unused photographer when it costs little (within the diversity margin).
         #
         # Phase 1 — for HIGH-IMPACT photographic slots only, and only while the per-build
-        # visual budget lasts, a single bounded vision call re-picks among the TOP-N
-        # already-uniqueness-filtered candidates. It FAILS OPEN to the metadata winner on
-        # any problem, never grows the pool, and never triggers a new stock search.
+        # visual budget lasts, a bounded vision pass re-picks among the TOP-N metadata
+        # candidates. When ≥2 high-impact slots are eligible they are decided in ONE batched
+        # multimodal request (one round-trip instead of N sequential calls); a lone eligible
+        # slot uses the single-slot path. Either way it FAILS OPEN per slot to the metadata
+        # winner, never grows the pool, and never triggers a new stock search.
         rerank_on = visual_rerank_enabled()
         rerank_budget = visual_rerank_budget() if rerank_on else 0
         rerank_top_n = visual_rerank_topn()
         used_ids: set = set()
         used_photographers: set = set()
         selections: List[SelectedAsset] = []
+
+        # ── Visual rerank pre-pass: pick the eligible high-impact slots (bounded by budget) and
+        #    decide them (batched when ≥2) BEFORE the deterministic loop, so their winners are
+        #    reserved and non-high-impact slots can never collide with a visual pick. ──
+        batch_winner: Dict[str, ScoredImage] = {}
+        batch_diag_by_slot: Dict[str, Dict[str, Any]] = {}
+        if rerank_on and rerank_budget > 0:
+            eligible: List[Any] = []
+            for req, ranked in zip(requirements, ranked_per_req):
+                if isinstance(ranked, Exception) or not ranked:
+                    continue
+                if visual_rerank.is_high_impact_slot(req) and len(eligible) < rerank_budget:
+                    eligible.append((req, ranked))
+            if len(eligible) >= 2:
+                slots = [(req.slot_id, req, visual_rerank._shortlist(ranked, rerank_top_n))
+                         for req, ranked in eligible]
+                picks, agg = await visual_rerank.rerank_batch(intent, slots, top_n=rerank_top_n)
+                local_used: set = set()
+                for slot_id, _req, shortlist in slots:
+                    idx = picks.get(slot_id)
+                    chosen_sc: Optional[ScoredImage] = None
+                    if idx is not None and 0 <= idx < len(shortlist) and shortlist[idx].candidate.id not in local_used:
+                        chosen_sc = shortlist[idx]
+                    else:
+                        # Per-slot fail-open + deterministic uniqueness: best UNUSED in this shortlist.
+                        for s in shortlist:
+                            if s.candidate.id not in local_used:
+                                chosen_sc = s
+                                break
+                    if chosen_sc is not None:
+                        local_used.add(chosen_sc.candidate.id)
+                        batch_winner[slot_id] = chosen_sc
+                        batch_diag_by_slot[slot_id] = {
+                            **agg,
+                            "selectedRankBefore": int(idx) if idx is not None else 0,
+                            "selectedRankAfter": 0,
+                        }
+            elif len(eligible) == 1:
+                req, ranked = eligible[0]
+                chosen_sc, diag = await visual_rerank.rerank_winner(
+                    intent, req, list(ranked), top_n=rerank_top_n,
+                )
+                if chosen_sc is not None:
+                    batch_winner[req.slot_id] = chosen_sc
+                    batch_diag_by_slot[req.slot_id] = {
+                        "visualRerankMode": "slot-single", "eligibleSlotCount": 1,
+                        "attemptedSlotCount": 1,
+                        "providerCallCount": 1 if diag.get("visualRerankAttempted") else 0,
+                        "changedWinnerCount": 1 if diag.get("reason") == "reranked" else 0,
+                        "failedSlotCount": 0 if diag.get("succeeded") else 1,
+                        **diag,
+                    }
+
+        # Reserve the visual winners up front so the deterministic loop below never reassigns
+        # their candidates to another slot (cross-slot uniqueness holds regardless of slot order).
+        for _sid, _sc in batch_winner.items():
+            used_ids.add(_sc.candidate.id)
+            _ph = _sc.candidate.photographer_name.strip().lower()
+            if _ph:
+                used_photographers.add(_ph)
+
         for req, ranked in zip(requirements, ranked_per_req):
             if isinstance(ranked, Exception) or not ranked:
                 continue
             visual_diag: Optional[Dict[str, Any]] = None
-            chosen: Optional[ScoredImage] = None
-            if rerank_on and rerank_budget > 0 and visual_rerank.is_high_impact_slot(req):
-                available = [s for s in ranked if s.candidate.id not in used_ids]
-                if available:
-                    rerank_budget -= 1  # count the attempt regardless of outcome (bounded cost)
-                    chosen, visual_diag = await visual_rerank.rerank_winner(
-                        intent, req, available, top_n=rerank_top_n,
-                    )
-            if chosen is None:
+            if req.slot_id in batch_winner:
+                chosen = batch_winner[req.slot_id]                 # visual pick — already reserved
+                visual_diag = batch_diag_by_slot.get(req.slot_id)
+            else:
                 chosen = _pick(ranked, used_ids, used_photographers)
-            if chosen is None:
-                continue
-            cand = chosen.candidate
-            used_ids.add(cand.id)
-            photographer = cand.photographer_name.strip().lower()
-            if photographer:
-                used_photographers.add(photographer)
+                if chosen is None:
+                    continue
+                cand = chosen.candidate
+                used_ids.add(cand.id)
+                photographer = cand.photographer_name.strip().lower()
+                if photographer:
+                    used_photographers.add(photographer)
             score_meta: Dict[str, Any] = dict(chosen.as_metadata())
             if visual_diag is not None:
                 score_meta["visualRerank"] = visual_diag
-            selections.append(SelectedAsset(slot_id=req.slot_id, candidate=cand, score=score_meta))
+            selections.append(SelectedAsset(slot_id=req.slot_id, candidate=chosen.candidate, score=score_meta))
 
         return selections
     except Exception as exc:  # noqa: BLE001 — smart path must never break generation
