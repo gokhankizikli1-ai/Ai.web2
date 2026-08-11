@@ -299,6 +299,24 @@ class StockNeedItem(BaseModel):
     # exactly as before; the service sanitizes/dedupes and uses at most 3 as a bounded
     # fallback for a REQUIRED slot whose primary query found nothing.
     queryVariants: List[str] = Field(default_factory=list, max_length=6)
+    # ── Art direction (Phase 1) — the already-derived, already-sanitized per-slot signal from the
+    #    frontend visualConcept image roles, forwarded so the Smart Image ranker can reason about it.
+    #    ALL optional + bounded; old clients omit them (defaults apply) and unknown/enum values are
+    #    re-validated downstream (design_intent) → neutral, so nothing here can reject a request. The
+    #    enum-shaped fields are plain bounded strings on the wire (not Literal) so a bad value is
+    #    accepted then neutralized rather than 422'd. Never hex colours, copy, prompts or research.
+    role: str = Field(default="", max_length=80)
+    subject: str = Field(default="", max_length=120)
+    people: str = Field(default="", max_length=16)
+    framing: str = Field(default="", max_length=80)
+    lighting: str = Field(default="", max_length=60)
+    tone: str = Field(default="", max_length=60)
+    authenticity: str = Field(default="", max_length=40)
+    aspectRatio: str = Field(default="", max_length=12)
+    focalPoint: str = Field(default="", max_length=60)
+    negativeSpace: bool = Field(default=False)
+    loadingPriority: str = Field(default="", max_length=16)
+    noRepeat: bool = Field(default=True)
 
 
 class StockDesignContext(BaseModel):
@@ -324,6 +342,38 @@ class StockSourceBody(BaseModel):
     context: Optional[StockDesignContext] = Field(default=None)
 
 
+def _need_from_item(n: "StockNeedItem") -> Dict[str, Any]:
+    """Project a validated StockNeedItem into the plain need dict the sourcing service consumes.
+    Pure + total. Forwards the known-good fields plus the Phase-1 art direction verbatim; the
+    deterministic sourcing path ignores unknown keys and design_intent re-sanitizes every art field,
+    so this is always safe and additive."""
+    return {
+        "slotId": n.slotId,
+        "query": n.query,
+        "orientation": n.orientation,
+        "altText": n.altText,
+        # purpose/required refine the Image Intelligence ranking; ignored by the
+        # deterministic path, so passing them through is always safe.
+        "purpose": n.purpose,
+        "required": n.required,
+        # Optional bounded fallback variants (sanitized/deduped/capped in the service).
+        "queryVariants": list(n.queryVariants or []),
+        # Art direction (Phase 1) — forwarded verbatim; design_intent re-sanitizes each field.
+        "role": n.role,
+        "subject": n.subject,
+        "people": n.people,
+        "framing": n.framing,
+        "lighting": n.lighting,
+        "tone": n.tone,
+        "authenticity": n.authenticity,
+        "aspectRatio": n.aspectRatio,
+        "focalPoint": n.focalPoint,
+        "negativeSpace": n.negativeSpace,
+        "loadingPriority": n.loadingPriority,
+        "noRepeat": n.noRepeat,
+    }
+
+
 @router.post("/stock/source")
 async def stock_source(
     body: StockSourceBody,
@@ -334,21 +384,7 @@ async def stock_source(
     raises to the client — provider/validation failures return a structured,
     honest manifest so website generation can always proceed."""
     cap = min(int(body.maxImages or 0) or sourcing.MAX_IMAGES, sourcing.MAX_IMAGES)
-    needs = [
-        {
-            "slotId": n.slotId,
-            "query": n.query,
-            "orientation": n.orientation,
-            "altText": n.altText,
-            # purpose/required refine the Image Intelligence ranking; ignored by the
-            # deterministic path, so passing them through is always safe.
-            "purpose": n.purpose,
-            "required": n.required,
-            # Optional bounded fallback variants (sanitized/deduped/capped in the service).
-            "queryVariants": list(n.queryVariants or []),
-        }
-        for n in (body.needs or [])
-    ][:cap]
+    needs = [_need_from_item(n) for n in (body.needs or [])][:cap]
     context = body.context.model_dump() if body.context is not None else None
     try:
         result = await sourcing.source_images(needs, context)

@@ -3,6 +3,8 @@ import {
   deriveImageNeeds,
   sanitizeImageQuery,
   refineSourcedAssets,
+  buildStockSourceRequestBody,
+  MAX_SOURCED_IMAGES,
   type ImageNeed,
 } from '@/lib/webBuildImageSourcing';
 import type { FrontendBuildSpecification, SourcedImageAsset } from '@/lib/webBuildAgents';
@@ -136,5 +138,60 @@ describe('webBuildImageSourcing — refineSourcedAssets (filter + cross-role ded
   it('fails open on empty/garbage input', () => {
     expect(refineSourcedAssets([], []).assets).toEqual([]);
     expect(() => refineSourcedAssets(needs, [null as unknown as SourcedImageAsset])).not.toThrow();
+  });
+});
+
+describe('webBuildImageSourcing — /stock/source wire body carries bounded art direction (Phase 1)', () => {
+  const rich: ImageNeed = {
+    slotId: 'hero1', purpose: 'hero', query: 'restaurant interior espresso', orientation: 'landscape',
+    required: true, altText: 'cozy restaurant', role: 'hero-signature', subject: 'restaurant interior',
+    people: 'avoid', framing: 'wide establishing', lighting: 'warm ambient', tone: 'inviting',
+    authenticity: 'authentic-photo-required', aspectRatio: '16:9', focalPoint: 'center',
+    negativeSpace: true, loadingPriority: 'eager', noRepeat: true, queryVariants: ['a', 'b'],
+  };
+  const legacy: ImageNeed = {
+    slotId: 'sec1', purpose: 'gallery', query: 'ocean resort', orientation: 'landscape',
+    required: false, altText: 'beach',
+  };
+
+  it('B/C: a rich need serializes its bounded art-direction fields onto the wire', () => {
+    const body = buildStockSourceRequestBody([rich]);
+    const n = body.needs[0];
+    expect(n.role).toBe('hero-signature');
+    expect(n.subject).toBe('restaurant interior');
+    expect(n.people).toBe('avoid');
+    expect(n.authenticity).toBe('authentic-photo-required');
+    expect(n.aspectRatio).toBe('16:9');
+    expect(n.negativeSpace).toBe(true);
+    expect(n.loadingPriority).toBe('eager');
+    expect(n.noRepeat).toBe(true);
+    expect(n.queryVariants).toEqual(['a', 'b']);
+  });
+
+  it('J: a legacy need (no art direction) sends only the base fields — old behavior preserved', () => {
+    const n = buildStockSourceRequestBody([legacy]).needs[0];
+    expect(n).toEqual({ slotId: 'sec1', purpose: 'gallery', query: 'ocean resort', orientation: 'landscape', required: false, altText: 'beach' });
+    // none of the art-direction keys are present
+    for (const k of ['role', 'people', 'framing', 'lighting', 'tone', 'authenticity', 'aspectRatio', 'focalPoint', 'loadingPriority']) {
+      expect(k in n).toBe(false);
+    }
+    // absent booleans are NOT forced onto the wire (only sent when the client set them)
+    expect('negativeSpace' in n).toBe(false);
+    expect('noRepeat' in n).toBe(false);
+  });
+
+  it('L/K: exactly ONE batched request body carries every need + the unchanged maxImages cap', () => {
+    const body = buildStockSourceRequestBody([rich, legacy]);
+    expect(Array.isArray(body.needs)).toBe(true);
+    expect(body.needs.length).toBe(2);           // one batched request for all needs
+    expect(body.maxImages).toBe(MAX_SOURCED_IMAGES); // provider-side cap unchanged
+  });
+
+  it('never leaks non-art-direction / sensitive keys onto a need (bounded field set only)', () => {
+    const n = buildStockSourceRequestBody([rich]).needs[0];
+    const allowed = new Set(['slotId', 'purpose', 'query', 'orientation', 'required', 'altText',
+      'queryVariants', 'role', 'subject', 'people', 'framing', 'lighting', 'tone', 'authenticity',
+      'aspectRatio', 'focalPoint', 'negativeSpace', 'loadingPriority', 'noRepeat']);
+    for (const k of Object.keys(n)) expect(allowed.has(k)).toBe(true);
   });
 });

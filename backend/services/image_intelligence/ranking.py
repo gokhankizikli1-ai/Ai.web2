@@ -22,18 +22,79 @@ from backend.services.image_intelligence.config import RANKING_DIMENSIONS, Ranki
 from backend.services.image_intelligence.design_intent import DesignIntent, ImageRequirement
 from backend.services.image_intelligence.providers import ImageCandidate
 
-# Generic terms that carry no discriminating signal — excluded from relevance overlap
-# so "modern professional stock photo" doesn't reward every candidate equally.
+# Generic terms that carry no discriminating signal — excluded from relevance overlap so
+# "modern professional stock photo" doesn't reward every candidate equally. This list holds ONLY
+# unambiguous marketing/style adjectives that are never a concrete photographic SUBJECT, so the
+# concrete subject (restaurant interior / espresso / dining room) always dominates generic style
+# vocabulary (premium / editorial / high-end). Ambiguous words that CAN be a real subject
+# (e.g. natural, clean, minimal) are deliberately NOT banned, per the "don't globally ban" rule.
 _STOPWORDS = frozenset({
     "the", "and", "for", "with", "a", "an", "of", "in", "on", "to", "photo", "photos",
     "image", "images", "picture", "stock", "background", "shot", "view", "modern",
     "professional", "premium", "quality", "beautiful", "nice", "good",
+    # additional generic marketing/style adjectives (subject must dominate these)
+    "luxury", "luxe", "elegant", "sleek", "aesthetic", "trendy", "stylish", "gorgeous",
+    "stunning", "upscale", "chic", "sophisticated", "refined", "highend", "editorial",
 })
 
 
 def _tokens(text: str) -> List[str]:
     raw = "".join(c.lower() if (c.isalnum() or c.isspace()) else " " for c in (text or "")).split()
     return [t for t in raw if len(t) > 1 and t not in _STOPWORDS]
+
+
+# ── Art direction (Phase 1) — metadata-truthful signal the ranker may honestly use ──────────────
+# The ranker CANNOT see pixels. It uses the preserved art direction ONLY where the candidate's
+# provider ALT text can truthfully support a decision: whether people are present, and whether the
+# asset is obviously non-photographic. Framing / negative-space / focal-point / lighting / tone are
+# preserved but NOT consumed here (real verification needs the Phase 2 vision pass), so this never
+# pretends to see composition it cannot.
+
+# Alt-text tokens that clearly indicate people are present.
+_PEOPLE_TERMS = frozenset({
+    "person", "people", "man", "woman", "men", "women", "boy", "girl", "lady", "guy",
+    "couple", "team", "staff", "group", "crowd", "portrait", "face", "child", "children",
+    "kid", "kids", "family", "worker", "workers", "employee", "businessman", "businesswoman",
+    "model", "human", "selfie", "friends",
+})
+# Alt-text tokens that clearly indicate a NON-photographic / synthetic asset.
+_NON_PHOTO_TERMS = frozenset({
+    "illustration", "illustrated", "illustrations", "render", "rendered", "rendering",
+    "3d", "cgi", "vector", "mockup", "clipart", "cartoon", "drawing", "sketch",
+    "generated", "aigenerated", "artwork",
+})
+
+# Bounded adjustments — small vs the 0-100 relevance base so the SUBJECT always dominates.
+_PEOPLE_AVOID_PENALTY = 25.0
+_PEOPLE_REQUIRED_REWARD = 12.0
+_AUTHENTICITY_PENALTY = 20.0
+
+
+def art_direction_adjustment(req: ImageRequirement, cand: ImageCandidate) -> tuple:
+    """Bounded, metadata-truthful relevance adjustment from the preserved art direction, plus a
+    diagnostic of which fields were actually CONSUMED (``artDirectionFieldsConsumed``).
+
+    Uses ONLY the candidate's alt text — never pixels. A ``people`` rule (avoid/required) and an
+    ``authentic-photo-required`` rule are the only signals provider metadata can honestly support. A
+    missing/blank alt yields ZERO adjustment — never a penalty and never a rejection. The delta is
+    small relative to the 0-100 subject-relevance base, so concrete subject semantics still dominate.
+    Returns ``(delta, consumed)``; ``consumed`` maps field name → whether it changed the score."""
+    consumed = {"people": False, "authenticity": False}
+    alt_tokens = set(_tokens(cand.alt))
+    if not alt_tokens:
+        return 0.0, consumed
+    delta = 0.0
+    has_person = bool(alt_tokens & _PEOPLE_TERMS)
+    if req.people == "avoid" and has_person:
+        delta -= _PEOPLE_AVOID_PENALTY
+        consumed["people"] = True
+    elif req.people == "required" and has_person:
+        delta += _PEOPLE_REQUIRED_REWARD
+        consumed["people"] = True
+    if req.authenticity == "authentic-photo-required" and (alt_tokens & _NON_PHOTO_TERMS):
+        delta -= _AUTHENTICITY_PENALTY
+        consumed["authenticity"] = True
+    return delta, consumed
 
 
 # ── Individual scorers (DesignIntent, ImageRequirement, ImageCandidate) → 0-100 ──
@@ -46,10 +107,13 @@ def score_relevance(intent: DesignIntent, req: ImageRequirement, cand: ImageCand
     it falls back to a neutral floor so a good-but-undescribed photo still competes.
     """
     subject_tokens = set(_tokens(req.subject))
-    vocab_tokens = set(intent.vocabulary())
+    # Drop generic style words from the secondary vocabulary bias too, so the concrete SUBJECT — not
+    # on-brand adjectives like premium/editorial — decides relevance (the candidate haystack is already
+    # stop-worded, so this only hardens the intent side of the overlap).
+    vocab_tokens = set(intent.vocabulary()) - _STOPWORDS
     haystack = set(_tokens(f"{cand.alt} {cand.photographer_name}"))
     if not cand.alt:
-        return 45.0  # undescribed — neutral, let quality/color decide
+        return 45.0  # undescribed — neutral, let quality/color decide (never penalized/rejected)
 
     if subject_tokens:
         covered = len(subject_tokens & haystack) / len(subject_tokens)
@@ -63,7 +127,11 @@ def score_relevance(intent: DesignIntent, req: ImageRequirement, cand: ImageCand
     else:
         vocab_score = 60.0
 
-    return round(0.72 * subject_score + 0.28 * vocab_score, 2)
+    base = 0.72 * subject_score + 0.28 * vocab_score
+    # Bounded, metadata-truthful art-direction adjustment (people / authenticity). Zero for a legacy
+    # need (no art direction) or a candidate with no alt, so behaviour is unchanged there.
+    delta, _consumed = art_direction_adjustment(req, cand)
+    return round(max(0.0, min(100.0, base + delta)), 2)
 
 
 def score_quality(intent: DesignIntent, req: ImageRequirement, cand: ImageCandidate) -> float:
@@ -212,4 +280,5 @@ __all__ = [
     "ImageRankingEngine", "ScoredImage", "Scorer", "register_scorer",
     "score_relevance", "score_quality", "score_style",
     "score_color", "score_composition", "score_conversion",
+    "art_direction_adjustment",
 ]

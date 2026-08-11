@@ -358,7 +358,38 @@ export function buildDesignContext(spec: FrontendBuildSpecification | undefined)
   }
 }
 
-/** POST the needs plan to the backend sourcing endpoint. Never throws. */
+/**
+ * Build the EXACT batched `/stock/source` request body — ONE POST carrying every need. Pure + exported
+ * so the wire projection is directly testable. Wires the known-good need shape plus the OPTIONAL,
+ * bounded queryVariants AND the already-sanitized per-slot art direction (Phase 1). Every art field is
+ * optional + short and is only included when present, so old backends simply ignore unknown keys (no
+ * request can be rejected) and old clients that omit them behave exactly as before. Sends ONLY these
+ * bounded per-slot fields — never the visualConcept object, the raw user prompt, hex colours or research.
+ */
+export function buildStockSourceRequestBody(
+  needs: ImageNeed[], context?: DesignContext,
+): { needs: Array<Record<string, unknown>>; maxImages: number; context?: DesignContext } {
+  const wireNeeds = needs.map((n) => ({
+    slotId: n.slotId, purpose: n.purpose, query: n.query, orientation: n.orientation,
+    required: n.required, altText: n.altText,
+    ...(n.queryVariants && n.queryVariants.length ? { queryVariants: n.queryVariants.slice(0, 3) } : {}),
+    ...(n.role ? { role: n.role.slice(0, 80) } : {}),
+    ...(n.subject ? { subject: n.subject.slice(0, 120) } : {}),
+    ...(n.people ? { people: n.people } : {}),
+    ...(n.framing ? { framing: n.framing.slice(0, 80) } : {}),
+    ...(n.lighting ? { lighting: n.lighting.slice(0, 60) } : {}),
+    ...(n.tone ? { tone: n.tone.slice(0, 60) } : {}),
+    ...(n.authenticity ? { authenticity: n.authenticity } : {}),
+    ...(n.aspectRatio ? { aspectRatio: n.aspectRatio.slice(0, 12) } : {}),
+    ...(n.focalPoint ? { focalPoint: n.focalPoint.slice(0, 60) } : {}),
+    ...(typeof n.negativeSpace === 'boolean' ? { negativeSpace: n.negativeSpace } : {}),
+    ...(n.loadingPriority ? { loadingPriority: n.loadingPriority } : {}),
+    ...(typeof n.noRepeat === 'boolean' ? { noRepeat: n.noRepeat } : {}),
+  }));
+  return { needs: wireNeeds, maxImages: MAX_SOURCED_IMAGES, ...(context ? { context } : {}) };
+}
+
+/** POST the needs plan to the backend sourcing endpoint. Never throws. One batched request. */
 async function fetchSourcedImages(
   needs: ImageNeed[], context?: DesignContext, opts?: { signal?: AbortSignal },
 ): Promise<SourceResponse | null> {
@@ -367,19 +398,10 @@ async function fetchSourcedImages(
   opts?.signal?.addEventListener('abort', onAbort);
   const timer = setTimeout(() => ctrl.abort(), 25000);
   try {
-    // Wire the known-good need shape plus the OPTIONAL, bounded queryVariants (now consumed by the backend
-    // as a bounded fallback for a required slot whose primary query finds nothing). The backend sanitizes/
-    // dedupes/caps them and its schema is lenient, so old backends simply ignore the field — no request can
-    // be rejected. The heavier art-direction fields stay client-side (already baked into `query`).
-    const wireNeeds = needs.map((n) => ({
-      slotId: n.slotId, purpose: n.purpose, query: n.query, orientation: n.orientation,
-      required: n.required, altText: n.altText,
-      ...(n.queryVariants && n.queryVariants.length ? { queryVariants: n.queryVariants.slice(0, 3) } : {}),
-    }));
     const resp = await fetch(`${apiBase()}/v2/web-build/images/stock/source`, {
       method: 'POST',
       headers: authHeaders(),
-      body: JSON.stringify({ needs: wireNeeds, maxImages: MAX_SOURCED_IMAGES, ...(context ? { context } : {}) }),
+      body: JSON.stringify(buildStockSourceRequestBody(needs, context)),
       signal: ctrl.signal,
     });
     if (!resp.ok) return null;

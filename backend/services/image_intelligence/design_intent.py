@@ -44,6 +44,14 @@ _PURPOSE_PROFILE = {
 }
 
 
+# Bounded allow-lists for the enum-shaped art-direction fields. An unknown/malformed value
+# degrades to the neutral default ("" / False / True) so legacy needs behave exactly as before
+# and no bad client value can reach the ranker.
+_PEOPLE_VALUES = frozenset({"required", "optional", "avoid"})
+_AUTHENTICITY_VALUES = frozenset({"authentic-photo-required", "illustrative-ok", "generatable"})
+_LOADING_VALUES = frozenset({"eager", "lazy"})
+
+
 @dataclass
 class ImageRequirement:
     """The requirement for a single image slot in the site."""
@@ -54,6 +62,22 @@ class ImageRequirement:
     subject: str = ""                      # the search subject / query for this slot
     alt_text: str = ""
     required: bool = False
+    # ── Art direction (Phase 1) — the already-derived per-slot signal, preserved end-to-end from the
+    #    frontend visualConcept image roles. All optional/neutral-defaulted so a legacy need reproduces
+    #    the previous behaviour exactly. Consumed conservatively by the ranker only where provider
+    #    METADATA can truthfully support it (people, authenticity); the rest are preserved for the
+    #    Phase 2 vision pass (pixel-level framing / negative-space / focal-point verification).
+    role: str = ""                         # e.g. hero-signature | section-support | gallery-tile
+    people: str = ""                       # required | optional | avoid | "" (unknown → neutral)
+    framing: str = ""                      # composition hint (Phase 2 vision)
+    lighting: str = ""                     # lighting hint (kept neutral — metadata rarely exposes it)
+    tone: str = ""                         # mood hint (kept neutral — metadata rarely exposes it)
+    authenticity: str = ""                 # authentic-photo-required | illustrative-ok | generatable | ""
+    aspect_ratio_hint: str = ""            # e.g. "16:9" (composition already uses orientation bands)
+    focal_point: str = ""                  # focal-point hint (Phase 2 vision)
+    negative_space: bool = False           # copy-space desired (real verification is Phase 2 vision)
+    loading_priority: str = ""             # eager | lazy — a rendering hint, not a ranking signal
+    no_repeat: bool = True                 # cross-slot uniqueness already enforced by the selector
 
     @property
     def is_conversion_critical(self) -> bool:
@@ -65,6 +89,23 @@ class ImageRequirement:
 
     def aspect_band(self) -> tuple:
         return _ORIENTATION_ASPECT.get(self.orientation, _ORIENTATION_ASPECT["landscape"])
+
+    def art_direction_fields(self) -> Dict[str, bool]:
+        """Bounded, non-sensitive diagnostic: which art-direction fields actually reached this
+        requirement (``artDirectionFieldsReceived``). Booleans only — never the raw values — so it is
+        safe to surface in tests/metadata without leaking queries, copy or research."""
+        return {
+            "role": bool(self.role),
+            "people": bool(self.people),
+            "framing": bool(self.framing),
+            "lighting": bool(self.lighting),
+            "tone": bool(self.tone),
+            "authenticity": bool(self.authenticity),
+            "aspectRatio": bool(self.aspect_ratio_hint),
+            "focalPoint": bool(self.focal_point),
+            "negativeSpace": bool(self.negative_space),
+            "loadingPriority": bool(self.loading_priority),
+        }
 
 
 @dataclass
@@ -136,6 +177,18 @@ def _tokens(text: str) -> List[str]:
     return [t for t in "".join(c.lower() if (c.isalnum() or c.isspace()) else " " for c in (text or "")).split() if len(t) > 1]
 
 
+def _as_bool(value: Any, default: bool) -> bool:
+    """Strict: only a real JSON/Python bool counts; any other/malformed value degrades to ``default``
+    (so a non-bool never silently reads as truthy)."""
+    return value if isinstance(value, bool) else default
+
+
+def _enum(value: Any, allowed: "frozenset[str]") -> str:
+    """Bounded enum: a known value passes through lower-cased; anything else → "" (neutral)."""
+    text = _s(value, 40).lower()
+    return text if text in allowed else ""
+
+
 def _requirement_from_need(need: Dict[str, Any]) -> Optional[ImageRequirement]:
     slot_id = _s(need.get("slotId"), 120)
     if not slot_id:
@@ -153,6 +206,18 @@ def _requirement_from_need(need: Dict[str, Any]) -> Optional[ImageRequirement]:
         subject=_s(need.get("query"), 120),
         alt_text=_s(need.get("altText"), 200),
         required=bool(need.get("required")),
+        # Art direction (Phase 1) — each field sanitized/bounded; unknown enum values → neutral "".
+        role=_s(need.get("role"), 60),
+        people=_enum(need.get("people"), _PEOPLE_VALUES),
+        framing=_s(need.get("framing"), 80),
+        lighting=_s(need.get("lighting"), 60),
+        tone=_s(need.get("tone"), 60),
+        authenticity=_enum(need.get("authenticity"), _AUTHENTICITY_VALUES),
+        aspect_ratio_hint=_s(need.get("aspectRatio"), 12),
+        focal_point=_s(need.get("focalPoint"), 60),
+        negative_space=_as_bool(need.get("negativeSpace"), False),
+        loading_priority=_enum(need.get("loadingPriority"), _LOADING_VALUES),
+        no_repeat=_as_bool(need.get("noRepeat"), True),
     )
 
 
