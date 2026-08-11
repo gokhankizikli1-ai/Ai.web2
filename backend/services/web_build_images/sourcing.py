@@ -421,6 +421,25 @@ async def source_images(
             # Optional, bounded, sanitized fallback query variants (Phase 1). Deduped, ≤3,
             # never equal to the primary query. Old clients omit this ⇒ empty ⇒ unchanged.
             "variants": _clean_variants(n.get("queryVariants"), q),
+            # ── Art direction (Phase 1) — PRESERVE through this normalization boundary so the Smart
+            #    Image layer (image_intelligence.select_assets → build_design_intent → ImageRequirement)
+            #    actually receives it. Previously THIS whitelist dropped these fields even though the
+            #    route forwarded them. Bounded here as defence-in-depth; design_intent re-sanitizes and
+            #    neutralizes unknown enum values (the canonical validator). The DETERMINISTIC fallback
+            #    ignores these keys, so it never consumes an unsupported field, and old 6-field needs
+            #    simply carry empty/neutral values ⇒ behaviour unchanged.
+            "role": str(n.get("role") or "").strip()[:80],
+            "subject": str(n.get("subject") or "").strip()[:120],
+            "people": str(n.get("people") or "").strip()[:16],
+            "framing": str(n.get("framing") or "").strip()[:80],
+            "lighting": str(n.get("lighting") or "").strip()[:60],
+            "tone": str(n.get("tone") or "").strip()[:60],
+            "authenticity": str(n.get("authenticity") or "").strip()[:40],
+            "aspectRatio": str(n.get("aspectRatio") or "").strip()[:12],
+            "focalPoint": str(n.get("focalPoint") or "").strip()[:60],
+            "negativeSpace": n.get("negativeSpace") if isinstance(n.get("negativeSpace"), bool) else False,
+            "loadingPriority": str(n.get("loadingPriority") or "").strip()[:16],
+            "noRepeat": n.get("noRepeat") if isinstance(n.get("noRepeat"), bool) else True,
         })
         if len(clean_needs) >= MAX_IMAGES:
             break
