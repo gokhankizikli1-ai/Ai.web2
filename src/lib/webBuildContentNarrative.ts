@@ -1177,7 +1177,7 @@ export function analyzeSiteDepth(
     // Decision-support absent entirely (warning — could be intentional; never a hard block).
     if (levelAtLeast(contract.decisionSupport, 'substantial')) {
       const hasDecisionSurface = contract.sectionExpectations.some((e) => e.isCoreDecisionSurface
-        && DECISION_SUPPORT_TOKENS.some((t) => lc(e.rationale).includes('decision')));
+        && lc(e.rationale).includes('decision'));
       if (!hasDecisionSurface) {
         push({ code: 'depth-decision-support-absent', severity: 'minor', label: 'no decision-support surface', files: [],
           evidence: capEv(`this ${contract.archetype} site expects decision-support (${contract.decisionSupport}) but no pricing/comparison/specs/FAQ surface is planned — verify the visitor has enough to decide`),
