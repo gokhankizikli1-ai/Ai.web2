@@ -33,7 +33,7 @@ import { renderBindingRequirementsBlock } from '@/lib/webBuildBindingRequirement
 import { renderResearchDirectionBlock } from '@/lib/webBuildResearchDirection';
 import { renderCompositionBlock } from '@/lib/webBuildComposition';
 import { renderVisualSystemBlock } from '@/lib/webBuildVisualSystem';
-import { renderContentNarrativeBlock } from '@/lib/webBuildContentNarrative';
+import { renderContentNarrativeBlock, renderSiteDepthBlock } from '@/lib/webBuildContentNarrative';
 import { renderExperienceQualityBlock } from '@/lib/webBuildExperienceQuality';
 import { renderVisualConceptBlock } from '@/lib/webBuildVisualConcept';
 import { renderExperienceIdentityBlock } from '@/lib/webBuildExperienceIdentity';
@@ -2139,6 +2139,10 @@ export function buildFrontendBuilderRequest(spec: FrontendBuildSpecification): s
   // Phase (content narrative) — the BINDING public content & conversion narrative (per-section message
   // jobs, concrete specificity, CTA hierarchy, truthful proof). Hard-bounded; absent ⇒ unchanged request.
   const contentNarrativeBlock = renderContentNarrativeBlock(spec.contentNarrative);
+  // Phase 2 (site depth & completeness) — the BINDING, site-type-aware depth directives (browse/decision
+  // surface expectations so the site is a complete, usable website of its type). Hard-bounded; absent ⇒
+  // unchanged request.
+  const siteDepthBlock = renderSiteDepthBlock(spec.siteDepth);
   // Phase (integrated experience quality) — the BINDING cross-system experience obligations
   // (coherence + responsive + interaction + a11y + performance). Hard-bounded; absent ⇒ unchanged.
   const experienceBlock2 = renderExperienceQualityBlock(spec.experienceQuality);
@@ -2206,6 +2210,7 @@ export function buildFrontendBuilderRequest(spec: FrontendBuildSpecification): s
     ...compositionBlock,
     ...visualSystemBlock,
     ...contentNarrativeBlock,
+    ...siteDepthBlock,
     ...experienceBlock2,
     ...imageBlock,
     ...coverageBlock,
