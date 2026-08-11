@@ -32,6 +32,7 @@ import type { ResearchDirectionContract } from '@/lib/webBuildResearchDirection'
 import type { CompositionContract } from '@/lib/webBuildComposition';
 import { collectSectionUnits } from '@/lib/webBuildSectionSource';
 import { detectLeakedFieldLabels as detectFieldLabelsInSource } from '@/lib/webBuildFieldLabel';
+import { isNavigationText } from '@/lib/webBuildInteraction';
 
 /* ── Bounds (named, mandatory) ─────────────────────────────────────────────── */
 const MAX_TEXT = 160;
@@ -783,6 +784,499 @@ export function buildContentNarrativeDiagnostics(
       internalCopyLeakCount: live.internalLeakCount,
       contentAcceptanceStatus: live.status,
       contentIssueCodes: contentNarrativeIssueCodes(live),
+    } : {}),
+  };
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+ * SITE DEPTH & COMPLETENESS (Phase 2) — a deterministic, GENERAL, site-type-aware
+ * contract owned by this same content authority. It answers a question the narrative
+ * contract does NOT: is this a COMPLETE, USABLE website of its own type, or a
+ * good-looking landing page that ends before the visitor can actually browse, choose
+ * or decide?
+ *
+ * It is deliberately NOT a universal section-count minimum. Appropriate depth is
+ * DERIVED per site from the business model + sector/subsector + user request +
+ * research + conversion model + composition + content narrative + the section
+ * architecture, and expressed as a per-site DEPTH PROFILE plus per-section depth
+ * EXPECTATIONS. A restaurant, a SaaS, an ecommerce store, a portfolio, a local
+ * service and an intentionally-minimal landing page each get a DIFFERENT profile —
+ * never the same length or the same section count.
+ *
+ * Acceptance is conservative and complements (never duplicates) the narrative copy
+ * checks: it owns STRUCTURAL / CHOICE depth (does a planned core browse/decision
+ * surface actually render multiple real items; can the visitor reach the core
+ * decision content at all) while the narrative contract owns copy specificity. Only
+ * strongly-proven gaps block; intentionally-minimal sites are explicitly relaxed.
+ * Deterministic, network-free, fail-open, additive/optional for old builds.
+ * ════════════════════════════════════════════════════════════════════════════ */
+
+export type SiteDepthArchetype =
+  | 'browse-catalog'    // choose from many items: ecommerce, marketplace, real-estate, furniture, jewelry, auto
+  | 'evaluate-product'  // assess & buy a product/service: SaaS, subscription, contact-sales
+  | 'showcase-work'     // judge a body of work: portfolio, agency, studio, photographer
+  | 'book-service'      // decide on & book a service: restaurant, clinic, salon, trades, hospitality, tourism
+  | 'inform-content'    // read/browse content: blog, magazine, publication, docs, knowledge base
+  | 'convert-lead'      // one focused offer: single-offer landing, waitlist, campaign (often intentionally minimal)
+  | 'utility-tool'      // use an app surface: dashboard, console, internal tool
+  | 'general';          // unknown → conservative, low expectations
+
+export type DepthLevel = 'minimal' | 'moderate' | 'substantial' | 'rich';
+
+/** The depth expectation for ONE planned section — derived from its own role/purpose PLUS the site
+ *  archetype. `isCoreDecisionSurface` marks the browse/choice/decision content central to this site's
+ *  job (a restaurant's menu, a store's product grid, a SaaS's pricing) — the content whose absence
+ *  makes the site incomplete. Never rendered as public copy. */
+export interface SectionDepthExpectation {
+  id: string;
+  isCoreDecisionSurface: boolean;
+  expectedSubstance: DepthLevel;
+  expectedElements: string[];
+  rationale: string;
+}
+
+export interface SiteDepthContract {
+  version: 'site-depth-v1';
+  status: 'derived' | 'legacy';
+  archetype: SiteDepthArchetype;
+  dominantVisitorJob: string;
+  // Site-level depth dimensions — each a TARGET LEVEL, never a section count. Different
+  // archetypes produce different profiles, which is what makes generated sites vary.
+  browseSurface: DepthLevel;      // how much choice/catalog surface the site should offer
+  decisionSupport: DepthLevel;    // pricing / comparison / specs / FAQ depth to enable a decision
+  trustDepth: DepthLevel;         // credibility / proof / reassurance content
+  contentDepth: DepthLevel;       // substance inside core content sections
+  functionalDepth: DepthLevel;    // interactive states expected (owned/verified by experience-quality)
+  coreDecisionSurfaces: string[]; // section ids that are core browse/decision surfaces
+  coreDecisionReachedRequired: boolean; // must the visitor reach real decision content before the final CTA?
+  intentionallyMinimal: boolean;  // convert-lead / tiny site / explicit minimal → relax expectations
+  sectionExpectations: SectionDepthExpectation[];
+  requirements: string[];         // concise, IMPLEMENTABLE builder depth directives
+  derivationBasis: string[];
+  reasons: string[];
+}
+
+/* ── Depth profiles per archetype (the source of profile VARIETY). ── */
+const DEPTH_PROFILES: Record<SiteDepthArchetype, {
+  browseSurface: DepthLevel; decisionSupport: DepthLevel; trustDepth: DepthLevel;
+  contentDepth: DepthLevel; functionalDepth: DepthLevel; job: string;
+}> = {
+  'browse-catalog':   { browseSurface: 'rich',        decisionSupport: 'substantial', trustDepth: 'moderate',    contentDepth: 'moderate',    functionalDepth: 'substantial', job: 'browse many items and choose one to buy/enquire' },
+  'evaluate-product': { browseSurface: 'moderate',    decisionSupport: 'rich',        trustDepth: 'substantial', contentDepth: 'substantial', functionalDepth: 'moderate',    job: 'understand the product, compare options and sign up' },
+  'showcase-work':    { browseSurface: 'substantial', decisionSupport: 'minimal',     trustDepth: 'substantial', contentDepth: 'substantial', functionalDepth: 'moderate',    job: 'judge the body of work and get in touch' },
+  'book-service':     { browseSurface: 'substantial', decisionSupport: 'substantial', trustDepth: 'substantial', contentDepth: 'moderate',    functionalDepth: 'moderate',    job: 'understand the offering, trust the operator and book/enquire' },
+  'inform-content':   { browseSurface: 'substantial', decisionSupport: 'minimal',     trustDepth: 'moderate',    contentDepth: 'rich',        functionalDepth: 'minimal',     job: 'find and read substantive content' },
+  'convert-lead':     { browseSurface: 'minimal',     decisionSupport: 'moderate',    trustDepth: 'moderate',    contentDepth: 'moderate',    functionalDepth: 'minimal',     job: 'grasp one offer and take one action' },
+  'utility-tool':     { browseSurface: 'minimal',     decisionSupport: 'minimal',     trustDepth: 'minimal',     contentDepth: 'minimal',     functionalDepth: 'rich',        job: 'operate the tool' },
+  'general':          { browseSurface: 'moderate',    decisionSupport: 'moderate',    trustDepth: 'moderate',    contentDepth: 'moderate',    functionalDepth: 'minimal',     job: 'understand the offering and act' },
+};
+
+const BROWSE_CATALOG_MODELS = new Set(['inventory-led-sales', 'catalog-showroom', 'two-sided-marketplace', 'listing-lead-generation']);
+const EVALUATE_MODELS = new Set(['subscription-product', 'contact-sales-product']);
+const SHOWCASE_MODELS = new Set(['project-inquiry']);
+const BOOK_SERVICE_MODELS = new Set(['reservation-led', 'appointment-led', 'service-booking', 'quote-led-service', 'catalog-consultation']);
+
+const SECTOR_ARCHETYPE: Record<string, SiteDepthArchetype> = {
+  'jewelry': 'browse-catalog', 'furniture-interiors': 'browse-catalog', 'automotive-dealership': 'browse-catalog',
+  'real-estate': 'browse-catalog', 'marketplace': 'browse-catalog',
+  'ai-saas': 'evaluate-product',
+  'portfolio-agency': 'showcase-work',
+  'restaurant-hospitality': 'book-service', 'clinic-healthcare': 'book-service', 'local-service': 'book-service',
+  'landscaping': 'book-service', 'travel-tourism': 'book-service',
+  'general': 'general',
+};
+
+// Tokens that mark a section as a core BROWSE / CHOICE surface (site-type agnostic).
+const BROWSE_SURFACE_TOKENS = ['menu', 'catalog', 'catalogue', 'product', 'products', 'collection', 'shop', 'store',
+  'listing', 'listings', 'room', 'rooms', 'fleet', 'inventory', 'propert', 'portfolio', 'gallery', 'work', 'project',
+  'destination', 'vehicle', 'car ', 'home ', 'apartment', 'service', 'services', 'treatment', 'course', 'class',
+  'dish', 'plate', 'offering', 'package', 'plan', 'plans', 'pricing', 'tier', 'membership', 'article', 'post', 'recipe'];
+// Tokens that mark a section as core DECISION-SUPPORT (pricing / comparison / specs / FAQ).
+const DECISION_SUPPORT_TOKENS = ['pricing', 'price', 'plan', 'plans', 'package', 'tier', 'compare', 'comparison',
+  'spec', 'specs', 'specification', 'feature', 'features', 'faq', 'question', 'option', 'options'];
+// Tokens that indicate an INTENTIONALLY MINIMAL site (respect the user's choice; never force depth).
+const MINIMAL_TOKENS = ['landing page', 'one page', 'single page', 'single-page', 'coming soon', 'waitlist',
+  'wait list', 'early access', 'lead capture', 'campaign', 'splash', 'link in bio', 'linktree', 'teaser', 'minimal'];
+// Tokens that indicate an app/tool surface (functional depth, not content depth).
+const UTILITY_TOKENS = ['dashboard', 'admin', 'console', 'internal tool', 'app ui', 'control panel', 'workspace', 'portal', 'crm interface'];
+// Tokens that indicate a content/reading site.
+const CONTENT_TOKENS = ['blog', 'magazine', 'news', 'publication', 'editorial', 'docs', 'documentation', 'knowledge base', 'wiki', 'journal', 'media site'];
+
+function levelAtLeast(level: DepthLevel, floor: DepthLevel): boolean {
+  const rank: Record<DepthLevel, number> = { minimal: 0, moderate: 1, substantial: 2, rich: 3 };
+  return rank[level] >= rank[floor];
+}
+
+interface ArchetypeDecision { archetype: SiteDepthArchetype; basis: string[]; }
+function deriveArchetype(input: ContentNarrativeInput): ArchetypeDecision {
+  const id = input.identity || ({} as FrontendSpecIdentity);
+  const basis: string[] = [];
+  const text = lc([id.siteType, id.primaryConcept, id.pageScreenModel, id.websiteExperienceModel,
+    id.primaryWebsiteExperience, input.conversionModel, input.prompt].filter(Boolean).join(' '));
+  const model = lc(id.businessModel);
+
+  // 1) Explicit app/tool surface wins (functional, not content).
+  if (UTILITY_TOKENS.some((t) => text.includes(t))) { basis.push('utility-signal'); return { archetype: 'utility-tool', basis }; }
+  // 2) Explicit content/reading site.
+  if (CONTENT_TOKENS.some((t) => text.includes(t))) { basis.push('content-signal'); return { archetype: 'inform-content', basis }; }
+  // 3) Explicit intentionally-minimal single-offer landing.
+  if (MINIMAL_TOKENS.some((t) => text.includes(t))) { basis.push('minimal-signal'); return { archetype: 'convert-lead', basis }; }
+  // 4) Business model is the most direct structural signal.
+  if (BROWSE_CATALOG_MODELS.has(model)) { basis.push('businessModel'); return { archetype: 'browse-catalog', basis }; }
+  if (EVALUATE_MODELS.has(model)) { basis.push('businessModel'); return { archetype: 'evaluate-product', basis }; }
+  if (SHOWCASE_MODELS.has(model)) { basis.push('businessModel'); return { archetype: 'showcase-work', basis }; }
+  if (BOOK_SERVICE_MODELS.has(model)) { basis.push('businessModel'); return { archetype: 'book-service', basis }; }
+  // 5) Fall back to the sector taxonomy.
+  const sector = String(id.sector || 'general');
+  if (SECTOR_ARCHETYPE[sector]) { basis.push('sector'); return { archetype: SECTOR_ARCHETYPE[sector], basis }; }
+  basis.push('fallback');
+  return { archetype: 'general', basis };
+}
+
+function sectionIsBrowseSurface(s: FrontendSpecSection, compRole: string | undefined): boolean {
+  const p = lc(`${s.purpose || ''} ${s.name || ''} ${(s.interactionHints || []).join(' ')} ${s.componentHint || ''} ${s.visualModule || ''}`);
+  // A site navigation is NOT a browse/decision surface even though a "nav menu" carries the token
+  // "menu" — it routes to content, it is not itself the content to browse. Use the CANONICAL nav
+  // classifier (shared with the interaction authority) so a real food/content menu is still a browse
+  // surface while a site/mobile menu is excluded. One source of truth — no duplicated nav regex.
+  if (isNavigationText(p)) return false;
+  if (compRole === 'enable-decision' || compRole === 'compare') return true;
+  return BROWSE_SURFACE_TOKENS.some((t) => p.includes(t));
+}
+function sectionIsDecisionSupport(s: FrontendSpecSection): boolean {
+  const p = lc(`${s.purpose || ''} ${s.name || ''}`);
+  return DECISION_SUPPORT_TOKENS.some((t) => p.includes(t));
+}
+
+export function deriveSiteDepthContract(input: ContentNarrativeInput): SiteDepthContract | undefined {
+  try {
+    const identity = input.identity;
+    if (!identity) return undefined;
+    const rawSections = (input.sections || []).filter((s) => s && s.id).slice(0, MAX_SECTIONS);
+    const comp = input.composition;
+    // Need at least the architecture or research to say anything; else legacy no-op.
+    if (rawSections.length === 0 && !input.research && !comp) return undefined;
+    const ordered = [...rawSections].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+
+    const { archetype, basis } = deriveArchetype(input);
+    const profile = DEPTH_PROFILES[archetype];
+
+    const roleById = new Map<string, string>();
+    for (const s of comp?.sections || []) roleById.set(s.id, s.narrativeRole);
+
+    const sectionExpectations: SectionDepthExpectation[] = ordered.map((s, i) => {
+      const compRole = roleById.get(s.id);
+      const browse = sectionIsBrowseSurface(s, compRole);
+      const decision = sectionIsDecisionSupport(s);
+      const isCore = browse || decision;
+      const p = lc(`${s.purpose || ''} ${s.name || ''}`);
+      let expectedSubstance: DepthLevel;
+      let expectedElements: string[];
+      let rationale: string;
+      if (browse) {
+        expectedSubstance = levelAtLeast(profile.browseSurface, 'substantial') ? profile.browseSurface : 'substantial';
+        expectedElements = ['multiple distinct, real items (not a single placeholder)',
+          'each item named with at least one concrete, specific attribute'];
+        rationale = 'core browse/choice surface for this site type';
+      } else if (decision) {
+        expectedSubstance = 'substantial';
+        expectedElements = ['each option named with its concrete value (price/spec/answer)',
+          'clear, real differences a visitor can decide between'];
+        rationale = 'core decision-support surface (pricing/compare/specs/FAQ)';
+      } else if (/about|story|mission|who we|philosophy|values|heritage|team/.test(p)) {
+        expectedSubstance = profile.contentDepth === 'rich' ? 'substantial' : 'moderate';
+        expectedElements = ['a real, specific account — not one generic sentence'];
+        rationale = 'trust/credibility content';
+      } else if (i === 0 || /hero|contact|book|enquir|reserve|sign ?up|get started|cta/.test(p)) {
+        expectedSubstance = 'minimal';
+        expectedElements = ['a clear, concrete promise or action'];
+        rationale = 'orientation / conversion — brevity is appropriate';
+      } else {
+        expectedSubstance = 'moderate';
+        expectedElements = ['substantive, specific content beyond a heading'];
+        rationale = 'supporting content section';
+      }
+      return { id: s.id, isCoreDecisionSurface: isCore, expectedSubstance, expectedElements, rationale };
+    });
+
+    const coreDecisionSurfaces = sectionExpectations.filter((e) => e.isCoreDecisionSurface).map((e) => e.id);
+
+    // Intentionally-minimal: the explicit landing archetype, an explicit minimal signal, or a genuinely
+    // tiny site with no planned core surface. When minimal we relax structural depth expectations.
+    const minimalText = lc([identity.siteType, identity.primaryConcept, input.prompt, input.conversionModel].filter(Boolean).join(' '));
+    const intentionallyMinimal = archetype === 'convert-lead'
+      || MINIMAL_TOKENS.some((t) => minimalText.includes(t))
+      || (ordered.length > 0 && ordered.length <= 3 && coreDecisionSurfaces.length === 0);
+
+    const coreDecisionReachedRequired = coreDecisionSurfaces.length > 0 && !intentionallyMinimal;
+
+    // Concise, IMPLEMENTABLE builder directives — only the ones this site actually needs.
+    const requirements: string[] = [];
+    if (!intentionallyMinimal) {
+      if (levelAtLeast(profile.browseSurface, 'substantial') && coreDecisionSurfaces.length) {
+        requirements.push('Render a real browse/choice surface: MULTIPLE distinct items (not one placeholder card), each with a concrete name and at least one specific attribute so a visitor can actually compare and choose.');
+      }
+      if (levelAtLeast(profile.decisionSupport, 'substantial')) {
+        requirements.push('Include genuine decision-support content appropriate to this business (pricing/plans, specs, comparison, or FAQ) so the visitor can decide — not just browse.');
+      }
+      if (levelAtLeast(profile.trustDepth, 'substantial')) {
+        requirements.push('Include specific, honest trust/credibility content (real specifics, not fabricated metrics or testimonials).');
+      }
+      if (levelAtLeast(profile.contentDepth, 'substantial')) {
+        requirements.push('Develop the core content sections with substantive, specific material — a heading with one generic line is not enough.');
+      }
+      if (coreDecisionReachedRequired) {
+        requirements.push(`Ensure the visitor can reach the core decision content (${coreDecisionSurfaces.slice(0, 4).join(', ')}) before the final call-to-action — the site must not end while the main browse/decision surface is still only a heading.`);
+      }
+    } else {
+      requirements.push('This is an intentionally focused/minimal site: keep it lean, do NOT pad it with browse surfaces or sections the concept does not need.');
+    }
+
+    return {
+      version: 'site-depth-v1', status: 'derived',
+      archetype,
+      dominantVisitorJob: clip(input.conversionModel || identity.primaryConversionIntent || profile.job, 120),
+      browseSurface: intentionallyMinimal ? 'minimal' : profile.browseSurface,
+      decisionSupport: profile.decisionSupport,
+      trustDepth: profile.trustDepth,
+      contentDepth: profile.contentDepth,
+      functionalDepth: profile.functionalDepth,
+      coreDecisionSurfaces,
+      coreDecisionReachedRequired,
+      intentionallyMinimal,
+      sectionExpectations,
+      requirements: requirements.slice(0, MAX_LIST),
+      derivationBasis: uniq([
+        ...basis,
+        rawSections.length ? 'architectureSections' : '',
+        input.research ? 'researchDirection' : '',
+        comp ? 'composition' : '',
+        input.prompt ? 'userPrompt' : '',
+      ].filter(Boolean)).slice(0, MAX_LIST),
+      reasons: [
+        `archetype=${archetype}; ${coreDecisionSurfaces.length} core decision surface(s); ${intentionallyMinimal ? 'intentionally minimal' : 'expects development'}`,
+      ].slice(0, MAX_LIST),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+/* ── RENDER — one compact BINDING SITE DEPTH & COMPLETENESS block for the builder. ── */
+export function renderSiteDepthBlock(contract: SiteDepthContract | undefined): string[] {
+  if (!contract || contract.status !== 'derived') return [];
+  if (contract.intentionallyMinimal && !contract.requirements.length) return [];
+  const out: string[] = [
+    'BINDING SITE DEPTH & COMPLETENESS:',
+    `This site's visitor job: ${clip(contract.dominantVisitorJob, 110)}.`,
+    `Depth profile — browse: ${contract.browseSurface}, decision-support: ${contract.decisionSupport}, trust: ${contract.trustDepth}, content: ${contract.contentDepth}.`,
+    'Build a COMPLETE, usable website for this job — not a landing page that stops before the visitor can',
+    'browse, choose or decide. Do NOT invent a fixed number of sections; match the depth to the job above.',
+    ...contract.requirements.map((r) => `- ${clip(r, 220)}`),
+  ];
+  if (contract.coreDecisionSurfaces.length) {
+    out.push(`Core browse/decision surfaces that MUST render real, multiple items: ${contract.coreDecisionSurfaces.slice(0, 6).join(', ')}.`);
+  }
+  out.push('');
+  let total = 0; const bounded: string[] = [];
+  for (const line of out) { total += line.length + 1; if (total > RENDER_CHAR_CEILING) break; bounded.push(line); }
+  return bounded;
+}
+
+/* ── ACCEPTANCE — conservative structural/choice-depth checks. Complements (never
+ *    duplicates) the narrative copy checks. Only strongly-proven gaps block. ── */
+export type SiteDepthIssueCode =
+  | 'depth-core-surface-thin'
+  | 'depth-decision-unreachable'
+  | 'depth-decision-support-absent';
+
+export interface SiteDepthIssue {
+  code: SiteDepthIssueCode;
+  severity: FrontendBuilderReviewSeverity;
+  label: string;
+  files: string[];
+  evidence: string;
+  repairInstruction: string;
+}
+export interface SiteDepthAcceptanceResult {
+  status: 'pass' | 'warning' | 'fail';
+  legacy: boolean;
+  archetype: SiteDepthArchetype;
+  intentionallyMinimal: boolean;
+  coreSurfacesPlanned: number;
+  coreSurfacesSubstantive: number;
+  thinSurfaceCount: number;
+  issues: SiteDepthIssue[];
+}
+const LEGACY_DEPTH: SiteDepthAcceptanceResult = {
+  status: 'pass', legacy: true, archetype: 'general', intentionallyMinimal: false,
+  coreSurfacesPlanned: 0, coreSurfacesSubstantive: 0, thinSurfaceCount: 0, issues: [],
+};
+
+const MIN_BROWSE_ITEMS = 2;   // a real browse/choice surface renders ≥2 distinct items
+const THIN_WORDS = 12;        // below this (with ≤1 item, no dynamic/child) a core surface is heading-only
+
+/** Count real, distinct item-like units rendered STATICALLY in a section region. A `.map(` (dynamic
+ *  list) or a capitalized child component makes the count AMBIGUOUS → treated as satisfied (fail-open). */
+function countRenderedItems(region: string): { items: number; dynamic: boolean; hasChild: boolean } {
+  const cleaned = stripComments(region || '').replace(/<(svg|script|style)\b[\s\S]*?<\/\1>/gi, ' ');
+  const dynamic = /\.\s*map\s*\(/.test(cleaned) || /\bfor\s*\(/.test(cleaned);
+  const hasChild = /<[A-Z][A-Za-z0-9]*[\s/>]/.test(cleaned);
+  const li = (cleaned.match(/<li[\s>]/gi) || []).length;
+  const structural = (cleaned.match(/<(?:article|figure)[\s>]/gi) || []).length;
+  const cardish = (cleaned.match(/class(?:Name)?="[^"]*\b(?:card|tile|product|plan|menu-item|listing|item|cell|grid-item)\b[^"]*"/gi) || []).length;
+  return { items: Math.max(li, structural, cardish), dynamic, hasChild };
+}
+
+export function analyzeSiteDepth(
+  files: FrontendGeneratedFile[] | undefined,
+  contract: SiteDepthContract | undefined,
+): SiteDepthAcceptanceResult {
+  try {
+    if (!contract || contract.status !== 'derived') return LEGACY_DEPTH;
+    const list = Array.isArray(files) ? files : [];
+    if (!list.length) return { ...LEGACY_DEPTH, legacy: false, archetype: contract.archetype };
+    // Respect intentionally-minimal sites: never fault them for lacking browse depth.
+    if (contract.intentionallyMinimal) {
+      return { ...LEGACY_DEPTH, legacy: false, archetype: contract.archetype, intentionallyMinimal: true };
+    }
+    const coreIds = contract.coreDecisionSurfaces;
+    if (!coreIds.length) {
+      return { ...LEGACY_DEPTH, legacy: false, archetype: contract.archetype };
+    }
+    const issues: SiteDepthIssue[] = [];
+    const push = (i: SiteDepthIssue) => { if (issues.length < MAX_ISSUES) issues.push(i); };
+    const units = collectSectionUnits(list, coreIds);
+    const byId = new Map(contract.sectionExpectations.map((e) => [e.id, e]));
+
+    let substantive = 0; let thin = 0;
+    for (const u of units.slice(0, MAX_SECTIONS)) {
+      const exp = byId.get(u.id); if (!exp || !exp.isCoreDecisionSurface) continue;
+      const region = (u.content || '').slice(0, MAX_SCAN);
+      const { items, dynamic, hasChild } = countRenderedItems(region);
+      const words = tokens(extractVisibleText(region).text).length;
+      const isSubstantive = dynamic || hasChild || items >= MIN_BROWSE_ITEMS || words >= 40;
+      if (isSubstantive) { substantive += 1; continue; }
+      // Strong evidence of a heading-only / single-placeholder core surface.
+      if (items <= 1 && words < THIN_WORDS) {
+        thin += 1;
+        push({ code: 'depth-core-surface-thin', severity: 'major', label: u.id, files: [u.path],
+          evidence: capEv(`core browse/decision surface "${u.id}" renders ${items <= 0 ? 'no' : 'a single'} item and only ${words} words of visible content — a visitor cannot actually browse or choose here`),
+          repairInstruction: capEv(`Render real, MULTIPLE items in "${u.id}" (${exp.expectedElements.slice(0, 2).join('; ')}); a heading or one placeholder is not a usable ${exp.rationale}.`) });
+      }
+    }
+
+    // Site-level: none of the planned core decision surfaces actually rendered anything real →
+    // the visitor can never reach the core decision content. Strong, conservative blocker.
+    if (contract.coreDecisionReachedRequired && substantive === 0 && units.length >= 1) {
+      push({ code: 'depth-decision-unreachable', severity: 'major', label: 'core decision unreachable', files: uniq(units.map((u) => u.path)).slice(0, MAX_ISSUE_FILES),
+        evidence: capEv(`the site plans ${coreIds.length} core browse/decision surface(s) (${coreIds.slice(0, 4).join(', ')}) but NONE render real, multiple items — the site ends before the visitor can browse or decide`),
+        repairInstruction: capEv('Develop at least the primary browse/decision surface with real, multiple items so the visitor can actually make the core decision this site exists for.') });
+    }
+
+    // Decision-support absent entirely (warning — could be intentional; never a hard block).
+    if (levelAtLeast(contract.decisionSupport, 'substantial')) {
+      const hasDecisionSurface = contract.sectionExpectations.some((e) => e.isCoreDecisionSurface
+        && DECISION_SUPPORT_TOKENS.some((t) => lc(e.rationale).includes('decision')));
+      if (!hasDecisionSurface) {
+        push({ code: 'depth-decision-support-absent', severity: 'minor', label: 'no decision-support surface', files: [],
+          evidence: capEv(`this ${contract.archetype} site expects decision-support (${contract.decisionSupport}) but no pricing/comparison/specs/FAQ surface is planned — verify the visitor has enough to decide`),
+          repairInstruction: capEv('Consider adding a decision-support surface (pricing/plans, comparison, specs or FAQ) appropriate to the business, if the concept warrants it.') });
+      }
+    }
+
+    const blocking = issues.some((i) => i.severity !== 'minor');
+    const warned = issues.some((i) => i.severity === 'minor');
+    return {
+      status: blocking ? 'fail' : warned ? 'warning' : 'pass',
+      legacy: false, archetype: contract.archetype, intentionallyMinimal: false,
+      coreSurfacesPlanned: coreIds.length, coreSurfacesSubstantive: substantive, thinSurfaceCount: thin,
+      issues: issues.slice(0, MAX_ISSUES),
+    };
+  } catch {
+    return { ...LEGACY_DEPTH, legacy: false };
+  }
+}
+
+export function hasBlockingSiteDepthFindings(result: SiteDepthAcceptanceResult | undefined): boolean {
+  return !!result && result.status === 'fail';
+}
+
+const DEPTH_CATEGORY: Record<SiteDepthIssueCode, FrontendBuilderReviewCategory> = {
+  'depth-core-surface-thin': 'component-composition',
+  'depth-decision-unreachable': 'concept-fidelity',
+  'depth-decision-support-absent': 'component-composition',
+};
+
+export function siteDepthToReviewIssues(result: SiteDepthAcceptanceResult | undefined): FrontendBuilderReviewIssue[] {
+  if (!result || !result.issues.length) return [];
+  const out: FrontendBuilderReviewIssue[] = [];
+  let i = 0;
+  for (const issue of result.issues) {
+    if (issue.severity === 'minor') continue;   // advisory/manual-review — never a repair blocker
+    out.push({
+      id: `depth-${issue.code}-${i += 1}`,
+      severity: issue.severity,
+      category: DEPTH_CATEGORY[issue.code],
+      files: (issue.files || []).slice(0, MAX_ISSUE_FILES),
+      evidence: capEv(issue.evidence),
+      repairInstruction: capEv(issue.repairInstruction),
+    });
+    if (out.length >= MAX_ISSUES) break;
+  }
+  return out;
+}
+
+export function siteDepthIssueCodes(result: SiteDepthAcceptanceResult | undefined): string[] {
+  if (!result) return [];
+  return uniq(result.issues.map((i) => i.code)).slice(0, 12);
+}
+
+/* ── Owner diagnostics (bounded, no secrets / source / URLs / raw copy). ── */
+export interface SiteDepthDiagnostics {
+  siteDepthVersion: string;
+  siteDepthStatus: 'derived' | 'legacy';
+  archetype: SiteDepthArchetype;
+  browseSurface: DepthLevel;
+  decisionSupport: DepthLevel;
+  trustDepth: DepthLevel;
+  contentDepth: DepthLevel;
+  coreDecisionSurfaceCount: number;
+  intentionallyMinimal: boolean;
+  requirementCount: number;
+  derivationBasis: string[];
+  siteDepthCharCount: number;
+  coreSurfacesSubstantive?: number;
+  thinSurfaceCount?: number;
+  siteDepthAcceptanceStatus?: 'pass' | 'warning' | 'fail';
+  siteDepthIssueCodes?: string[];
+}
+
+export function buildSiteDepthDiagnostics(
+  contract: SiteDepthContract | undefined,
+  acceptance: SiteDepthAcceptanceResult | undefined,
+  siteDepthCharCount: number,
+): SiteDepthDiagnostics | undefined {
+  if (!contract) return undefined;
+  const live = acceptance && !acceptance.legacy ? acceptance : undefined;
+  return {
+    siteDepthVersion: contract.version,
+    siteDepthStatus: contract.status,
+    archetype: contract.archetype,
+    browseSurface: contract.browseSurface,
+    decisionSupport: contract.decisionSupport,
+    trustDepth: contract.trustDepth,
+    contentDepth: contract.contentDepth,
+    coreDecisionSurfaceCount: contract.coreDecisionSurfaces.length,
+    intentionallyMinimal: contract.intentionallyMinimal,
+    requirementCount: contract.requirements.length,
+    derivationBasis: contract.derivationBasis.slice(0, 8),
+    siteDepthCharCount,
+    ...(live ? {
+      coreSurfacesSubstantive: live.coreSurfacesSubstantive,
+      thinSurfaceCount: live.thinSurfaceCount,
+      siteDepthAcceptanceStatus: live.status,
+      siteDepthIssueCodes: siteDepthIssueCodes(live),
     } : {}),
   };
 }

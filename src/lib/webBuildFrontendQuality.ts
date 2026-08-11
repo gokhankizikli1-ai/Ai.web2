@@ -111,6 +111,15 @@ import {
   contentNarrativeIssueCodes, buildContentNarrativeDiagnostics, renderContentNarrativeBlock,
   type ContentAcceptanceResult,
 } from '@/lib/webBuildContentNarrative';
+// Phase 2 (site depth & completeness) — the SAME site-depth contract rendered into the builder request is
+// analyzed here; only strongly-proven STRUCTURAL completeness failures (a planned core browse/decision
+// surface rendered heading-only, or the core decision content never rendering) block and ride the EXISTING
+// deterministic-issue merge → the EXISTING single repair. No new model call.
+import {
+  analyzeSiteDepth, siteDepthToReviewIssues, hasBlockingSiteDepthFindings,
+  siteDepthIssueCodes, buildSiteDepthDiagnostics, renderSiteDepthBlock,
+  type SiteDepthAcceptanceResult,
+} from '@/lib/webBuildContentNarrative';
 // Phase (integrated experience quality) — unified cross-system acceptance (pure, network-free). The
 // SAME contract rendered into the builder request is analyzed here; only strongly-proven cross-cutting
 // failures block and ride the EXISTING deterministic-issue merge → the EXISTING single repair.
@@ -833,6 +842,9 @@ export async function runFrontendBuilderQualityPipeline(
     // Phase (content narrative) — the BINDING content/conversion-narrative contract drives content acceptance.
     const contentNarrative = spec?.contentNarrative;
     const contentNarrativeChars = renderContentNarrativeBlock(contentNarrative).join('\n').length;
+    // Phase 2 (site depth & completeness) — the BINDING site-depth contract drives structural-completeness acceptance.
+    const siteDepth = spec?.siteDepth;
+    const siteDepthChars = renderSiteDepthBlock(siteDepth).join('\n').length;
     // Phase (integrated experience quality) — the BINDING cross-system experience contract drives acceptance.
     const experienceQuality = spec?.experienceQuality;
     const experienceQualityChars = renderExperienceQualityBlock(experienceQuality).join('\n').length;
@@ -858,6 +870,7 @@ export async function runFrontendBuilderQualityPipeline(
     let initialComposition: CompositionAcceptanceResult | undefined;
     let initialVisualSystem: VisualSystemAcceptanceResult | undefined;
     let initialContent: ContentAcceptanceResult | undefined;
+    let initialDepth: SiteDepthAcceptanceResult | undefined;
     let initialExperience: ExperienceAcceptanceResult | undefined;
     let initialVisual: VisualAcceptanceResult | undefined;
     let initialExperienceIdentity: ExperienceIdentityAcceptanceResult | undefined;
@@ -868,6 +881,7 @@ export async function runFrontendBuilderQualityPipeline(
       initialComposition = analyzeComposition(validation?.files, composition);
       initialVisualSystem = analyzeVisualSystem(validation?.files, visualSystem);
       initialContent = analyzeContentNarrative(validation?.files, contentNarrative);
+      initialDepth = analyzeSiteDepth(validation?.files, siteDepth);
       initialExperience = analyzeExperienceQuality(validation?.files, experienceQuality);
       initialVisual = analyzeVisualContribution(validation?.files, visualConcept);
       initialExperienceIdentity = analyzeExperienceIdentity(validation?.files, experienceIdentity);
@@ -883,6 +897,7 @@ export async function runFrontendBuilderQualityPipeline(
         ...(initialComposition ? compositionToReviewIssues(initialComposition) : []),
         ...(initialVisualSystem ? visualSystemToReviewIssues(initialVisualSystem) : []),
         ...(initialContent ? contentNarrativeToReviewIssues(initialContent) : []),
+        ...(initialDepth ? siteDepthToReviewIssues(initialDepth) : []),
         ...(initialExperience ? experienceToReviewIssues(initialExperience) : []),
         ...(initialVisual ? visualToReviewIssues(initialVisual) : []),
         ...(initialExperienceIdentity ? experienceIdentityToReviewIssues(initialExperienceIdentity) : []),
@@ -903,6 +918,7 @@ export async function runFrontendBuilderQualityPipeline(
     let repairComposition: CompositionAcceptanceResult | undefined;
     let repairVisualSystem: VisualSystemAcceptanceResult | undefined;
     let repairContent: ContentAcceptanceResult | undefined;
+    let repairDepth: SiteDepthAcceptanceResult | undefined;
     let repairExperience: ExperienceAcceptanceResult | undefined;
     let repairVisual: VisualAcceptanceResult | undefined;
     let repairExperienceIdentity: ExperienceIdentityAcceptanceResult | undefined;
@@ -910,7 +926,7 @@ export async function runFrontendBuilderQualityPipeline(
     // Bounded, non-sensitive binding/drift diagnostics for the acceptance artifact.
     const bindingExtra = (): Partial<FrontendBuilderAcceptanceArtifact> => {
       const hasAny = !!bindingReqs || !!(initialBinding && initialBinding.driftIssueCount) || !!(repairBinding && repairBinding.driftIssueCount)
-        || !!imageCoverage || !!coverageDiag || !!researchDirection || !!composition || !!visualSystem || !!contentNarrative || !!experienceQuality || !!visualConcept || !!experienceIdentity || !!motionExecution || !!executionObligations || !!imageIntelDiag;
+        || !!imageCoverage || !!coverageDiag || !!researchDirection || !!composition || !!visualSystem || !!contentNarrative || !!siteDepth || !!experienceQuality || !!visualConcept || !!experienceIdentity || !!motionExecution || !!executionObligations || !!imageIntelDiag;
       if (!hasAny) return {};
       const b = repairBinding || initialBinding;
       const c = bindingReqs?.counts;
@@ -959,6 +975,8 @@ export async function runFrontendBuilderQualityPipeline(
         ...(visualSystem ? { visualSystem: buildVisualSystemDiagnostics(visualSystem, repairVisualSystem || initialVisualSystem, visualSystemChars) } : {}),
         // ── Phase (content narrative) — bounded, secret-free content diagnostics (truthful consumption). ──
         ...(contentNarrative ? { contentNarrative: buildContentNarrativeDiagnostics(contentNarrative, repairContent || initialContent, contentNarrativeChars) } : {}),
+        // ── Phase 2 (site depth & completeness) — bounded, secret-free structural-completeness diagnostics. ──
+        ...(siteDepth ? { siteDepth: buildSiteDepthDiagnostics(siteDepth, repairDepth || initialDepth, siteDepthChars) } : {}),
         // ── Phase (integrated experience quality) — bounded, secret-free diagnostics (truthful consumption). ──
         ...(experienceQuality ? { experienceQuality: buildExperienceDiagnostics(experienceQuality, repairExperience || initialExperience, experienceQualityChars) } : {}),
         // ── Phase (visual concept & art direction) — bounded, secret-free diagnostics (truthful consumption). ──
@@ -1090,7 +1108,7 @@ export async function runFrontendBuilderQualityPipeline(
     // Phase 13C — a model "pass" can NEVER approve while severe deterministic warnings remain.
     //    Phase 12G — a blocking binding-requirement or cross-sector-drift finding can NEVER be
     //    fast-approved (the merge above already flips passed=false, but this is an explicit guard).
-    if (initialReview.passed && severeWarningGatePassed(validation) && !hasBlockingBindingFindings(initialBinding) && !hasBlockingResearchFindings(initialResearch) && !hasBlockingCompositionFindings(initialComposition) && !hasBlockingVisualSystemFindings(initialVisualSystem) && !hasBlockingContentFindings(initialContent) && !hasBlockingExperienceFindings(initialExperience) && !hasBlockingVisualFindings(initialVisual) && !hasBlockingExperienceIdentityFindings(initialExperienceIdentity) && !hasBlockingMotionExecutionFindings(initialMotion)) {
+    if (initialReview.passed && severeWarningGatePassed(validation) && !hasBlockingBindingFindings(initialBinding) && !hasBlockingResearchFindings(initialResearch) && !hasBlockingCompositionFindings(initialComposition) && !hasBlockingVisualSystemFindings(initialVisualSystem) && !hasBlockingContentFindings(initialContent) && !hasBlockingSiteDepthFindings(initialDepth) && !hasBlockingExperienceFindings(initialExperience) && !hasBlockingVisualFindings(initialVisual) && !hasBlockingExperienceIdentityFindings(initialExperienceIdentity) && !hasBlockingMotionExecutionFindings(initialMotion)) {
       const acceptance = acceptanceArtifact('approved', initialProjectName, {
         initialReviewPassed: true, repairAttempted: false, repairAccepted: false, finalReviewPassed: false,
         reason: `Initial static design review passed (score ${initialReview.score ?? '?'}); no severe quality warnings. Rendered visual test pending.`,
@@ -1272,6 +1290,7 @@ export async function runFrontendBuilderQualityPipeline(
       repairComposition = analyzeComposition(repairValidation.files, composition);
       repairVisualSystem = analyzeVisualSystem(repairValidation.files, visualSystem);
       repairContent = analyzeContentNarrative(repairValidation.files, contentNarrative);
+      repairDepth = analyzeSiteDepth(repairValidation.files, siteDepth);
       repairExperience = analyzeExperienceQuality(repairValidation.files, experienceQuality);
       repairVisual = analyzeVisualContribution(repairValidation.files, visualConcept);
       repairExperienceIdentity = analyzeExperienceIdentity(repairValidation.files, experienceIdentity);
@@ -1284,6 +1303,7 @@ export async function runFrontendBuilderQualityPipeline(
         ...(repairComposition ? compositionToReviewIssues(repairComposition) : []),
         ...(repairVisualSystem ? visualSystemToReviewIssues(repairVisualSystem) : []),
         ...(repairContent ? contentNarrativeToReviewIssues(repairContent) : []),
+        ...(repairDepth ? siteDepthToReviewIssues(repairDepth) : []),
         ...(repairExperience ? experienceToReviewIssues(repairExperience) : []),
         ...(repairVisual ? visualToReviewIssues(repairVisual) : []),
         ...(repairExperienceIdentity ? experienceIdentityToReviewIssues(repairExperienceIdentity) : []),
@@ -1308,6 +1328,7 @@ export async function runFrontendBuilderQualityPipeline(
     const blockingComposition = hasBlockingCompositionFindings(repairComposition);
     const blockingVisualSystem = hasBlockingVisualSystemFindings(repairVisualSystem);
     const blockingContent = hasBlockingContentFindings(repairContent);
+    const blockingSiteDepth = hasBlockingSiteDepthFindings(repairDepth);
     const blockingExperience = hasBlockingExperienceFindings(repairExperience);
     const blockingVisual = hasBlockingVisualFindings(repairVisual);
     const blockingExperienceIdentity = hasBlockingExperienceIdentityFindings(repairExperienceIdentity);
@@ -1333,6 +1354,7 @@ export async function runFrontendBuilderQualityPipeline(
       blockingComposition,
       blockingVisualSystem,
       blockingContent,
+      blockingSiteDepth,
       blockingExperience,
       blockingVisual,
       blockingExperienceIdentity,
@@ -1356,6 +1378,7 @@ export async function runFrontendBuilderQualityPipeline(
         [hasBlockingCompositionFindings(initialComposition), blockingComposition],
         [hasBlockingVisualSystemFindings(initialVisualSystem), blockingVisualSystem],
         [hasBlockingContentFindings(initialContent), blockingContent],
+        [hasBlockingSiteDepthFindings(initialDepth), blockingSiteDepth],
         [hasBlockingExperienceFindings(initialExperience), blockingExperience],
         [hasBlockingVisualFindings(initialVisual), blockingVisual],
         [hasBlockingExperienceIdentityFindings(initialExperienceIdentity), blockingExperienceIdentity],
@@ -1433,6 +1456,8 @@ export async function runFrontendBuilderQualityPipeline(
       ? `The repaired project still fails the binding integrated experience (${experienceIssueCodes(repairExperience).slice(0, 4).join(', ')} — e.g. a desktop-only/broken-mobile layout, clipped required copy, a shallow interaction with no feedback, an inaccessible control, or eager/oversized media); the repair was not accepted.`
       : blockingContent
       ? `The repaired project still fails the binding content narrative (${contentNarrativeIssueCodes(repairContent).slice(0, 4).join(', ')} — e.g. a required section with no substantive public copy, generic/duplicated propositions across sections, leaked internal planning copy, or no actionable CTA); the repair was not accepted.`
+      : blockingSiteDepth
+      ? `The repaired project is still materially underdeveloped for its site type (${siteDepthIssueCodes(repairDepth).slice(0, 4).join(', ')} — e.g. a core browse/decision surface rendered heading-only, or the core decision content never rendering); the repair was not accepted.`
       : blockingVisualSystem
       ? `The repaired project still fails the binding visual system (${visualSystemIssueCodes(repairVisualSystem).slice(0, 4).join(', ')} — e.g. no coherent token source, declared tokens bypassed, repeated generic card chrome, or unreadable body text); the repair was not accepted.`
       : blockingVisual

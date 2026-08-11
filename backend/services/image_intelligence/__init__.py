@@ -26,7 +26,9 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from backend.services.image_intelligence.config import is_enabled, load_weights
+from backend.services.image_intelligence.config import (
+    is_enabled, load_weights, visual_rerank_budget, visual_rerank_enabled, visual_rerank_topn,
+)
 from backend.services.image_intelligence.design_intent import (
     DesignIntent, ImageRequirement, build_design_intent,
 )
@@ -38,6 +40,7 @@ from backend.services.image_intelligence.query_builder import build_search_query
 from backend.services.image_intelligence.ranking import (
     ImageRankingEngine, ScoredImage, register_scorer,
 )
+from backend.services.image_intelligence import visual_rerank
 
 logger = logging.getLogger(__name__)
 
@@ -52,11 +55,15 @@ _SEARCH_CONCURRENCY = 4
 
 @dataclass
 class SelectedAsset:
-    """One slot's winning candidate plus its transparent score breakdown."""
+    """One slot's winning candidate plus its transparent score breakdown.
+
+    ``score`` is the metadata breakdown (see :meth:`ScoredImage.as_metadata`); when the
+    Phase-1 visual rerank runs for a high-impact slot it attaches a bounded, secret-free
+    ``visualRerank`` diagnostics sub-dict — hence the ``Any`` value type."""
 
     slot_id: str
     candidate: ImageCandidate
-    score: Dict[str, float]
+    score: Dict[str, Any]
 
     @property
     def row(self) -> Dict[str, Any]:
@@ -122,13 +129,31 @@ async def select_assets(
 
         # Deterministic cross-slot selection: best unused candidate, preferring an
         # unused photographer when it costs little (within the diversity margin).
+        #
+        # Phase 1 — for HIGH-IMPACT photographic slots only, and only while the per-build
+        # visual budget lasts, a single bounded vision call re-picks among the TOP-N
+        # already-uniqueness-filtered candidates. It FAILS OPEN to the metadata winner on
+        # any problem, never grows the pool, and never triggers a new stock search.
+        rerank_on = visual_rerank_enabled()
+        rerank_budget = visual_rerank_budget() if rerank_on else 0
+        rerank_top_n = visual_rerank_topn()
         used_ids: set = set()
         used_photographers: set = set()
         selections: List[SelectedAsset] = []
         for req, ranked in zip(requirements, ranked_per_req):
             if isinstance(ranked, Exception) or not ranked:
                 continue
-            chosen = _pick(ranked, used_ids, used_photographers)
+            visual_diag: Optional[Dict[str, Any]] = None
+            chosen: Optional[ScoredImage] = None
+            if rerank_on and rerank_budget > 0 and visual_rerank.is_high_impact_slot(req):
+                available = [s for s in ranked if s.candidate.id not in used_ids]
+                if available:
+                    rerank_budget -= 1  # count the attempt regardless of outcome (bounded cost)
+                    chosen, visual_diag = await visual_rerank.rerank_winner(
+                        intent, req, available, top_n=rerank_top_n,
+                    )
+            if chosen is None:
+                chosen = _pick(ranked, used_ids, used_photographers)
             if chosen is None:
                 continue
             cand = chosen.candidate
@@ -136,7 +161,10 @@ async def select_assets(
             photographer = cand.photographer_name.strip().lower()
             if photographer:
                 used_photographers.add(photographer)
-            selections.append(SelectedAsset(slot_id=req.slot_id, candidate=cand, score=chosen.as_metadata()))
+            score_meta: Dict[str, Any] = dict(chosen.as_metadata())
+            if visual_diag is not None:
+                score_meta["visualRerank"] = visual_diag
+            selections.append(SelectedAsset(slot_id=req.slot_id, candidate=cand, score=score_meta))
 
         return selections
     except Exception as exc:  # noqa: BLE001 — smart path must never break generation

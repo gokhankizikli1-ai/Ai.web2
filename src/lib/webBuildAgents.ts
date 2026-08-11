@@ -2086,6 +2086,13 @@ export interface FrontendBuildSpecification {
    *  from the EXISTING identity + conversion model + research/approved-claim policy + composition +
    *  binding + sanitized section public copy (no new model/network call). */
   contentNarrative?: import('@/lib/webBuildContentNarrative').ContentNarrativeContract;
+  /** Phase 2 (site depth & completeness) — a deterministic, GENERAL, site-type-aware contract owning
+   *  whether the site is a COMPLETE, usable website of its own type (enough browse/choice/decision
+   *  surface) rather than a landing page that ends before the visitor can decide. NOT a universal
+   *  section-count minimum: the depth profile is derived per site from business model + sector +
+   *  request + research + conversion model + composition + architecture. Additive: fresh builds only;
+   *  absent ⇒ legacy behavior. Derived deterministically (no new model/network call). */
+  siteDepth?: import('@/lib/webBuildContentNarrative').SiteDepthContract;
   /** Phase (integrated experience quality) — the BINDING cross-system experience contract: per-section
    *  coherence + responsive + interaction + accessibility + performance obligations that connect the
    *  #558–#563 decisions into one implementable experience. Additive: present only on fresh builds;
@@ -2935,6 +2942,11 @@ export interface FrontendBuilderAcceptanceArtifact {
    *    issue codes only; never raw prompts, research, provider answers, full copy or secrets).
    *    All OPTIONAL/additive. ── */
   contentNarrative?: import('@/lib/webBuildContentNarrative').ContentNarrativeDiagnostics;
+
+  /* ── Phase 2 (site depth & completeness) — bounded owner diagnostics (archetype + depth-profile
+   *    levels + core-surface / thin counts + issue codes only; never raw source, prompts or secrets).
+   *    All OPTIONAL/additive. ── */
+  siteDepth?: import('@/lib/webBuildContentNarrative').SiteDepthDiagnostics;
 
   /* ── Phase (integrated experience quality) — bounded owner diagnostics (sub-policy presence +
    *    per-dimension finding counts + issue codes only; never raw source, prompts or secrets).

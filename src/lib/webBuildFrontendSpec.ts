@@ -34,7 +34,7 @@ import { deriveImageCoverageRequirement } from '@/lib/webBuildImageCoverage';
 import { deriveResearchDirection } from '@/lib/webBuildResearchDirection';
 import { deriveCompositionContract } from '@/lib/webBuildComposition';
 import { deriveVisualSystemContract } from '@/lib/webBuildVisualSystem';
-import { deriveContentNarrativeContract } from '@/lib/webBuildContentNarrative';
+import { deriveContentNarrativeContract, deriveSiteDepthContract } from '@/lib/webBuildContentNarrative';
 import { deriveExperienceQualityContract } from '@/lib/webBuildExperienceQuality';
 import { deriveVisualConceptContract } from '@/lib/webBuildVisualConcept';
 import { deriveExperienceIdentityContract } from '@/lib/webBuildExperienceIdentity';
@@ -799,6 +799,28 @@ export function deriveFrontendBuildSpecification(input: FrontendBuildSpecInput):
       });
       if (contentNarrative) built.contentNarrative = contentNarrative;
     } catch { /* never block the build on content-narrative derivation */ }
+
+    // Phase 2 (site depth & completeness) — derive the GENERAL, site-type-aware depth contract from the
+    // SAME authoritative inputs (identity/business model + sector + conversion model + research +
+    // composition + the section architecture + user prompt). NOT a universal section count: a restaurant,
+    // a SaaS, a store, a portfolio and a minimal landing page each get a different depth profile.
+    // Deterministic; no model/network call; fail-open. Absent ⇒ legacy behavior.
+    try {
+      const siteDepth = deriveSiteDepthContract({
+        identity: built.identity,
+        language: built.language,
+        sections: built.architecture?.sections || [],
+        primaryCta: built.architecture?.primaryCTA,
+        secondaryCta: built.architecture?.secondaryCTA,
+        conversionModel: built.architecture?.conversionJourneyModel,
+        research: built.researchDirection,
+        composition: built.composition,
+        binding: built.bindingRequirements,
+        artDirection: input.artDirection,
+        prompt: built.prompt,
+      });
+      if (siteDepth) built.siteDepth = siteDepth;
+    } catch { /* never block the build on site-depth derivation */ }
 
     // Phase (integrated experience quality) — connect the derived contracts (composition, content,
     // visual system, imagery, binding) into per-section cross-system experience obligations

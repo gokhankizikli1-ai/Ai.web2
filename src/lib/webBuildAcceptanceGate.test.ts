@@ -72,6 +72,30 @@ describe('evaluateAcceptanceGate — accepted candidate has no false failure', (
   });
 });
 
+describe('Phase 2 — site-depth structural-completeness gate (optional, backward-compatible)', () => {
+  it('omitting blockingSiteDepth accepts a clean candidate (old callers unaffected)', () => {
+    const input = { ...baseAccept() };
+    delete (input as Partial<AcceptanceGateInput>).blockingSiteDepth;   // not set by old callers
+    const r = evaluateAcceptanceGate(input);
+    expect(r.accept).toBe(true);
+    expect('blockingSiteDepth' in r.diagnostics).toBe(false);           // diagnostic shape unchanged when not blocking
+  });
+
+  it('blockingSiteDepth=true rejects with the blocking-site-depth reason and flags the analyzer', () => {
+    const r = evaluateAcceptanceGate({ ...baseAccept(), blockingSiteDepth: true });
+    expect(r.accept).toBe(false);
+    expect(r.reasonCode).toBe('blocking-site-depth');
+    expect(r.diagnostics.blockingSiteDepth).toBe(true);
+    expect(r.diagnostics.anyBlockingAnalyzer).toBe(true);
+  });
+
+  it('blockingSiteDepth=false accepts and never adds the diagnostic key', () => {
+    const r = evaluateAcceptanceGate({ ...baseAccept(), blockingSiteDepth: false });
+    expect(r.accept).toBe(true);
+    expect('blockingSiteDepth' in r.diagnostics).toBe(false);
+  });
+});
+
 describe('Q1/Q2 — reviewer clean, deterministic gate still rejects with an exact reason', () => {
   it('reviewer no blocking issues but score < threshold → explicit review-not-passed reason', () => {
     // finalReviewPassed=false models a review that flagged a sub-threshold score even though the
