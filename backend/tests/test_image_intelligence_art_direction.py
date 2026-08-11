@@ -178,6 +178,69 @@ def test_J_legacy_need_backward_compatible():
     assert delta == 0.0
 
 
+# ── INTEGRATION — art direction survives sourcing.source_images' normalization boundary ──────
+# This is the boundary the earlier unit tests missed: sourcing.source_images REBUILDS each need into a
+# `clean_needs` dict before calling image_intelligence.select_assets. We capture the exact dict that
+# reaches select_assets and prove the art direction is still present there and all the way into the
+# ImageRequirement — and that a legacy 6-field need still carries neutral values (unchanged behaviour).
+
+def _run_sourcing_capture(monkeypatch, need_dicts):
+    """Drive sourcing.source_images with the provider disabled (empty search) and capture the exact
+    needs list handed to image_intelligence.select_assets — the real projection boundary."""
+    import asyncio
+    from backend.services.web_build_images import sourcing
+
+    captured = {}
+
+    async def fake_select(needs, context=None, provider_name=None):
+        captured["needs"] = [dict(n) for n in needs]   # snapshot the select_assets input
+        return []                                       # force the deterministic fallback path
+
+    async def fake_search(query, provider, page, per_page, orientation):
+        return {"results": [], "providers": {"pexels": "ok", "unsplash": "ok"}}
+
+    monkeypatch.setattr(sourcing.image_intelligence, "is_enabled", lambda: True)
+    monkeypatch.setattr(sourcing.image_intelligence, "select_assets", fake_select)
+    monkeypatch.setattr(sourcing.stock, "availability", lambda: {"pexels": True, "unsplash": True})
+    monkeypatch.setattr(sourcing.stock, "search", fake_search)
+    asyncio.run(sourcing.source_images(need_dicts, None))
+    return captured.get("needs")
+
+
+def test_INTEGRATION_art_direction_survives_sourcing_into_select_assets(monkeypatch):
+    need = _need_from_item(StockNeedItem(**_RICH))          # route projection
+    passed = _run_sourcing_capture(monkeypatch, [need])     # ← through sourcing.source_images
+    assert passed is not None and len(passed) == 1
+    n = passed[0]
+    # the art direction reached the select_assets input (previously dropped by clean_needs)
+    assert n["role"] == "hero-signature"
+    assert n["people"] == "avoid"
+    assert n["authenticity"] == "authentic-photo-required"
+    assert n["aspectRatio"] == "16:9"
+    assert n["focalPoint"] == "center"
+    assert n["negativeSpace"] is True
+    assert n["loadingPriority"] == "eager"
+    assert n["framing"] == "wide establishing"
+    # …and it survives all the way into the ImageRequirement build_design_intent constructs
+    intent = build_design_intent(passed, None)
+    hero = intent.hero_image_requirement
+    assert hero is not None
+    assert hero.people == "avoid" and hero.authenticity == "authentic-photo-required" and hero.role == "hero-signature"
+
+
+def test_INTEGRATION_legacy_need_unchanged_through_sourcing(monkeypatch):
+    need = _need_from_item(StockNeedItem(**_LEGACY))
+    passed = _run_sourcing_capture(monkeypatch, [need])
+    assert passed is not None and len(passed) == 1
+    n = passed[0]
+    # base fields preserved exactly; art fields carried as neutral/empty (no behaviour change)
+    assert n["slotId"] == "hero" and n["query"] == "ocean resort sunset" and n["required"] is True
+    assert n["people"] == "" and n["authenticity"] == "" and n["role"] == "" and n["negativeSpace"] is False
+    assert n["noRepeat"] is True
+    req = build_design_intent(passed, None).hero_image_requirement
+    assert req is not None and not any(req.art_direction_fields().values())
+
+
 # ── M — no vision/model call exists in this phase ────────────────────────────────────────────
 
 def test_M_no_vision_or_model_call_in_ranking_or_intent():
