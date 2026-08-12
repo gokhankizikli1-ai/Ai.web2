@@ -272,6 +272,18 @@ export function renderGenerationContractBlock(contract: FrontendGenerationContra
   if (contract.requiredSections.length) lines.push(`- Respect this section sequence: ${contract.requiredSections.join(' → ')}.`);
   lines.push(`- FORBIDDEN (do NOT use unless the user request explicitly asks for it): ${contract.forbiddenPatterns.join('; ')}.`);
   lines.push(`- Creative freedom: ${contract.creativeFreedom.join('; ')}.`);
+  // Source-output efficiency — spend output tokens on VISIBLE quality, not redundant source. This does
+  // NOT mean generate a smaller/shallower site; it means generate the same or better site with less
+  // repeated code. Reuse stays LOCAL and semantics-aware (unique hero/story/conversion stay bespoke).
+  lines.push(
+    '- SOURCE EFFICIENCY (spend tokens on visible quality, NOT redundant code — do NOT shrink the site): '
+    + 'render repeated visual units (cards, programs, products, menu items, plans) from a small LOCAL data '
+    + 'array with ONE template (data.map(...)) instead of hand-copying near-identical blocks; keep unique '
+    + 'sections (hero/story/conversion) bespoke and do NOT over-componentize one-off layout. Do NOT '
+    + 'duplicate a static dataset across files, embed giant base64 or oversized inline SVG paths, add '
+    + 'boilerplate comments, or keep unused state/effects. Let CSS handle responsive variants instead of '
+    + 'duplicating markup. Put the saved tokens into content depth, responsive behavior and real interactivity.',
+  );
   // First-pass motion parity: when the authoritative plan requires motion, emit the concise BINDING
   // implementation block (same interpretation as the post-generation enforcement). Otherwise keep
   // the pre-existing generic line byte-for-byte — so static/minimal/reduced-motion/old contracts are

@@ -93,6 +93,11 @@ export interface ContentNarrativeContract {
   approvedClaimRefs: string[];        // opaque #560 fingerprints (never rendered publicly)
   prohibitedClaimClasses: string[];
   genericTerms: string[];
+  /** True when this site is genuinely a PORTFOLIO / case-study / agency-work context, so
+   *  portfolio vocabulary ("Selected Work", "Our Work", "Case Studies") is domain-native. When false,
+   *  a browse/decision section that heads itself with portfolio vocabulary is a domain-label mismatch
+   *  (e.g. "Selected Work" over a fitness *programs* browse surface). Additive; absent ⇒ legacy. */
+  portfolioContext: boolean;
   sections: ContentSectionAssignment[];
   derivationBasis: string[];
   contractPersistedInSpecification: boolean;
@@ -318,6 +323,10 @@ export function deriveContentNarrativeContract(input: ContentNarrativeInput): Co
     approvedClaimRefs: approvedClaims,
     prohibitedClaimClasses,
     genericTerms: GENERIC_TERMS.slice(0, MAX_GENERIC),
+    // Portfolio/case-study context ⇒ portfolio vocabulary is domain-native. Derived from the sector and
+    // whether any section is genuinely a work/case-study surface (never a hard-coded per-sector table).
+    portfolioContext: String(identity.sector || '') === 'portfolio-agency'
+      || ordered.some((s) => /portfolio|case stud|selected work|our work|recent work|featured work|our projects/.test(lc(`${s.purpose || ''} ${s.name || ''}`))),
     sections,
     derivationBasis: uniq([
       rawSections.length ? 'architectureSections' : '',
@@ -371,6 +380,12 @@ export function renderContentNarrativeBlock(contract: ContentNarrativeContract |
     'with real continuity — do not repeat the same proposition in every section.',
     'Use concrete sector/product/service nouns; avoid interchangeable template slogans and generic',
     `filler (${contract.genericTerms.slice(0, 8).join(', ')}) as the ONLY content of a section.`,
+    // Domain-native public labels: a heading should reflect what the visitor actually does in the section.
+    ...(!contract.portfolioContext && contract.sections.some((s) => s.narrativeRole === 'enable-decision')
+      ? ['Use DOMAIN-NATIVE public headings that name what the visitor browses/chooses in each browse section '
+         + '(e.g. Programs / Menu / Collections / Services as appropriate); do NOT use portfolio vocabulary '
+         + '("Selected Work", "Our Work", "Case Studies") unless this is genuinely a portfolio or case-study site.']
+      : []),
     'Preserve any exact user-provided approved copy verbatim.',
     `CTA hierarchy: ${contract.ctaLabelPolicy} Primary action: ${clip(contract.primaryCtaRole, 50)}; secondary: ${clip(contract.secondaryCtaRole, 50)}.`,
     `Proof: ${contract.proofPolicy}`,
@@ -488,7 +503,8 @@ export type ContentIssueCode =
   | 'content-repetition'
   | 'content-voice-drift'
   | 'content-language-mix'
-  | 'content-proof-absent';
+  | 'content-proof-absent'
+  | 'content-domain-label';
 
 export interface ContentIssue {
   code: ContentIssueCode;
@@ -544,13 +560,16 @@ export function analyzeContentNarrative(
     const anchorSet = new Set(contract.sections.flatMap((s) => s.specificityAnchors));
     const genericSet = new Set(contract.genericTerms);
 
-    interface SecEval { id: string; path: string; role: NarrativeRole; required: boolean; words: string[]; hasDynamic: boolean; hasChild: boolean; hasSpecificity: boolean; genericOnly: boolean; fingerprint: Set<string>; leaked: string[]; labelLeaked: string[]; substantive: boolean; }
+    interface SecEval { id: string; path: string; role: NarrativeRole; required: boolean; words: string[]; hasDynamic: boolean; hasChild: boolean; hasSpecificity: boolean; genericOnly: boolean; fingerprint: Set<string>; leaked: string[]; labelLeaked: string[]; substantive: boolean; portfolioLabel: boolean; }
     const evals: SecEval[] = [];
     for (const u of units.slice(0, MAX_SECTIONS)) {
       const sc = byId.get(u.id); if (!sc) continue;
       const region = (u.content || '').slice(0, MAX_SCAN);
       const vt = extractVisibleText(region);
       const words = tokens(vt.text);
+      // Domain-label mismatch signal — a browse section headed with PORTFOLIO vocabulary. Checked at the
+      // START of the visible text (the heading), so ordinary prose mentioning "work" is not flagged.
+      const portfolioLabel = /\b(?:selected work|our work|case stud(?:y|ies)|recent work|featured work|view (?:our|my) work)\b/.test(lc(vt.text).slice(0, 80));
       // A capitalized child component may carry the copy in another file → ambiguous, never "missing".
       const hasChild = /<[A-Z][A-Za-z0-9]*[\s/>]/.test(stripComments(region));
       // Internal-planning leakage — only from VISIBLE text (comments/attrs excluded by the reader).
@@ -565,7 +584,19 @@ export function analyzeContentNarrative(
       const substantive = words.length >= MIN_WORDS;
       const hasSpecificity = words.some((w) => anchorSet.has(w)) || fingerprint.size >= 2;
       const genericOnly = substantive && !hasSpecificity && words.some((w) => genericSet.has(w));
-      evals.push({ id: u.id, path: u.path, role: sc.narrativeRole, required: sc.publicCopyRequired, words, hasDynamic: vt.hasDynamic, hasChild, hasSpecificity, genericOnly, fingerprint, leaked, labelLeaked, substantive });
+      evals.push({ id: u.id, path: u.path, role: sc.narrativeRole, required: sc.publicCopyRequired, words, hasDynamic: vt.hasDynamic, hasChild, hasSpecificity, genericOnly, fingerprint, leaked, labelLeaked, substantive, portfolioLabel });
+    }
+
+    // ── Domain-native public labels: a browse/choose section headed with portfolio vocabulary in a
+    //    NON-portfolio site is a domain mismatch (e.g. "Selected Work" over a fitness programs surface).
+    //    Portfolio/case-study sites are exempt (portfolioContext). Strong, conservative. ──
+    if (!contract.portfolioContext) {
+      const mislabeled = evals.filter((e) => e.role === 'enable-decision' && e.portfolioLabel);
+      if (mislabeled.length) {
+        push({ code: 'content-domain-label', severity: 'major', label: 'domain-inappropriate label', files: uniq(mislabeled.map((e) => e.path)).slice(0, MAX_ISSUE_FILES),
+          evidence: capEv(`${mislabeled.length} browse/choose section(s) (${mislabeled.slice(0, 4).map((e) => e.id).join(', ')}) use portfolio vocabulary ("Selected Work"/"Our Work"/"Case Studies") as their public heading, but this is not a portfolio/case-study site — the label does not reflect what the visitor is actually doing`),
+          repairInstruction: capEv('Rename the heading to a domain-native label that names what the visitor browses/chooses here (e.g. Programs / Menu / Collections / Services); reserve portfolio/work vocabulary for an actual portfolio or case-study section.') });
+      }
     }
 
     // ── 1. Missing substantive public content in a REQUIRED section (blocker, per section). A dynamic
@@ -701,6 +732,7 @@ const CONTENT_CATEGORY: Record<ContentIssueCode, FrontendBuilderReviewCategory> 
   'content-voice-drift': 'copy-fidelity',
   'content-language-mix': 'copy-fidelity',
   'content-proof-absent': 'honesty',
+  'content-domain-label': 'concept-fidelity',
 };
 
 export function contentNarrativeToReviewIssues(result: ContentAcceptanceResult | undefined): FrontendBuilderReviewIssue[] {

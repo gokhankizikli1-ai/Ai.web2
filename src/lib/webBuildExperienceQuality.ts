@@ -435,6 +435,13 @@ export function renderExperienceQualityBlock(contract: ExperienceQualityContract
     ...(contract.globalResponsive.length ? [`Responsive: ${contract.globalResponsive.slice(0, 5).join('; ')}.`] : []),
     ...(contract.globalAccessibility.length ? [`Accessibility: ${contract.globalAccessibility.slice(0, 5).join('; ')}.`] : []),
     ...(contract.globalPerformance.length ? [`Performance/media: ${contract.globalPerformance.slice(0, 5).join('; ')}.`] : []),
+    // UI polish — whitespace must be EARNED; vary composition; make CTA hierarchy visible.
+    'Whitespace must be EARNED: a generous/full-height section needs a real anchor (dominant photography,',
+    'a strong typographic statement, real browse/catalog items, a meaningful interaction, or substantive',
+    'content). Do NOT manufacture page length with tall empty sections or filler; tighten spacing instead.',
+    'Vary composition: unrelated top-level sections must NOT all render as the same card grid; give the',
+    'page rhythm and 1–2 dominant moments. Make CTA hierarchy visible — ONE dominant primary action per',
+    'conversion context; keep secondary actions subordinate; do not render every CTA with equal weight.',
     'Per-section experience obligations (by section id):',
     ...secLines,
     '',
@@ -612,6 +619,9 @@ export function factsFor(id: string, path: string, content: string): SectionFact
 export type ExperienceIssueCode =
   // Phase 1 — coherence
   | 'experience-flat-rhythm' | 'experience-content-layout-tight'
+  // UI polish (substance-to-space fit, composition variety, CTA visual hierarchy)
+  | 'experience-dead-space' | 'experience-thin-section'
+  | 'experience-repeated-composition' | 'experience-cta-weight'
   // Phase 2 — responsive
   | 'experience-desktop-only' | 'experience-harmful-clip'
   | 'experience-cta-hidden-mobile' | 'experience-responsive-warn'
@@ -621,7 +631,9 @@ export type ExperienceIssueCode =
   | 'experience-clickable-div' | 'experience-input-unlabeled' | 'experience-menu-no-control' | 'experience-a11y-warn'
   // Phase 5 — performance
   | 'experience-all-eager' | 'experience-hero-lazy'
-  | 'experience-unbounded-motion' | 'experience-huge-inline' | 'experience-perf-warn';
+  | 'experience-unbounded-motion' | 'experience-huge-inline' | 'experience-perf-warn'
+  // Source-output efficiency (spend output tokens on visible quality, not redundant source)
+  | 'experience-repeated-jsx' | 'experience-unused-state';
 
 export interface ExperienceIssue {
   code: ExperienceIssueCode;
@@ -642,6 +654,16 @@ export interface ExperienceAcceptanceResult {
   interactionFindingCount: number;
   accessibilityFindingCount: number;
   performanceFindingCount: number;
+  /** Bounded, numeric-only source-efficiency signals (no source text). Present on fresh analyses. */
+  sourceEfficiency?: {
+    sourceChars: number;
+    tsxChars: number;
+    cssChars: number;
+    repeatedStructureCount: number;   // sections flagged for hand-duplicated repeated blocks
+    largeLiteralCount: number;        // large inline base64 payloads
+    unusedStateSignals: number;       // sections flagged for dead React state
+    largeSvgSignal: number;           // giant inline SVG path payloads
+  };
   issues: ExperienceIssue[];
 }
 const LEGACY_EXPERIENCE: ExperienceAcceptanceResult = {
@@ -681,6 +703,10 @@ export function analyzeExperienceQuality(
         repairInstruction: capEv('Give dense/proof sections a layout with room (columns/structure) matching their content; do not cram them into a minimal centered block.') });
     }
     coherenceRhythmCheck(contract, facts, push);
+    // ── UI polish — whitespace must be earned; composition variety; CTA visual hierarchy. ──
+    substanceToSpaceCheck(facts, byId, push);
+    compositionVarietyCheck(facts, push);
+    ctaHierarchyCheck(facts, push);
     // ── Phase 2 — responsive layout & content-fit. ──
     responsiveCheck(facts, byId, factById, push);
     // ── Phase 3 — interaction depth & state-feedback integrity. ──
@@ -690,18 +716,34 @@ export function analyzeExperienceQuality(
     accessibilityCheck(byId, factById, push);
     // ── Phase 5 — performance, media delivery & runtime resilience. ──
     performanceCheck(facts, byId, factById, push);
+    // ── Source-output efficiency — redundant source waste (repeated JSX at section scope; dead state at
+    //    FILE/component scope, since hooks live above the section markup). Full source stripped once. ──
+    const fileByPath = new Map(list.map((f) => [f.path, stripComments((f.content || '').slice(0, MAX_SCAN))]));
+    sourceEfficiencyCheck(facts, fileByPath, push);
 
     const coherenceFindingCount = issues.filter((i) => i.subPolicy === 'coherence').length;
     const responsiveFindingCount = issues.filter((i) => i.subPolicy === 'responsive').length;
     const interactionFindingCount = issues.filter((i) => i.subPolicy === 'interaction').length;
     const accessibilityFindingCount = issues.filter((i) => i.subPolicy === 'accessibility').length;
     const performanceFindingCount = issues.filter((i) => i.subPolicy === 'performance').length;
+    // Bounded numeric source-efficiency diagnostics (no source text) — observability, never a blocker.
+    const tsxChars = list.filter((f) => /\.(?:tsx|jsx|ts|js)$/i.test(f.path)).reduce((n, f) => n + (f.content || '').length, 0);
+    const cssChars = list.filter((f) => /\.css$/i.test(f.path)).reduce((n, f) => n + (f.content || '').length, 0);
+    const sourceEfficiency = {
+      sourceChars: list.reduce((n, f) => n + (f.content || '').length, 0),
+      tsxChars, cssChars,
+      repeatedStructureCount: issues.filter((i) => i.code === 'experience-repeated-jsx').length,
+      largeLiteralCount: facts.reduce((n, f) => n + (f.clean.match(/data:(?:image|font)\/[^;]{1,20};base64,[A-Za-z0-9+/=]{8000,}/gi) || []).length, 0),
+      unusedStateSignals: issues.filter((i) => i.code === 'experience-unused-state').length,
+      largeSvgSignal: facts.reduce((n, f) => n + (f.clean.match(/\bd=["'][^"']{3000,}["']/gi) || []).length, 0),
+    };
     const blocking = issues.some((i) => i.severity !== 'minor');
     const warned = issues.some((i) => i.severity === 'minor');
     const status: ExperienceAcceptanceResult['status'] = blocking ? 'fail' : warned ? 'warning' : 'pass';
     return {
       status, legacy: false, analyzedSectionCount: facts.length, ambiguousSectionCount: ambiguous,
       coherenceFindingCount, responsiveFindingCount, interactionFindingCount, accessibilityFindingCount, performanceFindingCount,
+      sourceEfficiency,
       issues: issues.slice(0, MAX_ISSUES),
     };
   } catch {
@@ -718,6 +760,134 @@ function coherenceRhythmCheck(contract: ExperienceQualityContract, facts: Sectio
       repairInstruction: capEv('Vary section structure/weight so the page has rhythm and 1–2 dominant moments, not one repeated centered column.') });
   }
   void contract;
+}
+
+/* ── UI polish helpers (whitespace must be EARNED; variety; CTA weight) ── */
+// Direction-aware VERTICAL footprint of a section — the ONLY axis that proves generous vertical space.
+// A generic `gap-*` (or `gap-x-*`) applies horizontally in grid/flex and NEVER counts as vertical space.
+//   'strong'  → a genuinely tall section (full viewport height, a large explicit vh min-height, large
+//               vertical padding py-*, or pt-* AND pb-* both materially large). Only 'strong' can raise
+//               the MAJOR dead-space finding.
+//   'weak'    → vertical rhythm between children (space-y-* / gap-y-*, i.e. row gap) that is large but is
+//               NOT by itself proof of a tall footprint → at most an advisory warning.
+//   'none'    → no vertical-space evidence (generic gap-*, gap-x-*, horizontal-only spacing).
+function verticalFootprint(render: string): 'strong' | 'weak' | 'none' {
+  const strong =
+    /\bmin-h-screen\b|\bh-screen\b/.test(render)                       // full-viewport height
+    || /\bmin-h-\[[^\]]*vh\b/.test(render)                             // large explicit viewport-height min
+    || /\b(?:sm:|md:|lg:|xl:|2xl:)?py-(?:2[4-9]|[3-9]\d)\b/.test(render) // large vertical padding
+    || (/\b(?:sm:|md:|lg:|xl:|2xl:)?pt-(?:1[6-9]|[2-9]\d)\b/.test(render)
+        && /\b(?:sm:|md:|lg:|xl:|2xl:)?pb-(?:1[6-9]|[2-9]\d)\b/.test(render)); // pt AND pb both large
+  if (strong) return 'strong';
+  // Vertical rhythm ONLY (row gap / vertical child spacing) — never a horizontal or generic gap.
+  const weak = /\bspace-y-(?:1[6-9]|[2-9]\d)\b/.test(render) || /\bgap-y-(?:1[6-9]|[2-9]\d)\b/.test(render);
+  return weak ? 'weak' : 'none';
+}
+// A dominant real MEDIA anchor (photo / video / poster / background image).
+const _DOMINANT_MEDIA_RE = /<img\b|<video\b|<picture\b|<Image\b|background-image|bg-\[url|bg-\[image/i;
+// A strong TYPOGRAPHIC statement (a genuinely large display size — a legitimate sparse anchor).
+const _STRONG_TYPE_RE = /\btext-(?:5xl|6xl|7xl|8xl|9xl)\b|\btext-\[(?:[6-9]\d|\d{3})/;
+// PROOF/trust surface tokens (a real reason for a calm, spacious treatment).
+const _PROOF_RE = /testimonial|review|rating|\bstars?\b|\blogos?\b|award|accredit|certif|trusted|as seen/i;
+
+/** Count real, repeated item-like units rendered in a section (browse/catalog density). */
+function itemDensity(f: SectionFacts): number {
+  const li = f.elements.filter((e) => e.tag === 'li' || e.tag === 'article' || e.tag === 'figure').length;
+  const cardish = f.elements.filter((e) => /\b(?:card|tile|product|plan|listing|item|cell)\b/.test(e.classes)).length;
+  const mapped = /\.\s*map\s*\(/.test(f.clean) ? 3 : 0;   // a dynamic list renders many items
+  return Math.max(li, cardish, mapped);
+}
+
+/** Substance-to-space fit — a visually generous/sparse section is justified ONLY by a strong anchor:
+ *  dominant media, a strong typographic statement, real browse/catalog density, a meaningful interactive
+ *  focal point, a proof/trust surface, or substantial narrative content. A generous section with none of
+ *  those and almost no content is manufactured page length → flag (reduce spacing OR add substance).
+ *  Never requires filler; never forces dense layouts; dynamic/child regions fail open. */
+function substanceToSpaceCheck(
+  facts: SectionFacts[], byId: Map<string, ExperienceSectionObligation>, push: (x: ExperienceIssue) => void,
+): void {
+  for (const f of facts) {
+    if (f.hasDynamic || f.hasChildComponent) continue;                 // content may live elsewhere → fail open
+    const footprint = verticalFootprint(f.render);
+    if (footprint === 'none') continue;                                // no VERTICAL space evidence (gap-x/generic gap never counts)
+    const ob = byId.get(f.id);
+    const hasMedia = _DOMINANT_MEDIA_RE.test(f.clean);
+    const hasInteraction = (ob?.interaction && ob.interaction.kind !== 'none') || f.elements.some(isControlEl);
+    const hasBrowse = itemDensity(f) >= 3;
+    const hasProof = _PROOF_RE.test(f.clean);
+    const strongType = _STRONG_TYPE_RE.test(f.render) && f.words >= 3;
+    const substantialCopy = f.words >= 40;
+    const anchored = hasMedia || hasInteraction || hasBrowse || hasProof || strongType || substantialCopy;
+    if (anchored) continue;
+    if (footprint === 'strong' && f.words < 8) {
+      // Genuinely TALL vertical footprint + no anchor + almost no content → dead space (strong evidence).
+      push({ code: 'experience-dead-space', severity: 'major', subPolicy: 'coherence', label: 'unearned whitespace', files: [f.path],
+        evidence: capEv(`section "${f.id}" uses a tall/full-height vertical treatment but has no dominant media, no meaningful interaction, no browse/proof content and only ${f.words} words — the vertical space is not earned (manufactured page length)`),
+        repairInstruction: capEv(`Either reduce the unnecessary vertical spacing for "${f.id}" OR give it a real anchor (dominant photography, a strong typographic statement, real browse items, a meaningful interaction, or substantive content). Do not add filler text.`) });
+    } else if (f.words < 20) {
+      // Weak vertical evidence, OR a tall section with only slightly-thin content → advisory (never a block).
+      push({ code: 'experience-thin-section', severity: 'minor', subPolicy: 'coherence', label: 'thin spacious section', files: [f.path],
+        evidence: capEv(`section "${f.id}" is visually generous but light on substance (${f.words} words, no dominant anchor) — verify the whitespace is earned`),
+        repairInstruction: capEv('Tighten the spacing or strengthen the section anchor (media / typography / browse / interaction / content).') });
+    }
+  }
+}
+
+/** Composition variety — detect page depth manufactured by repeated structure: the SAME card-grid
+ *  silhouette across ≥3 distinct top-level sections. Conservative; static regions only. */
+function compositionVarietyCheck(facts: SectionFacts[], push: (x: ExperienceIssue) => void): void {
+  const gridSig = new Map<string, Set<string>>();     // "grid-N" → set of section paths
+  for (const f of facts) {
+    if (f.hasChildComponent) continue;
+    const cols = new Set<number>();
+    for (const el of f.elements) {
+      const m = /grid-cols-(\d+)/.exec(el.classes);
+      if (m && m[1]) cols.add(parseInt(m[1], 10));
+    }
+    for (const n of cols) {
+      if (n < 2) continue;                            // a single-column stack is not a repeated card grid
+      const key = `grid-${n}`;
+      if (!gridSig.has(key)) gridSig.set(key, new Set());
+      gridSig.get(key)!.add(f.id);
+    }
+  }
+  for (const [key, ids] of gridSig) {
+    if (ids.size >= 3) {
+      push({ code: 'experience-repeated-composition', severity: 'minor', subPolicy: 'coherence', label: 'repeated card-grid silhouette', files: [],
+        evidence: capEv(`${ids.size} distinct top-level sections (${[...ids].slice(0, 5).join(', ')}) share the same ${key} card-grid silhouette — the page reads template-like and page depth comes from repeated structure`),
+        repairInstruction: capEv('Differentiate the composition of unrelated sections (vary layout, media role, rhythm) so distinct sections do not all render as the same card grid.') });
+      break;                                          // one systemic finding is enough
+    }
+  }
+}
+
+/** CTA visual hierarchy — a conversion page needs ONE dominant primary action. When ≥2 call-to-action
+ *  elements share the SAME visual treatment (identical class strings) with no dominant one, the hierarchy
+ *  is flat. Surfaced as a WARNING (no universal button style is imposed). */
+function ctaHierarchyCheck(facts: SectionFacts[], push: (x: ExperienceIssue) => void): void {
+  const ctaClasses: string[] = [];
+  for (const f of facts) {
+    if (f.hasChildComponent) continue;
+    for (const el of f.elements) {
+      if (el.tag !== 'button' && el.tag !== 'a') continue;
+      if (!el.classes) continue;
+      // Heuristic: a styled CTA has button-ish utility classes (padding + background/border/rounded).
+      if (/\bp[xy]?-\d|\bpx-\d/.test(el.classes) && /\b(?:bg-|border|rounded)/.test(el.classes)) {
+        ctaClasses.push(el.classes.split(/\s+/).sort().join(' '));
+      }
+    }
+  }
+  if (ctaClasses.length < 3) return;                  // too few CTAs to judge a hierarchy
+  const counts = new Map<string, number>();
+  for (const c of ctaClasses) counts.set(c, (counts.get(c) || 0) + 1);
+  const distinct = counts.size;
+  const dominantShare = Math.max(...counts.values()) / ctaClasses.length;
+  // Flat hierarchy: essentially every CTA looks the same (one identical treatment dominates all of them).
+  if (distinct === 1 || dominantShare >= 0.9) {
+    push({ code: 'experience-cta-weight', severity: 'minor', subPolicy: 'coherence', label: 'flat CTA hierarchy', files: [],
+      evidence: capEv(`${ctaClasses.length} call-to-action elements share one identical visual treatment with no dominant primary — CTA hierarchy is flat and the primary action does not stand out`),
+      repairInstruction: capEv('Give the primary action dominant visual weight (size/colour/contrast) and keep secondary actions subordinate; do not render every CTA with the same emphasis.') });
+  }
 }
 
 /** Parse one container's className tokens into the BASE (unprefixed = mobile) grid columns and whether
@@ -1160,15 +1330,20 @@ function performanceCheck(
       evidence: capEv(`${infinite} continuous/infinite animations run with no prefers-reduced-motion handling anywhere — this wastes runtime and ignores motion sensitivity`),
       repairInstruction: capEv('Gate continuous animations behind prefers-reduced-motion (motion-reduce:) and avoid unbounded animation on content.') });
   }
-  // 4. Giant or repeated inline base64 payloads (blocker).
+  // 4. Giant or repeated inline base64 payloads, OR a giant inline SVG path (blocker). Both spend
+  //    large amounts of output source on decorative bytes rather than visible quality.
   const base64 = facts.flatMap((f) => f.clean.match(/data:(?:image|font)\/[^;]{1,20};base64,[A-Za-z0-9+/=]{2000,}/gi) || []);
   const huge = base64.filter((b) => b.length >= 40000);
   const repeated = base64.filter((b) => b.length >= 8000);
   const repeatedDup = new Set(repeated).size < repeated.length && repeated.length >= 3;
-  if (huge.length >= 1 || repeatedDup) {
+  const giantSvgPath = facts.flatMap((f) => f.clean.match(/\bd=["'][^"']{3000,}["']/gi) || []);
+  if (huge.length >= 1 || repeatedDup || giantSvgPath.length >= 1) {
+    const svgKb = Math.round((giantSvgPath[0]?.length || 0) / 1000);
     push({ code: 'experience-huge-inline', severity: 'major', subPolicy: 'performance', label: 'huge/duplicated inline media', files: [],
-      evidence: capEv(`${huge.length ? `a ${Math.round((huge[0]?.length || 0) / 1000)}KB inline base64 payload is embedded` : `${repeated.length} large inline base64 payloads (some duplicated) are embedded`} — inline media bloats the bundle and blocks parsing`),
-      repairInstruction: capEv('Serve media as real image files (reuse the sourced assets) instead of embedding large/duplicated base64 inline.') });
+      evidence: capEv(giantSvgPath.length
+        ? `a giant inline SVG path (~${svgKb}KB of path data) is embedded in source — decorative vector bytes crowd out visible-quality source`
+        : (huge.length ? `a ${Math.round((huge[0]?.length || 0) / 1000)}KB inline base64 payload is embedded` : `${repeated.length} large inline base64 payloads (some duplicated) are embedded`) + ' — inline media bloats the bundle and blocks parsing'),
+      repairInstruction: capEv('Serve media as real image files (reuse the sourced assets) and simplify/extract oversized inline SVG; do not embed large/duplicated base64 or giant vector paths inline.') });
   }
   // 5. Duplicate heavy media reused across many sections (warning — often intentional, e.g. logos).
   const srcCount = new Map<string, number>();
@@ -1181,6 +1356,59 @@ function performanceCheck(
   }
 }
 
+/** Source-output efficiency — spend output tokens on visible quality, not redundant source. Flags
+ *  STRONG, proven waste only: many hand-duplicated near-identical sibling blocks that should be
+ *  data-driven, and obviously-dead React state. Reuse must stay LOCAL and semantics-aware, so a
+ *  bespoke/varied section is never treated as duplication, and a working interaction is never
+ *  penalized. Dynamic (`.map`) lists and child-hosted regions fail open. */
+function sourceEfficiencyCheck(
+  facts: SectionFacts[], fileByPath: Map<string, string>, push: (x: ExperienceIssue) => void,
+): void {
+  // A) Repeated hand-written blocks — SECTION scope (the duplicated markup lives in the section return).
+  for (const f of facts) {
+    if (f.hasChildComponent) continue;
+    if (/\.\s*map\s*\(/.test(f.clean)) continue;                       // already data-driven
+    const byClass = new Map<string, number>();
+    for (const el of f.elements) {
+      const key = el.classes.trim();
+      if (key.length >= 12) byClass.set(key, (byClass.get(key) || 0) + 1);
+    }
+    const maxRepeat = byClass.size ? Math.max(...byClass.values()) : 0;
+    if (maxRepeat >= 6) {
+      push({ code: 'experience-repeated-jsx', severity: 'major', subPolicy: 'performance', label: 'hand-duplicated repeated blocks', files: [f.path],
+        evidence: capEv(`section "${f.id}" hand-writes ${maxRepeat} near-identical sibling blocks (same class structure, no .map) — the repeated markup spends output source on duplication instead of visible quality`),
+        repairInstruction: capEv(`Drive the repeated units in "${f.id}" from a small local data array rendered with one template (data.map(...)); keep bespoke/unique sections hand-written. Do not over-componentize one-off layout.`) });
+    }
+  }
+
+  // B) Obviously-dead React state — FILE/COMPONENT scope. Hooks idiomatically live ABOVE the <section>
+  //    markup (in the component body), so a section-slice scan misses them. Correlate a useState to a
+  //    section in its file, then judge USAGE across the WHOLE file: a value/setter referenced ANYWHERE
+  //    (rendered, in a handler, a derived value, a child prop, a class/aria/style) counts as used —
+  //    we FAIL OPEN toward "used" and flag only when the pair appears exactly once (its declaration).
+  const sectionIdByPath = new Map<string, string>();
+  for (const f of facts) { if (!sectionIdByPath.has(f.path)) sectionIdByPath.set(f.path, f.id); }
+  for (const [path, sid] of sectionIdByPath) {
+    const src = fileByPath.get(path);
+    if (!src) continue;                                                // no full source available → fail open
+    const stateRe = /const\s*\[\s*(\w+)\s*,\s*(set\w+)\s*\]\s*=\s*(?:React\.)?useState/g;
+    let sm: RegExpExecArray | null; let guard = 0;
+    while ((sm = stateRe.exec(src)) && guard < 40) {
+      guard += 1;
+      const v = sm[1]; const setter = sm[2];
+      if (!v || !setter) continue;
+      const vCount = (src.match(new RegExp(`\\b${v}\\b`, 'g')) || []).length;
+      const setCount = (src.match(new RegExp(`\\b${setter}\\b`, 'g')) || []).length;
+      if (vCount <= 1 && setCount <= 1) {                              // only the destructuring occurrence → dead
+        push({ code: 'experience-unused-state', severity: 'minor', subPolicy: 'performance', label: 'unused React state', files: [path],
+          evidence: capEv(`the component in "${path}" (section "${sid}") declares useState "${v}" that is never read or updated anywhere in the file — dead state spends source with no visible effect`),
+          repairInstruction: capEv(`Remove the unused "${v}" state (and any effect that only maintains it); keep state that drives a visible outcome.`) });
+        break;                                                        // one advisory signal per file is enough
+      }
+    }
+  }
+}
+
 export function hasBlockingExperienceFindings(result: ExperienceAcceptanceResult | undefined): boolean {
   return !!result && result.status === 'fail';
 }
@@ -1188,6 +1416,10 @@ export function hasBlockingExperienceFindings(result: ExperienceAcceptanceResult
 const EXPERIENCE_CATEGORY: Record<ExperienceIssueCode, FrontendBuilderReviewCategory> = {
   'experience-flat-rhythm': 'layout-rhythm',
   'experience-content-layout-tight': 'layout-rhythm',
+  'experience-dead-space': 'layout-rhythm',
+  'experience-thin-section': 'layout-rhythm',
+  'experience-repeated-composition': 'layout-rhythm',
+  'experience-cta-weight': 'visual-hierarchy',
   'experience-desktop-only': 'responsive-intent',
   'experience-harmful-clip': 'responsive-intent',
   'experience-cta-hidden-mobile': 'responsive-intent',
@@ -1204,6 +1436,8 @@ const EXPERIENCE_CATEGORY: Record<ExperienceIssueCode, FrontendBuilderReviewCate
   'experience-unbounded-motion': 'motion-and-interaction',
   'experience-huge-inline': 'maintainability',
   'experience-perf-warn': 'maintainability',
+  'experience-repeated-jsx': 'maintainability',
+  'experience-unused-state': 'maintainability',
 };
 
 export function experienceToReviewIssues(result: ExperienceAcceptanceResult | undefined): FrontendBuilderReviewIssue[] {

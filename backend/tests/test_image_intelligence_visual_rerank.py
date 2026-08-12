@@ -233,3 +233,96 @@ def test_config_bounds_clamp(monkeypatch):
     assert config.visual_rerank_budget() == 0                     # clamped to [0,4]
     monkeypatch.setenv("SMART_IMAGE_VISUAL_RERANK_TOPN", "1")
     assert config.visual_rerank_topn() == 2
+
+
+# ── BATCH visual selection (≥2 high-impact slots in ONE request) ──────────────────
+def _about_req(**over) -> ImageRequirement:
+    base = dict(slot_id="about", purpose="about", orientation="landscape",
+                subject="chef portrait", role="primary-about storytelling",
+                people="required", authenticity="authentic-photo-required", required=True)
+    base.update(over)
+    return ImageRequirement(**base)
+
+
+def _slot(slot_id: str, req: ImageRequirement, n: int) -> tuple:
+    # a top-N shortlist of n scored candidates whose ids are unique to this slot
+    sl = []
+    for i in range(n):
+        c = ImageCandidate(id=f"{slot_id}:{i}", provider="pexels", provider_image_id=str(i),
+                           url=f"https://cdn/{slot_id}/{i}.jpg", width=2000, height=1125,
+                           alt=f"{slot_id} {i}", photographer_name=f"P{i}", raw={})
+        sl.append(ScoredImage(candidate=c, breakdown={}, final_score=90.0 - i))
+    return (slot_id, req, sl)
+
+
+@pytest.mark.asyncio
+async def test_batch_A_B_H_two_slots_one_provider_call():
+    prov = _FakeProvider('{"slots":[{"slotId":"hero","bestIndex":2},{"slotId":"about","bestIndex":1}]}')
+    slots = [_slot("hero", _hero_req(), 3), _slot("about", _about_req(), 3)]
+    picks, diag = await visual_rerank.rerank_batch(_intent(), slots, top_n=3, provider_getter=_getter(prov))
+    # B: both slots decided, A: exactly ONE provider round-trip
+    assert picks["hero"] == 2 and picks["about"] == 1
+    assert prov.calls == 1 and diag["providerCallCount"] == 1
+    assert diag["visualRerankMode"] == "batch" and diag["eligibleSlotCount"] == 2 and diag["attemptedSlotCount"] == 2
+    # H: top-N bound preserved — 3 + 3 candidate images in the single request
+    assert diag["candidateCountTotal"] == 6
+    images = [b for b in prov.last_request.messages[1].content if b.get("type") == "image_url"]
+    assert len(images) == 6 and all(b["image_url"]["detail"] == "low" for b in images)
+    assert diag["changedWinnerCount"] == 2 and diag["failedSlotCount"] == 0 and diag["succeeded"] is True
+
+
+@pytest.mark.asyncio
+async def test_batch_D_malformed_all_metadata_winners():
+    prov = _FakeProvider("not json at all")
+    slots = [_slot("hero", _hero_req(), 3), _slot("about", _about_req(), 3)]
+    picks, diag = await visual_rerank.rerank_batch(_intent(), slots, top_n=3, provider_getter=_getter(prov))
+    assert picks["hero"] is None and picks["about"] is None       # → caller keeps metadata winners
+    assert diag["failedSlotCount"] == 2 and diag["succeeded"] is False and diag["reason"] == "malformed-verdict"
+
+
+@pytest.mark.asyncio
+async def test_batch_E_partial_only_affected_slot_fails_open():
+    # hero valid, about missing from the reply → about nulls, hero unaffected.
+    prov = _FakeProvider('{"slots":[{"slotId":"hero","bestIndex":1}]}')
+    slots = [_slot("hero", _hero_req(), 3), _slot("about", _about_req(), 3)]
+    picks, diag = await visual_rerank.rerank_batch(_intent(), slots, top_n=3, provider_getter=_getter(prov))
+    assert picks["hero"] == 1 and picks["about"] is None
+    assert diag["failedSlotCount"] == 1 and diag["succeeded"] is True
+
+
+@pytest.mark.asyncio
+async def test_batch_out_of_range_index_nulls_that_slot():
+    prov = _FakeProvider('{"slots":[{"slotId":"hero","bestIndex":9},{"slotId":"about","bestIndex":0}]}')
+    slots = [_slot("hero", _hero_req(), 3), _slot("about", _about_req(), 3)]
+    picks, _ = await visual_rerank.rerank_batch(_intent(), slots, top_n=3, provider_getter=_getter(prov))
+    assert picks["hero"] is None and picks["about"] == 0
+
+
+@pytest.mark.asyncio
+async def test_batch_fail_open_provider_unavailable_no_call():
+    def boom(_name):
+        raise RuntimeError("no provider")
+    slots = [_slot("hero", _hero_req(), 3), _slot("about", _about_req(), 3)]
+    picks, diag = await visual_rerank.rerank_batch(_intent(), slots, top_n=3, provider_getter=boom)
+    assert picks["hero"] is None and picks["about"] is None
+    assert diag["providerCallCount"] == 0 and diag["reason"] == "provider-unavailable"
+
+
+@pytest.mark.asyncio
+async def test_batch_thin_shortlist_slot_is_not_attempted():
+    # a slot with <2 usable candidates is never judged (kept as metadata), others still batch.
+    prov = _FakeProvider('{"slots":[{"slotId":"hero","bestIndex":1}]}')
+    slots = [_slot("hero", _hero_req(), 3), _slot("about", _about_req(), 1)]
+    picks, diag = await visual_rerank.rerank_batch(_intent(), slots, top_n=3, provider_getter=_getter(prov))
+    assert picks["hero"] == 1 and picks["about"] is None
+    assert diag["attemptedSlotCount"] == 1 and diag["failedSlotCount"] == 1
+
+
+def test_batch_J_prompt_prioritizes_slot_brief_over_consistency():
+    # J: the judge is instructed to satisfy each slot's OWN brief first and NEVER pick a semantically
+    # weaker image just for cross-image consistency. (Deterministic proof of the obligation text.)
+    p = visual_rerank._BATCH_SYSTEM_PROMPT.lower()
+    assert "brief" in p
+    assert "never choose a semantically weaker image" in p
+    assert "consisten" in p            # consistency is only a tie-breaker, mentioned after the brief
+    assert p.index("brief") < p.index("consisten")

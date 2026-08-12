@@ -125,6 +125,11 @@ def _candidate_url(scored: ScoredImage) -> str:
     return (getattr(cand, "url", "") or getattr(cand, "thumbnail_url", "") or "").strip()
 
 
+def _shortlist(available: List[ScoredImage], top_n: int) -> List[ScoredImage]:
+    """The TOP-N metadata-ranked candidates that carry a usable hotlink URL. Never grows the pool."""
+    return [s for s in available[: max(2, top_n)] if _candidate_url(s)]
+
+
 def _build_user_content(intent: DesignIntent, req: ImageRequirement,
                         shortlist: List[ScoredImage]) -> List[Dict[str, Any]]:
     """One multimodal user turn: the bounded brief text, then ONE image block per
@@ -198,7 +203,7 @@ async def rerank_winner(
     if not available:
         return available[0] if available else None, _base_diag(True, 0, "no-candidates")  # type: ignore[index]
 
-    shortlist = [s for s in available[: max(2, top_n)] if _candidate_url(s)]
+    shortlist = _shortlist(available, top_n)
     if len(shortlist) < 2:
         return available[0], _base_diag(True, len(shortlist), "insufficient-candidates")
 
@@ -272,4 +277,197 @@ async def rerank_winner(
     return shortlist[best], diag
 
 
-__all__ = ["is_high_impact_slot", "rerank_winner"]
+# ── BATCH visual selection — decide SEVERAL high-impact slots in ONE multimodal request ─────────
+# When ≥2 high-impact slots are eligible in the same build, the per-slot rerank would make ≥2
+# SEQUENTIAL vision calls. Batching sends every eligible slot's OWN top-N shortlist in ONE request:
+# one provider round-trip instead of N. Each slot is still judged against its OWN brief FIRST; visual-
+# set consistency is only a tie-breaker (never a reason to pick a semantically weaker image). Cross-slot
+# uniqueness is resolved DETERMINISTICALLY by the caller from the returned per-slot indices, so a shared
+# candidate can never fill two slots. Fail-open is per-slot: a malformed / missing / out-of-range slot
+# result degrades ONLY that slot to its metadata winner and never corrupts another slot.
+
+_BATCH_SYSTEM_PROMPT = (
+    "You are an art director choosing the single best photograph for EACH of several high-impact "
+    "website slots at once. For every slot you are shown its own brief and its own small numbered set "
+    "of real candidate photos. Judge ONLY what is visibly true in each photo (subject, whether people "
+    "are present, framing/composition, orientation, lighting, mood, authenticity, and space for text). "
+    "For EACH slot, first pick the candidate that best satisfies THAT slot's brief. When two candidates "
+    "satisfy a slot's brief equally well, prefer the one that keeps the overall image set visually "
+    "consistent (photographic style, lighting family, subject coherence, colour/mood) — but NEVER choose "
+    "a semantically weaker image for a slot just for consistency. Respond with STRICT JSON only: "
+    '{"slots": [{"slotId": "<id>", "bestIndex": <0-based integer for THAT slot>}, ...]}. Every bestIndex '
+    "MUST be one of the indices shown for that slot; include every slotId exactly once."
+)
+
+# One batch judge input: (slot_id, its requirement, its already-built top-N shortlist).
+BatchSlot = Tuple[str, ImageRequirement, List[ScoredImage]]
+
+
+def _build_batch_user_content(intent: DesignIntent, slots: List[BatchSlot]) -> List[Dict[str, Any]]:
+    """One multimodal user turn for the whole batch: per slot, a header + its bounded brief, then one
+    low-detail image block per candidate labelled with the slot id and index. No raw copy/research."""
+    parts: List[Dict[str, Any]] = [
+        {"type": "text", "text": f"Choose the best candidate index for EACH of the {len(slots)} slots below."},
+    ]
+    for slot_id, req, shortlist in slots:
+        parts.append({"type": "text",
+                      "text": f"=== SLOT {slot_id} — {len(shortlist)} candidates (indices 0..{len(shortlist) - 1}) ===\n"
+                              + _art_direction_brief(intent, req)})
+        for i, scored in enumerate(shortlist):
+            parts.append({"type": "text", "text": f"[{slot_id}] Candidate {i}:"})
+            parts.append({"type": "image_url", "image_url": {"url": _candidate_url(scored), "detail": "low"}})
+    return parts
+
+
+def _parse_batch_indices(content: Optional[str], slot_counts: Dict[str, int]) -> Dict[str, Optional[int]]:
+    """Extract a valid 0-based index PER slot from the model's JSON, or ``None`` for that slot (→ per-slot
+    fail-open). A malformed whole reply yields all ``None``; a bad single entry only nulls that slot."""
+    out: Dict[str, Optional[int]] = {sid: None for sid in slot_counts}
+    try:
+        parsed = json.loads(content or "")
+    except (ValueError, TypeError):
+        return out
+    if not isinstance(parsed, dict):
+        return out
+    arr = parsed.get("slots")
+    if not isinstance(arr, list):
+        return out
+    for item in arr:
+        if not isinstance(item, dict):
+            continue
+        sid = item.get("slotId")
+        if not isinstance(sid, str) or sid not in slot_counts:
+            continue
+        raw = item.get("bestIndex")
+        if isinstance(raw, bool):        # bool is an int subclass — reject explicitly
+            continue
+        if not isinstance(raw, int):
+            try:
+                raw = int(str(raw).strip())
+            except (TypeError, ValueError):
+                continue
+        if 0 <= raw < slot_counts[sid]:
+            out[sid] = raw
+    return out
+
+
+def _batch_diag(slot_count: int, candidate_total: int, reason: str) -> Dict[str, Any]:
+    """Bounded, secret-free AGGREGATE diagnostics for a batch attempt (numbers/enums only)."""
+    return {
+        "visualRerankMode": "batch",
+        "visualRerankAttempted": False,
+        "eligibleSlotCount": slot_count,
+        "attemptedSlotCount": 0,
+        "candidateCountTotal": candidate_total,
+        "providerCallCount": 0,
+        "latencyMs": 0,
+        "changedWinnerCount": 0,
+        "failedSlotCount": slot_count,
+        "succeeded": False,
+        "reason": reason,
+    }
+
+
+async def rerank_batch(
+    intent: DesignIntent,
+    slots: List[BatchSlot],
+    *,
+    top_n: int,
+    provider_getter: Optional[ProviderGetter] = None,
+    model: Optional[str] = None,
+) -> Tuple[Dict[str, Optional[int]], Dict[str, Any]]:
+    """Decide the visually-best candidate INDEX for each eligible high-impact slot in ONE request.
+
+    ``slots`` is ``[(slot_id, requirement, top_n_shortlist)]`` (the caller has already bounded each
+    shortlist to top-N usable candidates). Returns ``(picks, aggregate_diag)`` where ``picks[slot_id]``
+    is the chosen 0-based index into THAT slot's shortlist, or ``None`` (→ the caller keeps that slot's
+    metadata winner). ONE provider round-trip for the whole batch. Fails open per slot; never raises,
+    never grows any pool, never triggers a stock search. Cross-slot uniqueness is the caller's job."""
+    slot_ids = [sid for sid, _, _ in slots]
+    candidate_total = sum(len(sl) for _, _, sl in slots)
+    picks: Dict[str, Optional[int]] = {sid: None for sid in slot_ids}
+    # Only slots with ≥2 usable candidates can be judged; the rest keep their metadata winner.
+    usable = [(sid, req, sl) for sid, req, sl in slots if len(sl) >= 2]
+    diag = _batch_diag(len(slots), candidate_total, "attempted")
+    diag["attemptedSlotCount"] = len(usable)
+    if not usable:
+        diag["reason"] = "insufficient-candidates"
+        return picks, diag
+
+    # Same provider plumbing as the single-slot path — never a second client/model.
+    try:
+        from backend.services.providers.errors import ProviderError
+        from backend.services.providers.types import ProviderMessage, ProviderRequest
+    except Exception:  # noqa: BLE001
+        diag["reason"] = "provider-import-unavailable"
+        return picks, diag
+    try:
+        getter = provider_getter
+        if getter is None:
+            from backend.services.providers import get_provider as getter  # type: ignore[no-redef]
+        provider = getter("openai")
+    except Exception:  # noqa: BLE001
+        diag["reason"] = "provider-unavailable"
+        return picks, diag
+    use_model = model or ""
+    if not use_model:
+        try:
+            from backend.core.config import settings
+            use_model = getattr(settings, "MODEL_STRONG", "") or ""
+        except Exception:  # noqa: BLE001
+            diag["reason"] = "provider-unavailable"
+            return picks, diag
+    if not getattr(provider, "supports_vision", False) or not provider.model_supports_vision(use_model):
+        diag["reason"] = "vision-model-unavailable"
+        return picks, diag
+
+    request = ProviderRequest(
+        messages=[
+            ProviderMessage(role="system", content=_BATCH_SYSTEM_PROMPT),
+            ProviderMessage(role="user", content=_build_batch_user_content(intent, usable)),
+        ],
+        model=use_model,
+        temperature=0.0,
+        # Small JSON verdict, scaled modestly with slot count (still tiny vs a description).
+        max_tokens=min(600, _RERANK_MAX_TOKENS + 80 * len(usable)),
+        timeout_s=_RERANK_TIMEOUT_S,
+        extra={"response_format": {"type": "json_object"}},
+    )
+    diag["visualRerankAttempted"] = True
+    started = time.monotonic()
+    diag["providerCallCount"] = 1  # we are committing to exactly ONE round-trip for the whole batch
+    try:
+        result = await provider.chat_completion(request)
+    except ProviderError as exc:
+        diag["latencyMs"] = int((time.monotonic() - started) * 1000)
+        diag["reason"] = "provider-error"
+        logger.info("[IMG_INTEL] visual rerank batch provider error: %s", getattr(exc, "code", "provider-error"))
+        return picks, diag
+    except Exception:  # noqa: BLE001
+        diag["latencyMs"] = int((time.monotonic() - started) * 1000)
+        diag["reason"] = "provider-error"
+        logger.info("[IMG_INTEL] visual rerank batch unexpected provider failure")
+        return picks, diag
+    diag["latencyMs"] = int((time.monotonic() - started) * 1000)
+
+    slot_counts = {sid: len(sl) for sid, _, sl in usable}
+    idx_by_slot = _parse_batch_indices(getattr(result, "content", None), slot_counts)
+    changed = 0
+    valid = 0
+    for sid in slot_counts:
+        idx = idx_by_slot.get(sid)
+        if idx is None:
+            continue
+        picks[sid] = idx
+        valid += 1
+        if idx != 0:
+            changed += 1
+    # failed = slots the judge could not place (missing/invalid) + slots with too-thin shortlists.
+    diag["failedSlotCount"] = len(slots) - valid
+    diag["changedWinnerCount"] = changed
+    diag["succeeded"] = valid > 0
+    diag["reason"] = "reranked" if changed > 0 else ("confirmed-metadata-winner" if valid > 0 else "malformed-verdict")
+    return picks, diag
+
+
+__all__ = ["is_high_impact_slot", "rerank_winner", "rerank_batch", "BatchSlot"]
