@@ -64,6 +64,59 @@ export interface AppImageStrategy {
   forbid: string[];
 }
 
+/**
+ * Premium component-quality contract (UI Quality Phase 1). App-specific ADAPTATION of the
+ * shared visual system — it adds NO colour/type tokens (those stay in VisualSystemContract);
+ * it states how the app's controls must be built and behave so generated UI reads as
+ * intentionally designed software, not browser-default filler. Bounded + deterministic.
+ */
+export interface AppComponentQuality {
+  /** How to build controls from the available dependencies — never a new package. */
+  buildStrategy: string;
+  /** Per control-family quality obligations (compact, one line per family). */
+  controls: string[];
+  /** Interaction states every interactive control must express (role-appropriate, not forced). */
+  interactionStates: string;
+  /** Surface / elevation obligations — themed popovers, no theme-mismatched surfaces. */
+  surfaces: string;
+}
+
+/**
+ * Context-aware visual-hierarchy contract (UI Quality Phase 2). It states how to USE the shared
+ * brand tokens well — layering, accent/semantic discipline, typography scale, density and chart
+ * presentation — WITHOUT imposing any single house palette or one universal look. Guidance varies
+ * by app class (functional / consumer / utility) so apps read as art-directed, not generic.
+ */
+export interface AppVisualHierarchy {
+  /** Background → surface → raised → border → text → muted ladder from the shared tokens. */
+  layering: string;
+  /** Accent + semantic + selected/hover/focus usage discipline (no forced palette). */
+  colorUsage: string;
+  /** Typography hierarchy for this app class (title / heading / metric / label / metadata). */
+  typography: string;
+  /** Context-aware density intent for this app type. */
+  density: string;
+  /** Surface composition — when to use flat groups/dividers/inset instead of a card wall. */
+  surfaceComposition: string;
+  /** Chart / data-viz presentation obligations (apply only where charts exist). */
+  dataViz: string;
+}
+
+/**
+ * Interaction polish contract (UI Quality Phase 3). The VISUAL/motion layer only — the functional
+ * control→handler→state→consequence wiring stays owned by the screen-depth contract (no second
+ * interaction engine). It adds restrained micro-interactions, honest local feedback and navigation
+ * active-state polish so a built app feels intentional when operated, not just in a screenshot.
+ */
+export interface AppInteractionPolish {
+  /** Restrained, reduced-motion-aware micro-interactions (no new dependency). */
+  motion: string;
+  /** Visible, honest local feedback (defers functional wiring to screen depth). */
+  feedback: string;
+  /** Navigation polish — always-clear active route/tab/sidebar item + responsive adaptation. */
+  navigation: string;
+}
+
 export interface AppVisualContract {
   version: 'app-visual-v1';
   appType: AppType;
@@ -72,6 +125,12 @@ export interface AppVisualContract {
   devices: DeviceTarget[];
   screenComposition: ScreenComposition[];
   imageStrategy: AppImageStrategy;
+  /** Premium control/component quality obligations (UI Quality Phase 1). */
+  componentQuality: AppComponentQuality;
+  /** Context-aware visual hierarchy / palette-usage / density / chart guidance (UI Quality Phase 2). */
+  hierarchy: AppVisualHierarchy;
+  /** Interaction / micro-polish / feedback / navigation polish (UI Quality Phase 3). */
+  interactionPolish: AppInteractionPolish;
   /** App UI anti-patterns to actively avoid. */
   antiPatterns: string[];
   /** How this adapter reuses the shared visual system (no new tokens). */
@@ -213,6 +272,76 @@ function imageStrategyFor(appType: AppType): AppImageStrategy {
   };
 }
 
+/* ── Component quality (UI Quality Phase 1) ──────────────────────────────────── */
+
+/** The premium component-quality contract. Deterministic; the only variation is a
+ *  minimal-utility relaxation and a dark-theme emphasis for popup surfaces. It names the
+ *  ALREADY-AVAILABLE primitives (Radix UI / cva / clsx / tailwind-merge / lucide-react) so
+ *  the model builds themed controls without any new dependency. */
+function componentQualityFor(appType: AppType, colorMode: 'light' | 'dark' | 'mixed' | undefined): AppComponentQuality {
+  const minimal = appType === 'utility';
+  const darkPopup = colorMode === 'dark' ? ' In this dark app, never open a light/white browser-default surface.' : '';
+  const buildStrategy = minimal
+    ? 'Build controls from the shared tokens. A native control is fine here only if it fully inherits the theme (surface, border, text, radius, focus) — no unstyled browser-default look.'
+    : `Build controls from the shared tokens using the available primitives — Radix UI, class-variance-authority, clsx, tailwind-merge, lucide-react — never a new dependency. Where a native popup (select/menu) would break the theme, use a Radix listbox/menu so the OPEN surface is themed; a raw native control is fine only if its trigger AND surface inherit the theme.${darkPopup}`;
+  const controls = [
+    'Buttons: distinct primary/secondary/ghost/destructive, one dominant primary per view, consistent height/padding/radius — not all primary.',
+    'Inputs: themed surface, label/placeholder hierarchy, focus ring, error state, height matching buttons.',
+    'Select/dropdown: themed trigger AND menu surface, selected + active-option states, keyboard + dismiss — never a white browser-default popup.',
+    'Tabs/segmented: one unmistakable active state, hover/focus, consistent geometry, content that actually switches.',
+    'Toggles/checkboxes/radios: clear on/off + disabled, adequate target size, themed.',
+    'Menus/popovers/modals/sheets: an elevated themed surface separated from the canvas, with dismiss + focus — no white surface in a dark UI.',
+    'Tables: row hover, selected state when selectable, integrated search/filter, consistent row actions.',
+  ];
+  return {
+    buildStrategy,
+    controls,
+    interactionStates: 'Each control shows the states its role needs — hover, focus-visible ring, active, selected, disabled — applied consistently (matching height/radius/focus). Do not force every state onto simple controls.',
+    surfaces: 'Elevation is theme-derived and consistent: dropdown/menu/dialog surfaces inherit the app palette (a dark app never opens a light surface). Reserve borders+radius for real grouping — no card-soup.',
+  };
+}
+
+/* ── Visual hierarchy (UI Quality Phase 2) ───────────────────────────────────── */
+
+/** Context-aware hierarchy guidance. It references the SHARED tokens (never a fixed palette)
+ *  and varies by app class so a CRM reads dense-but-legible, a fitness app reads breathable and
+ *  expressive, and a utility stays minimal — proving the guidance is not one universal template. */
+function hierarchyFor(appType: AppType, colorMode: 'light' | 'dark' | 'mixed' | undefined): AppVisualHierarchy {
+  const functional = FUNCTIONAL.has(appType);
+  const consumer = CONSUMER.has(appType);
+  const utility = appType === 'utility';
+  const density = utility
+    ? 'Minimal: one clear task per view with generous space — never a dashboard grid.'
+    : functional
+      ? 'Information-dense but legible: tighter rows and compact controls for scanning; hierarchy via weight and spacing, not just more cards.'
+      : consumer
+        ? 'Breathable and expressive: larger targets, more whitespace, imagery/typography carrying personality where it serves content.'
+        : 'Balanced: comfortable spacing with a clear primary focus per screen.';
+  const typography = utility
+    ? 'Restrained scale: emphasize the one result/value, small labels — no marketing headline.'
+    : functional
+      ? 'Distinct steps for title, section heading, metric numerals, table/list text, labels, metadata — never one size/weight everywhere, and no oversized marketing headline in a functional app.'
+      : 'A confident title and section rhythm with expressive display type where it fits, plus legible body/labels — not a marketing headline.';
+  return {
+    layering: `Clear background → surface → raised → border → text → muted ladder from the shared ${colorMode || 'themed'} tokens so panels read as distinct depths — no gray-on-gray flatness.`,
+    colorUsage: 'Spend the accent on the one key action/metric per view; reserve semantic success/warning/error for real status; give selected/hover/focus distinct on-palette treatments; keep muted text legible; no random accents or neon unless the brief calls for it.',
+    typography,
+    density,
+    surfaceComposition: 'Not every block needs a bordered card — use flat groups, dividers, section headers and inset surfaces where they read better; avoid "card soup"; give each screen one dominant panel.',
+    dataViz: 'Charts: label axes/series with context; on-palette colours from the shared accent (no default rainbow); a chart type that fits the data; responsive; in a titled panel integrated with the hierarchy — never a bare default-library example with meaningless numbers. Use the available recharts or SVG/CSS; no charting dependency.',
+  };
+}
+
+/* ── Interaction polish (UI Quality Phase 3) ─────────────────────────────────── */
+
+/** The visual/motion polish contract. Deterministic and compact; it explicitly defers the
+ *  functional wiring to the screen-depth authority so there is no duplicated interaction engine. */
+const INTERACTION_POLISH: AppInteractionPolish = {
+  motion: 'Restrained, purposeful transitions only where they aid comprehension (tab/route/dropdown/sheet open, hover elevation, press, selection, progress) — short (~150–250ms), non-blocking, respecting prefers-reduced-motion. Don’t animate everything. Use CSS or the available framer-motion; no new dependency.',
+  feedback: 'Every local action shows a visible, honest consequence (saved/added/removed/updated, filtered results change, toggled state flips) — never a faked remote success. Functional wiring is the screen-depth contract.',
+  navigation: 'Always indicate the active route/tab/sidebar item (not hover alone); nav items have hover + focus-visible; nav adapts responsively (sidebar → drawer/bottom tabs). No dead nav.',
+};
+
 const APP_ANTI_PATTERNS: string[] = [
   'A giant marketing hero or oversized headline as the first viewport of a functional screen.',
   'Excessive landing-page whitespace between operational elements.',
@@ -246,6 +375,8 @@ export function deriveAppVisualContract(
     };
     const screenComposition = arch.screens.map((s) => compositionForScreen(s.id, s.role, shellType, appType));
     const imageStrategy = imageStrategyFor(appType);
+    const componentQuality = componentQualityFor(appType, visualSystem?.colorMode);
+    const hierarchy = hierarchyFor(appType, visualSystem?.colorMode);
     const tokenReuse = visualSystem
       ? `Reuses the shared visual-system tokens (${visualSystem.colorMode} mode, roles: ${(visualSystem.colorRoles || []).map((r) => r.role).slice(0, 6).join(', ')}). App adapter adds only shell/nav/density/composition — no new colour or type tokens.`
       : 'Reuses the shared visual-system tokens as the brand/style source of truth; the app adapter adds only shell/nav/density/composition — no new colour or type tokens.';
@@ -262,6 +393,9 @@ export function deriveAppVisualContract(
       devices: devicesFor(appType),
       screenComposition,
       imageStrategy,
+      componentQuality,
+      hierarchy,
+      interactionPolish: INTERACTION_POLISH,
       antiPatterns: APP_ANTI_PATTERNS,
       tokenReuse,
       notes,
@@ -286,6 +420,25 @@ export function renderAppShellBlock(contract: AppVisualContract | undefined): st
     out.push(`- ${c.screenId} [${c.role}]: first viewport = ${c.firstViewport} Primary zone = ${c.primaryZone}. Chrome = ${c.chrome} ${c.interactionHierarchy}`);
   }
   out.push(`Imagery: ${contract.imageStrategy.rationale} Prefer: ${contract.imageStrategy.preferredVisuals.join(', ')}. Avoid: ${contract.imageStrategy.forbid.join(', ')}.`);
+  const cq = contract.componentQuality;
+  out.push('Component quality (premium, design-system controls — not browser-default filler):');
+  out.push(`  ${cq.buildStrategy}`);
+  for (const c of cq.controls) out.push(`  • ${c}`);
+  out.push(`  States: ${cq.interactionStates}`);
+  out.push(`  Surfaces: ${cq.surfaces}`);
+  const h = contract.hierarchy;
+  out.push('Visual hierarchy (use the shared brand tokens — do NOT invent a new palette):');
+  out.push(`  Layering: ${h.layering}`);
+  out.push(`  Colour usage: ${h.colorUsage}`);
+  out.push(`  Typography: ${h.typography}`);
+  out.push(`  Density: ${h.density}`);
+  out.push(`  Composition: ${h.surfaceComposition}`);
+  out.push(`  Data/charts: ${h.dataViz}`);
+  const ip = contract.interactionPolish;
+  out.push('Interaction polish (feel intentional when operated — functional wiring is the screen-depth contract):');
+  out.push(`  Motion: ${ip.motion}`);
+  out.push(`  Feedback: ${ip.feedback}`);
+  out.push(`  Navigation: ${ip.navigation}`);
   out.push('Avoid these app UI anti-patterns:');
   for (const a of contract.antiPatterns) out.push(`  • ${a}`);
   return out;

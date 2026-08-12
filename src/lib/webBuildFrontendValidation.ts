@@ -32,6 +32,7 @@ import { evaluateSemanticContent } from '@/lib/webBuildSemanticContentGuard';
 import { stripLeadingFieldLabel } from '@/lib/webBuildFieldLabel';
 import { screenComponentName } from '@/lib/appArchitecture';
 import { findDeadControls } from '@/lib/appScreenDepth';
+import { detectAppUiQuality } from '@/lib/appUiQuality';
 
 /* ── Bounds (safe against untrusted model output) ───────────────────────────── */
 const MAX_GENERATED_FILES = 80;
@@ -940,6 +941,14 @@ function validateProject(rawFiles: RawFile[], spec: FrontendBuildSpecification, 
         addError(acc, 'dead-route', `navigation route ${r.path} targets unknown screen "${r.screenId}"`, 'src/App.tsx');
       }
     }
+    // UI Quality Phases 1–2 — conservative premium-UI defect detection (advisory warnings only,
+    // threaded into the SAME review/repair loop; never changes status or forces a repair).
+    const uiFindings = detectAppUiQuality({
+      files: files.map((f) => ({ path: f.path, content: f.content, language: f.language })),
+      appType: spec.appArchitecture.appType,
+      colorMode: spec.visualSystem?.colorMode,
+    });
+    for (const uf of uiFindings) addWarning(acc, uf.code, uf.message, uf.files[0]);
   }
 
   // ── Assemble + decide status ────────────────────────────────────────────────
