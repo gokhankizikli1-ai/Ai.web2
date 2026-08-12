@@ -81,6 +81,27 @@ export interface AppComponentQuality {
   surfaces: string;
 }
 
+/**
+ * Context-aware visual-hierarchy contract (UI Quality Phase 2). It states how to USE the shared
+ * brand tokens well — layering, accent/semantic discipline, typography scale, density and chart
+ * presentation — WITHOUT imposing any single house palette or one universal look. Guidance varies
+ * by app class (functional / consumer / utility) so apps read as art-directed, not generic.
+ */
+export interface AppVisualHierarchy {
+  /** Background → surface → raised → border → text → muted ladder from the shared tokens. */
+  layering: string;
+  /** Accent + semantic + selected/hover/focus usage discipline (no forced palette). */
+  colorUsage: string;
+  /** Typography hierarchy for this app class (title / heading / metric / label / metadata). */
+  typography: string;
+  /** Context-aware density intent for this app type. */
+  density: string;
+  /** Surface composition — when to use flat groups/dividers/inset instead of a card wall. */
+  surfaceComposition: string;
+  /** Chart / data-viz presentation obligations (apply only where charts exist). */
+  dataViz: string;
+}
+
 export interface AppVisualContract {
   version: 'app-visual-v1';
   appType: AppType;
@@ -91,6 +112,8 @@ export interface AppVisualContract {
   imageStrategy: AppImageStrategy;
   /** Premium control/component quality obligations (UI Quality Phase 1). */
   componentQuality: AppComponentQuality;
+  /** Context-aware visual hierarchy / palette-usage / density / chart guidance (UI Quality Phase 2). */
+  hierarchy: AppVisualHierarchy;
   /** App UI anti-patterns to actively avoid. */
   antiPatterns: string[];
   /** How this adapter reuses the shared visual system (no new tokens). */
@@ -263,6 +286,37 @@ function componentQualityFor(appType: AppType, colorMode: 'light' | 'dark' | 'mi
   };
 }
 
+/* ── Visual hierarchy (UI Quality Phase 2) ───────────────────────────────────── */
+
+/** Context-aware hierarchy guidance. It references the SHARED tokens (never a fixed palette)
+ *  and varies by app class so a CRM reads dense-but-legible, a fitness app reads breathable and
+ *  expressive, and a utility stays minimal — proving the guidance is not one universal template. */
+function hierarchyFor(appType: AppType, colorMode: 'light' | 'dark' | 'mixed' | undefined): AppVisualHierarchy {
+  const functional = FUNCTIONAL.has(appType);
+  const consumer = CONSUMER.has(appType);
+  const utility = appType === 'utility';
+  const density = utility
+    ? 'Minimal density: one clear task per view with generous surrounding space — never a dashboard grid.'
+    : functional
+      ? 'Information-dense but legible: tighter rows and compact controls for scanning, hierarchy carried by weight and spacing (not just more cards).'
+      : consumer
+        ? 'Breathable and expressive: larger touch targets, more whitespace, imagery/typography allowed to carry personality where it serves content.'
+        : 'Balanced density: comfortable spacing with a clear primary focus per screen.';
+  const typography = utility
+    ? 'A restrained scale: one clear result/value emphasized, small supporting labels — no marketing headline.'
+    : functional
+      ? 'Distinct steps for screen title, section heading, metric numerals, table/list text, labels and metadata — never one size/weight everywhere, and no oversized marketing headline in a functional app.'
+      : 'A confident title and section rhythm with expressive display type where it fits the product, plus legible body/labels — still not a marketing landing headline.';
+  return {
+    layering: `Establish a clear background → surface → raised-surface → border → text → muted-text ladder from the shared ${colorMode || 'themed'} tokens so panels read as distinct depths, not one flat field. Avoid gray-on-gray where nothing separates.`,
+    colorUsage: 'Spend the shared accent on the single most important action/metric per view, not on everything; reserve semantic success/warning/error for real status; give selected / hover / focus distinct but on-palette treatments; keep muted/secondary text at a legible contrast; do not introduce random accent colours or oversaturated neon unless the brief calls for it.',
+    typography,
+    density,
+    surfaceComposition: 'Not every block needs a border + rounded card. Use flat groups, dividers, section headers, inset surfaces and borderless metric groups where they read better — avoid "card soup" where every element is an equally-prominent card. Give each screen one clearly dominant panel.',
+    dataViz: 'Where charts exist: label axes/series and give enough context to read the metric; use a coherent chart palette derived from the shared accent/tokens (never a default rainbow); choose a chart type that fits the data; size responsively; and place the chart in a titled panel integrated with the surface hierarchy — never a bare default-library example with meaningless numbers. Prefer the available recharts or lightweight SVG/CSS; do not add a charting dependency.',
+  };
+}
+
 const APP_ANTI_PATTERNS: string[] = [
   'A giant marketing hero or oversized headline as the first viewport of a functional screen.',
   'Excessive landing-page whitespace between operational elements.',
@@ -297,6 +351,7 @@ export function deriveAppVisualContract(
     const screenComposition = arch.screens.map((s) => compositionForScreen(s.id, s.role, shellType, appType));
     const imageStrategy = imageStrategyFor(appType);
     const componentQuality = componentQualityFor(appType, visualSystem?.colorMode);
+    const hierarchy = hierarchyFor(appType, visualSystem?.colorMode);
     const tokenReuse = visualSystem
       ? `Reuses the shared visual-system tokens (${visualSystem.colorMode} mode, roles: ${(visualSystem.colorRoles || []).map((r) => r.role).slice(0, 6).join(', ')}). App adapter adds only shell/nav/density/composition — no new colour or type tokens.`
       : 'Reuses the shared visual-system tokens as the brand/style source of truth; the app adapter adds only shell/nav/density/composition — no new colour or type tokens.';
@@ -314,6 +369,7 @@ export function deriveAppVisualContract(
       screenComposition,
       imageStrategy,
       componentQuality,
+      hierarchy,
       antiPatterns: APP_ANTI_PATTERNS,
       tokenReuse,
       notes,
@@ -344,6 +400,14 @@ export function renderAppShellBlock(contract: AppVisualContract | undefined): st
   for (const c of cq.controls) out.push(`  • ${c}`);
   out.push(`  States: ${cq.interactionStates}`);
   out.push(`  Surfaces: ${cq.surfaces}`);
+  const h = contract.hierarchy;
+  out.push('Visual hierarchy (use the shared brand tokens — do NOT invent a new palette):');
+  out.push(`  Layering: ${h.layering}`);
+  out.push(`  Colour usage: ${h.colorUsage}`);
+  out.push(`  Typography: ${h.typography}`);
+  out.push(`  Density: ${h.density}`);
+  out.push(`  Composition: ${h.surfaceComposition}`);
+  out.push(`  Data/charts: ${h.dataViz}`);
   out.push('Avoid these app UI anti-patterns:');
   for (const a of contract.antiPatterns) out.push(`  • ${a}`);
   return out;
