@@ -2258,8 +2258,13 @@ export function buildFrontendBuilderRequest(spec: FrontendBuildSpecification): s
     'changelog, Markdown commentary or apologies. Do not emit unused files. Do not duplicate all',
     'public copy in both a data file and component literals. Do not add large generated SVG paths,',
     'base64 data, dependency lockfiles or boilerplate comments. Keep files concise, reusable and',
-    'production-minded while FULLY implementing the specification (do not reduce sections, flatten',
-    'the design, remove motion/composition or lower the quality bar).',
+    ...(isApp ? [
+      'production-minded while FULLY implementing the specification (do not drop planned screens,',
+      'flatten navigation, remove screen state/interactions or lower the quality bar).',
+    ] : [
+      'production-minded while FULLY implementing the specification (do not reduce sections, flatten',
+      'the design, remove motion/composition or lower the quality bar).',
+    ]),
     '',
     'BEGIN_FRONTEND_BUILD_SPEC_JSON',
     json,
