@@ -2038,6 +2038,14 @@ export interface FrontendBuildSpecification {
   language: string;
   prompt: string;
 
+  /** Canonical pipeline build type. OPTIONAL and additive: absent ⇒ 'web' (every
+   *  spec derived before this field existed). When 'app', the app screen /
+   *  navigation / screen-depth / app-visual contracts are populated and the
+   *  scrolling page-composition contracts are intentionally omitted, so the
+   *  generation request, structural validation and acceptance analyzers branch
+   *  on this single field instead of re-deriving "app vs website" per stage. */
+  buildType?: import('@/lib/buildType').BuildType;
+
   identity: FrontendSpecIdentity;
   designSystem: FrontendSpecDesignSystem;
   architecture: FrontendSpecArchitecture;

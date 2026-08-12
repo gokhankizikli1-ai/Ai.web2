@@ -125,6 +125,11 @@ export interface WebBuildStep {
 
 export interface WebBuildPayload {
   source: 'web_build';
+  /** Canonical pipeline build type for this project. OPTIONAL and additive:
+   *  absent ⇒ a legacy website build (every payload persisted before this field
+   *  existed). Populated from the selected builder mode at build time and
+   *  round-tripped by save/reopen so a reopened project knows it was an app. */
+  buildType?: import('@/lib/buildType').BuildType;
   prompt: string;
   /** Strategy brief. Core fields + optional richer strategy from the model's
    *  Build Plan / Design Direction (see WebBuildBrief). All optional → old
@@ -1125,15 +1130,16 @@ function resolveBuildWebsiteLanguage(prompt: string, prev: WebBuildPayload | und
 
 export function buildWebBuildPayload(
   prompt: string, result: WebBuildResult, prev?: WebBuildPayload, lang?: string,
+  buildType?: import('@/lib/buildType').BuildType,
 ): WebBuildPayload {
   try {
-    return assembleWebBuildPayload(prompt, result, prev, lang);
+    return assembleWebBuildPayload(prompt, result, prev, lang, buildType);
   } catch (err) {
     if (typeof console !== 'undefined') {
       // eslint-disable-next-line no-console
       console.error('[WebBuild] package assembly failed — synthesizing a safe package', err);
     }
-    return synthesizeSafePayload(prompt, result, prev, lang);
+    return synthesizeSafePayload(prompt, result, prev, lang, buildType);
   }
 }
 
@@ -1147,9 +1153,15 @@ export function buildWebBuildPayload(
  */
 function assembleWebBuildPayload(
   prompt: string, result: WebBuildResult, prev?: WebBuildPayload, lang?: string,
+  buildType?: import('@/lib/buildType').BuildType,
 ): WebBuildPayload {
   const now = new Date().toISOString();
   const effLang = resolveBuildWebsiteLanguage(prompt, prev, lang);
+  // Resolve the canonical build type ONCE for this turn: an explicit selection
+  // wins; otherwise a revision inherits the previous payload's type; otherwise
+  // it is a website. This is the single place the app/web decision is fixed.
+  const effBuildType: import('@/lib/buildType').BuildType =
+    buildType ?? prev?.buildType ?? 'web';
   const inferred = inferWebsiteBrief(prompt, effLang);
 
   const backendBrief = extractBrief(result.sections);
@@ -1626,6 +1638,7 @@ function assembleWebBuildPayload(
         const frontendBuildSpec = deriveFrontendBuildSpecification({
           prompt,
           lang: effLang,
+          buildType: effBuildType,
           brief: artBrief,
           sectionItems,
           layoutPlan,
@@ -1819,6 +1832,7 @@ function assembleWebBuildPayload(
   };
   return {
     source: 'web_build',
+    buildType: effBuildType,
     prompt: prev?.prompt || prompt,
     // The Art-Director-enriched brief IS the persisted brief so the preview and
     // any recompute use the same art-direction palette + strategy fields.
@@ -1873,9 +1887,12 @@ function minimalProjectFiles(items: WebBuildSectionItem[], brief: WebBuildBrief)
  */
 function synthesizeSafePayload(
   prompt: string, result: WebBuildResult, prev?: WebBuildPayload, lang?: string,
+  buildType?: import('@/lib/buildType').BuildType,
 ): WebBuildPayload {
   const now = new Date().toISOString();
   const effLang = resolveBuildWebsiteLanguage(prompt, prev, lang);
+  const effBuildType: import('@/lib/buildType').BuildType =
+    buildType ?? prev?.buildType ?? 'web';
   const inferred = inferWebsiteBrief(prompt, effLang);
 
   let brief: WebBuildBrief;
@@ -1964,6 +1981,7 @@ function synthesizeSafePayload(
   };
   return {
     source: 'web_build',
+    buildType: effBuildType,
     prompt: prev?.prompt || prompt,
     brief: mergedBrief,
     sectionItems,

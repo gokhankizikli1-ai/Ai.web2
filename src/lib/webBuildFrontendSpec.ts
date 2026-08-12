@@ -25,6 +25,7 @@ import type { WebBuildLayoutPlan } from '@/lib/webBuildLayoutPlan';
 // Phase 12F — the shared product-intent authority (a leaf; no runtime cycle) for the
 // final specification contradiction guard.
 import { resolveProductIntent } from '@/lib/webBuildProductIntent';
+import { resolveBuildType } from '@/lib/buildType';
 import { stripLeadingFieldLabel } from '@/lib/webBuildFieldLabel';
 // PR #510 — deterministic Experience Architecture planner (a leaf; pure + fail-open; reads
 // only this assembled spec + the prompt, so it introduces no runtime import cycle).
@@ -53,6 +54,11 @@ import type {
 export interface FrontendBuildSpecInput {
   prompt: string;
   lang: string;
+  /** Canonical pipeline build type. Absent ⇒ 'web' (legacy behavior). When 'app'
+   *  the spec derives app screen/navigation contracts instead of the scrolling
+   *  page-composition contracts, so downstream generation/validation/acceptance
+   *  branch on `spec.buildType` rather than re-inferring from prompt text. */
+  buildType?: import('@/lib/buildType').BuildType;
   brief: WebBuildBrief;
   sectionItems: WebBuildSectionItem[];
   layoutPlan: WebBuildLayoutPlan;
@@ -257,6 +263,7 @@ function failedOpenSpec(input: FrontendBuildSpecInput): FrontendBuildSpecificati
     status: 'failed-open',
     language: str(input.lang) || 'en',
     prompt: str(input.prompt),
+    buildType: resolveBuildType(input.buildType),
     identity: { siteType: str(input.brief?.type) || 'website' },
     designSystem: {
       rejectedDirections: [], colorTokens: {}, compositionRules: [], surfaceRules: [],
@@ -687,6 +694,7 @@ export function deriveFrontendBuildSpecification(input: FrontendBuildSpecInput):
       status,
       language: lang,
       prompt: str(input.prompt),
+      buildType: resolveBuildType(input.buildType),
       identity,
       designSystem: guardedDesignSystem,
       architecture: finalArchitecture,

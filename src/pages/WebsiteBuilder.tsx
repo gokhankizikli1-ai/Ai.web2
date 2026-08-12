@@ -10,6 +10,7 @@ import WebBuildWelcome from '@/components/builder/WebBuildWelcome';
 import { WebBuildModeChips, WebBuildModePill } from '@/components/builder/WebBuildModeSelector';
 import WebBuildSidebar from '@/components/builder/WebBuildSidebar';
 import type { BuilderMode } from '@/lib/builderMode';
+import { buildTypeFromBuilderMode } from '@/lib/buildType';
 import { useLanguageStore } from '@/stores/languageStore';
 import {
   getWebBuildSession, getActiveWebBuildSession,
@@ -283,7 +284,7 @@ export default function WebsiteBuilder() {
       basePayload: null,
       execute: async (signal) => {
         const res = await generateWebBuild(trimmed, { signal, mode });
-        const planned = buildWebBuildPayload(trimmed, res, undefined, lang);
+        const planned = buildWebBuildPayload(trimmed, res, undefined, lang, buildTypeFromBuilderMode(mode));
         // PR #518 — FRESH BUILDS ONLY: when both flags are on, pass the rendered-visual
         // producer so the pipeline measures the generated files in the app-level hidden host
         // before final acceptance. `createMeasurementProducer` returns undefined when disabled
