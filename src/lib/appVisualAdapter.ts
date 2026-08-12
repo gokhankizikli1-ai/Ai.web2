@@ -280,26 +280,24 @@ function imageStrategyFor(appType: AppType): AppImageStrategy {
  *  the model builds themed controls without any new dependency. */
 function componentQualityFor(appType: AppType, colorMode: 'light' | 'dark' | 'mixed' | undefined): AppComponentQuality {
   const minimal = appType === 'utility';
-  const darkPopup = colorMode === 'dark'
-    ? ' In this dark app a control must NEVER open an unrelated light/white browser-default surface.'
-    : '';
+  const darkPopup = colorMode === 'dark' ? ' In this dark app, never open a light/white browser-default surface.' : '';
   const buildStrategy = minimal
-    ? 'Build controls from the shared design tokens. A raw native control is acceptable here, but its closed control must fully inherit the theme (surface, border, text, radius, focus ring) — no unstyled browser-default look.'
-    : `Build controls from the shared design tokens using the ALREADY-AVAILABLE primitives — Radix UI (@radix-ui/react-*), class-variance-authority, clsx, tailwind-merge, lucide-react — never add a dependency. Where a browser-native popup (select/menu) would break the premium theme, use a Radix listbox/menu so the OPEN surface is themed too; a raw native control is acceptable only when its trigger AND surface fully inherit the theme.${darkPopup}`;
+    ? 'Build controls from the shared tokens. A native control is fine here only if it fully inherits the theme (surface, border, text, radius, focus) — no unstyled browser-default look.'
+    : `Build controls from the shared tokens using the available primitives — Radix UI, class-variance-authority, clsx, tailwind-merge, lucide-react — never a new dependency. Where a native popup (select/menu) would break the theme, use a Radix listbox/menu so the OPEN surface is themed; a raw native control is fine only if its trigger AND surface inherit the theme.${darkPopup}`;
   const controls = [
-    'Buttons: distinct primary / secondary / ghost / destructive variants, exactly one dominant primary per view; consistent height, padding, radius; icon+label aligned — not every button styled as primary.',
-    'Inputs: themed field surface, label + placeholder hierarchy, focus ring, and an error/invalid state; height consistent with buttons.',
-    'Select / dropdown: a themed trigger AND a themed menu surface, with selected + active-option states, keyboard operation and dismiss — never a white browser-default popup inside a themed app.',
-    'Tabs / segmented controls: one unmistakable active state, hover/focus, consistent geometry, and content that actually switches.',
-    'Toggles / checkboxes / radios: clear on/off + disabled state, adequate target size, integrated with the theme.',
-    'Menus / popovers / modals / sheets: an elevated surface clearly separated from the canvas and derived from the app palette, with dismiss + focus handling — no random white surface in a dark UI.',
-    'Tables: row hover, a selected state when rows are selectable, integrated search/filter controls, and consistent row-action affordances.',
+    'Buttons: distinct primary/secondary/ghost/destructive, one dominant primary per view, consistent height/padding/radius — not all primary.',
+    'Inputs: themed surface, label/placeholder hierarchy, focus ring, error state, height matching buttons.',
+    'Select/dropdown: themed trigger AND menu surface, selected + active-option states, keyboard + dismiss — never a white browser-default popup.',
+    'Tabs/segmented: one unmistakable active state, hover/focus, consistent geometry, content that actually switches.',
+    'Toggles/checkboxes/radios: clear on/off + disabled, adequate target size, themed.',
+    'Menus/popovers/modals/sheets: an elevated themed surface separated from the canvas, with dismiss + focus — no white surface in a dark UI.',
+    'Tables: row hover, selected state when selectable, integrated search/filter, consistent row actions.',
   ];
   return {
     buildStrategy,
     controls,
-    interactionStates: 'Every interactive control expresses the states its role needs — hover, focus-visible ring, active/pressed, selected, disabled — applied CONSISTENTLY across the app (matching height, radius and focus treatment). Do not force every state onto simple controls.',
-    surfaces: 'Elevation and surface hierarchy are theme-derived and consistent: every dropdown, menu and dialog surface inherits the app palette rather than a browser default. Reserve borders + radius for real grouping — do not wrap every element in its own card.',
+    interactionStates: 'Each control shows the states its role needs — hover, focus-visible ring, active, selected, disabled — applied consistently (matching height/radius/focus). Do not force every state onto simple controls.',
+    surfaces: 'Elevation is theme-derived and consistent: dropdown/menu/dialog surfaces inherit the app palette (a dark app never opens a light surface). Reserve borders+radius for real grouping — no card-soup.',
   };
 }
 
@@ -313,24 +311,24 @@ function hierarchyFor(appType: AppType, colorMode: 'light' | 'dark' | 'mixed' | 
   const consumer = CONSUMER.has(appType);
   const utility = appType === 'utility';
   const density = utility
-    ? 'Minimal density: one clear task per view with generous surrounding space — never a dashboard grid.'
+    ? 'Minimal: one clear task per view with generous space — never a dashboard grid.'
     : functional
-      ? 'Information-dense but legible: tighter rows and compact controls for scanning, hierarchy carried by weight and spacing (not just more cards).'
+      ? 'Information-dense but legible: tighter rows and compact controls for scanning; hierarchy via weight and spacing, not just more cards.'
       : consumer
-        ? 'Breathable and expressive: larger touch targets, more whitespace, imagery/typography allowed to carry personality where it serves content.'
-        : 'Balanced density: comfortable spacing with a clear primary focus per screen.';
+        ? 'Breathable and expressive: larger targets, more whitespace, imagery/typography carrying personality where it serves content.'
+        : 'Balanced: comfortable spacing with a clear primary focus per screen.';
   const typography = utility
-    ? 'A restrained scale: one clear result/value emphasized, small supporting labels — no marketing headline.'
+    ? 'Restrained scale: emphasize the one result/value, small labels — no marketing headline.'
     : functional
-      ? 'Distinct steps for screen title, section heading, metric numerals, table/list text, labels and metadata — never one size/weight everywhere, and no oversized marketing headline in a functional app.'
-      : 'A confident title and section rhythm with expressive display type where it fits the product, plus legible body/labels — still not a marketing landing headline.';
+      ? 'Distinct steps for title, section heading, metric numerals, table/list text, labels, metadata — never one size/weight everywhere, and no oversized marketing headline in a functional app.'
+      : 'A confident title and section rhythm with expressive display type where it fits, plus legible body/labels — not a marketing headline.';
   return {
-    layering: `Establish a clear background → surface → raised-surface → border → text → muted-text ladder from the shared ${colorMode || 'themed'} tokens so panels read as distinct depths, not one flat field. Avoid gray-on-gray where nothing separates.`,
-    colorUsage: 'Spend the shared accent on the single most important action/metric per view, not on everything; reserve semantic success/warning/error for real status; give selected / hover / focus distinct but on-palette treatments; keep muted/secondary text at a legible contrast; do not introduce random accent colours or oversaturated neon unless the brief calls for it.',
+    layering: `Clear background → surface → raised → border → text → muted ladder from the shared ${colorMode || 'themed'} tokens so panels read as distinct depths — no gray-on-gray flatness.`,
+    colorUsage: 'Spend the accent on the one key action/metric per view; reserve semantic success/warning/error for real status; give selected/hover/focus distinct on-palette treatments; keep muted text legible; no random accents or neon unless the brief calls for it.',
     typography,
     density,
-    surfaceComposition: 'Not every block needs a border + rounded card. Use flat groups, dividers, section headers, inset surfaces and borderless metric groups where they read better — avoid "card soup" where every element is an equally-prominent card. Give each screen one clearly dominant panel.',
-    dataViz: 'Where charts exist: label axes/series and give enough context to read the metric; use a coherent chart palette derived from the shared accent/tokens (never a default rainbow); choose a chart type that fits the data; size responsively; and place the chart in a titled panel integrated with the surface hierarchy — never a bare default-library example with meaningless numbers. Prefer the available recharts or lightweight SVG/CSS; do not add a charting dependency.',
+    surfaceComposition: 'Not every block needs a bordered card — use flat groups, dividers, section headers and inset surfaces where they read better; avoid "card soup"; give each screen one dominant panel.',
+    dataViz: 'Charts: label axes/series with context; on-palette colours from the shared accent (no default rainbow); a chart type that fits the data; responsive; in a titled panel integrated with the hierarchy — never a bare default-library example with meaningless numbers. Use the available recharts or SVG/CSS; no charting dependency.',
   };
 }
 
@@ -339,9 +337,9 @@ function hierarchyFor(appType: AppType, colorMode: 'light' | 'dark' | 'mixed' | 
 /** The visual/motion polish contract. Deterministic and compact; it explicitly defers the
  *  functional wiring to the screen-depth authority so there is no duplicated interaction engine. */
 const INTERACTION_POLISH: AppInteractionPolish = {
-  motion: 'Add restrained, purposeful transitions ONLY where they aid comprehension — tab/route change, dropdown/menu/sheet open, hover elevation, button press, list selection, progress. Keep them short (~150–250ms), never block interaction, and respect prefers-reduced-motion. Do not animate everything or add long/distracting motion. Use CSS transitions or the available framer-motion — no new dependency.',
-  feedback: 'Every control that performs a local action shows a visible, HONEST consequence (saved/added/removed/updated, filtered results change, toggled state flips) — never a faked remote success. The functional wiring is owned by the screen-depth contract; this is the polished, visible result.',
-  navigation: 'The current route / active tab / active sidebar item is ALWAYS clearly indicated (not hover alone); nav items carry hover + focus-visible states; navigation adapts responsively (sidebar → drawer or bottom tabs at narrow widths). No dead nav.',
+  motion: 'Restrained, purposeful transitions only where they aid comprehension (tab/route/dropdown/sheet open, hover elevation, press, selection, progress) — short (~150–250ms), non-blocking, respecting prefers-reduced-motion. Don’t animate everything. Use CSS or the available framer-motion; no new dependency.',
+  feedback: 'Every local action shows a visible, honest consequence (saved/added/removed/updated, filtered results change, toggled state flips) — never a faked remote success. Functional wiring is the screen-depth contract.',
+  navigation: 'Always indicate the active route/tab/sidebar item (not hover alone); nav items have hover + focus-visible; nav adapts responsively (sidebar → drawer/bottom tabs). No dead nav.',
 };
 
 const APP_ANTI_PATTERNS: string[] = [
