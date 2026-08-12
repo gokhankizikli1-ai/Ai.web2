@@ -3,7 +3,8 @@ import { deriveFrontendBuildSpecification, type FrontendBuildSpecInput } from '@
 import { buildFrontendBuilderReviewRequest, fitReviewRequestUnderCap } from '@/lib/webBuildApi';
 import { buildReviewScopedSpecProjection } from '@/lib/webBuildQualityContext';
 import { deriveLayoutPlan } from '@/lib/webBuildLayoutPlan';
-import type { WebBuildBrief, WebBuildFile } from '@/lib/webBuildApi';
+import type { WebBuildBrief } from '@/lib/webBuildApi';
+import type { WebBuildFile } from '@/lib/webBuildPayload';
 import type { FrontendBuildSpecification } from '@/lib/webBuildAgents';
 
 function spec(prompt: string, buildType: 'app' | 'web'): FrontendBuildSpecification {

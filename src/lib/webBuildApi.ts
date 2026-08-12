@@ -3445,34 +3445,68 @@ export function buildFrontendBuilderReviewRequest(
   compact?: CompactSourceContext,
   authorityDigest?: Record<string, unknown>,
 ): string {
+  const isApp = spec.buildType === 'app';
+  const filesForReq = compact ? frontendFilesForRequest(compact.includedFiles) : frontendFilesForRequest(files);
+  const warnings = (deterministicWarnings && deterministicWarnings.length) ? deterministicWarnings.slice(0, 8) : undefined;
+  const prevIssues = (stage === 'post-repair' && previousReview)
+    ? (previousReview.issues || []).slice(0, 12).map((i) => ({ id: i.id, category: i.category, severity: i.severity, repairInstruction: i.repairInstruction }))
+    : undefined;
+  const compactNote = compact
+    ? '`files` contains the CHANGED files plus their directly-related supporting source; `omittedFilesManifest` lists the remaining UNCHANGED project files (path/type/size only) — do not penalize omitted files for not being shown.'
+    : undefined;
+
+  if (isApp) {
+    // Cost Phase 2 — CACHE-FRIENDLY app review: the leading prose is fully STABLE (no varying
+    // stage / compact note) and the input leads with the STABLE contract (spec projection +
+    // authority digest); the varying material (stage, files, findings, context note) trails. So
+    // the initial review and the post-repair review of the SAME build share a byte-identical
+    // leading prefix (prose + spec projection + digest), which OpenAI automatic prefix caching
+    // can reuse. No text is duplicated or inflated; the varying fields simply moved after the spec.
+    const appInput: Record<string, unknown> = {
+      task: 'frontend-design-review',
+      responseContract: 'frontend-review-v1',
+      specification: spec,
+      ...(authorityDigest ? { authorityDigest } : {}),
+      // ── varying region (after the stable contract) ──
+      stage,
+      files: filesForReq,
+    };
+    if (compact) appInput.omittedFilesManifest = compact.omittedManifest;
+    if (compactNote) appInput.contextNote = compactNote;
+    if (warnings) appInput.deterministicQualityWarnings = warnings;
+    if (prevIssues) appInput.previousReviewIssues = prevIssues;
+    return [
+      '[FRONTEND BUILDER REQUEST]',
+      '[FRONTEND REVIEW REQUEST]',
+      'Task: static design-quality review of an ALREADY-VALIDATED model-native project.',
+      'Review ONLY the specification and the source files below. You did NOT see a rendered',
+      'page, a screenshot, a compiled bundle or a browser — never claim you did. Return ONLY',
+      'the strict frontend-review-v1 JSON object (no Markdown fence, no prose before/after).',
+      'BUILD TYPE: app — this is a CLIENT-ROUTED MULTI-SCREEN APPLICATION, not a website. Judge it as an',
+      'app: assess application shell quality, per-screen completeness + data hierarchy, navigation clarity',
+      'and route reachability, real interactive state (no dead controls), and narrow/responsive usability.',
+      'Do NOT penalize it for lacking a marketing hero, long scrolling sections, testimonials or pricing —',
+      'those are WRONG for an app. Flag website-like marketing sections or a giant landing hero as defects.',
+      'The input `stage`, `files`, `contextNote` and `previousReviewIssues` follow the stable contract.',
+      'BEGIN_FRONTEND_BUILD_SPEC_JSON',
+      'BEGIN_FRONTEND_REVIEW_INPUT_JSON',
+      JSON.stringify(appInput),
+      'END_FRONTEND_REVIEW_INPUT_JSON',
+      'END_FRONTEND_BUILD_SPEC_JSON',
+    ].join('\n');
+  }
+
+  // ── WEB review — unchanged (byte-for-byte the pre-existing request). ──
   const input: Record<string, unknown> = {
     task: 'frontend-design-review',
     responseContract: 'frontend-review-v1',
     stage,
     specification: spec,
-    // App reviews receive the lean review-scoped spec projection (heavy generator authorities
-    // dropped) PLUS this bounded authority digest, so every acceptance-relevant obligation
-    // (accessibility, responsive, interactions, truth/claims, required obligations) is still
-    // present at a fraction of the size. Absent for web ⇒ the request is byte-for-byte unchanged.
-    ...(authorityDigest ? { authorityDigest } : {}),
-    // Owner-compact post-repair review: send only the changed files + their deterministic
-    // supporting closure as full source, plus a metadata-only manifest of the omitted unchanged
-    // files. When `compact` is absent the request is byte-for-byte the pre-existing full-source one.
-    files: compact ? frontendFilesForRequest(compact.includedFiles) : frontendFilesForRequest(files),
+    files: filesForReq,
   };
   if (compact) input.omittedFilesManifest = compact.omittedManifest;
-  // Phase 13B — bounded deterministic quality WARNINGS from the static validator
-  // (shallow-project / shallow-section / minimal-styles / repetitive-section-structure /
-  // internal-copy-leak / missing-hero-visual-layer). Signals only: the reviewer still
-  // judges independently and is never told to auto-pass or auto-fail on them.
-  if (deterministicWarnings && deterministicWarnings.length) {
-    input.deterministicQualityWarnings = deterministicWarnings.slice(0, 8);
-  }
-  if (stage === 'post-repair' && previousReview) {
-    input.previousReviewIssues = (previousReview.issues || []).slice(0, 12).map((i) => ({
-      id: i.id, category: i.category, severity: i.severity, repairInstruction: i.repairInstruction,
-    }));
-  }
+  if (warnings) input.deterministicQualityWarnings = warnings;
+  if (prevIssues) input.previousReviewIssues = prevIssues;
   return [
     '[FRONTEND BUILDER REQUEST]',
     '[FRONTEND REVIEW REQUEST]',
@@ -3480,13 +3514,6 @@ export function buildFrontendBuilderReviewRequest(
     'Review ONLY the specification and the source files below. You did NOT see a rendered',
     'page, a screenshot, a compiled bundle or a browser — never claim you did. Return ONLY',
     'the strict frontend-review-v1 JSON object (no Markdown fence, no prose before/after).',
-    ...(spec.buildType === 'app' ? [
-      'BUILD TYPE: app — this is a CLIENT-ROUTED MULTI-SCREEN APPLICATION, not a website. Judge it as an',
-      'app: assess application shell quality, per-screen completeness + data hierarchy, navigation clarity',
-      'and route reachability, real interactive state (no dead controls), and narrow/responsive usability.',
-      'Do NOT penalize it for lacking a marketing hero, long scrolling sections, testimonials or pricing —',
-      'those are WRONG for an app. Flag website-like marketing sections or a giant landing hero as defects.',
-    ] : []),
     ...(compact ? [
       'CONTEXT NOTE: `files` contains the CHANGED files plus their directly-related supporting',
       'source; `omittedFilesManifest` lists the remaining UNCHANGED project files (path/type/size',
@@ -3583,6 +3610,10 @@ export interface ReviewFitResult {
   specCharsFull?: number;
   specCharsProjected?: number;
   projectionReductionPct?: number;
+  /** Cache diagnostics (app) — the stable leading prefix (identical across a build's calls,
+   *  cacheable) vs the variable trailing payload (stage/files/findings). */
+  stablePrefixChars?: number;
+  variablePayloadChars?: number;
 }
 
 /** Phase 14L.2/14L.3/14L.4 — GENERIC deterministic fit of a structured `frontend_builder` request
@@ -3699,6 +3730,13 @@ export function fitReviewRequestUnderCap(
     result.specCharsFull = full;
     result.specCharsProjected = projected;
     result.projectionReductionPct = full > 0 ? Math.round(((full - projected) / full) * 100) : 0;
+    // The stable cacheable prefix ends where the varying region begins ("stage" — the first
+    // varying field after the spec projection + authority digest).
+    const idx = result.message.indexOf('"stage":');
+    if (idx > 0) {
+      result.stablePrefixChars = idx;
+      result.variablePayloadChars = result.message.length - idx;
+    }
   }
   return result;
 }
