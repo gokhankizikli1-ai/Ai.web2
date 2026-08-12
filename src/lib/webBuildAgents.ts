@@ -2131,6 +2131,18 @@ export interface FrontendBuildSpecification {
    *  absent ⇒ legacy. No new call. */
   executionObligations?: import('@/lib/webBuildExecutionObligations').ExecutionObligationRegistry;
 
+  /** Phase 2 (App Build) — the app SCREEN architecture: screen inventory (role /
+   *  user-job / entry conditions / primary info + action / data shape / relevant
+   *  lifecycle states), entry screen, relationships, shell and flows. Present ONLY
+   *  when buildType === 'app'; absent ⇒ a web build is byte-for-byte unchanged.
+   *  Deterministic; no model/network call; fail-open. */
+  appArchitecture?: import('@/lib/appBuildArchitecture').AppArchitectureContract;
+  /** Phase 2 (App Build) — the app NAVIGATION: route table, default route, pattern
+   *  (sidebar / tabs / stack / single), back behavior, deep-link identities and
+   *  router reuse. Reads appArchitecture; every route resolves to a declared screen.
+   *  Present ONLY when buildType === 'app'; absent ⇒ web build unchanged. */
+  navigation?: import('@/lib/appBuildArchitecture').NavigationContract;
+
   honestyRules: string[];
   sourceTrace: string[];
   missingInputs: string[];

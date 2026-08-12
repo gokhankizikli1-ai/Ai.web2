@@ -41,6 +41,7 @@ import { deriveVisualConceptContract } from '@/lib/webBuildVisualConcept';
 import { deriveExperienceIdentityContract } from '@/lib/webBuildExperienceIdentity';
 import { deriveMotionExecutionContract } from '@/lib/webBuildMotionExecution';
 import { deriveExecutionObligationRegistry } from '@/lib/webBuildExecutionObligations';
+import { deriveAppArchitectureContract, deriveNavigationContract } from '@/lib/appBuildArchitecture';
 import type {
   FrontendBuildSpecification, FrontendSpecSection, FrontendSpecImageSlot, FrontendSpecMotionLayer,
   FrontendSpecIdentity, FrontendSpecDesignSystem, FrontendSpecArchitecture, FrontendSpecAssetPlan,
@@ -927,6 +928,25 @@ export function deriveFrontendBuildSpecification(input: FrontendBuildSpecInput):
       });
       if (executionObligations) built.executionObligations = executionObligations;
     } catch { /* never block the build on obligation-registry derivation */ }
+
+    // Phase 2 (App Build) — for an APP build only, derive the app SCREEN architecture +
+    // NAVIGATION from the resolved identity + prompt intent + planned screen names. This
+    // is the app-specific planning authority that makes the multi-screen difference real
+    // (screens/roles/states/routes) instead of the web page/section model. Deterministic;
+    // no model/network call; fail-open. A web build never enters this branch, so the web
+    // spec is byte-for-byte unchanged.
+    if (buildType === 'app') {
+      try {
+        const appArchitecture = deriveAppArchitectureContract({
+          identity: built.identity,
+          prompt: built.prompt,
+          sectionNames: (built.architecture?.sections || []).map((s) => s.name || s.id),
+        });
+        built.appArchitecture = appArchitecture;
+        const navigation = deriveNavigationContract(appArchitecture);
+        if (navigation) built.navigation = navigation;
+      } catch { /* never block the build on app-architecture derivation */ }
+    }
 
     return built;
   } catch {
