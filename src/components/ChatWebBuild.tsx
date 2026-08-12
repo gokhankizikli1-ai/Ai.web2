@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import WebBuildConversation from '@/components/builder/WebBuildConversation';
 import type { BuilderMode } from '@/lib/builderMode';
+import { resolveBuildType } from '@/lib/buildType';
 import { useLanguageStore } from '@/stores/languageStore';
 import {
   saveWebBuildSession, getWebBuildSession, sessionIdOf,
@@ -329,7 +330,7 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
       reporter({ phase: 'planning', status: 'completed', detailRows: [{ label: 'sections', value: String(res.sections?.length ?? 0) }] });
 
       reporter({ phase: 'specification', status: 'active' });
-      const planned = buildWebBuildPayload(trimmed, res, undefined, lang);
+      const planned = buildWebBuildPayload(trimmed, res, undefined, lang, { buildType: resolveBuildType(mode) });
       const spec = planned.steps[planned.steps.length - 1]?.artifacts?.frontendBuildSpec;
       const specRows: WebBuildActivityDetailRow[] = [{ label: 'sections', value: String(planned.sectionItems?.length ?? spec?.architecture?.sections?.length ?? 0) }];
       if (spec?.language) specRows.unshift({ label: 'language', value: spec.language });

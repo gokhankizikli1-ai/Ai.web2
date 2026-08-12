@@ -202,6 +202,7 @@ function screenLooksSubstantive(content: string, expects: SubstanceSignal[]): bo
     result: /result|output|=\s*\{?\s*\w+\s*[+\-*/]|total|<output\b/i.test(c),
     action: /<button\b|onClick|role=["']button["']|<a\b|<Link\b/i.test(c),
     interactive: /<(input|select|textarea|button|a|Link)\b|onClick|onChange|onSubmit/i.test(c),
+    empty: /empty[- ]?state|EmptyState|<Empty\b|no (?:results|items|data)|nothing (?:here|yet)|no matches/i.test(c),
   };
   // A screen with any interactive control + more than a bare heading is substantive.
   const headingOnly = /<h[1-6][^>]*>[^<]*<\/h[1-6]>/i.test(c)
@@ -214,7 +215,8 @@ function screenLooksSubstantive(content: string, expects: SubstanceSignal[]): bo
     if ((e === 'metrics' || e === 'chart') && has.metric) return true;
     if (e === 'result-output' && (has.result || has.fields)) return true;
     if (e === 'primary-action' && has.action) return true;
-    if (e === 'empty-state') return true; // empty-state is optional evidence, never a block
+    // empty-state counts only when present in source; expecting it never auto-passes.
+    if (e === 'empty-state' && has.empty) return true;
   }
   // Fallback: any interactive control at all is enough to not be a shell.
   return has.interactive;
