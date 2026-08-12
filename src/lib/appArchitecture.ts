@@ -109,6 +109,19 @@ const lc = (s: unknown): string => (typeof s === 'string' ? s.toLowerCase() : ''
 const has = (hay: string, ...needles: string[]): boolean => needles.some((n) => hay.includes(n));
 const uniq = <T,>(xs: T[]): T[] => Array.from(new Set(xs));
 
+/** PascalCase component name for a screen id (deterministic). */
+export function screenComponentName(id: string): string {
+  const parts = (id || 'screen').split(/[^a-z0-9]+/i).filter(Boolean);
+  const pascal = parts.map((p) => p.charAt(0).toUpperCase() + p.slice(1)).join('') || 'Screen';
+  return /screen$/i.test(pascal) ? pascal : `${pascal}Screen`;
+}
+
+/** The canonical generated file path for a screen (single source of truth shared
+ *  by the output contract and the generation request). */
+export function screenFilePath(id: string): string {
+  return `src/screens/${screenComponentName(id)}.tsx`;
+}
+
 /** Route-safe id from a name (deterministic, ascii, hyphenated, bounded). */
 function toId(name: string): string {
   return (name || '')

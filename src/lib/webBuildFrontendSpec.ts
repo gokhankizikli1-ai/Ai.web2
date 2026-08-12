@@ -26,7 +26,7 @@ import type { WebBuildLayoutPlan } from '@/lib/webBuildLayoutPlan';
 // final specification contradiction guard.
 import { resolveProductIntent } from '@/lib/webBuildProductIntent';
 import { resolveBuildType } from '@/lib/buildType';
-import { deriveAppArchitectureContract } from '@/lib/appArchitecture';
+import { deriveAppArchitectureContract, screenFilePath } from '@/lib/appArchitecture';
 import { deriveNavigationContract } from '@/lib/appNavigation';
 import { deriveScreenDepthContract } from '@/lib/appScreenDepth';
 import { deriveAppVisualContract } from '@/lib/appVisualAdapter';
@@ -233,6 +233,45 @@ function buildOutputContract(sectionComponentFiles: string[]): FrontendSpecOutpu
     requirements: clean(OUTPUT_REQUIREMENTS, 24),
     forbiddenPatterns: clean(OUTPUT_FORBIDDEN, 24),
     successCriteria: clean(OUTPUT_SUCCESS, 16),
+  };
+}
+
+/* ── App output contract — a client-routed multi-SCREEN project (Phase 5). Each
+ *  planned screen is a required component file under src/screens/; there are NO
+ *  scrolling section-component files. Reuses the same validation machinery
+ *  (requiredFiles must exist, imports resolve) with app-shaped requirements. ── */
+const APP_OUTPUT_REQUIREMENTS: string[] = [
+  'Emit complete file contents for every file — no truncation.',
+  'Build a client-routed multi-screen app: configure react-router in src/App.tsx and render each screen from src/screens/.',
+  'Every planned screen exists as its own component file under src/screens/ and is reachable via its route.',
+  'Use valid relative imports; no missing required imports; no duplicate file paths.',
+  'No empty component bodies and no placeholder comments (e.g. "// TODO", "...").',
+  'Every interactive control has a real handler, updates state (useState/useReducer), and shows a visible consequence.',
+  'Render loading / empty / error states only where a screen actually shows data.',
+  'Accessible, semantic markup; the layout is usable at the narrow (phone) width with no overflow.',
+  'Respect prefers-reduced-motion for any animation.',
+  'Local, front-end-only behavior: never simulate real payments, emails, account creation or remote saves as succeeded.',
+];
+const APP_OUTPUT_SUCCESS: string[] = [
+  'The build compiles as a static React + TypeScript + Tailwind (Vite) app.',
+  'Navigation works: every nav control routes to a real screen; there are no dead links.',
+  'Each screen is complete for its role (real content + state), not a heading with empty cards.',
+  'The app looks like an application (shell + screens), not a scrolling marketing site in a phone frame.',
+];
+
+function buildAppOutputContract(screenComponentFiles: string[]): FrontendSpecOutputContract {
+  return {
+    format: 'frontend-files-v1',
+    framework: 'react',
+    language: 'typescript',
+    styling: 'tailwind-css',
+    requiredFiles: clean([...REQUIRED_FILES, ...screenComponentFiles], 24),
+    recommendedFiles: clean(['src/app/routes.tsx', 'src/components/AppShell.tsx', 'src/lib/designSystem.ts', 'src/data/appData.ts'], 16),
+    requiredSectionComponentFiles: [],
+    allowedExtensions: ['tsx', 'ts', 'css'],
+    requirements: clean(APP_OUTPUT_REQUIREMENTS, 24),
+    forbiddenPatterns: clean(OUTPUT_FORBIDDEN, 24),
+    successCriteria: clean(APP_OUTPUT_SUCCESS, 16),
   };
 }
 
@@ -778,6 +817,11 @@ export function deriveFrontendBuildSpecification(input: FrontendBuildSpecInput):
           if (navigation) built.navigation = navigation;
           const screenDepth = deriveScreenDepthContract(appArchitecture);
           if (screenDepth) built.screenDepth = screenDepth;
+          // Rebuild the output contract around the app SCREENS (each screen is a
+          // required component file; no scrolling section-component files), so the
+          // SAME validation machinery enforces app structure.
+          const screenFiles = appArchitecture.screens.map((s) => screenFilePath(s.id));
+          built.outputContract = buildAppOutputContract(screenFiles);
         }
       } catch { /* never block the build on app-architecture derivation */ }
     }
