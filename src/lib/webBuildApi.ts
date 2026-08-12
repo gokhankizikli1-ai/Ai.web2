@@ -3481,11 +3481,14 @@ export function buildFrontendBuilderReviewRequest(
     if (compactNote) appInput.contextNote = compactNote;
     if (warnings) appInput.deterministicQualityWarnings = warnings;
     if (prevIssues) appInput.previousReviewIssues = prevIssues;
+    const hasDigest = !!authorityDigest;
     return [
       '[FRONTEND BUILDER REQUEST]',
       '[FRONTEND REVIEW REQUEST]',
       'Task: static design-quality review of an ALREADY-VALIDATED model-native project.',
-      'Review ONLY the specification and the source files below. You did NOT see a rendered',
+      hasDigest
+        ? 'Review the specification, the authorityDigest AND the source files below. You did NOT see a rendered'
+        : 'Review ONLY the specification and the source files below. You did NOT see a rendered',
       'page, a screenshot, a compiled bundle or a browser — never claim you did. Return ONLY',
       'the strict frontend-review-v1 JSON object (no Markdown fence, no prose before/after).',
       'BUILD TYPE: app — this is a CLIENT-ROUTED MULTI-SCREEN APPLICATION, not a website. Judge it as an',
@@ -3493,6 +3496,16 @@ export function buildFrontendBuilderReviewRequest(
       'and route reachability, real interactive state (no dead controls), and narrow/responsive usability.',
       'Do NOT penalize it for lacking a marketing hero, long scrolling sections, testimonials or pricing —',
       'those are WRONG for an app. Flag website-like marketing sections or a giant landing hero as defects.',
+      // The lean specification intentionally omits the heavy generator authorities; `authorityDigest`
+      // carries their hard obligations so the review keeps full quality parity. Kept as STABLE prose
+      // (identical every stage) so the cache-friendly leading prefix is preserved.
+      ...(hasDigest ? [
+        'AUTHORITY DIGEST: `authorityDigest` is an AUTHORITATIVE, compact projection of the quality',
+        'obligations intentionally NOT repeated in the lean specification — accessibility, responsive',
+        'behavior, contrast, interaction requirements and shared visual/performance obligations. Treat',
+        'every obligation it carries as a REVIEW REQUIREMENT (flag violations of it exactly as you would',
+        'a specification violation); it is authoritative review input, never optional metadata.',
+      ] : []),
       'The input `stage`, `files`, `contextNote` and `previousReviewIssues` follow the stable contract.',
       'BEGIN_FRONTEND_BUILD_SPEC_JSON',
       'BEGIN_FRONTEND_REVIEW_INPUT_JSON',
