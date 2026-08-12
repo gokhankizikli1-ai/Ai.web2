@@ -149,6 +149,7 @@ export const de: Record<string, string> = {
   webBuildNoSources: 'keine Quellen verwendet',
   webBuildContractFailed: 'Korvix konnte keinen vollständigen, modellgeplanten Build vom Backend erhalten. Versuche es gleich noch einmal.',
   webBuildWebsiteLabel: 'Webseite',
+  webBuildAppLabel: 'App',
   // Sidebar specific
   workspaceHub: 'Workspace-Hub', explore: 'Entdecken', work: 'Arbeit', tools: 'Werkzeuge',
   moreTabs: 'Mehr', pinned: 'Angeheftet', yourChats: 'Ihre Chats',

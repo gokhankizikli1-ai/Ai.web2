@@ -57,6 +57,10 @@ export interface WebBuildActivityItem {
 export interface WebBuildActivityState {
   version: 'web-build-activity-v1';
   kind: WebBuildActivityKind;
+  /** The build type this timeline describes. Absent ⇒ 'web' (legacy). Drives
+   *  build-type-aware stage LABELS only — the stage IDs and state machine are
+   *  identical for web and app (no duplicate activity model). */
+  buildType?: import('@/lib/buildType').BuildType;
   items: WebBuildActivityItem[];
   final: WebBuildActivityFinal;
 }
@@ -134,6 +138,38 @@ export const ACTIVITY_TITLES: Record<string, L3> = {
   'revision-preview': { en: 'Preparing the updated preview', tr: 'Güncellenen önizleme hazırlanıyor', de: 'Aktualisierte Vorschau wird vorbereitet' },
 };
 
+/** App Build (buildType='app') LABEL overrides — only the stages whose web wording
+ *  ("website direction", "website strategy") is inaccurate for an app. Stages not
+ *  listed here fall back to the shared ACTIVITY_TITLES, so this is additive and the
+ *  web timeline is untouched. Stage IDs are identical (no duplicate state machine). */
+export const ACTIVITY_TITLES_APP: Record<string, L3> = {
+  research: { en: 'Researching the product direction', tr: 'Ürün yönü araştırılıyor', de: 'Produktrichtung wird recherchiert' },
+  planning: { en: 'Creating the app strategy', tr: 'Uygulama stratejisi oluşturuluyor', de: 'App-Strategie wird erstellt' },
+  specification: { en: 'Preparing the app specification', tr: 'Uygulama planı hazırlanıyor', de: 'App-Spezifikation wird vorbereitet' },
+  'visual-planning': { en: 'Planning screen architecture', tr: 'Ekran mimarisi planlanıyor', de: 'Bildschirmarchitektur wird geplant' },
+  'image-sourcing': { en: 'Sourcing visual assets', tr: 'Görsel öğeler bulunuyor', de: 'Visuelle Elemente werden beschafft' },
+  'frontend-generation': { en: 'Generating the React application', tr: 'React uygulaması oluşturuluyor', de: 'React-Anwendung wird generiert' },
+  'quality-review': { en: 'Reviewing application quality', tr: 'Uygulama kalitesi inceleniyor', de: 'App-Qualität wird geprüft' },
+};
+
+/** App override for the DETAIL labels that name a website concept. Additive. */
+export const ACTIVITY_DETAIL_LABELS_APP: Record<string, L3> = {
+  language: { en: 'App language', tr: 'Uygulama dili', de: 'App-Sprache' },
+  sections: { en: 'Planned screens', tr: 'Planlanan ekran', de: 'Geplante Bildschirme' },
+};
+
+/** Resolve the title triple for a stage, build-type aware (app override → web base). */
+export function activityTitleFor(stageId: string, buildType?: import('@/lib/buildType').BuildType): L3 | undefined {
+  if (buildType === 'app' && ACTIVITY_TITLES_APP[stageId]) return ACTIVITY_TITLES_APP[stageId];
+  return ACTIVITY_TITLES[stageId];
+}
+
+/** Resolve a detail-row label triple, build-type aware (app override → web base). */
+export function activityDetailLabelFor(labelKey: string, buildType?: import('@/lib/buildType').BuildType): L3 | undefined {
+  if (buildType === 'app' && ACTIVITY_DETAIL_LABELS_APP[labelKey]) return ACTIVITY_DETAIL_LABELS_APP[labelKey];
+  return ACTIVITY_DETAIL_LABELS[labelKey];
+}
+
 export const ACTIVITY_STATUS_LABELS: Record<WebBuildActivityStatus, L3> = {
   waiting: { en: 'Waiting', tr: 'Bekliyor', de: 'Wartet' },
   active: { en: 'Working', tr: 'Çalışıyor', de: 'Arbeitet' },
@@ -191,7 +227,7 @@ export function boundDetailRows(rows?: WebBuildActivityDetailRow[]): WebBuildAct
 }
 
 /* ── Initializers ──────────────────────────────────────────────────────────────── */
-function initState(kind: WebBuildActivityKind, stages: readonly StageDef[]): WebBuildActivityState {
+function initState(kind: WebBuildActivityKind, stages: readonly StageDef[], buildType?: import('@/lib/buildType').BuildType): WebBuildActivityState {
   const now = Date.now();
   const items: WebBuildActivityItem[] = stages.map((s, i) => ({
     id: s.id,
@@ -200,17 +236,17 @@ function initState(kind: WebBuildActivityKind, stages: readonly StageDef[]): Web
     status: i === 0 ? 'active' : 'waiting',
     startedAt: i === 0 ? now : undefined,
   }));
-  return { version: 'web-build-activity-v1', kind, items, final: 'running' };
+  return { version: 'web-build-activity-v1', kind, buildType, items, final: 'running' };
 }
 
 /** The truthful FRESH-build timeline (first stage already active on creation). */
-export function initBuildActivity(): WebBuildActivityState {
-  return initState('build', BUILD_STAGES);
+export function initBuildActivity(buildType?: import('@/lib/buildType').BuildType): WebBuildActivityState {
+  return initState('build', BUILD_STAGES, buildType);
 }
 
 /** The truthful REVISION timeline — no research/planning stages by design. */
-export function initRevisionActivity(): WebBuildActivityState {
-  return initState('revision', REVISION_STAGES);
+export function initRevisionActivity(buildType?: import('@/lib/buildType').BuildType): WebBuildActivityState {
+  return initState('revision', REVISION_STAGES, buildType);
 }
 
 /* ── Reducer ───────────────────────────────────────────────────────────────────── */

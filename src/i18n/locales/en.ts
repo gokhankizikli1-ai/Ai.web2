@@ -156,6 +156,7 @@ export const en: Record<string, string> = {
   webBuildNoSources: 'no sources used',
   webBuildContractFailed: 'Korvix could not get a complete model-planned build from the backend. Try again in a moment.',
   webBuildWebsiteLabel: 'Website',
+  webBuildAppLabel: 'App',
   // Sidebar specific
   workspaceHub: 'Workspace Hub', explore: 'Explore', work: 'Work', tools: 'Tools',
   moreTabs: 'More', pinned: 'Pinned', yourChats: 'Your chats',

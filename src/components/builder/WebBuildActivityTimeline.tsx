@@ -4,9 +4,10 @@ import { Check, AlertCircle, ChevronDown } from 'lucide-react';
 import { useLanguageStore } from '@/stores/languageStore';
 import type { Language } from '@/stores/languageStore';
 import {
-  ACTIVITY_TITLES, ACTIVITY_DETAIL_LABELS,
+  activityTitleFor, activityDetailLabelFor,
   type WebBuildActivityState, type WebBuildActivityItem,
 } from '@/lib/webBuildActivity';
+import type { BuildType } from '@/lib/buildType';
 
 /**
  * Web Build ACTIVITY WORKSTREAM (Phase 13H.1) — a CONVERSATIONAL, Claude/Kimi-style agent
@@ -61,6 +62,17 @@ const DONE_TITLES: Record<string, L3> = {
   'revision-preview': { en: 'Updated preview prepared', tr: 'Güncellenen önizleme hazırlandı', de: 'Aktualisierte Vorschau vorbereitet' },
 };
 
+/** App Build completed-line overrides (additive; only the web-worded stages). */
+const DONE_TITLES_APP: Record<string, L3> = {
+  research: { en: 'Product direction researched', tr: 'Ürün yönü araştırıldı', de: 'Produktrichtung recherchiert' },
+  planning: { en: 'App strategy created', tr: 'Uygulama stratejisi oluşturuldu', de: 'App-Strategie erstellt' },
+  specification: { en: 'App specification prepared', tr: 'Uygulama planı hazırlandı', de: 'App-Spezifikation vorbereitet' },
+  'frontend-generation': { en: 'React application generated', tr: 'React uygulaması oluşturuldu', de: 'React-Anwendung generiert' },
+  'quality-review': { en: 'Application quality reviewed', tr: 'Uygulama kalitesi incelendi', de: 'App-Qualität geprüft' },
+};
+const doneTitleFor = (stageId: string, buildType?: BuildType): L3 | undefined =>
+  (buildType === 'app' && DONE_TITLES_APP[stageId]) ? DONE_TITLES_APP[stageId] : DONE_TITLES[stageId];
+
 /** Format a bounded duration, localized: "3m 18s" / "3 dk 18 sn" / "3 Min 18 Sek". */
 function formatDuration(ms: number, lang: Language): string {
   const total = Math.max(0, Math.round(ms / 1000));
@@ -96,19 +108,20 @@ function Marker({ kind, reducedMotion }: { kind: 'active' | 'completed' | 'faile
 /** One conversational activity line: a marker + a state-aware sentence, with an optional
  *  inline (indented, card-less) detail expansion. */
 function Line({
-  item, lang, now, open, onToggle, reducedMotion, neutral, animate,
+  item, lang, now, open, onToggle, reducedMotion, neutral, animate, buildType,
 }: {
   item: WebBuildActivityItem; lang: Language; now: number;
   open: boolean; onToggle: () => void; reducedMotion: boolean; neutral: boolean; animate: boolean;
+  buildType?: BuildType;
 }) {
   const isActive = item.status === 'active' && !neutral;
   const isCompleted = item.status === 'completed';
   const isFailed = item.status === 'failed';
   const markerKind = isCompleted ? 'completed' : isFailed ? 'failed' : isActive ? 'active' : 'neutral';
 
-  const activeTitle = pick(ACTIVITY_TITLES[item.titleKey], lang, item.titleKey);
+  const activeTitle = pick(activityTitleFor(item.titleKey, buildType), lang, item.titleKey);
   const title = isCompleted
-    ? pick(DONE_TITLES[item.id], lang, activeTitle)
+    ? pick(doneTitleFor(item.id, buildType), lang, activeTitle)
     : isActive
       ? `${activeTitle}…`
       : activeTitle;
@@ -154,7 +167,7 @@ function Line({
                 <div className="mt-1 space-y-0.5 border-l border-white/[0.08] pl-2.5">
                   {item.detailRows!.map((r, i) => (
                     <div key={i} className="flex gap-1.5 text-[11.5px] leading-relaxed">
-                      <span className="text-[#64748B]">{pick(ACTIVITY_DETAIL_LABELS[r.label], lang, r.label)}:</span>
+                      <span className="text-[#64748B]">{pick(activityDetailLabelFor(r.label, buildType), lang, r.label)}:</span>
                       <span className="min-w-0 break-words text-[#94A3B8]">{r.value}</span>
                     </div>
                   ))}
@@ -210,6 +223,7 @@ export default function WebBuildActivityTimeline({ state, startedAt, endedAt, va
             reducedMotion={reducedMotion}
             neutral={neutral}
             animate={variant === 'live'}
+            buildType={state.buildType}
           />
         ))}
       </AnimatePresence>

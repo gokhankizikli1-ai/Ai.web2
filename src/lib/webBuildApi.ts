@@ -908,12 +908,22 @@ export function buildWebBuildRequest(
   idea: string,
   opts?: { revise?: boolean; previousReply?: string; mode?: BuilderMode | null },
 ): string {
+  // buildType='app' gets a fully APP-framed planning prompt (screens/navigation/
+  // flows/state) instead of the website strategy prompt. The [WEB BUILD REQUEST]
+  // header stays (it is the backend planning-mode selector, not design vocabulary),
+  // and the parser-required H2 headers stay, but the persona, scope and every design
+  // instruction are app-oriented — no website/hero/section-architecture/conversion
+  // framing reaches the model. Web builds are byte-for-byte unchanged.
+  const isApp = opts?.mode === 'app';
   const lines: string[] = ['[WEB BUILD REQUEST]'];
   // Selected build mode is hidden context — it shapes what gets built without
-  // ever appearing in the user's message or the persisted prompt.
-  const modeCtx = buildModeContext(opts?.mode);
-  if (modeCtx) lines.push(`BUILD CONTEXT: ${modeCtx}`, '');
-  if (opts?.revise) {
+  // ever appearing in the user's message or the persisted prompt. For an APP build
+  // the whole prompt below is app-framed, so the one-line context is redundant.
+  if (!isApp) {
+    const modeCtx = buildModeContext(opts?.mode);
+    if (modeCtx) lines.push(`BUILD CONTEXT: ${modeCtx}`, '');
+  }
+  if (opts?.revise && !isApp) {
     lines.push(
       'This is a REVISION of an existing website. Apply ONLY the change the user asks for',
       'and keep every other section exactly as it was. Re-output the full build with the',
@@ -929,7 +939,7 @@ export function buildWebBuildRequest(
       lines.push('', 'PREVIOUS BUILD (preserve unless the change touches it):', opts.previousReply);
     }
     lines.push('', `Requested change: ${idea}`);
-  } else {
+  } else if (!isApp) {
     lines.push(
       'You are a SENIOR Website Strategy, UX Architecture and Conversion Copy Director.',
       'Produce the complete PLANNING package for the idea below by REASONING FROM THE IDEA',
@@ -1032,6 +1042,115 @@ export function buildWebBuildRequest(
       '',
       `Idea: ${idea}`,
     );
+  } else if (opts?.revise) {
+    // APP revision — app-framed, screens/flows (never website/sections).
+    lines.push(
+      'This is a REVISION of an existing multi-screen APPLICATION. Apply ONLY the change the',
+      'user asks for and keep every other screen exactly as it was. Re-output the full build with',
+      'the targeted screen(s)/flow updated. Keep the same premium bar: real screen content, working',
+      'navigation and honest local state — never downgrade a screen to generic filler.',
+      'SCOPE stays APPLICATION + FRONT-END ONLY: never add a real backend, AI runtime, database,',
+      'payments, authentication or real search — interactive surfaces are local, front-end-only',
+      'samples. Preserve the App Experience Plan fields (app experience model, screen model,',
+      'navigation model, app shell, primary flow, state model) unless the change explicitly alters them.',
+    );
+    if (opts.previousReply) {
+      lines.push('', 'PREVIOUS BUILD (preserve unless the change touches it):', opts.previousReply);
+    }
+    lines.push('', `Requested change: ${idea}`);
+  } else {
+    // APP fresh planning — a client-routed, multi-SCREEN application. Keeps the same six
+    // parser H2 headers and the brief label tokens, but every persona/scope/design decision
+    // is app-oriented (screens, routes, navigation, flows, state) with NO website/hero/
+    // scrolling-section/conversion assumptions.
+    lines.push(
+      'You are a SENIOR Product / Application Strategy, UX Architecture and Product Copy Director.',
+      'Produce the complete PLANNING package for the APP idea below by REASONING FROM THE IDEA',
+      'ITSELF, not from a fixed template. Two different app ideas must produce genuinely different',
+      'screen architecture, navigation and product decisions because their strategy differs.',
+      '',
+      'PLANNING ONLY: you are NOT writing code here. Do NOT output React, Tailwind, file paths',
+      '(src/..., .tsx), code fences, or any implementation source. A separate dedicated Frontend',
+      'Builder generates the real multi-screen application afterward from THIS plan, so your job is',
+      'to make every decision it needs. Do NOT emit a "## Frontend Code" section.',
+      '',
+      'SCOPE, APPLICATION + FRONT-END ONLY: plan a CLIENT-ROUTED, MULTI-SCREEN application',
+      '(screens, routes, navigation, stateful flows) — NOT a scrolling marketing website and NOT a',
+      'landing page. Never a real backend, AI runtime, database, payments, authentication or real',
+      'search — interactive surfaces are LOCAL, front-end-only samples, never a claim that the',
+      'product is actually running.',
+      '',
+      'RESEARCH: Use the trusted [BUILD INTELLIGENCE] context Korvix supplies when present, and',
+      'fold real findings into "Strategy insight". When it is absent, reason from your own',
+      'knowledge and label it "Strategy insight". Never invent URLs, sources, competitors,',
+      'statistics, prices, logos or testimonials, and never claim you browsed or researched.',
+      '',
+      'OUTPUT: use EXACTLY these six H2 sections, in THIS order, and NO other H2 sections. Inside',
+      'them use these EXACT labeled fields, ONE concise line each (the parser depends on the',
+      'labels). Be specific but compact; do not repeat the same decision across sections.',
+      '',
+      '## Design Thinking Plan',
+      'A VISIBLE structured design decision (NOT hidden reasoning). Name CONCRETE choices; banned',
+      'as a whole decision: "modern premium", "clean", "sleek", "user friendly". Reject at least',
+      'two plausible-but-wrong directions (incl. the default template trap). EXACT labels, one per line:',
+      'Design thesis: <one sentence: the real identity of the app>',
+      'Audience decision: <who uses it and the primary job they open it to do>',
+      'First impression: <what the first SCREEN should feel like, concrete, not "premium">',
+      'Selected visual direction: <a SPECIFIC visual direction, not "modern premium">',
+      'Rejected directions: <2-3 directions you rejected and WHY, incl. the default template trap>',
+      'App shell decision: <sidebar / bottom tabs / top nav / stacked — and why it fits this app>',
+      'Screen rhythm decision: <how screens differ in density/layout so the app does not feel templated>',
+      'Primary workspace surface: <the main operational screen the user lives in, and why>',
+      'Palette decision: <specific palette family/intent and why>',
+      'Typography decision: <specific type mood and hierarchy>',
+      'Template traps to avoid: <exact traps, e.g. a giant marketing hero on a functional screen>',
+      'Differentiation move: <the ONE thing that makes this app not feel templated>',
+      'Quality bar: <what would make this feel Linear / Height / Notion-level>',
+      '',
+      '## Build Plan',
+      'App type: <the kind of app, e.g. CRM, analytics dashboard, fitness app, booking app, utility>',
+      'Core idea: <one line: what this app is>',
+      'Audience: <who uses it>',
+      'User intent: <the primary job the user opens the app to do>',
+      'Primary goal: <the single most important user outcome>',
+      'Strategy insight: <the key insight that shapes the app>',
+      'Key flows: <the 1-3 primary flows through the app>',
+      'Primary action: <the single most important in-app action>',
+      '',
+      '## Design Direction',
+      'Visual mood: <...>',
+      'Layout logic: <how the app shell + screens are organized and why>',
+      'Typography direction: <heading/body personality>',
+      'Color direction: <palette intent>',
+      'Visual metaphor: <the core visual idea>',
+      'Motion direction: <what animates and why, conceptual, not code>',
+      'Responsive behavior: <how it adapts across desktop / tablet / narrow (phone) widths>',
+      '-- APP EXPERIENCE PLAN -- decide from THIS idea (application + front-end only, never a real',
+      '   backend/AI/db/payments/search). EXACT labels, one per line:',
+      'App experience model: <dashboard app | list-detail app | workspace app | tracker app | browse app | utility app>',
+      'Screen model: <the screens this app needs, as a short list>',
+      'Primary experience: <what the main action opens/does INSIDE the app, and why>',
+      'App shell: <sidebar | bottom-tabs | top-nav | stacked — the top-level navigation>',
+      'Navigation model: <tab navigation | sidebar navigation | stack/drill-down | modal/sheet flows>',
+      'State model: <the key local UI state the app holds, e.g. selected item, filter, form, saving>',
+      'Primary flow: <the main screen-to-screen path, e.g. list -> detail -> edit>',
+      '-- APP ENTRY -- how the user enters the app (front-end only). EXACT labels, one per line:',
+      'Default screen: <the screen the app opens on>',
+      'Entry conditions: <what the user sees first / any onboarding step, or "none">',
+      'Primary entry action: <label + action, e.g. "Open a deal -> Deal Detail">',
+      '',
+      '## Page Sections -- these are the app SCREENS (each a routed view, NOT a scrolling page',
+      '   section). Normally 3-8 screens; fewer for a small utility, more for a rich tool. Each as',
+      '   `- <screen-id>: one or two short sentences on the screen job`. Stable kebab-case ids.',
+      '## Generated Copy -- specific, in-product copy per screen using `### <screen-id>` subheadings:',
+      '   screen title, key labels, primary/secondary action labels, empty-state text. ONLY the copy',
+      '   the app actually needs. Never generic filler (e.g. "Get started", "Welcome").',
+      '## Next Steps -- at most 4 concrete follow-ups the user can ask for.',
+      '',
+      'Write ALL copy in the same language as the idea, natural and fluent.',
+      '',
+      `Idea: ${idea}`,
+    );
   }
   return lines.join('\n');
 }
@@ -1049,13 +1168,72 @@ export function buildWebBuildRepairRequest(
   idea: string,
   previousReply: string,
   parse?: WebBuildParseDiagnostics,
+  mode?: BuilderMode | null,
 ): string {
-  const missing = parse?.canonicalSectionsMissing?.length
-    ? parse.canonicalSectionsMissing.join(', ')
-    : 'the Website Experience Plan fields, Page Sections and Generated Copy';
   // Phase 9B-2A: a focused, compressed repair prompt (smaller than a full second
   // generation) — it targets the missing contract, not a whole re-explanation.
   const prev = (previousReply || '').trim().slice(0, 2000);
+  const isApp = mode === 'app';
+  // APP strict repair — app-framed (screens/navigation/flows/state). It must NOT
+  // reintroduce website persona / hero / Website Experience Plan / conversion journey
+  // / landing-page scope, which would overwrite an app-framed plan. Keeps the same
+  // parser-required H2 headers. Web repair (below) is byte-for-byte unchanged.
+  if (isApp) {
+    const missingApp = parse?.canonicalSectionsMissing?.length
+      ? parse.canonicalSectionsMissing.join(', ')
+      : 'the App Experience Plan fields, Page Sections (app screens) and Generated Copy';
+    return [
+      '[WEB BUILD REQUEST]',
+      '[WEB BUILD PLANNING REPAIR REQUEST]',
+      'You are a SENIOR Product / Application Strategy & UX Architecture Director. Your',
+      'previous response did not satisfy the App Build PLANNING contract. Re-output the',
+      'complete model-planned package now — no explanation, no summary, no apology.',
+      'PLANNING ONLY: do NOT output React, Tailwind, file paths or code fences, and do NOT',
+      'emit a "## Frontend Code" section — the dedicated Frontend Builder generates code later.',
+      'This is a CLIENT-ROUTED, MULTI-SCREEN APPLICATION (screens, routes, navigation, stateful',
+      'flows) — NOT a website and NOT a landing page.',
+      'REQUIRED H2 sections, in this order (exactly these six, no others):',
+      '## Design Thinking Plan',
+      '## Build Plan',
+      '## Design Direction',
+      '## Page Sections',
+      '## Generated Copy',
+      '## Next Steps',
+      '',
+      '## Design Thinking Plan comes FIRST — a VISIBLE structured plan (NOT hidden reasoning)',
+      'with these EXACT labels, one per line, each a CONCRETE choice: "Design thesis:",',
+      '"Audience decision:", "First impression:", "Selected visual direction:",',
+      '"Rejected directions:", "App shell decision:", "Screen rhythm decision:",',
+      '"Primary workspace surface:", "Palette decision:", "Typography decision:",',
+      '"Template traps to avoid:", "Differentiation move:", "Quality bar:". No vague final',
+      'decisions ("modern premium", "clean", "sleek", "professional"). Reject ≥2 concrete',
+      'directions incl. the default template trap (e.g. a giant marketing hero on a functional',
+      'screen, or an endless grid of identical cards).',
+      '',
+      'Inside ## Build Plan / ## Design Direction include the EXACT labels, one per line:',
+      'App Experience Plan — "App experience model:", "Screen model:", "Primary experience:",',
+      '"App shell:", "Navigation model:", "State model:", "Primary flow:".',
+      'App Entry — "Default screen:", "Entry conditions:", "Primary entry action:".',
+      '',
+      'MOST IMPORTANT: a real ## Page Sections listing the app SCREENS (each a routed view,',
+      'NOT a scrolling page section) + specific ## Generated Copy per screen (in-product copy,',
+      'never generic filler). Output NO source code.',
+      '',
+      `Previously missing/invalid: ${missingApp}.`,
+      'SCOPE: APPLICATION + FRONT-END ONLY — no real backend, AI runtime, database, payments,',
+      'authentication or real search; interactive surfaces are local, client-side simulations',
+      "from sample data. Never fabricate metrics/logos/testimonials/prices/sources/compliance.",
+      "Write ALL copy in the idea's language.",
+      '',
+      `Idea: ${idea}`,
+      '',
+      'PREVIOUS INVALID REPLY (do not repeat its mistakes — output the full package):',
+      prev,
+    ].join('\n');
+  }
+  const missing = parse?.canonicalSectionsMissing?.length
+    ? parse.canonicalSectionsMissing.join(', ')
+    : 'the Website Experience Plan fields, Page Sections and Generated Copy';
   return [
     '[WEB BUILD REQUEST]',
     // Phase 13E — marks a STRICT PLANNING REPAIR so the backend runs ZERO research passes
@@ -1125,9 +1303,69 @@ export function buildWebBuildDesignPlanRepairRequest(
   idea: string,
   firstReply: string,
   diagnostics?: WebBuildParseDiagnostics,
+  mode?: BuilderMode | null,
 ): string {
   const weak = (diagnostics?.weakDesignPlanWarnings || []).slice(0, 6);
   const prev = (firstReply || '').trim().slice(0, 3500);
+  const isApp = mode === 'app';
+  // APP design-plan quality nudge — app-framed. (For app this path is currently
+  // unreachable because an app plan never satisfies the WEP-gated full contract that
+  // triggers the nudge; kept app-framed as defense-in-depth so no fallback can ever
+  // reintroduce website vocabulary.) Web nudge (below) is byte-for-byte unchanged.
+  if (isApp) {
+    return [
+      '[WEB BUILD REQUEST]',
+      '[WEB BUILD DESIGN PLAN REPAIR REQUEST]',
+      'You are a SENIOR Product / Application Strategy & UX Architecture Director. Your',
+      'previous response met the basic PLANNING contract, but its `## Design Thinking Plan`',
+      'did not meet the DESIGN-QUALITY bar. Re-output the COMPLETE build package again for',
+      'the SAME app idea, in the SAME language, with the SAME scope and honesty rules — but',
+      'make the Design Thinking Plan genuinely CONCRETE this time.',
+      '',
+      weak.length ? `Weaknesses detected: ${weak.join('; ')}.` : 'The plan read as a generic template plan.',
+      '',
+      'Keep these EXACT H2 sections in this order (the parser depends on them):',
+      '## Design Thinking Plan',
+      '## Build Plan',
+      '## Design Direction',
+      '## Page Sections',
+      '## Generated Copy',
+      '## Next Steps',
+      '',
+      'The `## Design Thinking Plan` MUST use these EXACT labels, one per line, each a',
+      'CONCRETE choice — NOT a vague phrase: "Design thesis:", "Audience decision:",',
+      '"First impression:", "Selected visual direction:", "Rejected directions:",',
+      '"App shell decision:", "Screen rhythm decision:", "Primary workspace surface:",',
+      '"Palette decision:", "Typography decision:", "Template traps to avoid:",',
+      '"Differentiation move:", "Quality bar:".',
+      '',
+      'HARD REQUIREMENTS:',
+      '- Rejected directions: name AT LEAST 2 specific directions you are NOT taking, and WHY,',
+      '  incl. the default template trap (e.g. a giant marketing hero on a functional screen).',
+      '- App shell decision: a specific shell (sidebar / bottom tabs / top nav / stacked) and why.',
+      '- Screen rhythm decision: how screens differ in density/layout so the app is not templated.',
+      '- Primary workspace surface: the main operational screen the user lives in.',
+      '- Palette / Typography decisions: specific family/mood, not "nice colors" / "clean fonts".',
+      '- Differentiation move: the ONE concrete thing that makes this app not feel templated.',
+      '',
+      'BANNED as a FINAL decision: "modern premium", "clean", "sleek", "user friendly",',
+      '"professional", "polished". Replace any of these with specifics.',
+      '',
+      'Keep a real ## Page Sections listing the app SCREENS (each a routed view, NOT a scrolling',
+      'section) and specific ## Generated Copy per screen (never generic filler).',
+      'PLANNING ONLY: do NOT output React, Tailwind, file paths or code fences, and do NOT',
+      'emit a "## Frontend Code" section — the dedicated Frontend Builder generates code later.',
+      '',
+      'SCOPE stays APPLICATION + FRONT-END ONLY: no real backend, AI runtime, database, payments,',
+      'authentication or real search. Never fabricate metrics, logos, testimonials, prices,',
+      'sources or compliance claims.',
+      '',
+      `Idea: ${idea}`,
+      '',
+      'PREVIOUS REPLY (keep what is good; strengthen the Design Thinking Plan):',
+      prev,
+    ].join('\n');
+  }
   return [
     '[WEB BUILD REQUEST]',
     // Phase 13E — marks a DESIGN-PLAN quality repair so the backend runs ZERO research passes.
@@ -1776,6 +2014,16 @@ export async function generateWebBuild(
     // Revisions build on an already-validated site → keep tolerant behavior.
     if (opts?.revise) return first;
 
+    // APP builds plan in APP vocabulary (screens/navigation/flows/state) and therefore do
+    // NOT emit the website "Website Experience Plan" labels the full WEB planning contract
+    // requires. Accept a PREVIEW-VIABLE first app attempt directly (same call count as web,
+    // NO forced strict-repair round-trip) rather than failing the website-shaped contract.
+    // A genuinely thin app plan (not preview-viable) still falls through to the one repair.
+    const isApp = opts?.mode === 'app';
+    if (isApp && !isModelPlanningContractEnough(first) && isPreviewViableStrictRepair(first)) {
+      return first;
+    }
+
     // A fresh build that already cleared the PLANNING contract is preview-viable —
     // the Preview renders from the planning/copy sections; Frontend Code is a bonus
     // (Phase 6D). Phase 9B-1: nudge a WEAK Design Thinking Plan with EXACTLY ONE
@@ -1797,7 +2045,7 @@ export async function generateWebBuild(
       let dpRepaired: WebBuildResult | undefined;
       try {
         dpRepaired = refineShape(parseWebBuildResult(
-          await callBackend(buildWebBuildDesignPlanRepairRequest(trimmed, first.reply, first.parseDiagnostics), 'design-plan-repair'),
+          await callBackend(buildWebBuildDesignPlanRepairRequest(trimmed, first.reply, first.parseDiagnostics, opts?.mode), 'design-plan-repair'),
           { revise: false },
         ));
       } catch (err) {
@@ -1839,7 +2087,7 @@ export async function generateWebBuild(
     let repaired: WebBuildResult;
     try {
       repaired = refineShape(parseWebBuildResult(
-        await callBackend(buildWebBuildRepairRequest(trimmed, first.reply, first.parseDiagnostics), 'strict-repair'),
+        await callBackend(buildWebBuildRepairRequest(trimmed, first.reply, first.parseDiagnostics, opts?.mode), 'strict-repair'),
         { revise: false },
       ));
     } catch (err) {
@@ -1867,9 +2115,11 @@ export async function generateWebBuild(
       // passed: planningContractPresent stays false and the gap is recorded.
       if (isPreviewViableStrictRepair(repaired)) {
         const firstQuality = isRepairableModelPartial(first) ? 'model-partial' : 'frontend-fallback';
-        const gap = !rd?.hasWebsiteExperiencePlanFields
-          ? 'missing Website Experience Plan labels'
-          : `planning contract incomplete (missing ${rd?.canonicalSectionsMissing.join(', ') || 'fields'})`;
+        const gap = isApp
+          ? 'app plan uses app experience labels (website experience plan intentionally absent)'
+          : !rd?.hasWebsiteExperiencePlanFields
+            ? 'missing Website Experience Plan labels'
+            : `planning contract incomplete (missing ${rd?.canonicalSectionsMissing.join(', ') || 'fields'})`;
         // eslint-disable-next-line no-console
         console.warn(`[WebBuild] strict repair below the full planning contract but PREVIEW-VIABLE — accepting honestly (${gap}).`);
         return {
@@ -1919,7 +2169,7 @@ export async function generateWebBuild(
     let dpRepaired2: WebBuildResult | undefined;
     try {
       dpRepaired2 = refineShape(parseWebBuildResult(
-        await callBackend(buildWebBuildDesignPlanRepairRequest(trimmed, repairedPlanned.reply, repairedPlanned.parseDiagnostics), 'design-plan-repair'),
+        await callBackend(buildWebBuildDesignPlanRepairRequest(trimmed, repairedPlanned.reply, repairedPlanned.parseDiagnostics, opts?.mode), 'design-plan-repair'),
         { revise: false },
       ));
     } catch (err) {
