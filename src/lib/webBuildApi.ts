@@ -34,7 +34,7 @@ import { renderResearchDirectionBlock } from '@/lib/webBuildResearchDirection';
 import { renderCompositionBlock } from '@/lib/webBuildComposition';
 import { renderVisualSystemBlock } from '@/lib/webBuildVisualSystem';
 import { renderContentNarrativeBlock, renderSiteDepthBlock } from '@/lib/webBuildContentNarrative';
-import { renderExperienceQualityBlock } from '@/lib/webBuildExperienceQuality';
+import { renderExperienceQualityBlock, renderExperienceQualityGlobalBlock } from '@/lib/webBuildExperienceQuality';
 import { renderVisualConceptBlock } from '@/lib/webBuildVisualConcept';
 import { renderExperienceIdentityBlock } from '@/lib/webBuildExperienceIdentity';
 import { renderMotionExecutionBlock } from '@/lib/webBuildMotionExecution';
@@ -2401,7 +2401,13 @@ export function buildFrontendBuilderRequest(spec: FrontendBuildSpecification): s
   const siteDepthBlock = renderSiteDepthBlock(spec.siteDepth);
   // Phase (integrated experience quality) — the BINDING cross-system experience obligations
   // (coherence + responsive + interaction + a11y + performance). Hard-bounded; absent ⇒ unchanged.
-  const experienceBlock2 = renderExperienceQualityBlock(spec.experienceQuality);
+  // Cost Phase 5 — an APP renders ONLY the shared GLOBAL obligations (responsive/a11y/performance);
+  // its per-screen interactions/states are owned by ScreenDepth and its composition/whitespace/CTA
+  // hierarchy by AppVisual, so the full per-section web block would duplicate those + leak page/
+  // section vocabulary. Web renders the full block (unchanged).
+  const experienceBlock2 = spec.buildType === 'app'
+    ? renderExperienceQualityGlobalBlock(spec.experienceQuality)
+    : renderExperienceQualityBlock(spec.experienceQuality);
   // Phase (visual concept & art direction) — the ONE dominant visual idea: visual thesis, signature hero
   // visual, media selection, per-image art direction, designed motion vocabulary, rhythm & forbidden
   // generic patterns. Placed EARLY (below) so first-glance visual priority is not buried. Hard-bounded
