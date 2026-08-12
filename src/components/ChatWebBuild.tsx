@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import WebBuildConversation from '@/components/builder/WebBuildConversation';
 import type { BuilderMode } from '@/lib/builderMode';
-import { buildTypeFromBuilderMode } from '@/lib/buildType';
+import { buildTypeFromBuilderMode, buildTypeLabel, isAppBuild } from '@/lib/buildType';
 import { useLanguageStore } from '@/stores/languageStore';
 import {
   saveWebBuildSession, getWebBuildSession, sessionIdOf,
@@ -130,9 +130,10 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
     const runId = saveWebBuildSession(p, lang);
     if (!runId) return;
     setActiveWebBuildSession(runId);
-    // Title like "Website: Peyzaj Mimarlığı". Convert the CURRENT chat session
+    // Title like "Website: …" / "App: …". Convert the CURRENT chat session
     // (sessionId) into this web_build in place — never a duplicate sibling.
-    const label = t('webBuildWebsiteLabel');
+    // App builds use the same buildTypeLabel as project save; websites keep i18n.
+    const label = isAppBuild(p.buildType) ? buildTypeLabel('app') : t('webBuildWebsiteLabel');
     const title = `${label}: ${deriveWebBuildTitle(p.prompt, lang)}`;
     // The owning chat session id and the Web Build run id are DISTINCT identities.
     const owningChatSessionId = sessionId ?? runId;

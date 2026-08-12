@@ -347,9 +347,12 @@ export function deriveAppArchitectureContract(input: AppArchitectureInput): AppA
 
     // Simplicity collapse — a "simple/minimal" app keeps only the entry screen,
     // one drill-in and (if present) settings, so it is not over-engineered.
+    // Prefer a drill-in off the entry; otherwise take any drill-in (most playbooks
+    // attach details to list screens, not the entry). Missing parents are repaired below.
     if (isIntentionallySimple(text) && appType !== 'utility') {
       const entry = screens.find((s) => s.global) || screens[0];
-      const drill = screens.find((s) => s.parentId === entry?.id);
+      const drill = screens.find((s) => s.parentId === entry?.id)
+        || screens.find((s) => Boolean(s.parentId));
       const settings = screens.find((s) => s.role === 'settings');
       screens = uniq([entry, drill, settings].filter(Boolean) as AppScreenIdentity[]);
     }
