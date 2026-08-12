@@ -2142,6 +2142,12 @@ export interface FrontendBuildSpecification {
    *  router reuse. Reads appArchitecture; every route resolves to a declared screen.
    *  Present ONLY when buildType === 'app'; absent ⇒ web build unchanged. */
   navigation?: import('@/lib/appBuildArchitecture').NavigationContract;
+  /** Phase 3 (App Build) — the app SCREEN DEPTH & COMPLETENESS contract: per-screen
+   *  substance expectations (role-derived, not a universal count), the app interaction
+   *  patterns in play, and the honest-simulation rules (front-end only, never a real
+   *  payment/email/account/remote-save claim). Present ONLY when buildType === 'app';
+   *  absent ⇒ web build unchanged. */
+  screenDepth?: import('@/lib/appBuildScreenDepth').ScreenDepthContract;
 
   honestyRules: string[];
   sourceTrace: string[];

@@ -42,6 +42,7 @@ import { deriveExperienceIdentityContract } from '@/lib/webBuildExperienceIdenti
 import { deriveMotionExecutionContract } from '@/lib/webBuildMotionExecution';
 import { deriveExecutionObligationRegistry } from '@/lib/webBuildExecutionObligations';
 import { deriveAppArchitectureContract, deriveNavigationContract } from '@/lib/appBuildArchitecture';
+import { deriveScreenDepthContract } from '@/lib/appBuildScreenDepth';
 import type {
   FrontendBuildSpecification, FrontendSpecSection, FrontendSpecImageSlot, FrontendSpecMotionLayer,
   FrontendSpecIdentity, FrontendSpecDesignSystem, FrontendSpecArchitecture, FrontendSpecAssetPlan,
@@ -945,6 +946,10 @@ export function deriveFrontendBuildSpecification(input: FrontendBuildSpecInput):
         built.appArchitecture = appArchitecture;
         const navigation = deriveNavigationContract(appArchitecture);
         if (navigation) built.navigation = navigation;
+        // Phase 3 — the app screen-depth & completeness contract (role-derived substance
+        // + interaction patterns + honest-simulation rules). Reads the architecture.
+        const screenDepth = deriveScreenDepthContract(appArchitecture);
+        if (screenDepth) built.screenDepth = screenDepth;
       } catch { /* never block the build on app-architecture derivation */ }
     }
 
