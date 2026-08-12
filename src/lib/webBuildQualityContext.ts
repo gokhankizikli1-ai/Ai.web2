@@ -583,6 +583,29 @@ export function buildRepairAuthorityDigest(spec: FrontendBuildSpecification): Re
       }).filter((o) => Object.keys(o).length);
     dPut(digest, 'requiredBindings', bindingReqs.length ? bindingReqs : undefined);
 
+    // 1b) APP-ONLY backfill — an app review/repair is served the review-scoped spec PROJECTION,
+    //     which drops the full experienceQuality + visualSystem contracts. Preserve their GLOBAL
+    //     accessibility / responsive / performance / contrast obligations here in bounded form so
+    //     obligation parity holds after projection. Web repair still sends the full spec, so these
+    //     would be duplicate there — gated to app to keep the web digest byte-for-byte unchanged.
+    if (dStr(s.buildType) === 'app') {
+      const eqc = dObj(s.experienceQuality);
+      if (eqc) {
+        const q: Record<string, unknown> = {};
+        dPut(q, 'accessibility', dStrList(eqc.globalAccessibility, 10));
+        dPut(q, 'responsive', dStrList(eqc.globalResponsive, 10));
+        dPut(q, 'performance', dStrList(eqc.globalPerformance, 8));
+        dPut(digest, 'qualityObligations', Object.keys(q).length ? q : undefined);
+      }
+      const vsc = dObj(s.visualSystem);
+      if (vsc) {
+        const v: Record<string, unknown> = {};
+        dPut(v, 'contrast', dStrList(vsc.contrastObligations, 8));
+        dPut(v, 'responsive', dStrList(vsc.responsiveObligations, 8));
+        dPut(digest, 'visualSystemObligations', Object.keys(v).length ? v : undefined);
+      }
+    }
+
     // 2) research — required sector patterns + forbidden modules/claims + sector authority.
     const rd = dObj(s.researchDirection);
     if (rd) {

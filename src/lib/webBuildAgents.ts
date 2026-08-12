@@ -3304,6 +3304,11 @@ export interface FrontendBuilderReviewRawArtifact {
   /** True when the review-scoped spec projection was used (heavy optional generator
    *  authorities dropped so a rich build is still reviewable under the cap). */
   specCompacted?: boolean;
+  /** Cost diagnostics (app reviews) — full vs projected spec chars and the reduction %,
+   *  when the lean projection + authority digest were applied proactively. */
+  reviewSpecCharsFull?: number;
+  reviewSpecCharsProjected?: number;
+  projectionReductionPct?: number;
   /** Server-verified ai_guard role for THIS review sub-call: 'continuation' means the
    *  request's operation key matched the already-running parent build (attached, free);
    *  'start' means it did not. Absent when the response carried no aiOperation echo. */

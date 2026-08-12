@@ -3443,12 +3443,18 @@ export function buildFrontendBuilderReviewRequest(
   previousReview?: FrontendBuilderReviewArtifact,
   deterministicWarnings?: string[],
   compact?: CompactSourceContext,
+  authorityDigest?: Record<string, unknown>,
 ): string {
   const input: Record<string, unknown> = {
     task: 'frontend-design-review',
     responseContract: 'frontend-review-v1',
     stage,
     specification: spec,
+    // App reviews receive the lean review-scoped spec projection (heavy generator authorities
+    // dropped) PLUS this bounded authority digest, so every acceptance-relevant obligation
+    // (accessibility, responsive, interactions, truth/claims, required obligations) is still
+    // present at a fraction of the size. Absent for web ⇒ the request is byte-for-byte unchanged.
+    ...(authorityDigest ? { authorityDigest } : {}),
     // Owner-compact post-repair review: send only the changed files + their deterministic
     // supporting closure as full source, plus a metadata-only manifest of the omitted unchanged
     // files. When `compact` is absent the request is byte-for-byte the pre-existing full-source one.
@@ -3524,6 +3530,11 @@ export async function generateFrontendBuilderReviewRaw(
     reviewFitMode: fit.fitMode,
     ...(fit.sizeBounded ? { sizeBounded: true, omittedFileCount: fit.omittedFileCount } : {}),
     ...(fit.specCompacted ? { specCompacted: true } : {}),
+    ...(fit.specCharsFull !== undefined ? {
+      reviewSpecCharsFull: fit.specCharsFull,
+      reviewSpecCharsProjected: fit.specCharsProjected,
+      projectionReductionPct: fit.projectionReductionPct,
+    } : {}),
   };
   if (message.length > MAX_FRONTEND_TASK_REQUEST_CHARS) {
     return reviewRawArtifact(stage, 'failed', `The review request (${message.length} chars) exceeds the safe request limit (${MAX_FRONTEND_TASK_REQUEST_CHARS}).`, sizeMeta);
@@ -3567,6 +3578,11 @@ export interface ReviewFitResult {
   omittedFileCount: number;
   fitMode: ReviewRequestFitMode;
   specCompacted: boolean;
+  /** Cost diagnostics — the full vs projected spec size and the reduction it achieved.
+   *  Present when a lean projection was applied proactively (app review/repair). */
+  specCharsFull?: number;
+  specCharsProjected?: number;
+  projectionReductionPct?: number;
 }
 
 /** Phase 14L.2/14L.3/14L.4 — GENERIC deterministic fit of a structured `frontend_builder` request
@@ -3669,8 +3685,22 @@ export function fitReviewRequestUnderCap(
   compact: CompactSourceContext | undefined,
 ): ReviewFitResult {
   const priorityPaths = compact ? compact.includedFiles.map((f) => f.path) : [];
-  return fitStructuredBuilderRequestUnderCap(spec, files, priorityPaths, compact, (useSpec, useCompact) =>
-    buildFrontendBuilderReviewRequest(useSpec, files, stage, previousReview, deterministicWarnings, useCompact));
+  // Cost Phase 1 — APP reviews use the lean review-scoped spec projection PROACTIVELY (not just
+  // reactively at the size ceiling) + a bounded authority digest, so obligation parity holds while
+  // the resent spec shrinks materially. WEB is byte-for-byte unchanged (baseSpec===spec, no digest).
+  const isApp = spec.buildType === 'app';
+  const authorityDigest = isApp ? buildRepairAuthorityDigest(spec) : undefined;
+  const baseSpec = isApp ? buildReviewScopedSpecProjection(spec) : spec;
+  const result = fitStructuredBuilderRequestUnderCap(baseSpec, files, priorityPaths, compact, (useSpec, useCompact) =>
+    buildFrontendBuilderReviewRequest(useSpec, files, stage, previousReview, deterministicWarnings, useCompact, authorityDigest));
+  if (isApp) {
+    const full = JSON.stringify(spec).length;
+    const projected = JSON.stringify(baseSpec).length + (authorityDigest ? JSON.stringify(authorityDigest).length : 0);
+    result.specCharsFull = full;
+    result.specCharsProjected = projected;
+    result.projectionReductionPct = full > 0 ? Math.round(((full - projected) / full) * 100) : 0;
+  }
+  return result;
 }
 
 /** Serialize the bounded REPAIR request. Sends ONLY: the authoritative specification,
@@ -3886,7 +3916,10 @@ export async function generateFrontendBuilderRepairRaw(
   // Same survival reason as the digest: derive the architecture-fidelity obligation from the ORIGINAL
   // spec so the remove-unplanned rule is not lost when the fitter compacts `useSpec`.
   const archFidelity = buildArchitectureFidelityObligation(spec);
-  const fit = fitStructuredBuilderRequestUnderCap(spec, files, allFilePaths, undefined, (useSpec) =>
+  // Cost Phase 1 — app repair uses the lean projected spec PROACTIVELY (obligations preserved by the
+  // digest above). Web keeps the full spec (byte-for-byte unchanged).
+  const repairBaseSpec = spec.buildType === 'app' ? buildReviewScopedSpecProjection(spec) : spec;
+  const fit = fitStructuredBuilderRequestUnderCap(repairBaseSpec, files, allFilePaths, undefined, (useSpec) =>
     buildFrontendBuilderRepairRequest(useSpec, files, initialReview, opts?.deterministicWarnings, opts?.qualityEvidence, authorityDigest, archFidelity));
   const message = fit.message;
   if (message.length > MAX_FRONTEND_TASK_REQUEST_CHARS) {
@@ -4058,7 +4091,10 @@ export async function generateFrontendBuilderDeltaRepairRaw(
   const authorityDigest = buildRepairAuthorityDigest(spec);
   // Original-spec architecture obligation (survives projection like the digest).
   const archFidelity = buildArchitectureFidelityObligation(spec);
-  const fit = fitStructuredBuilderRequestUnderCap(spec, files, priorityPaths, opts?.compact, (useSpec, useCompact) =>
+  // Cost Phase 1 — app delta repair uses the lean projected spec PROACTIVELY (obligations preserved
+  // by the digest above). Web keeps the full spec (byte-for-byte unchanged).
+  const repairBaseSpec = spec.buildType === 'app' ? buildReviewScopedSpecProjection(spec) : spec;
+  const fit = fitStructuredBuilderRequestUnderCap(repairBaseSpec, files, priorityPaths, opts?.compact, (useSpec, useCompact) =>
     buildFrontendBuilderDeltaRepairRequest(useSpec, files, initialReview, opts?.deterministicWarnings, opts?.qualityEvidence, useCompact, authorityDigest, archFidelity));
   const message = fit.message;
   if (message.length > MAX_FRONTEND_TASK_REQUEST_CHARS) {
