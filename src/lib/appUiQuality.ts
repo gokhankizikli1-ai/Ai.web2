@@ -170,6 +170,29 @@ export function detectGenericDashboard(input: AppUiQualityInput): AppUiQualityFi
   }];
 }
 
+/* ── 6) Navigation with no active-route indication (UI Quality Phase 3) ──────────
+ * A file that renders a real navigation region (a <nav> / role="navigation") with multiple route
+ * links but tracks NO active state (aria-current / NavLink / isActive / location.pathname / an
+ * active-class cue) has no current-route indication. Conservative: requires a nav region AND ≥2
+ * links AND zero active-state signals, so a simple single-link header never matches. */
+const NAV_REGION_RE = /<nav\b|role=["']navigation["']/i;
+const LINK_RE = /<NavLink\b|<Link\b|\bto=["']\/|href=["']\/(?![/])/gi;
+const NAV_ACTIVE_RE = /aria-current|<NavLink\b|isActive|location\.pathname|usePathname|useLocation|data-active|\bactive(?:Route|Path|Tab|Item)\b|className=\{\(\{\s*isActive/i;
+export function detectMissingNavActiveState(input: AppUiQualityInput): AppUiQualityFinding[] {
+  const hit: string[] = [];
+  for (const f of uiFiles(input.files)) {
+    if (!NAV_REGION_RE.test(f.content)) continue;
+    const links = (f.content.match(LINK_RE) || []).length;
+    if (links >= 2 && !NAV_ACTIVE_RE.test(f.content)) hit.push(f.path);
+  }
+  if (!hit.length) return [];
+  return [{
+    code: 'app-navigation-active-state',
+    message: `navigation renders multiple route links with no active/current-route indication (${hit.slice(0, 3).join(', ')}) — highlight the active route/tab/sidebar item so users know where they are`,
+    files: hit.slice(0, MAX_FILES_PER_FINDING),
+  }];
+}
+
 /** Run every app UI-quality detector. Deterministic, bounded, fail-open. */
 export function detectAppUiQuality(input: AppUiQualityInput): AppUiQualityFinding[] {
   try {
@@ -179,6 +202,7 @@ export function detectAppUiQuality(input: AppUiQualityInput): AppUiQualityFindin
       ...detectFlatButtonHierarchy(input),
       ...detectDeadTabs(input),
       ...detectGenericDashboard(input),
+      ...detectMissingNavActiveState(input),
     ];
   } catch {
     return [];

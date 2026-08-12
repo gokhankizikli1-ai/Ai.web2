@@ -102,6 +102,21 @@ export interface AppVisualHierarchy {
   dataViz: string;
 }
 
+/**
+ * Interaction polish contract (UI Quality Phase 3). The VISUAL/motion layer only — the functional
+ * control→handler→state→consequence wiring stays owned by the screen-depth contract (no second
+ * interaction engine). It adds restrained micro-interactions, honest local feedback and navigation
+ * active-state polish so a built app feels intentional when operated, not just in a screenshot.
+ */
+export interface AppInteractionPolish {
+  /** Restrained, reduced-motion-aware micro-interactions (no new dependency). */
+  motion: string;
+  /** Visible, honest local feedback (defers functional wiring to screen depth). */
+  feedback: string;
+  /** Navigation polish — always-clear active route/tab/sidebar item + responsive adaptation. */
+  navigation: string;
+}
+
 export interface AppVisualContract {
   version: 'app-visual-v1';
   appType: AppType;
@@ -114,6 +129,8 @@ export interface AppVisualContract {
   componentQuality: AppComponentQuality;
   /** Context-aware visual hierarchy / palette-usage / density / chart guidance (UI Quality Phase 2). */
   hierarchy: AppVisualHierarchy;
+  /** Interaction / micro-polish / feedback / navigation polish (UI Quality Phase 3). */
+  interactionPolish: AppInteractionPolish;
   /** App UI anti-patterns to actively avoid. */
   antiPatterns: string[];
   /** How this adapter reuses the shared visual system (no new tokens). */
@@ -317,6 +334,16 @@ function hierarchyFor(appType: AppType, colorMode: 'light' | 'dark' | 'mixed' | 
   };
 }
 
+/* ── Interaction polish (UI Quality Phase 3) ─────────────────────────────────── */
+
+/** The visual/motion polish contract. Deterministic and compact; it explicitly defers the
+ *  functional wiring to the screen-depth authority so there is no duplicated interaction engine. */
+const INTERACTION_POLISH: AppInteractionPolish = {
+  motion: 'Add restrained, purposeful transitions ONLY where they aid comprehension — tab/route change, dropdown/menu/sheet open, hover elevation, button press, list selection, progress. Keep them short (~150–250ms), never block interaction, and respect prefers-reduced-motion. Do not animate everything or add long/distracting motion. Use CSS transitions or the available framer-motion — no new dependency.',
+  feedback: 'Every control that performs a local action shows a visible, HONEST consequence (saved/added/removed/updated, filtered results change, toggled state flips) — never a faked remote success. The functional wiring is owned by the screen-depth contract; this is the polished, visible result.',
+  navigation: 'The current route / active tab / active sidebar item is ALWAYS clearly indicated (not hover alone); nav items carry hover + focus-visible states; navigation adapts responsively (sidebar → drawer or bottom tabs at narrow widths). No dead nav.',
+};
+
 const APP_ANTI_PATTERNS: string[] = [
   'A giant marketing hero or oversized headline as the first viewport of a functional screen.',
   'Excessive landing-page whitespace between operational elements.',
@@ -370,6 +397,7 @@ export function deriveAppVisualContract(
       imageStrategy,
       componentQuality,
       hierarchy,
+      interactionPolish: INTERACTION_POLISH,
       antiPatterns: APP_ANTI_PATTERNS,
       tokenReuse,
       notes,
@@ -408,6 +436,11 @@ export function renderAppShellBlock(contract: AppVisualContract | undefined): st
   out.push(`  Density: ${h.density}`);
   out.push(`  Composition: ${h.surfaceComposition}`);
   out.push(`  Data/charts: ${h.dataViz}`);
+  const ip = contract.interactionPolish;
+  out.push('Interaction polish (feel intentional when operated — functional wiring is the screen-depth contract):');
+  out.push(`  Motion: ${ip.motion}`);
+  out.push(`  Feedback: ${ip.feedback}`);
+  out.push(`  Navigation: ${ip.navigation}`);
   out.push('Avoid these app UI anti-patterns:');
   for (const a of contract.antiPatterns) out.push(`  • ${a}`);
   return out;
