@@ -35,7 +35,7 @@ export interface AppUiQualityInput {
 }
 
 const MAX_FILES_PER_FINDING = 6;
-const MAX_SCAN_PER_FILE = 400; // tag-scan safety bound per file
+const MAX_ELEMENTS_PER_FILE = 600; // element-scan safety bound per file
 
 /** Source files that carry app UI (screens + components), excluding data/css. */
 function uiFiles(files: AppUiSourceFile[]): AppUiSourceFile[] {
@@ -44,28 +44,75 @@ function uiFiles(files: AppUiSourceFile[]): AppUiSourceFile[] {
     f.path !== 'src/main.tsx');
 }
 
-/** Iterate opening tags of a NATIVE (lowercase) HTML element, yielding the raw attribute
- *  string. Case-SENSITIVE on purpose: `<select>` is the native control, `<Select…>` is a
- *  themed React/Radix component and must never be mistaken for a raw browser-default control. */
-function forEachTag(source: string, name: string, fn: (attrs: string) => void): void {
-  const re = new RegExp(`<${name}\\b([^>]*)>`, 'g');
-  let m: RegExpExecArray | null;
-  let n = 0;
-  while ((m = re.exec(source)) && n < MAX_SCAN_PER_FILE) { n += 1; fn(m[1] || ''); }
+interface JsxElement {
+  /** Element/component name as written (`select`, `button`, `Button`, `DropdownMenuContent`, …). */
+  name: string;
+  /** The FULL opening-tag attribute text (everything between the name and the closing `>`). */
+  attrs: string;
+}
+
+/**
+ * Bounded, JSX-AWARE opening-tag scanner. Unlike a `[^>]*` regex it captures the WHOLE opening
+ * tag — including attributes that follow a `{(e) => …}` handler — by tracking brace depth and
+ * string literals so a `>` inside a JSX expression (`=>`, `a > b`), a quoted string, or a nested
+ * `{}` never terminates the tag early. It is NOT a full JSX parser (no dependency): on any
+ * ambiguous / unterminated opening tag it FAILS OPEN — the element is skipped, never yielded — so
+ * incomplete parsing can never produce a finding. Bounded by MAX_ELEMENTS_PER_FILE.
+ */
+function forEachElement(source: string, fn: (el: JsxElement) => void): void {
+  let i = 0;
+  let scanned = 0;
+  const n = source.length;
+  while (i < n && scanned < MAX_ELEMENTS_PER_FILE) {
+    const lt = source.indexOf('<', i);
+    if (lt < 0) break;
+    const nameStart = lt + 1;
+    const first = source[nameStart];
+    // Only element opens (a letter) — skip `</…`, `<!…`, `<>` and `a < b` comparisons.
+    if (!first || !/[A-Za-z]/.test(first)) { i = lt + 1; continue; }
+    let j = nameStart;
+    while (j < n && /[A-Za-z0-9._-]/.test(source[j])) j += 1;
+    const name = source.slice(nameStart, j);
+    // Scan attributes to the tag-closing '>' at brace-depth 0 and outside any string literal.
+    let k = j;
+    let depth = 0;
+    let quote = '';
+    let closed = -1;
+    let guard = 0;
+    while (k < n && guard < 20000) {
+      guard += 1;
+      const ch = source[k];
+      if (quote) { if (ch === quote) quote = ''; k += 1; continue; }
+      if (ch === '"' || ch === "'" || ch === '`') { quote = ch; k += 1; continue; }
+      if (ch === '{') { depth += 1; k += 1; continue; }
+      if (ch === '}') { if (depth > 0) depth -= 1; k += 1; continue; }
+      if (depth === 0 && ch === '>') { closed = k; break; }
+      if (depth === 0 && ch === '<') break; // a new tag opened before this one closed → malformed
+      k += 1;
+    }
+    if (closed < 0) { i = lt + 1; continue; } // fail open on ambiguous/unterminated tag
+    let attrs = source.slice(j, closed);
+    if (attrs.endsWith('/')) attrs = attrs.slice(0, -1); // self-closing
+    fn({ name, attrs });
+    scanned += 1;
+    i = closed + 1;
+  }
 }
 
 const hasClassName = (attrs: string): boolean => /\bclassName\s*=/.test(attrs);
 
 /* ── 1) Raw native control in a themed (non-utility) app ─────────────────────────
  * A native <select> with NO className is a browser-default surface — acceptable in a minimal
- * utility, but in a themed app it opens an unstyled popup that breaks the design. Radix-based
- * selects (no <select> tag) and themed native selects (<select className="…">) never match. */
+ * utility, but in a themed app it opens an unstyled popup that breaks the design. The JSX-aware
+ * scanner captures the whole opening tag, so a themed select whose className follows an arrow
+ * handler (`onChange={(e) => …} className="…"`) is correctly treated as themed. Radix selects
+ * (component `<Select…>`, not the native lowercase element) never match. */
 export function detectRawNativeControls(input: AppUiQualityInput): AppUiQualityFinding[] {
   if ((input.appType || '') === 'utility') return [];
   const hit: string[] = [];
   for (const f of uiFiles(input.files)) {
     let raw = false;
-    forEachTag(f.content, 'select', (attrs) => { if (!hasClassName(attrs)) raw = true; });
+    forEachElement(f.content, (el) => { if (el.name === 'select' && !hasClassName(el.attrs)) raw = true; });
     if (raw) hit.push(f.path);
   }
   if (!hit.length) return [];
@@ -77,16 +124,26 @@ export function detectRawNativeControls(input: AppUiQualityInput): AppUiQualityF
 }
 
 /* ── 2) Light popup/surface inside a DARK app ────────────────────────────────────
- * A dark app must not open a white/near-white menu/dropdown/dialog surface. Fires only when a
- * light background co-occurs with a surface keyword (menu/dropdown/popover/dialog/modal/sheet/
- * select) in the same file — precise, low false-positive. */
-const LIGHT_SURFACE_RE = /\bbg-(?:white|(?:gray|grey|slate|zinc|neutral|stone)-(?:50|100))\b|\bbg-\[#(?:fff|ffffff|f\w{2}|f\w{5})\]/i;
-const SURFACE_KEYWORD_RE = /dropdown|popover|menu|dialog|modal|\bsheet\b|listbox|combobox|<select\b|role=["'](?:menu|listbox|dialog)["']/i;
+ * A dark app must not open a white/near-white menu/dropdown/dialog surface. The light class must
+ * live ON an actual popup-surface ELEMENT — a Radix/component surface (`*Content`, Popover,
+ * Dialog, Sheet, Modal, Drawer, Listbox, Combobox) or a native element carrying role="menu"/
+ * "listbox"/"dialog". A lucide `Menu` icon import or an unrelated `bg-white/10` badge no longer
+ * matches, because a bare `menu` substring elsewhere in the file is never sufficient. */
+const LIGHT_SURFACE_RE = /\bbg-(?:white|(?:gray|grey|slate|zinc|neutral|stone)-(?:50|100))\b|\bbg-\[#(?:fff|ffffff|f[0-9a-f]{2}|f[0-9a-f]{5})\]/i;
+const SURFACE_NAME_RE = /(?:Content|Popover|Dialog|Sheet|Modal|Drawer|Listbox|Combobox)$/;
+const SURFACE_ROLE_RE = /\brole\s*=\s*["'](?:menu|listbox|dialog)["']/i;
+function isPopupSurface(el: JsxElement): boolean {
+  return SURFACE_NAME_RE.test(el.name) || SURFACE_ROLE_RE.test(el.attrs);
+}
 export function detectLightSurfaceInDarkApp(input: AppUiQualityInput): AppUiQualityFinding[] {
   if (input.colorMode !== 'dark') return [];
   const hit: string[] = [];
   for (const f of uiFiles(input.files)) {
-    if (LIGHT_SURFACE_RE.test(f.content) && SURFACE_KEYWORD_RE.test(f.content)) hit.push(f.path);
+    let mismatch = false;
+    forEachElement(f.content, (el) => {
+      if (!mismatch && isPopupSurface(el) && LIGHT_SURFACE_RE.test(el.attrs)) mismatch = true;
+    });
+    if (mismatch) hit.push(f.path);
   }
   if (!hit.length) return [];
   return [{
@@ -97,26 +154,44 @@ export function detectLightSurfaceInDarkApp(input: AppUiQualityInput): AppUiQual
 }
 
 /* ── 3) Flat button hierarchy (every action equally dominant) ─────────────────────
- * Aggregated across the app: when there are several strongly-filled buttons and NONE is a
- * subordinate secondary/ghost/outline, the UI has no primary/secondary hierarchy. Requires ≥4
- * dominant buttons and zero differentiation, so a small or already-tiered UI never matches. */
+ * Each BUTTON (native `<button>` or a `*Button` component) is classified from its OWN attributes
+ * only — a `border` class on a card or input can no longer suppress the finding, because only
+ * button elements are inspected. Fires when there are enough dominant (strong-fill / primary
+ * variant) buttons and NO subordinate (secondary/ghost/outline/muted) button — a real tier or an
+ * ambiguous unstyled wrapper (classified 'neutral') never triggers it. */
 const STRONG_FILL_RE = /\bbg-(?:blue|indigo|violet|purple|sky|cyan|primary|brand|emerald|green|teal|rose|red|orange|amber|fuchsia|pink)-(?:400|500|600|700)\b|\bbg-gradient-/i;
-const SUBORDINATE_RE = /\bbg-transparent\b|\bvariant\s*=\s*["'](?:secondary|ghost|outline|link|tertiary)["']|\bbg-(?:gray|grey|slate|zinc|neutral|stone)-(?:100|200|transparent)\b|\bborder\b(?![^"']*\bbg-(?:blue|indigo|violet|purple|primary))/i;
+const VARIANT_DOMINANT_RE = /\bvariant\s*=\s*["'`]?(?:default|primary|destructive|solid|cta)\b/i;
+const VARIANT_SUBORDINATE_RE = /\bvariant\s*=\s*["'`]?(?:secondary|ghost|outline|link|tertiary|subtle|muted)\b/i;
+const SUBORDINATE_CLASS_RE = /\bbg-transparent\b|\bbg-(?:gray|grey|slate|zinc|neutral|stone)-(?:50|100|200)\b/i;
+type ButtonWeight = 'dominant' | 'subordinate' | 'neutral';
+function isButtonElement(name: string): boolean {
+  return name === 'button' || name.endsWith('Button'); // native <button> or a *Button component
+}
+function classifyButton(attrs: string): ButtonWeight {
+  if (VARIANT_SUBORDINATE_RE.test(attrs)) return 'subordinate';
+  if (VARIANT_DOMINANT_RE.test(attrs)) return 'dominant';
+  const strong = STRONG_FILL_RE.test(attrs);
+  if (strong) return 'dominant';
+  // A muted fill, transparent, or a border-only outline (with no strong fill) reads as subordinate.
+  if (SUBORDINATE_CLASS_RE.test(attrs) || /\bborder\b/.test(attrs)) return 'subordinate';
+  return 'neutral';
+}
 export function detectFlatButtonHierarchy(input: AppUiQualityInput): AppUiQualityFinding[] {
   let dominant = 0;
   let subordinate = 0;
   const files: string[] = [];
   for (const f of uiFiles(input.files)) {
     let fileDominant = 0;
-    forEachTag(f.content, 'button', (attrs) => {
-      if (STRONG_FILL_RE.test(attrs)) { dominant += 1; fileDominant += 1; }
-      if (SUBORDINATE_RE.test(attrs)) subordinate += 1;
+    forEachElement(f.content, (el) => {
+      if (!isButtonElement(el.name)) return;
+      const w = classifyButton(el.attrs);
+      if (w === 'dominant') { dominant += 1; fileDominant += 1; }
+      else if (w === 'subordinate') subordinate += 1;
     });
-    // Also count a subordinate cue anywhere in the file (variant props on <Button/> components).
-    if (SUBORDINATE_RE.test(f.content)) subordinate += 1;
     if (fileDominant) files.push(f.path);
   }
-  if (dominant >= 4 && subordinate === 0) {
+  // ≥3 dominant actions and NO subordinate action anywhere → no primary/secondary hierarchy.
+  if (dominant >= 3 && subordinate === 0) {
     return [{
       code: 'app-button-hierarchy',
       message: `${dominant} buttons are all styled as an equally-dominant primary with no secondary/ghost tier — establish one dominant primary per view and subordinate the rest`,
