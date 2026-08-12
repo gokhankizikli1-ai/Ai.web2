@@ -2743,6 +2743,18 @@ export interface FrontendBuilderRepairArtifact {
   /** Owner-only DELTA quality-repair diagnostics. Present ONLY when the single quality-repair ran
    *  in `owner_delta` mode; absent for disabled/non-owner/full-mode repairs and old saved builds. */
   deltaRepair?: FrontendDeltaRepairArtifact;
+  /** Cost Phase 3 — App quality-repair routing diagnostics (app builds only; bounded, safe).
+   *  Records whether the single repair ran as a targeted DELTA (+ compact context) or a FULL
+   *  re-emit, the justified full-fallback reason (if any), and the file counts. Absent for web. */
+  appRepair?: {
+    mode: 'delta' | 'full';
+    contextMode: 'compact' | 'full';
+    fullFallbackReason?: string;
+    targetFileCount: number;
+    inputFileCount: number;
+    outputFileCount: number;
+    unaffectedFilesPreserved: boolean;
+  };
 
   /** Owner-only COMPACT quality-context diagnostics (additive, optional). Present ONLY when the
    *  quality-context mode was consulted during an `owner_delta` repair; carries the sanitized,
@@ -2859,6 +2871,10 @@ export interface FrontendQualityContextDiagnostics {
  *  'pending-manual-test' — a static design review never certifies a rendered page. */
 export interface FrontendBuilderAcceptanceArtifact {
   version: 'frontend-acceptance-v1';
+
+  /** Cost Phase 4 — set when the visual-intelligence model call was skipped as unused
+   *  (an app that uses no photography). Bounded, safe; absent when the call ran. */
+  visualIntelligenceSkipReason?: string;
 
   status: 'approved' | 'repaired-approved' | 'manual-review-required' | 'skipped';
 
@@ -3304,6 +3320,11 @@ export interface FrontendBuilderReviewRawArtifact {
   /** True when the review-scoped spec projection was used (heavy optional generator
    *  authorities dropped so a rich build is still reviewable under the cap). */
   specCompacted?: boolean;
+  /** Cost diagnostics (app reviews) — full vs projected spec chars and the reduction %,
+   *  when the lean projection + authority digest were applied proactively. */
+  reviewSpecCharsFull?: number;
+  reviewSpecCharsProjected?: number;
+  projectionReductionPct?: number;
   /** Server-verified ai_guard role for THIS review sub-call: 'continuation' means the
    *  request's operation key matched the already-running parent build (attached, free);
    *  'start' means it did not. Absent when the response carried no aiOperation echo. */

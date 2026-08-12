@@ -75,6 +75,41 @@ export function isDeltaRepairEligible(mode: WebBuildQualityRepairMode, ownerElig
   return false;
 }
 
+export interface AppRepairRouting {
+  /** True ⇒ the single repair runs as a targeted DELTA (bounded upserts). */
+  deltaEligible: boolean;
+  /** True ⇒ pair the delta with a COMPACT repair context (only the affected files + closure). */
+  compactEligible: boolean;
+  /** Present ⇒ a FULL re-emit was justified for THIS single repair (a wholesale problem). */
+  fullFallbackReason?: string;
+}
+
+/**
+ * Cost Phase 3 — APP quality-repair routing. An app quality repair defaults to a TARGETED DELTA +
+ * COMPACT context (the same single repair, shaped as bounded upserts over only the affected files),
+ * preserving unaffected screens byte-for-byte. A FULL re-emit is a bounded PRE-CALL fallback, chosen
+ * ONLY when the review indicates the fix spans essentially the whole project (≥5 files, ≥80% of the
+ * project referenced by issues, and ≥3 blockers) — a wholesale problem a delta cannot express well.
+ * Pure + deterministic; the SAME single repair call is made either way (delta never adds a call, and
+ * a delta that cannot safely apply fails open to the validated project — never a second call).
+ */
+export function resolveAppQualityRepairRouting(input: {
+  fileCount: number; issueFileCount: number; blockingCount: number;
+}): AppRepairRouting {
+  const fileCount = Math.max(0, input.fileCount | 0);
+  const issueFileCount = Math.max(0, input.issueFileCount | 0);
+  const blockingCount = Math.max(0, input.blockingCount | 0);
+  const spanFraction = fileCount > 0 ? issueFileCount / fileCount : 0;
+  if (fileCount >= 5 && spanFraction >= 0.8 && blockingCount >= 3) {
+    return {
+      deltaEligible: false,
+      compactEligible: false,
+      fullFallbackReason: `widespread issues (${issueFileCount}/${fileCount} files, ${blockingCount} blockers) — full re-emit`,
+    };
+  }
+  return { deltaEligible: true, compactEligible: true };
+}
+
 /* ── Bounds (aligned with the unchanged full-project validator so a reconstructed
  * project can never exceed what that validator accepts; the validator remains the
  * final authority — these are early, cheap, self-documenting rejections). ─────── */

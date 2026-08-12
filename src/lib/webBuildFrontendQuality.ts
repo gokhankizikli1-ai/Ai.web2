@@ -34,7 +34,7 @@ import {
 } from '@/lib/webBuildApi';
 // Owner-only DELTA quality-repair — pure, deterministic delta parser/validator/merger. No
 // network. Flag-gated + owner-gated by the caller; fail-open never triggers a second repair call.
-import { resolveWebBuildQualityRepairMode, isDeltaRepairEligible, reconstructRepairRawFromDelta } from '@/lib/webBuildDeltaRepair';
+import { resolveWebBuildQualityRepairMode, isDeltaRepairEligible, reconstructRepairRawFromDelta, resolveAppQualityRepairRouting } from '@/lib/webBuildDeltaRepair';
 // Pure guard-code classifiers (no IO) — turn a bounded raw guardBlock into the repair-artifact guard
 // diagnostic when the OPTIONAL quality repair was refused by the server ai_guard. Never enforcement.
 import { betaBlockKind, betaBlockRetryable } from '@/lib/aiGuard';
@@ -58,7 +58,7 @@ import {
 } from '@/lib/webBuildPayload';
 import { parseAndValidateFrontendBuilderRaw } from '@/lib/webBuildFrontendValidation';
 import { sourceStockImagesForPayload } from '@/lib/webBuildImageSourcing';
-import { runVisualIntelligence } from '@/lib/webBuildVisualIntelligence';
+import { runVisualIntelligence, resolveVisualIntelligenceNeed } from '@/lib/webBuildVisualIntelligence';
 import type { VisualStrategy } from '@/lib/webBuildVisualStrategy';
 import {
   parseFrontendBuilderReview, synthesizeDeterministicReviewIssues,
@@ -622,24 +622,37 @@ export async function runFrontendBuilderQualityPipeline(
   //    FAIL-OPEN: on any problem the payload is returned unchanged and generation
   //    proceeds typography-first. Only affects THIS new generation; old builds untouched. ──
   let basePayload = plannedPayload;
+  // Cost Phase 4 diagnostic — set when the visual-intelligence call is skipped as unused.
+  let visualIntelligenceSkipReason: string | undefined;
 
   // ── Step 0a (Phase 14K.7) — Visual Intelligence: decide the photography strategy
   //    + per-slot media plan + coherent stock queries BEFORE sourcing. FAIL-OPEN:
   //    on any problem the deterministic planner is used. Runs ONCE per fresh build. ──
+  // Cost Phase 4 — skip the visual-intelligence model call when its photography strategy has NO
+  // consumer (an app that uses icons/charts, not photography, with no photo coverage requirement).
+  // Its only consumers are stock-photo sourcing (also skipped in that state) and a photography
+  // diagnostic that defaults to 'none' when the strategy is absent. Web + photography apps are
+  // unchanged. Removes one gpt-4o-mini call + one round-trip; never a replacement call.
   emit('visual-planning', 'active');
-  try {
-    const vi = await runVisualIntelligence(basePayload.artifacts?.frontendBuildSpec, { signal: opts?.signal });
-    if (vi.strategy) {
-      basePayload = {
-        ...basePayload,
-        artifacts: { ...(basePayload.artifacts || {}), visualStrategy: vi.strategy },
-      };
-      emit('visual-planning', 'completed', visualPlanningRows(vi.strategy));
-    } else {
-      emit('visual-planning', 'skipped', [{ label: 'plan', value: 'standard' }]);
+  const viNeed = resolveVisualIntelligenceNeed(basePayload.artifacts?.frontendBuildSpec);
+  if (!viNeed.needed) {
+    visualIntelligenceSkipReason = viNeed.skipReason;
+    emit('visual-planning', 'skipped', [{ label: 'plan', value: 'app: no photography' }]);
+  } else {
+    try {
+      const vi = await runVisualIntelligence(basePayload.artifacts?.frontendBuildSpec, { signal: opts?.signal });
+      if (vi.strategy) {
+        basePayload = {
+          ...basePayload,
+          artifacts: { ...(basePayload.artifacts || {}), visualStrategy: vi.strategy },
+        };
+        emit('visual-planning', 'completed', visualPlanningRows(vi.strategy));
+      } else {
+        emit('visual-planning', 'skipped', [{ label: 'plan', value: 'standard' }]);
+      }
+    } catch {
+      emit('visual-planning', 'skipped');
     }
-  } catch {
-    emit('visual-planning', 'skipped');
   }
 
   emit('image-sourcing', 'active');
@@ -926,11 +939,12 @@ export async function runFrontendBuilderQualityPipeline(
     // Bounded, non-sensitive binding/drift diagnostics for the acceptance artifact.
     const bindingExtra = (): Partial<FrontendBuilderAcceptanceArtifact> => {
       const hasAny = !!bindingReqs || !!(initialBinding && initialBinding.driftIssueCount) || !!(repairBinding && repairBinding.driftIssueCount)
-        || !!imageCoverage || !!coverageDiag || !!researchDirection || !!composition || !!visualSystem || !!contentNarrative || !!siteDepth || !!experienceQuality || !!visualConcept || !!experienceIdentity || !!motionExecution || !!executionObligations || !!imageIntelDiag;
+        || !!imageCoverage || !!coverageDiag || !!researchDirection || !!composition || !!visualSystem || !!contentNarrative || !!siteDepth || !!experienceQuality || !!visualConcept || !!experienceIdentity || !!motionExecution || !!executionObligations || !!imageIntelDiag || !!visualIntelligenceSkipReason;
       if (!hasAny) return {};
       const b = repairBinding || initialBinding;
       const c = bindingReqs?.counts;
       return {
+        ...(visualIntelligenceSkipReason ? { visualIntelligenceSkipReason } : {}),
         ...(bindingReqs ? { bindingContractVersion: bindingReqs.version } : {}),
         ...(c ? {
           bindingRequirementCount: c.total, bindingSectionCount: c.section, bindingInteractionCount: c.interaction,
@@ -1167,11 +1181,30 @@ export async function runFrontendBuilderQualityPipeline(
     // build user (parity — a normal beta/paid user gets the same bounded quality-recovery the owner
     // gets, so their build is not left on a worse full re-emit that can regress into Safe Preview).
     const ownerEligible = opts?.ownerEligible === true;
-    const deltaEligible = isDeltaRepairEligible(repairMode, ownerEligible);
+    // Cost Phase 3 — an APP quality repair defaults to TARGETED DELTA + COMPACT context (the SAME
+    // single repair, shaped as bounded upserts over only the affected files) instead of a
+    // full-project re-emit. Unaffected screens/files are preserved byte-for-byte by the delta merge.
+    // FULL re-emit is a bounded PRE-CALL fallback, chosen ONLY when the review indicates the fix
+    // spans essentially the whole project (a wholesale problem a delta cannot express). Exactly ONE
+    // repair call either way — a delta that cannot safely apply fails OPEN to the validated project,
+    // never a second call. WEB is unchanged (env-driven owner_delta/all_delta/disabled).
+    const isAppBuild = spec?.buildType === 'app';
+    const appRouting = isAppBuild
+      ? resolveAppQualityRepairRouting({
+          fileCount: validation?.files?.length ?? 0,
+          issueFileCount: new Set(
+            (initialReview?.issues || []).flatMap((i) => i.files || []).filter((p): p is string => typeof p === 'string' && !!p),
+          ).size,
+          blockingCount: (initialReview?.issues || []).filter((i) => i.severity === 'blocker').length,
+        })
+      : undefined;
+    const appFullFallbackReason = appRouting?.fullFallbackReason;
+    const deltaEligible = isAppBuild ? appRouting!.deltaEligible : isDeltaRepairEligible(repairMode, ownerEligible);
     // Compact quality-context is eligible ONLY inside the delta path. It never touches the
-    // full-project repair, the initial review, revisions or any disabled path.
+    // full-project repair, the initial review, revisions or any disabled path. App delta always
+    // pairs with compact context (the whole point is a small, targeted repair request).
     const contextMode = resolveWebBuildQualityContextMode();
-    const compactContextEligible = isCompactContextEligible(deltaEligible, contextMode, ownerEligible);
+    const compactContextEligible = isAppBuild ? appRouting!.compactEligible : isCompactContextEligible(deltaEligible, contextMode, ownerEligible);
     let deltaDiagnostics: FrontendDeltaRepairArtifact | undefined;
     let repairRaw: FrontendBuilderRawArtifact;
     // Internal-only: the normalized changed/upsert paths from a valid reconstruction (used to build
@@ -1209,6 +1242,23 @@ export async function runFrontendBuilderQualityPipeline(
         },
       };
     };
+    // Cost Phase 3 — app quality-repair routing diagnostics (delta+compact vs justified full).
+    const appRepairExtra = (): Partial<FrontendBuilderRepairArtifact> => {
+      if (!isAppBuild) return {};
+      const inputFileCount = validation?.files?.length ?? 0;
+      const upserts = deltaDiagnostics?.returnedUpsertCount ?? 0;
+      return {
+        appRepair: {
+          mode: deltaEligible ? 'delta' : 'full',
+          contextMode: compactContextEligible ? 'compact' : 'full',
+          ...(appFullFallbackReason ? { fullFallbackReason: appFullFallbackReason } : {}),
+          targetFileCount: changedPaths?.length ?? upserts,
+          inputFileCount,
+          outputFileCount: deltaEligible ? upserts : inputFileCount,
+          unaffectedFilesPreserved: deltaEligible === true,
+        },
+      };
+    };
     if (repairRaw.status !== 'completed') {
       // An AI-usage-guard block on the OPTIONAL repair is recorded as bounded, safe diagnostics (the
       // exact guard code / kind / retryability) so the failure is diagnosable from a SAVED build; the
@@ -1223,6 +1273,7 @@ export async function runFrontendBuilderQualityPipeline(
         ...(deltaDiagnostics ? { deltaRepair: deltaDiagnostics } : {}),
         ...guardExtra,
         ...qcExtra(),
+        ...appRepairExtra(),
       });
       const acceptance = acceptanceArtifact('manual-review-required', initialProjectName, {
         initialReviewPassed: false, repairAttempted: true, repairAccepted: false, finalReviewPassed: false,
@@ -1250,6 +1301,7 @@ export async function runFrontendBuilderQualityPipeline(
         initialScore: initialReview.score,
         ...(deltaDiagnostics ? { deltaRepair: deltaDiagnostics } : {}),
         ...qcExtra(),
+        ...appRepairExtra(),
       });
       const acceptance = acceptanceArtifact('manual-review-required', initialProjectName, {
         initialReviewPassed: false, repairAttempted: true, repairAccepted: false, finalReviewPassed: false,
@@ -1433,6 +1485,7 @@ export async function runFrontendBuilderQualityPipeline(
         gateAlignment,
         majorAlignment,
         ...qcExtra(),
+        ...appRepairExtra(),
       });
       const acceptance = acceptanceArtifact('repaired-approved', 'repaired-model-native', {
         initialReviewPassed: false, repairAttempted: true, repairAccepted: true, finalReviewPassed: true,
@@ -1491,6 +1544,7 @@ export async function runFrontendBuilderQualityPipeline(
       gateAlignment,
       majorAlignment,
       ...qcExtra(),
+      ...appRepairExtra(),
     });
     const acceptance = acceptanceArtifact('manual-review-required', initialProjectName, {
       initialReviewPassed: false, repairAttempted: true, repairAccepted: false,

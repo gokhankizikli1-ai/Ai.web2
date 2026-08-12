@@ -451,6 +451,29 @@ export function renderExperienceQualityBlock(contract: ExperienceQualityContract
   return bounded;
 }
 
+/**
+ * Cost Phase 5 — the SHARED GLOBAL quality obligations only (responsive + accessibility +
+ * performance), with NO web page-section / whole-page-rhythm / whitespace / per-section framing.
+ * Used by APP generation: an app's per-screen interactions/states are owned by ScreenDepth and its
+ * composition/whitespace/CTA hierarchy by AppVisual, so the full per-section web block is duplicate
+ * for an app — but the GLOBAL accessibility/responsive/performance obligations are unique and
+ * quality-critical, so they are preserved here verbatim. Web builds keep the full block above.
+ */
+export function renderExperienceQualityGlobalBlock(contract: ExperienceQualityContract | undefined): string[] {
+  if (!contract || contract.status !== 'derived') return [];
+  if (!contract.globalResponsive.length && !contract.globalAccessibility.length && !contract.globalPerformance.length) return [];
+  const out = [
+    'SHARED QUALITY OBLIGATIONS (apply to EVERY screen — responsive + accessibility + performance):',
+    ...(contract.globalResponsive.length ? [`Responsive: ${contract.globalResponsive.slice(0, 7).join('; ')}.`] : []),
+    ...(contract.globalAccessibility.length ? [`Accessibility: ${contract.globalAccessibility.slice(0, 7).join('; ')}.`] : []),
+    ...(contract.globalPerformance.length ? [`Performance/media: ${contract.globalPerformance.slice(0, 6).join('; ')}.`] : []),
+    '',
+  ];
+  let total = 0; const bounded: string[] = [];
+  for (const line of out) { total += line.length + 1; if (total > RENDER_CHAR_CEILING) break; bounded.push(line); }
+  return bounded;
+}
+
 /* ────────────────────────────────────────────────────────────────────────────
  * SHARED SECTION-FACTS EXTRACTOR — robust, brace/quote-aware (no fragile <...>).
  * Computed ONCE per section and consumed by every sub-policy analyzer.

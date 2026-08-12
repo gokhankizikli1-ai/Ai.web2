@@ -34,7 +34,7 @@ import { renderResearchDirectionBlock } from '@/lib/webBuildResearchDirection';
 import { renderCompositionBlock } from '@/lib/webBuildComposition';
 import { renderVisualSystemBlock } from '@/lib/webBuildVisualSystem';
 import { renderContentNarrativeBlock, renderSiteDepthBlock } from '@/lib/webBuildContentNarrative';
-import { renderExperienceQualityBlock } from '@/lib/webBuildExperienceQuality';
+import { renderExperienceQualityBlock, renderExperienceQualityGlobalBlock } from '@/lib/webBuildExperienceQuality';
 import { renderVisualConceptBlock } from '@/lib/webBuildVisualConcept';
 import { renderExperienceIdentityBlock } from '@/lib/webBuildExperienceIdentity';
 import { renderMotionExecutionBlock } from '@/lib/webBuildMotionExecution';
@@ -2401,7 +2401,13 @@ export function buildFrontendBuilderRequest(spec: FrontendBuildSpecification): s
   const siteDepthBlock = renderSiteDepthBlock(spec.siteDepth);
   // Phase (integrated experience quality) — the BINDING cross-system experience obligations
   // (coherence + responsive + interaction + a11y + performance). Hard-bounded; absent ⇒ unchanged.
-  const experienceBlock2 = renderExperienceQualityBlock(spec.experienceQuality);
+  // Cost Phase 5 — an APP renders ONLY the shared GLOBAL obligations (responsive/a11y/performance);
+  // its per-screen interactions/states are owned by ScreenDepth and its composition/whitespace/CTA
+  // hierarchy by AppVisual, so the full per-section web block would duplicate those + leak page/
+  // section vocabulary. Web renders the full block (unchanged).
+  const experienceBlock2 = spec.buildType === 'app'
+    ? renderExperienceQualityGlobalBlock(spec.experienceQuality)
+    : renderExperienceQualityBlock(spec.experienceQuality);
   // Phase (visual concept & art direction) — the ONE dominant visual idea: visual thesis, signature hero
   // visual, media selection, per-image art direction, designed motion vocabulary, rhythm & forbidden
   // generic patterns. Placed EARLY (below) so first-glance visual priority is not buried. Hard-bounded
@@ -3443,30 +3449,83 @@ export function buildFrontendBuilderReviewRequest(
   previousReview?: FrontendBuilderReviewArtifact,
   deterministicWarnings?: string[],
   compact?: CompactSourceContext,
+  authorityDigest?: Record<string, unknown>,
 ): string {
+  const isApp = spec.buildType === 'app';
+  const filesForReq = compact ? frontendFilesForRequest(compact.includedFiles) : frontendFilesForRequest(files);
+  const warnings = (deterministicWarnings && deterministicWarnings.length) ? deterministicWarnings.slice(0, 8) : undefined;
+  const prevIssues = (stage === 'post-repair' && previousReview)
+    ? (previousReview.issues || []).slice(0, 12).map((i) => ({ id: i.id, category: i.category, severity: i.severity, repairInstruction: i.repairInstruction }))
+    : undefined;
+  const compactNote = compact
+    ? '`files` contains the CHANGED files plus their directly-related supporting source; `omittedFilesManifest` lists the remaining UNCHANGED project files (path/type/size only) — do not penalize omitted files for not being shown.'
+    : undefined;
+
+  if (isApp) {
+    // Cost Phase 2 — CACHE-FRIENDLY app review: the leading prose is fully STABLE (no varying
+    // stage / compact note) and the input leads with the STABLE contract (spec projection +
+    // authority digest); the varying material (stage, files, findings, context note) trails. So
+    // the initial review and the post-repair review of the SAME build share a byte-identical
+    // leading prefix (prose + spec projection + digest), which OpenAI automatic prefix caching
+    // can reuse. No text is duplicated or inflated; the varying fields simply moved after the spec.
+    const appInput: Record<string, unknown> = {
+      task: 'frontend-design-review',
+      responseContract: 'frontend-review-v1',
+      specification: spec,
+      ...(authorityDigest ? { authorityDigest } : {}),
+      // ── varying region (after the stable contract) ──
+      stage,
+      files: filesForReq,
+    };
+    if (compact) appInput.omittedFilesManifest = compact.omittedManifest;
+    if (compactNote) appInput.contextNote = compactNote;
+    if (warnings) appInput.deterministicQualityWarnings = warnings;
+    if (prevIssues) appInput.previousReviewIssues = prevIssues;
+    const hasDigest = !!authorityDigest;
+    return [
+      '[FRONTEND BUILDER REQUEST]',
+      '[FRONTEND REVIEW REQUEST]',
+      'Task: static design-quality review of an ALREADY-VALIDATED model-native project.',
+      hasDigest
+        ? 'Review the specification, the authorityDigest AND the source files below. You did NOT see a rendered'
+        : 'Review ONLY the specification and the source files below. You did NOT see a rendered',
+      'page, a screenshot, a compiled bundle or a browser — never claim you did. Return ONLY',
+      'the strict frontend-review-v1 JSON object (no Markdown fence, no prose before/after).',
+      'BUILD TYPE: app — this is a CLIENT-ROUTED MULTI-SCREEN APPLICATION, not a website. Judge it as an',
+      'app: assess application shell quality, per-screen completeness + data hierarchy, navigation clarity',
+      'and route reachability, real interactive state (no dead controls), and narrow/responsive usability.',
+      'Do NOT penalize it for lacking a marketing hero, long scrolling sections, testimonials or pricing —',
+      'those are WRONG for an app. Flag website-like marketing sections or a giant landing hero as defects.',
+      // The lean specification intentionally omits the heavy generator authorities; `authorityDigest`
+      // carries their hard obligations so the review keeps full quality parity. Kept as STABLE prose
+      // (identical every stage) so the cache-friendly leading prefix is preserved.
+      ...(hasDigest ? [
+        'AUTHORITY DIGEST: `authorityDigest` is an AUTHORITATIVE, compact projection of the quality',
+        'obligations intentionally NOT repeated in the lean specification — accessibility, responsive',
+        'behavior, contrast, interaction requirements and shared visual/performance obligations. Treat',
+        'every obligation it carries as a REVIEW REQUIREMENT (flag violations of it exactly as you would',
+        'a specification violation); it is authoritative review input, never optional metadata.',
+      ] : []),
+      'The input `stage`, `files`, `contextNote` and `previousReviewIssues` follow the stable contract.',
+      'BEGIN_FRONTEND_BUILD_SPEC_JSON',
+      'BEGIN_FRONTEND_REVIEW_INPUT_JSON',
+      JSON.stringify(appInput),
+      'END_FRONTEND_REVIEW_INPUT_JSON',
+      'END_FRONTEND_BUILD_SPEC_JSON',
+    ].join('\n');
+  }
+
+  // ── WEB review — unchanged (byte-for-byte the pre-existing request). ──
   const input: Record<string, unknown> = {
     task: 'frontend-design-review',
     responseContract: 'frontend-review-v1',
     stage,
     specification: spec,
-    // Owner-compact post-repair review: send only the changed files + their deterministic
-    // supporting closure as full source, plus a metadata-only manifest of the omitted unchanged
-    // files. When `compact` is absent the request is byte-for-byte the pre-existing full-source one.
-    files: compact ? frontendFilesForRequest(compact.includedFiles) : frontendFilesForRequest(files),
+    files: filesForReq,
   };
   if (compact) input.omittedFilesManifest = compact.omittedManifest;
-  // Phase 13B — bounded deterministic quality WARNINGS from the static validator
-  // (shallow-project / shallow-section / minimal-styles / repetitive-section-structure /
-  // internal-copy-leak / missing-hero-visual-layer). Signals only: the reviewer still
-  // judges independently and is never told to auto-pass or auto-fail on them.
-  if (deterministicWarnings && deterministicWarnings.length) {
-    input.deterministicQualityWarnings = deterministicWarnings.slice(0, 8);
-  }
-  if (stage === 'post-repair' && previousReview) {
-    input.previousReviewIssues = (previousReview.issues || []).slice(0, 12).map((i) => ({
-      id: i.id, category: i.category, severity: i.severity, repairInstruction: i.repairInstruction,
-    }));
-  }
+  if (warnings) input.deterministicQualityWarnings = warnings;
+  if (prevIssues) input.previousReviewIssues = prevIssues;
   return [
     '[FRONTEND BUILDER REQUEST]',
     '[FRONTEND REVIEW REQUEST]',
@@ -3474,13 +3533,6 @@ export function buildFrontendBuilderReviewRequest(
     'Review ONLY the specification and the source files below. You did NOT see a rendered',
     'page, a screenshot, a compiled bundle or a browser — never claim you did. Return ONLY',
     'the strict frontend-review-v1 JSON object (no Markdown fence, no prose before/after).',
-    ...(spec.buildType === 'app' ? [
-      'BUILD TYPE: app — this is a CLIENT-ROUTED MULTI-SCREEN APPLICATION, not a website. Judge it as an',
-      'app: assess application shell quality, per-screen completeness + data hierarchy, navigation clarity',
-      'and route reachability, real interactive state (no dead controls), and narrow/responsive usability.',
-      'Do NOT penalize it for lacking a marketing hero, long scrolling sections, testimonials or pricing —',
-      'those are WRONG for an app. Flag website-like marketing sections or a giant landing hero as defects.',
-    ] : []),
     ...(compact ? [
       'CONTEXT NOTE: `files` contains the CHANGED files plus their directly-related supporting',
       'source; `omittedFilesManifest` lists the remaining UNCHANGED project files (path/type/size',
@@ -3524,6 +3576,11 @@ export async function generateFrontendBuilderReviewRaw(
     reviewFitMode: fit.fitMode,
     ...(fit.sizeBounded ? { sizeBounded: true, omittedFileCount: fit.omittedFileCount } : {}),
     ...(fit.specCompacted ? { specCompacted: true } : {}),
+    ...(fit.specCharsFull !== undefined ? {
+      reviewSpecCharsFull: fit.specCharsFull,
+      reviewSpecCharsProjected: fit.specCharsProjected,
+      projectionReductionPct: fit.projectionReductionPct,
+    } : {}),
   };
   if (message.length > MAX_FRONTEND_TASK_REQUEST_CHARS) {
     return reviewRawArtifact(stage, 'failed', `The review request (${message.length} chars) exceeds the safe request limit (${MAX_FRONTEND_TASK_REQUEST_CHARS}).`, sizeMeta);
@@ -3567,6 +3624,15 @@ export interface ReviewFitResult {
   omittedFileCount: number;
   fitMode: ReviewRequestFitMode;
   specCompacted: boolean;
+  /** Cost diagnostics — the full vs projected spec size and the reduction it achieved.
+   *  Present when a lean projection was applied proactively (app review/repair). */
+  specCharsFull?: number;
+  specCharsProjected?: number;
+  projectionReductionPct?: number;
+  /** Cache diagnostics (app) — the stable leading prefix (identical across a build's calls,
+   *  cacheable) vs the variable trailing payload (stage/files/findings). */
+  stablePrefixChars?: number;
+  variablePayloadChars?: number;
 }
 
 /** Phase 14L.2/14L.3/14L.4 — GENERIC deterministic fit of a structured `frontend_builder` request
@@ -3669,8 +3735,29 @@ export function fitReviewRequestUnderCap(
   compact: CompactSourceContext | undefined,
 ): ReviewFitResult {
   const priorityPaths = compact ? compact.includedFiles.map((f) => f.path) : [];
-  return fitStructuredBuilderRequestUnderCap(spec, files, priorityPaths, compact, (useSpec, useCompact) =>
-    buildFrontendBuilderReviewRequest(useSpec, files, stage, previousReview, deterministicWarnings, useCompact));
+  // Cost Phase 1 — APP reviews use the lean review-scoped spec projection PROACTIVELY (not just
+  // reactively at the size ceiling) + a bounded authority digest, so obligation parity holds while
+  // the resent spec shrinks materially. WEB is byte-for-byte unchanged (baseSpec===spec, no digest).
+  const isApp = spec.buildType === 'app';
+  const authorityDigest = isApp ? buildRepairAuthorityDigest(spec) : undefined;
+  const baseSpec = isApp ? buildReviewScopedSpecProjection(spec) : spec;
+  const result = fitStructuredBuilderRequestUnderCap(baseSpec, files, priorityPaths, compact, (useSpec, useCompact) =>
+    buildFrontendBuilderReviewRequest(useSpec, files, stage, previousReview, deterministicWarnings, useCompact, authorityDigest));
+  if (isApp) {
+    const full = JSON.stringify(spec).length;
+    const projected = JSON.stringify(baseSpec).length + (authorityDigest ? JSON.stringify(authorityDigest).length : 0);
+    result.specCharsFull = full;
+    result.specCharsProjected = projected;
+    result.projectionReductionPct = full > 0 ? Math.round(((full - projected) / full) * 100) : 0;
+    // The stable cacheable prefix ends where the varying region begins ("stage" — the first
+    // varying field after the spec projection + authority digest).
+    const idx = result.message.indexOf('"stage":');
+    if (idx > 0) {
+      result.stablePrefixChars = idx;
+      result.variablePayloadChars = result.message.length - idx;
+    }
+  }
+  return result;
 }
 
 /** Serialize the bounded REPAIR request. Sends ONLY: the authoritative specification,
@@ -3886,7 +3973,10 @@ export async function generateFrontendBuilderRepairRaw(
   // Same survival reason as the digest: derive the architecture-fidelity obligation from the ORIGINAL
   // spec so the remove-unplanned rule is not lost when the fitter compacts `useSpec`.
   const archFidelity = buildArchitectureFidelityObligation(spec);
-  const fit = fitStructuredBuilderRequestUnderCap(spec, files, allFilePaths, undefined, (useSpec) =>
+  // Cost Phase 1 — app repair uses the lean projected spec PROACTIVELY (obligations preserved by the
+  // digest above). Web keeps the full spec (byte-for-byte unchanged).
+  const repairBaseSpec = spec.buildType === 'app' ? buildReviewScopedSpecProjection(spec) : spec;
+  const fit = fitStructuredBuilderRequestUnderCap(repairBaseSpec, files, allFilePaths, undefined, (useSpec) =>
     buildFrontendBuilderRepairRequest(useSpec, files, initialReview, opts?.deterministicWarnings, opts?.qualityEvidence, authorityDigest, archFidelity));
   const message = fit.message;
   if (message.length > MAX_FRONTEND_TASK_REQUEST_CHARS) {
@@ -4058,7 +4148,10 @@ export async function generateFrontendBuilderDeltaRepairRaw(
   const authorityDigest = buildRepairAuthorityDigest(spec);
   // Original-spec architecture obligation (survives projection like the digest).
   const archFidelity = buildArchitectureFidelityObligation(spec);
-  const fit = fitStructuredBuilderRequestUnderCap(spec, files, priorityPaths, opts?.compact, (useSpec, useCompact) =>
+  // Cost Phase 1 — app delta repair uses the lean projected spec PROACTIVELY (obligations preserved
+  // by the digest above). Web keeps the full spec (byte-for-byte unchanged).
+  const repairBaseSpec = spec.buildType === 'app' ? buildReviewScopedSpecProjection(spec) : spec;
+  const fit = fitStructuredBuilderRequestUnderCap(repairBaseSpec, files, priorityPaths, opts?.compact, (useSpec, useCompact) =>
     buildFrontendBuilderDeltaRepairRequest(useSpec, files, initialReview, opts?.deterministicWarnings, opts?.qualityEvidence, useCompact, authorityDigest, archFidelity));
   const message = fit.message;
   if (message.length > MAX_FRONTEND_TASK_REQUEST_CHARS) {

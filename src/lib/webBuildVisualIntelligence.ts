@@ -122,6 +122,39 @@ export interface VisualIntelligenceResult {
   elapsedMs: number;
 }
 
+export interface VisualIntelligenceNeed {
+  /** True ⇒ run the visual-intelligence model call. False ⇒ its photo strategy is unused. */
+  needed: boolean;
+  /** Bounded reason the call was skipped (present only when needed=false). */
+  skipReason?: string;
+}
+
+/**
+ * Cost Phase 4 — decide whether the visual-intelligence model call (photography strategy) is
+ * actually consumed. It feeds ONLY stock-photo sourcing (and a photography diagnostic that
+ * defaults to 'none' when the strategy is absent). For an APP whose visual system uses NO
+ * photography (icons/charts — CRM, analytics, task/admin tools) and whose image-coverage does
+ * not require photos, its output has no consumer, so the call is skipped. Web builds, apps that
+ * use photography (fitness/media/booking/consumer), and any coverage that requires photos always
+ * run it. Pure/deterministic; conservative (defaults to run when unsure).
+ */
+export function resolveVisualIntelligenceNeed(spec: FrontendBuildSpecification | undefined): VisualIntelligenceNeed {
+  if (!spec || spec.status === 'failed-open') return { needed: true };
+  if (spec.buildType !== 'app') return { needed: true }; // web unchanged
+  const coverage = spec.imageCoverage;
+  const coverageDemandsPhotos = !!coverage
+    && (coverage.mode === 'required' || coverage.mode === 'image-led')
+    && coverage.explicitNoPhoto !== true;
+  const usePhotography = spec.appVisual?.imageStrategy?.usePhotography;
+  if (usePhotography === false && !coverageDemandsPhotos) {
+    return {
+      needed: false,
+      skipReason: 'app uses no photography (icons/charts) and image-coverage requires no photos — the visual-intelligence photo strategy is unused',
+    };
+  }
+  return { needed: true };
+}
+
 /**
  * Run the agent for a fresh build's spec. Never throws. `strategy` is null on any
  * failure so callers fall back to deterministic `deriveImageNeeds`.
