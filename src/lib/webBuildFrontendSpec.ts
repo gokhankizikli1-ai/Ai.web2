@@ -43,6 +43,7 @@ import { deriveMotionExecutionContract } from '@/lib/webBuildMotionExecution';
 import { deriveExecutionObligationRegistry } from '@/lib/webBuildExecutionObligations';
 import { deriveAppArchitectureContract, deriveNavigationContract } from '@/lib/appBuildArchitecture';
 import { deriveScreenDepthContract } from '@/lib/appBuildScreenDepth';
+import { deriveAppVisualAdapter } from '@/lib/appBuildVisualAdapter';
 import type {
   FrontendBuildSpecification, FrontendSpecSection, FrontendSpecImageSlot, FrontendSpecMotionLayer,
   FrontendSpecIdentity, FrontendSpecDesignSystem, FrontendSpecArchitecture, FrontendSpecAssetPlan,
@@ -950,6 +951,11 @@ export function deriveFrontendBuildSpecification(input: FrontendBuildSpecInput):
         // + interaction patterns + honest-simulation rules). Reads the architecture.
         const screenDepth = deriveScreenDepthContract(appArchitecture);
         if (screenDepth) built.screenDepth = screenDepth;
+        // Phase 4 — the app visual adapter + per-screen composition. Reuses the shared
+        // VisualSystem tokens (built.visualSystem); adds only app-surface concepts. The
+        // nav pattern is threaded so tab placement (top vs bottom) matches navigation.
+        const appVisual = deriveAppVisualAdapter(appArchitecture, { navPattern: navigation?.pattern });
+        if (appVisual) built.appVisual = appVisual;
       } catch { /* never block the build on app-architecture derivation */ }
     }
 

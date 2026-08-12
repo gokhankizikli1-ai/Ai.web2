@@ -2148,6 +2148,12 @@ export interface FrontendBuildSpecification {
    *  payment/email/account/remote-save claim). Present ONLY when buildType === 'app';
    *  absent ⇒ web build unchanged. */
   screenDepth?: import('@/lib/appBuildScreenDepth').ScreenDepthContract;
+  /** Phase 4 (App Build) — the app VISUAL ADAPTER: app-surface concepts (shell / nav
+   *  placement / density / touch targets / chrome-vs-content), a context-aware image
+   *  strategy and a per-screen SCREEN COMPOSITION that replaces the web hero/section/
+   *  funnel model. Reuses the shared VisualSystem tokens — never a second token system.
+   *  Present ONLY when buildType === 'app'; absent ⇒ web build unchanged. */
+  appVisual?: import('@/lib/appBuildVisualAdapter').AppVisualAdapter;
 
   honestyRules: string[];
   sourceTrace: string[];
