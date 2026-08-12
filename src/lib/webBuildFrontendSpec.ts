@@ -29,6 +29,7 @@ import { resolveBuildType } from '@/lib/buildType';
 import { deriveAppArchitectureContract } from '@/lib/appArchitecture';
 import { deriveNavigationContract } from '@/lib/appNavigation';
 import { deriveScreenDepthContract } from '@/lib/appScreenDepth';
+import { deriveAppVisualContract } from '@/lib/appVisualAdapter';
 import { stripLeadingFieldLabel } from '@/lib/webBuildFieldLabel';
 // PR #510 — deterministic Experience Architecture planner (a leaf; pure + fail-open; reads
 // only this assembled spec + the prompt, so it introduces no runtime import cycle).
@@ -818,6 +819,14 @@ export function deriveFrontendBuildSpecification(input: FrontendBuildSpecInput):
       });
       if (visualSystem) built.visualSystem = visualSystem;
     } catch { /* never block the build on visual-system derivation */ }
+
+    // App Build — derive the app visual adapter AFTER the shared visual system so it
+    // reuses those tokens (no new colour/type) and only adds app-surface + screen
+    // composition + image strategy. App builds only; fail-open.
+    if (isApp) try {
+      const appVisual = deriveAppVisualContract(built.appArchitecture, built.visualSystem);
+      if (appVisual) built.appVisual = appVisual;
+    } catch { /* never block the build on app-visual derivation */ }
 
     // Phase (content narrative) — derive the BINDING content/conversion-narrative contract (per-section
     // message roles, concrete specificity anchors, brand voice, CTA hierarchy, truthful proof) from the

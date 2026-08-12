@@ -2147,6 +2147,11 @@ export interface FrontendBuildSpecification {
    *  interactions (control→handler→state→consequence) and role-derived lifecycle
    *  states. Present ONLY for app builds. */
   screenDepth?: import('@/lib/appScreenDepth').ScreenDepthContract;
+  /** App Build (buildType='app') — the app-surface visual adapter: shell / app bar
+   *  / nav / density / touch targets / device behavior / screen composition (which
+   *  replaces section composition) / context-aware image strategy. REUSES the
+   *  shared visualSystem tokens (no new colour/type). Present ONLY for app builds. */
+  appVisual?: import('@/lib/appVisualAdapter').AppVisualContract;
 
   honestyRules: string[];
   sourceTrace: string[];
