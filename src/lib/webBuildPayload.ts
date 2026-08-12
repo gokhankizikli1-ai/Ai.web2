@@ -23,6 +23,7 @@ import {
 import { deriveAgentSectionArchitecture } from '@/lib/webBuildSectionArchitecture';
 import { deriveFrontendBuildSpecification } from '@/lib/webBuildFrontendSpec';
 import { parseAndValidateFrontendBuilderRaw } from '@/lib/webBuildFrontendValidation';
+import { type BuildType, normalizeBuildType } from '@/lib/buildType';
 import { detectMessageLanguage, resolveWebsiteOutputLanguage } from '@/lib/locale';
 import type { Language } from '@/stores/languageStore';
 
@@ -125,6 +126,12 @@ export interface WebBuildStep {
 
 export interface WebBuildPayload {
   source: 'web_build';
+  /** The canonical product build type this project was generated as. OPTIONAL and
+   *  backward compatible: old saved builds carry no value and load as `web`
+   *  (normalizeBuildType). `app` marks a client-routed multi-screen React/Vite app
+   *  built by the same spine through the App Build adapters. Persistence, preview and
+   *  reopen read THIS field — the build type is never re-inferred from the prompt. */
+  buildType?: BuildType;
   prompt: string;
   /** Strategy brief. Core fields + optional richer strategy from the model's
    *  Build Plan / Design Direction (see WebBuildBrief). All optional → old
@@ -1125,16 +1132,30 @@ function resolveBuildWebsiteLanguage(prompt: string, prev: WebBuildPayload | und
 
 export function buildWebBuildPayload(
   prompt: string, result: WebBuildResult, prev?: WebBuildPayload, lang?: string,
+  opts?: { buildType?: BuildType },
 ): WebBuildPayload {
   try {
-    return assembleWebBuildPayload(prompt, result, prev, lang);
+    return assembleWebBuildPayload(prompt, result, prev, lang, opts);
   } catch (err) {
     if (typeof console !== 'undefined') {
       // eslint-disable-next-line no-console
       console.error('[WebBuild] package assembly failed — synthesizing a safe package', err);
     }
-    return synthesizeSafePayload(prompt, result, prev, lang);
+    return synthesizeSafePayload(prompt, result, prev, lang, opts);
   }
+}
+
+/**
+ * Resolve the build type for a (fresh or revised) payload. A revision keeps the
+ * ORIGINAL project's build type (prev wins); a fresh build takes the caller's
+ * resolved build type; anything absent/unknown normalizes to `web`. This is the ONE
+ * place the payload's build type is decided, so it never drifts between assembly and
+ * the safe-payload fallback.
+ */
+function resolvePayloadBuildType(
+  prev: WebBuildPayload | undefined, opts: { buildType?: BuildType } | undefined,
+): BuildType {
+  return normalizeBuildType(prev?.buildType ?? opts?.buildType);
 }
 
 /**
@@ -1147,9 +1168,11 @@ export function buildWebBuildPayload(
  */
 function assembleWebBuildPayload(
   prompt: string, result: WebBuildResult, prev?: WebBuildPayload, lang?: string,
+  opts?: { buildType?: BuildType },
 ): WebBuildPayload {
   const now = new Date().toISOString();
   const effLang = resolveBuildWebsiteLanguage(prompt, prev, lang);
+  const buildType = resolvePayloadBuildType(prev, opts);
   const inferred = inferWebsiteBrief(prompt, effLang);
 
   const backendBrief = extractBrief(result.sections);
@@ -1626,6 +1649,7 @@ function assembleWebBuildPayload(
         const frontendBuildSpec = deriveFrontendBuildSpecification({
           prompt,
           lang: effLang,
+          buildType,
           brief: artBrief,
           sectionItems,
           layoutPlan,
@@ -1819,6 +1843,7 @@ function assembleWebBuildPayload(
   };
   return {
     source: 'web_build',
+    buildType,
     prompt: prev?.prompt || prompt,
     // The Art-Director-enriched brief IS the persisted brief so the preview and
     // any recompute use the same art-direction palette + strategy fields.
@@ -1873,9 +1898,11 @@ function minimalProjectFiles(items: WebBuildSectionItem[], brief: WebBuildBrief)
  */
 function synthesizeSafePayload(
   prompt: string, result: WebBuildResult, prev?: WebBuildPayload, lang?: string,
+  opts?: { buildType?: BuildType },
 ): WebBuildPayload {
   const now = new Date().toISOString();
   const effLang = resolveBuildWebsiteLanguage(prompt, prev, lang);
+  const buildType = resolvePayloadBuildType(prev, opts);
   const inferred = inferWebsiteBrief(prompt, effLang);
 
   let brief: WebBuildBrief;
@@ -1964,6 +1991,7 @@ function synthesizeSafePayload(
   };
   return {
     source: 'web_build',
+    buildType,
     prompt: prev?.prompt || prompt,
     brief: mergedBrief,
     sectionItems,

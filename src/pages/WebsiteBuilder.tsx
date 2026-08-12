@@ -10,6 +10,7 @@ import WebBuildWelcome from '@/components/builder/WebBuildWelcome';
 import { WebBuildModeChips, WebBuildModePill } from '@/components/builder/WebBuildModeSelector';
 import WebBuildSidebar from '@/components/builder/WebBuildSidebar';
 import type { BuilderMode } from '@/lib/builderMode';
+import { resolveBuildType } from '@/lib/buildType';
 import { useLanguageStore } from '@/stores/languageStore';
 import {
   getWebBuildSession, getActiveWebBuildSession,
@@ -105,6 +106,15 @@ export default function WebsiteBuilder() {
       setSearchParams({}, { replace: true });
       runFreshRef.current?.(promptParam, m);
       return;
+    }
+    // A MODE-ONLY entry (no prompt/session) — e.g. the App Builder surface routes here
+    // as ?mode=app. Pre-select that build mode so the user's first submit runs as the
+    // canonical build type (mode 'app' → App Build), then fall through to the normal
+    // restore. Additive: an entry with no ?mode= is byte-for-byte unchanged.
+    const modeOnlyRaw = searchParams.get('mode');
+    if (modeOnlyRaw && ['website', 'app', 'game', 'landing', 'ecommerce'].includes(modeOnlyRaw)) {
+      setSelectedMode(modeOnlyRaw as BuilderMode);
+      setSearchParams({}, { replace: true });
     }
     // A run started in THIS tab is still live in the coordinator after SPA navigation
     // — adopt it via the sync effect below; never reload a stale session or restart.
@@ -283,7 +293,10 @@ export default function WebsiteBuilder() {
       basePayload: null,
       execute: async (signal) => {
         const res = await generateWebBuild(trimmed, { signal, mode });
-        const planned = buildWebBuildPayload(trimmed, res, undefined, lang);
+        // The user-selected mode is the INPUT authority for the canonical build type
+        // (mode 'app' → App Build; everything else → Web Build). Threaded onto the
+        // payload so preview + persistence read it and never re-infer from the prompt.
+        const planned = buildWebBuildPayload(trimmed, res, undefined, lang, { buildType: resolveBuildType(mode) });
         // PR #518 — FRESH BUILDS ONLY: when both flags are on, pass the rendered-visual
         // producer so the pipeline measures the generated files in the app-level hidden host
         // before final acceptance. `createMeasurementProducer` returns undefined when disabled

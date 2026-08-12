@@ -2036,6 +2036,12 @@ export interface FrontendBuildSpecification {
   version: 'frontend-spec-v1';
   status: FrontendBuildSpecStatus;
   language: string;
+  /** The canonical product build type this spec was derived for. OPTIONAL and
+   *  backward compatible: absent ⇒ `web`. When `app`, generation assembles the App
+   *  Build blocks (app architecture / navigation / screen depth / app visual surface)
+   *  in place of the web-coupled hero/section/site-depth blocks, reusing every shared
+   *  authority (visual system, binding requirements, obligations, validation, review). */
+  buildType?: import('@/lib/buildType').BuildType;
   prompt: string;
 
   identity: FrontendSpecIdentity;

@@ -26,6 +26,7 @@ import type { WebBuildLayoutPlan } from '@/lib/webBuildLayoutPlan';
 // final specification contradiction guard.
 import { resolveProductIntent } from '@/lib/webBuildProductIntent';
 import { stripLeadingFieldLabel } from '@/lib/webBuildFieldLabel';
+import { type BuildType, normalizeBuildType } from '@/lib/buildType';
 // PR #510 — deterministic Experience Architecture planner (a leaf; pure + fail-open; reads
 // only this assembled spec + the prompt, so it introduces no runtime import cycle).
 import { deriveExperienceArchitecturePlan } from '@/lib/webBuildExperienceArchitecture';
@@ -53,6 +54,11 @@ import type {
 export interface FrontendBuildSpecInput {
   prompt: string;
   lang: string;
+  /** The canonical product build type. OPTIONAL and backward compatible: absent ⇒
+   *  `web` (the native Web Build). `app` routes derivation + the generation request
+   *  through the App Build adapters (app architecture / navigation / screen depth /
+   *  app visual surface) instead of the web-coupled hero/section/site-depth blocks. */
+  buildType?: BuildType;
   brief: WebBuildBrief;
   sectionItems: WebBuildSectionItem[];
   layoutPlan: WebBuildLayoutPlan;
@@ -256,6 +262,7 @@ function failedOpenSpec(input: FrontendBuildSpecInput): FrontendBuildSpecificati
     version: 'frontend-spec-v1',
     status: 'failed-open',
     language: str(input.lang) || 'en',
+    buildType: normalizeBuildType(input.buildType),
     prompt: str(input.prompt),
     identity: { siteType: str(input.brief?.type) || 'website' },
     designSystem: {
@@ -319,6 +326,7 @@ function slotIdsForSection(slots: ReadonlyArray<{ id: string; target: string }> 
 export function deriveFrontendBuildSpecification(input: FrontendBuildSpecInput): FrontendBuildSpecification {
   try {
     const lang = str(input.lang) || 'en';
+    const buildType: BuildType = normalizeBuildType(input.buildType);
     const brief = input.brief || ({} as WebBuildBrief);
     const items = Array.isArray(input.sectionItems) ? input.sectionItems : [];
     const plan = input.layoutPlan;
@@ -686,6 +694,7 @@ export function deriveFrontendBuildSpecification(input: FrontendBuildSpecInput):
       version: 'frontend-spec-v1',
       status,
       language: lang,
+      buildType,
       prompt: str(input.prompt),
       identity,
       designSystem: guardedDesignSystem,
