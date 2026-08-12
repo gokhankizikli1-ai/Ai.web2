@@ -2872,6 +2872,10 @@ export interface FrontendQualityContextDiagnostics {
 export interface FrontendBuilderAcceptanceArtifact {
   version: 'frontend-acceptance-v1';
 
+  /** Cost Phase 4 — set when the visual-intelligence model call was skipped as unused
+   *  (an app that uses no photography). Bounded, safe; absent when the call ran. */
+  visualIntelligenceSkipReason?: string;
+
   status: 'approved' | 'repaired-approved' | 'manual-review-required' | 'skipped';
 
   activeProject: 'initial-model-native' | 'repaired-model-native' | 'internal-fallback'

@@ -58,7 +58,7 @@ import {
 } from '@/lib/webBuildPayload';
 import { parseAndValidateFrontendBuilderRaw } from '@/lib/webBuildFrontendValidation';
 import { sourceStockImagesForPayload } from '@/lib/webBuildImageSourcing';
-import { runVisualIntelligence } from '@/lib/webBuildVisualIntelligence';
+import { runVisualIntelligence, resolveVisualIntelligenceNeed } from '@/lib/webBuildVisualIntelligence';
 import type { VisualStrategy } from '@/lib/webBuildVisualStrategy';
 import {
   parseFrontendBuilderReview, synthesizeDeterministicReviewIssues,
@@ -622,24 +622,37 @@ export async function runFrontendBuilderQualityPipeline(
   //    FAIL-OPEN: on any problem the payload is returned unchanged and generation
   //    proceeds typography-first. Only affects THIS new generation; old builds untouched. ──
   let basePayload = plannedPayload;
+  // Cost Phase 4 diagnostic — set when the visual-intelligence call is skipped as unused.
+  let visualIntelligenceSkipReason: string | undefined;
 
   // ── Step 0a (Phase 14K.7) — Visual Intelligence: decide the photography strategy
   //    + per-slot media plan + coherent stock queries BEFORE sourcing. FAIL-OPEN:
   //    on any problem the deterministic planner is used. Runs ONCE per fresh build. ──
+  // Cost Phase 4 — skip the visual-intelligence model call when its photography strategy has NO
+  // consumer (an app that uses icons/charts, not photography, with no photo coverage requirement).
+  // Its only consumers are stock-photo sourcing (also skipped in that state) and a photography
+  // diagnostic that defaults to 'none' when the strategy is absent. Web + photography apps are
+  // unchanged. Removes one gpt-4o-mini call + one round-trip; never a replacement call.
   emit('visual-planning', 'active');
-  try {
-    const vi = await runVisualIntelligence(basePayload.artifacts?.frontendBuildSpec, { signal: opts?.signal });
-    if (vi.strategy) {
-      basePayload = {
-        ...basePayload,
-        artifacts: { ...(basePayload.artifacts || {}), visualStrategy: vi.strategy },
-      };
-      emit('visual-planning', 'completed', visualPlanningRows(vi.strategy));
-    } else {
-      emit('visual-planning', 'skipped', [{ label: 'plan', value: 'standard' }]);
+  const viNeed = resolveVisualIntelligenceNeed(basePayload.artifacts?.frontendBuildSpec);
+  if (!viNeed.needed) {
+    visualIntelligenceSkipReason = viNeed.skipReason;
+    emit('visual-planning', 'skipped', [{ label: 'plan', value: 'app: no photography' }]);
+  } else {
+    try {
+      const vi = await runVisualIntelligence(basePayload.artifacts?.frontendBuildSpec, { signal: opts?.signal });
+      if (vi.strategy) {
+        basePayload = {
+          ...basePayload,
+          artifacts: { ...(basePayload.artifacts || {}), visualStrategy: vi.strategy },
+        };
+        emit('visual-planning', 'completed', visualPlanningRows(vi.strategy));
+      } else {
+        emit('visual-planning', 'skipped', [{ label: 'plan', value: 'standard' }]);
+      }
+    } catch {
+      emit('visual-planning', 'skipped');
     }
-  } catch {
-    emit('visual-planning', 'skipped');
   }
 
   emit('image-sourcing', 'active');
@@ -926,11 +939,12 @@ export async function runFrontendBuilderQualityPipeline(
     // Bounded, non-sensitive binding/drift diagnostics for the acceptance artifact.
     const bindingExtra = (): Partial<FrontendBuilderAcceptanceArtifact> => {
       const hasAny = !!bindingReqs || !!(initialBinding && initialBinding.driftIssueCount) || !!(repairBinding && repairBinding.driftIssueCount)
-        || !!imageCoverage || !!coverageDiag || !!researchDirection || !!composition || !!visualSystem || !!contentNarrative || !!siteDepth || !!experienceQuality || !!visualConcept || !!experienceIdentity || !!motionExecution || !!executionObligations || !!imageIntelDiag;
+        || !!imageCoverage || !!coverageDiag || !!researchDirection || !!composition || !!visualSystem || !!contentNarrative || !!siteDepth || !!experienceQuality || !!visualConcept || !!experienceIdentity || !!motionExecution || !!executionObligations || !!imageIntelDiag || !!visualIntelligenceSkipReason;
       if (!hasAny) return {};
       const b = repairBinding || initialBinding;
       const c = bindingReqs?.counts;
       return {
+        ...(visualIntelligenceSkipReason ? { visualIntelligenceSkipReason } : {}),
         ...(bindingReqs ? { bindingContractVersion: bindingReqs.version } : {}),
         ...(c ? {
           bindingRequirementCount: c.total, bindingSectionCount: c.section, bindingInteractionCount: c.interaction,
