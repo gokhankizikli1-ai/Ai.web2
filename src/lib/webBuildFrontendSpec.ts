@@ -28,6 +28,7 @@ import { resolveProductIntent } from '@/lib/webBuildProductIntent';
 import { resolveBuildType } from '@/lib/buildType';
 import { deriveAppArchitectureContract } from '@/lib/appArchitecture';
 import { deriveNavigationContract } from '@/lib/appNavigation';
+import { deriveScreenDepthContract } from '@/lib/appScreenDepth';
 import { stripLeadingFieldLabel } from '@/lib/webBuildFieldLabel';
 // PR #510 — deterministic Experience Architecture planner (a leaf; pure + fail-open; reads
 // only this assembled spec + the prompt, so it introduces no runtime import cycle).
@@ -774,6 +775,8 @@ export function deriveFrontendBuildSpecification(input: FrontendBuildSpecInput):
           built.appArchitecture = appArchitecture;
           const navigation = deriveNavigationContract(appArchitecture);
           if (navigation) built.navigation = navigation;
+          const screenDepth = deriveScreenDepthContract(appArchitecture);
+          if (screenDepth) built.screenDepth = screenDepth;
         }
       } catch { /* never block the build on app-architecture derivation */ }
     }

@@ -2142,6 +2142,11 @@ export interface FrontendBuildSpecification {
    *  appArchitecture: routes, default route, nav model, drill-in/modal and back
    *  behavior. Present ONLY for app builds. Every route targets a real screen. */
   navigation?: import('@/lib/appNavigation').NavigationContract;
+  /** App Build (buildType='app') — per-screen completeness + state-lifecycle
+   *  obligations (the app analogue of siteDepth): required elements, wired
+   *  interactions (control→handler→state→consequence) and role-derived lifecycle
+   *  states. Present ONLY for app builds. */
+  screenDepth?: import('@/lib/appScreenDepth').ScreenDepthContract;
 
   honestyRules: string[];
   sourceTrace: string[];
