@@ -2038,6 +2038,14 @@ export interface FrontendBuildSpecification {
   language: string;
   prompt: string;
 
+  /** Canonical pipeline build type. OPTIONAL and additive: absent ⇒ 'web' (every
+   *  spec derived before this field existed). When 'app', the app screen /
+   *  navigation / screen-depth / app-visual contracts are populated and the
+   *  scrolling page-composition contracts are intentionally omitted, so the
+   *  generation request, structural validation and acceptance analyzers branch
+   *  on this single field instead of re-deriving "app vs website" per stage. */
+  buildType?: import('@/lib/buildType').BuildType;
+
   identity: FrontendSpecIdentity;
   designSystem: FrontendSpecDesignSystem;
   architecture: FrontendSpecArchitecture;
@@ -2124,6 +2132,26 @@ export interface FrontendBuildSpecification {
    *  (manifest), lifecycle diagnostics and pre/post-repair regression protection. Fresh builds only;
    *  absent ⇒ legacy. No new call. */
   executionObligations?: import('@/lib/webBuildExecutionObligations').ExecutionObligationRegistry;
+
+  /** App Build (buildType='app') — the app SCREEN architecture: screen inventory,
+   *  roles, hierarchy, primary entry screen, application shell and primary user
+   *  flows. Present ONLY for app builds (absent ⇒ web build); it replaces the
+   *  scrolling page-composition contracts with a routed multi-screen model. */
+  appArchitecture?: import('@/lib/appArchitecture').AppArchitectureContract;
+  /** App Build (buildType='app') — the routing/navigation contract derived from
+   *  appArchitecture: routes, default route, nav model, drill-in/modal and back
+   *  behavior. Present ONLY for app builds. Every route targets a real screen. */
+  navigation?: import('@/lib/appNavigation').NavigationContract;
+  /** App Build (buildType='app') — per-screen completeness + state-lifecycle
+   *  obligations (the app analogue of siteDepth): required elements, wired
+   *  interactions (control→handler→state→consequence) and role-derived lifecycle
+   *  states. Present ONLY for app builds. */
+  screenDepth?: import('@/lib/appScreenDepth').ScreenDepthContract;
+  /** App Build (buildType='app') — the app-surface visual adapter: shell / app bar
+   *  / nav / density / touch targets / device behavior / screen composition (which
+   *  replaces section composition) / context-aware image strategy. REUSES the
+   *  shared visualSystem tokens (no new colour/type). Present ONLY for app builds. */
+  appVisual?: import('@/lib/appVisualAdapter').AppVisualContract;
 
   honestyRules: string[];
   sourceTrace: string[];

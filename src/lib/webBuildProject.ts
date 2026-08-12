@@ -10,6 +10,7 @@ import { getProject, addProject, updateProject } from '@/stores/projectStore';
 import type { WebBuildResult } from '@/lib/webBuildApi';
 import { buildWebBuildPayload, type WebBuildPayload, type WebBuildStep } from '@/lib/webBuildPayload';
 import { hasModelNativeEntryFiles, canonicalWebBuildFilesFingerprint } from '@/lib/webBuildPreviewStash';
+import { isAppBuild, buildTypeLabel, resolveBuildType } from '@/lib/buildType';
 
 function uid(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -129,10 +130,13 @@ export function saveWebBuildToProject(
     : createWebBuildProject(idea, result);
 }
 
-/** Project name from an accumulated payload (type or original prompt). */
+/** Project name from an accumulated payload (type or original prompt). Reflects the
+ *  build type so a saved app reads "App: …" and a website reads "Website: …". */
 export function deriveWebProjectNameFromPayload(payload: WebBuildPayload): string {
-  const label = payload.brief?.type || payload.prompt.trim().replace(/\s+/g, ' ').slice(0, 48);
-  return `Website: ${label}`;
+  const appType = payload.buildType === 'app'
+    ? payload.artifacts?.frontendBuildSpec?.appArchitecture?.appType : undefined;
+  const label = appType || payload.brief?.type || payload.prompt.trim().replace(/\s+/g, ' ').slice(0, 48);
+  return `${buildTypeLabel(resolveBuildType(payload.buildType))}: ${label}`;
 }
 
 /** Result of a VERIFIED Web Build project save. `ok` is true ONLY when the payload actually
@@ -232,24 +236,25 @@ export function saveWebBuildPayloadToProject(
     }
   }
 
+  const isApp = isAppBuild(saved.buildType);
   const project: Project = {
     id: `proj-${uid()}`,
     name: deriveWebProjectNameFromPayload(saved),
     description: saved.prompt.trim().slice(0, 200),
-    category: 'Website',
+    category: isApp ? 'App' : 'Website',
     status: 'active',
     progress: 40,
     agents: [], tasks: [],
     memory: [{
       id: `mem-${uid()}`, type: 'knowledge', title: 'Brief',
-      content: saved.prompt.trim(), createdAt: now, tags: ['web-build', 'brief'], confidence: 1,
+      content: saved.prompt.trim(), createdAt: now, tags: [isApp ? 'app-build' : 'web-build', 'brief'], confidence: 1,
     }],
     files: [],
     createdAt: now,
     updatedAt: 'Just now',
     color: 'slate',
     gradient: 'from-[#3B82F6] to-[#60A5FA]',
-    icon: 'Layout',
+    icon: isApp ? 'Cpu' : 'Layout',
     webBuild: saved,
   };
   const wrote = addProject(project);

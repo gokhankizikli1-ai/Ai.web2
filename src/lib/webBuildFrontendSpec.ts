@@ -25,6 +25,11 @@ import type { WebBuildLayoutPlan } from '@/lib/webBuildLayoutPlan';
 // Phase 12F — the shared product-intent authority (a leaf; no runtime cycle) for the
 // final specification contradiction guard.
 import { resolveProductIntent } from '@/lib/webBuildProductIntent';
+import { resolveBuildType } from '@/lib/buildType';
+import { deriveAppArchitectureContract, screenFilePath } from '@/lib/appArchitecture';
+import { deriveNavigationContract } from '@/lib/appNavigation';
+import { deriveScreenDepthContract } from '@/lib/appScreenDepth';
+import { deriveAppVisualContract } from '@/lib/appVisualAdapter';
 import { stripLeadingFieldLabel } from '@/lib/webBuildFieldLabel';
 // PR #510 — deterministic Experience Architecture planner (a leaf; pure + fail-open; reads
 // only this assembled spec + the prompt, so it introduces no runtime import cycle).
@@ -53,6 +58,11 @@ import type {
 export interface FrontendBuildSpecInput {
   prompt: string;
   lang: string;
+  /** Canonical pipeline build type. Absent ⇒ 'web' (legacy behavior). When 'app'
+   *  the spec derives app screen/navigation contracts instead of the scrolling
+   *  page-composition contracts, so downstream generation/validation/acceptance
+   *  branch on `spec.buildType` rather than re-inferring from prompt text. */
+  buildType?: import('@/lib/buildType').BuildType;
   brief: WebBuildBrief;
   sectionItems: WebBuildSectionItem[];
   layoutPlan: WebBuildLayoutPlan;
@@ -226,6 +236,45 @@ function buildOutputContract(sectionComponentFiles: string[]): FrontendSpecOutpu
   };
 }
 
+/* ── App output contract — a client-routed multi-SCREEN project (Phase 5). Each
+ *  planned screen is a required component file under src/screens/; there are NO
+ *  scrolling section-component files. Reuses the same validation machinery
+ *  (requiredFiles must exist, imports resolve) with app-shaped requirements. ── */
+const APP_OUTPUT_REQUIREMENTS: string[] = [
+  'Emit complete file contents for every file — no truncation.',
+  'Build a client-routed multi-screen app: configure react-router in src/App.tsx and render each screen from src/screens/.',
+  'Every planned screen exists as its own component file under src/screens/ and is reachable via its route.',
+  'Use valid relative imports; no missing required imports; no duplicate file paths.',
+  'No empty component bodies and no placeholder comments (e.g. "// TODO", "...").',
+  'Every interactive control has a real handler, updates state (useState/useReducer), and shows a visible consequence.',
+  'Render loading / empty / error states only where a screen actually shows data.',
+  'Accessible, semantic markup; the layout is usable at the narrow (phone) width with no overflow.',
+  'Respect prefers-reduced-motion for any animation.',
+  'Local, front-end-only behavior: never simulate real payments, emails, account creation or remote saves as succeeded.',
+];
+const APP_OUTPUT_SUCCESS: string[] = [
+  'The build compiles as a static React + TypeScript + Tailwind (Vite) app.',
+  'Navigation works: every nav control routes to a real screen; there are no dead links.',
+  'Each screen is complete for its role (real content + state), not a heading with empty cards.',
+  'The app looks like an application (shell + screens), not a scrolling marketing site in a phone frame.',
+];
+
+function buildAppOutputContract(screenComponentFiles: string[]): FrontendSpecOutputContract {
+  return {
+    format: 'frontend-files-v1',
+    framework: 'react',
+    language: 'typescript',
+    styling: 'tailwind-css',
+    requiredFiles: clean([...REQUIRED_FILES, ...screenComponentFiles], 24),
+    recommendedFiles: clean(['src/app/routes.tsx', 'src/components/AppShell.tsx', 'src/lib/designSystem.ts', 'src/data/appData.ts'], 16),
+    requiredSectionComponentFiles: [],
+    allowedExtensions: ['tsx', 'ts', 'css'],
+    requirements: clean(APP_OUTPUT_REQUIREMENTS, 24),
+    forbiddenPatterns: clean(OUTPUT_FORBIDDEN, 24),
+    successCriteria: clean(APP_OUTPUT_SUCCESS, 16),
+  };
+}
+
 /** The honest generation stub — Phase 12A never runs a model. */
 const NOT_RUN_GENERATION = {
   status: 'not-run' as const,
@@ -257,6 +306,7 @@ function failedOpenSpec(input: FrontendBuildSpecInput): FrontendBuildSpecificati
     status: 'failed-open',
     language: str(input.lang) || 'en',
     prompt: str(input.prompt),
+    buildType: resolveBuildType(input.buildType),
     identity: { siteType: str(input.brief?.type) || 'website' },
     designSystem: {
       rejectedDirections: [], colorTokens: {}, compositionRules: [], surfaceRules: [],
@@ -687,6 +737,7 @@ export function deriveFrontendBuildSpecification(input: FrontendBuildSpecInput):
       status,
       language: lang,
       prompt: str(input.prompt),
+      buildType: resolveBuildType(input.buildType),
       identity,
       designSystem: guardedDesignSystem,
       architecture: finalArchitecture,
@@ -740,10 +791,45 @@ export function deriveFrontendBuildSpecification(input: FrontendBuildSpecInput):
       });
     } catch { /* never block the build on research-direction derivation */ }
 
+    // ── APP BUILD BRANCH ──────────────────────────────────────────────────────
+    // For buildType='app' the scrolling page-composition contracts below are the
+    // WRONG mental model (hero/scroll/page-sections). Instead derive the app
+    // SCREEN architecture + navigation from the SAME already-derived authorities
+    // (identity, binding requirements, research direction, prompt) — no new call,
+    // fail-open. The web-page contracts (composition/contentNarrative/siteDepth/
+    // visualConcept/experienceIdentity/motionExecution) are then intentionally
+    // skipped so App Build never inherits marketing-page assumptions. The NEUTRAL
+    // contracts (visualSystem, experienceQuality, executionObligations, image
+    // coverage) still run — they carry no scroll/hero assumptions.
+    const isApp = built.buildType === 'app';
+    if (isApp) {
+      try {
+        const appArchitecture = deriveAppArchitectureContract({
+          identity: built.identity,
+          binding: built.bindingRequirements,
+          research: built.researchDirection,
+          sectionNames: (built.architecture?.sections || []).map((s) => s.name).filter(Boolean),
+          prompt: built.prompt,
+        });
+        if (appArchitecture) {
+          built.appArchitecture = appArchitecture;
+          const navigation = deriveNavigationContract(appArchitecture);
+          if (navigation) built.navigation = navigation;
+          const screenDepth = deriveScreenDepthContract(appArchitecture);
+          if (screenDepth) built.screenDepth = screenDepth;
+          // Rebuild the output contract around the app SCREENS (each screen is a
+          // required component file; no scrolling section-component files), so the
+          // SAME validation machinery enforces app structure.
+          const screenFiles = appArchitecture.screens.map((s) => screenFilePath(s.id));
+          built.outputContract = buildAppOutputContract(screenFiles);
+        }
+      } catch { /* never block the build on app-architecture derivation */ }
+    }
+
     // Phase (composition) — derive the BINDING page-composition contract from the EXISTING layout/
     // section/blueprint + art-direction + research + binding + image-coverage artifacts (deterministic;
     // no model/network call; fail-open). Absent ⇒ legacy behavior.
-    try {
+    if (!isApp) try {
       const composition = deriveCompositionContract({
         identity: built.identity,
         sections: built.architecture?.sections || [],
@@ -778,12 +864,20 @@ export function deriveFrontendBuildSpecification(input: FrontendBuildSpecInput):
       if (visualSystem) built.visualSystem = visualSystem;
     } catch { /* never block the build on visual-system derivation */ }
 
+    // App Build — derive the app visual adapter AFTER the shared visual system so it
+    // reuses those tokens (no new colour/type) and only adds app-surface + screen
+    // composition + image strategy. App builds only; fail-open.
+    if (isApp) try {
+      const appVisual = deriveAppVisualContract(built.appArchitecture, built.visualSystem);
+      if (appVisual) built.appVisual = appVisual;
+    } catch { /* never block the build on app-visual derivation */ }
+
     // Phase (content narrative) — derive the BINDING content/conversion-narrative contract (per-section
     // message roles, concrete specificity anchors, brand voice, CTA hierarchy, truthful proof) from the
     // EXISTING identity + conversion model + research/approved-claim policy + composition + binding +
     // the SANITIZED section public copy (deterministic; no model/network call; fail-open). Runs last so
     // it can read every derived contract. Absent ⇒ legacy behavior.
-    try {
+    if (!isApp) try {
       const contentNarrative = deriveContentNarrativeContract({
         identity: built.identity,
         language: built.language,
@@ -805,7 +899,7 @@ export function deriveFrontendBuildSpecification(input: FrontendBuildSpecInput):
     // composition + the section architecture + user prompt). NOT a universal section count: a restaurant,
     // a SaaS, a store, a portfolio and a minimal landing page each get a different depth profile.
     // Deterministic; no model/network call; fail-open. Absent ⇒ legacy behavior.
-    try {
+    if (!isApp) try {
       const siteDepth = deriveSiteDepthContract({
         identity: built.identity,
         language: built.language,
@@ -846,7 +940,7 @@ export function deriveFrontendBuildSpecification(input: FrontendBuildSpecInput):
     // meaning, per-image art direction, a designed motion vocabulary, visual rhythm and forbidden generic
     // patterns. Runs last so every upstream contract is available (deterministic; no model/network call;
     // fail-open). Absent ⇒ legacy behavior.
-    try {
+    if (!isApp) try {
       const visualConcept = deriveVisualConceptContract({
         identity: built.identity,
         sections: built.architecture?.sections || [],
@@ -868,7 +962,7 @@ export function deriveFrontendBuildSpecification(input: FrontendBuildSpecInput):
     // architecture, product-demonstration intent, a category-true trust model (incl. a high-stakes
     // disclaimer floor), signature behavior and emotional/functional progression. Runs last so every
     // upstream contract is available (deterministic; no model/network call; fail-open). Absent ⇒ legacy.
-    try {
+    if (!isApp) try {
       const experienceIdentity = deriveExperienceIdentityContract({
         identity: built.identity,
         sections: built.architecture?.sections,
@@ -891,7 +985,7 @@ export function deriveFrontendBuildSpecification(input: FrontendBuildSpecInput):
     // simplification, reduced-motion equivalent, performance budget, fallback, hero blueprint, animated
     // demo). Runs last so both upstream contracts are available (deterministic; no model/network call;
     // fail-open). Absent ⇒ legacy behavior.
-    try {
+    if (!isApp) try {
       const motionExecution = deriveMotionExecutionContract({
         visualConcept: built.visualConcept,
         experienceIdentity: built.experienceIdentity,

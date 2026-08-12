@@ -30,6 +30,8 @@ import { evaluateVisualQuality } from '@/lib/webBuildVisualEvaluation';
 // only; returns undefined when its flag is off, so this file is unchanged then).
 import { evaluateSemanticContent } from '@/lib/webBuildSemanticContentGuard';
 import { stripLeadingFieldLabel } from '@/lib/webBuildFieldLabel';
+import { screenComponentName } from '@/lib/appArchitecture';
+import { findDeadControls } from '@/lib/appScreenDepth';
 
 /* ── Bounds (safe against untrusted model output) ───────────────────────────── */
 const MAX_GENERATED_FILES = 80;
@@ -550,6 +552,11 @@ function structuralSignature(content: string): string {
 /* ── Main validation (given successfully parsed files + the spec) ───────────── */
 function validateProject(rawFiles: RawFile[], spec: FrontendBuildSpecification, raw: FrontendBuilderRawArtifact): FrontendBuilderValidationArtifact {
   const acc = newAcc();
+  // App builds have no scrolling page-sections / hero: the web section-copy and
+  // hero-visual checks below are meaningless for them (and are replaced by the app
+  // structural checks — screen files required, nav targets resolvable, dead
+  // controls). Gate the web-only checks on this flag.
+  const isAppBuildSpec = spec.buildType === 'app';
 
   // 1) Path validation + case-insensitive dedupe → build the parsed file set.
   const byPath = new Map<string, RawFile>();
@@ -723,8 +730,9 @@ function validateProject(rawFiles: RawFile[], spec: FrontendBuildSpecification, 
   }
 
   // 8) Copy preservation (critical → error; supporting → warning). Compare-only norm.
+  //    Web builds only — an app renders screens, not the planning section copy.
   const haystack = normCopy(allContent);
-  const sections = Array.isArray(spec.architecture?.sections) ? spec.architecture.sections : [];
+  const sections = isAppBuildSpec ? [] : (Array.isArray(spec.architecture?.sections) ? spec.architecture.sections : []);
   for (const s of sections) {
     // Fix C — compare against the authoritative copy with any leading internal field-label prefix
     // stripped, so fidelity requires only the real public text (never "Headline:") and the reported
@@ -882,8 +890,9 @@ function validateProject(rawFiles: RawFile[], spec: FrontendBuildSpecification, 
     addWarning(acc, 'internal-copy-leak', `internal planning vocabulary (${internalCopyLeakCount}) appears in the rendered source — planning text may be leaking as visible public copy`);
   }
   // missing-hero-visual-layer — the hero section renders copy but no composed visual layer.
+  //   Web builds only — an app's entry screen is an operational surface, not a hero.
   let missingHeroVisualLayerDetected = false;
-  const heroId = Array.isArray(spec.architecture?.sectionOrder) ? spec.architecture.sectionOrder[0] : undefined;
+  const heroId = (!isAppBuildSpec && Array.isArray(spec.architecture?.sectionOrder)) ? spec.architecture.sectionOrder[0] : undefined;
   const heroPath = heroId ? `src/components/${pascalOf(heroId)}.tsx` : undefined;
   const heroFile = heroPath ? byPath.get(heroPath) : undefined;
   const heroComponentPath = heroFile ? heroFile.path : undefined;
@@ -892,6 +901,44 @@ function validateProject(rawFiles: RawFile[], spec: FrontendBuildSpecification, 
     if (hasJsxText && !HERO_VISUAL_RE.test(heroFile.content)) {
       missingHeroVisualLayerDetected = true;
       addWarning(acc, 'missing-hero-visual-layer', `the hero (${heroFile.path}) renders text with no composed visual layer (no svg/image/gradient/placeholder) — add an honest hero visual`);
+    }
+  }
+
+  // App structural checks (buildType='app' only). Screen-file existence is already
+  // enforced as an ERROR via requiredFiles (so a route to a screen the model never
+  // generated = missing-required-file = rejected/repairable). Here we add app-specific
+  // reachability + router wiring + dead controls on top of that.
+  if (isAppBuildSpec && spec.appArchitecture) {
+    const appContent = app?.content || '';
+    const routesFile = byPath.get('src/app/routes.tsx');
+    const routingHaystack = `${appContent}\n${routesFile?.content || ''}`;
+    const screensList = Array.isArray(spec.appArchitecture.screens) ? spec.appArchitecture.screens : [];
+    // Router must be wired for a multi-screen app.
+    const hasRouter = /react-router|createBrowserRouter|<Routes\b|<Route\b|useRoutes\b|RouterProvider|createHashRouter|<HashRouter\b|<BrowserRouter\b|<MemoryRouter\b/.test(routingHaystack);
+    if (screensList.length >= 2 && !hasRouter) {
+      addWarning(acc, 'missing-router', 'a multi-screen app declares screens but no react-router wiring was found in src/App.tsx or src/app/routes.tsx');
+    }
+    for (const s of screensList) {
+      const comp = screenComponentName(s.id);
+      const file = byPath.get(`src/screens/${comp}.tsx`);
+      if (!file) continue; // absence already reported as missing-required-file
+      const compRe = new RegExp(`\\b${comp}\\b`);
+      const referenced = compRe.test(appContent)
+        || sourceFiles.some((f) => f.path !== file.path && compRe.test(f.content));
+      if (!referenced) {
+        addWarning(acc, 'unwired-screen', `screen component ${comp} is never referenced by App.tsx or a route — it is unreachable`, file.path);
+      }
+      const dead = findDeadControls(s.id, file.content);
+      if (dead.length) {
+        addWarning(acc, 'dead-control', `${dead.length} interactive control(s) in ${comp} have no handler (onClick/onChange/onSubmit) — wire them or remove`, file.path);
+      }
+    }
+    // Defensive: a navigation route must target a declared screen (never a dead target).
+    const screenIds = new Set(screensList.map((s) => s.id));
+    for (const r of (spec.navigation?.routes || [])) {
+      if (!screenIds.has(r.screenId)) {
+        addError(acc, 'dead-route', `navigation route ${r.path} targets unknown screen "${r.screenId}"`, 'src/App.tsx');
+      }
     }
   }
 
