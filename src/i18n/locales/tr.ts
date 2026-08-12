@@ -149,6 +149,7 @@ export const tr: Record<string, string> = {
   webBuildNoSources: 'kaynak kullanılmadı',
   webBuildContractFailed: "Korvix backend'den tam model-planlı bir build alamadı. Birazdan tekrar dene.",
   webBuildWebsiteLabel: 'Web Sitesi',
+  webBuildAppLabel: 'Uygulama',
   // Sidebar specific
   workspaceHub: 'Çalışma Alanı Merkezi', explore: 'Keşfet', work: 'Çalışma', tools: 'Araçlar',
   moreTabs: 'Daha fazla', pinned: 'Sabitlenmiş', yourChats: 'Sohbetleriniz',

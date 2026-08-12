@@ -908,12 +908,22 @@ export function buildWebBuildRequest(
   idea: string,
   opts?: { revise?: boolean; previousReply?: string; mode?: BuilderMode | null },
 ): string {
+  // buildType='app' gets a fully APP-framed planning prompt (screens/navigation/
+  // flows/state) instead of the website strategy prompt. The [WEB BUILD REQUEST]
+  // header stays (it is the backend planning-mode selector, not design vocabulary),
+  // and the parser-required H2 headers stay, but the persona, scope and every design
+  // instruction are app-oriented — no website/hero/section-architecture/conversion
+  // framing reaches the model. Web builds are byte-for-byte unchanged.
+  const isApp = opts?.mode === 'app';
   const lines: string[] = ['[WEB BUILD REQUEST]'];
   // Selected build mode is hidden context — it shapes what gets built without
-  // ever appearing in the user's message or the persisted prompt.
-  const modeCtx = buildModeContext(opts?.mode);
-  if (modeCtx) lines.push(`BUILD CONTEXT: ${modeCtx}`, '');
-  if (opts?.revise) {
+  // ever appearing in the user's message or the persisted prompt. For an APP build
+  // the whole prompt below is app-framed, so the one-line context is redundant.
+  if (!isApp) {
+    const modeCtx = buildModeContext(opts?.mode);
+    if (modeCtx) lines.push(`BUILD CONTEXT: ${modeCtx}`, '');
+  }
+  if (opts?.revise && !isApp) {
     lines.push(
       'This is a REVISION of an existing website. Apply ONLY the change the user asks for',
       'and keep every other section exactly as it was. Re-output the full build with the',
@@ -929,7 +939,7 @@ export function buildWebBuildRequest(
       lines.push('', 'PREVIOUS BUILD (preserve unless the change touches it):', opts.previousReply);
     }
     lines.push('', `Requested change: ${idea}`);
-  } else {
+  } else if (!isApp) {
     lines.push(
       'You are a SENIOR Website Strategy, UX Architecture and Conversion Copy Director.',
       'Produce the complete PLANNING package for the idea below by REASONING FROM THE IDEA',
@@ -1026,6 +1036,115 @@ export function buildWebBuildRequest(
       '## Generated Copy -- specific, benefit-led copy per section using `### <section-id>`',
       '   subheadings: headline, subheadline, button labels, key bullets/FAQ. ONLY the copy the',
       '   frontend actually needs. Never generic filler (e.g. "Hayallerinize ulasin", "Get started").',
+      '## Next Steps -- at most 4 concrete follow-ups the user can ask for.',
+      '',
+      'Write ALL copy in the same language as the idea, natural and fluent.',
+      '',
+      `Idea: ${idea}`,
+    );
+  } else if (opts?.revise) {
+    // APP revision — app-framed, screens/flows (never website/sections).
+    lines.push(
+      'This is a REVISION of an existing multi-screen APPLICATION. Apply ONLY the change the',
+      'user asks for and keep every other screen exactly as it was. Re-output the full build with',
+      'the targeted screen(s)/flow updated. Keep the same premium bar: real screen content, working',
+      'navigation and honest local state — never downgrade a screen to generic filler.',
+      'SCOPE stays APPLICATION + FRONT-END ONLY: never add a real backend, AI runtime, database,',
+      'payments, authentication or real search — interactive surfaces are local, front-end-only',
+      'samples. Preserve the App Experience Plan fields (app experience model, screen model,',
+      'navigation model, app shell, primary flow, state model) unless the change explicitly alters them.',
+    );
+    if (opts.previousReply) {
+      lines.push('', 'PREVIOUS BUILD (preserve unless the change touches it):', opts.previousReply);
+    }
+    lines.push('', `Requested change: ${idea}`);
+  } else {
+    // APP fresh planning — a client-routed, multi-SCREEN application. Keeps the same six
+    // parser H2 headers and the brief label tokens, but every persona/scope/design decision
+    // is app-oriented (screens, routes, navigation, flows, state) with NO website/hero/
+    // scrolling-section/conversion assumptions.
+    lines.push(
+      'You are a SENIOR Product / Application Strategy, UX Architecture and Product Copy Director.',
+      'Produce the complete PLANNING package for the APP idea below by REASONING FROM THE IDEA',
+      'ITSELF, not from a fixed template. Two different app ideas must produce genuinely different',
+      'screen architecture, navigation and product decisions because their strategy differs.',
+      '',
+      'PLANNING ONLY: you are NOT writing code here. Do NOT output React, Tailwind, file paths',
+      '(src/..., .tsx), code fences, or any implementation source. A separate dedicated Frontend',
+      'Builder generates the real multi-screen application afterward from THIS plan, so your job is',
+      'to make every decision it needs. Do NOT emit a "## Frontend Code" section.',
+      '',
+      'SCOPE, APPLICATION + FRONT-END ONLY: plan a CLIENT-ROUTED, MULTI-SCREEN application',
+      '(screens, routes, navigation, stateful flows) — NOT a scrolling marketing website and NOT a',
+      'landing page. Never a real backend, AI runtime, database, payments, authentication or real',
+      'search — interactive surfaces are LOCAL, front-end-only samples, never a claim that the',
+      'product is actually running.',
+      '',
+      'RESEARCH: Use the trusted [BUILD INTELLIGENCE] context Korvix supplies when present, and',
+      'fold real findings into "Strategy insight". When it is absent, reason from your own',
+      'knowledge and label it "Strategy insight". Never invent URLs, sources, competitors,',
+      'statistics, prices, logos or testimonials, and never claim you browsed or researched.',
+      '',
+      'OUTPUT: use EXACTLY these six H2 sections, in THIS order, and NO other H2 sections. Inside',
+      'them use these EXACT labeled fields, ONE concise line each (the parser depends on the',
+      'labels). Be specific but compact; do not repeat the same decision across sections.',
+      '',
+      '## Design Thinking Plan',
+      'A VISIBLE structured design decision (NOT hidden reasoning). Name CONCRETE choices; banned',
+      'as a whole decision: "modern premium", "clean", "sleek", "user friendly". Reject at least',
+      'two plausible-but-wrong directions (incl. the default template trap). EXACT labels, one per line:',
+      'Design thesis: <one sentence: the real identity of the app>',
+      'Audience decision: <who uses it and the primary job they open it to do>',
+      'First impression: <what the first SCREEN should feel like, concrete, not "premium">',
+      'Selected visual direction: <a SPECIFIC visual direction, not "modern premium">',
+      'Rejected directions: <2-3 directions you rejected and WHY, incl. the default template trap>',
+      'App shell decision: <sidebar / bottom tabs / top nav / stacked — and why it fits this app>',
+      'Screen rhythm decision: <how screens differ in density/layout so the app does not feel templated>',
+      'Primary workspace surface: <the main operational screen the user lives in, and why>',
+      'Palette decision: <specific palette family/intent and why>',
+      'Typography decision: <specific type mood and hierarchy>',
+      'Template traps to avoid: <exact traps, e.g. a giant marketing hero on a functional screen>',
+      'Differentiation move: <the ONE thing that makes this app not feel templated>',
+      'Quality bar: <what would make this feel Linear / Height / Notion-level>',
+      '',
+      '## Build Plan',
+      'App type: <the kind of app, e.g. CRM, analytics dashboard, fitness app, booking app, utility>',
+      'Core idea: <one line: what this app is>',
+      'Audience: <who uses it>',
+      'User intent: <the primary job the user opens the app to do>',
+      'Primary goal: <the single most important user outcome>',
+      'Strategy insight: <the key insight that shapes the app>',
+      'Key flows: <the 1-3 primary flows through the app>',
+      'Primary action: <the single most important in-app action>',
+      '',
+      '## Design Direction',
+      'Visual mood: <...>',
+      'Layout logic: <how the app shell + screens are organized and why>',
+      'Typography direction: <heading/body personality>',
+      'Color direction: <palette intent>',
+      'Visual metaphor: <the core visual idea>',
+      'Motion direction: <what animates and why, conceptual, not code>',
+      'Responsive behavior: <how it adapts across desktop / tablet / narrow (phone) widths>',
+      '-- APP EXPERIENCE PLAN -- decide from THIS idea (application + front-end only, never a real',
+      '   backend/AI/db/payments/search). EXACT labels, one per line:',
+      'App experience model: <dashboard app | list-detail app | workspace app | tracker app | browse app | utility app>',
+      'Screen model: <the screens this app needs, as a short list>',
+      'Primary experience: <what the main action opens/does INSIDE the app, and why>',
+      'App shell: <sidebar | bottom-tabs | top-nav | stacked — the top-level navigation>',
+      'Navigation model: <tab navigation | sidebar navigation | stack/drill-down | modal/sheet flows>',
+      'State model: <the key local UI state the app holds, e.g. selected item, filter, form, saving>',
+      'Primary flow: <the main screen-to-screen path, e.g. list -> detail -> edit>',
+      '-- APP ENTRY -- how the user enters the app (front-end only). EXACT labels, one per line:',
+      'Default screen: <the screen the app opens on>',
+      'Entry conditions: <what the user sees first / any onboarding step, or "none">',
+      'Primary entry action: <label + action, e.g. "Open a deal -> Deal Detail">',
+      '',
+      '## Page Sections -- these are the app SCREENS (each a routed view, NOT a scrolling page',
+      '   section). Normally 3-8 screens; fewer for a small utility, more for a rich tool. Each as',
+      '   `- <screen-id>: one or two short sentences on the screen job`. Stable kebab-case ids.',
+      '## Generated Copy -- specific, in-product copy per screen using `### <screen-id>` subheadings:',
+      '   screen title, key labels, primary/secondary action labels, empty-state text. ONLY the copy',
+      '   the app actually needs. Never generic filler (e.g. "Get started", "Welcome").',
       '## Next Steps -- at most 4 concrete follow-ups the user can ask for.',
       '',
       'Write ALL copy in the same language as the idea, natural and fluent.',
@@ -1775,6 +1894,16 @@ export async function generateWebBuild(
 
     // Revisions build on an already-validated site → keep tolerant behavior.
     if (opts?.revise) return first;
+
+    // APP builds plan in APP vocabulary (screens/navigation/flows/state) and therefore do
+    // NOT emit the website "Website Experience Plan" labels the full WEB planning contract
+    // requires. Accept a PREVIEW-VIABLE first app attempt directly (same call count as web,
+    // NO forced strict-repair round-trip) rather than failing the website-shaped contract.
+    // A genuinely thin app plan (not preview-viable) still falls through to the one repair.
+    const isApp = opts?.mode === 'app';
+    if (isApp && !isModelPlanningContractEnough(first) && isPreviewViableStrictRepair(first)) {
+      return first;
+    }
 
     // A fresh build that already cleared the PLANNING contract is preview-viable —
     // the Preview renders from the planning/copy sections; Frontend Code is a bonus

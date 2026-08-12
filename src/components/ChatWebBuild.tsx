@@ -130,9 +130,9 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
     const runId = saveWebBuildSession(p, lang);
     if (!runId) return;
     setActiveWebBuildSession(runId);
-    // Title like "Website: Peyzaj Mimarlığı". Convert the CURRENT chat session
-    // (sessionId) into this web_build in place — never a duplicate sibling.
-    const label = t('webBuildWebsiteLabel');
+    // Title like "Website: Peyzaj Mimarlığı" (or "App: …" for an app build).
+    // Convert the CURRENT chat session (sessionId) into this web_build in place.
+    const label = p.buildType === 'app' ? t('webBuildAppLabel') : t('webBuildWebsiteLabel');
     const title = `${label}: ${deriveWebBuildTitle(p.prompt, lang)}`;
     // The owning chat session id and the Web Build run id are DISTINCT identities.
     const owningChatSessionId = sessionId ?? runId;
@@ -166,9 +166,9 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
 
   // Phase 13H — begin a truthful activity run: seed the expected timeline (first stage already
   // active), record the run identity, and clear any prior completed summary.
-  const startLive = useCallback((prompt: string, kind: 'build' | 'revision', controller: AbortController) => {
+  const startLive = useCallback((prompt: string, kind: 'build' | 'revision', controller: AbortController, buildType?: import('@/lib/buildType').BuildType) => {
     const startedAt = Date.now();
-    const activity = kind === 'revision' ? initRevisionActivity() : initBuildActivity();
+    const activity = kind === 'revision' ? initRevisionActivity(buildType) : initBuildActivity(buildType);
     activityRef.current = activity;
     liveMetaRef.current = { prompt, startedAt, controller };
     runFinalizedRef.current = null;
@@ -307,7 +307,7 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
     setSavedProjectId(undefined);
     setSaveFailed(false);
     setSaveStep('closed');
-    startLive(trimmed, 'build', controller);
+    startLive(trimmed, 'build', controller, buildTypeFromBuilderMode(mode));
     const reporter = makeReporter(controller);
 
     try {
@@ -382,7 +382,7 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
 
     setBusy(true);
     setErrorMsg('');
-    startLive(trimmed, 'revision', controller);
+    startLive(trimmed, 'revision', controller, payload?.buildType);
     const reporter = makeReporter(controller);
 
     try {
