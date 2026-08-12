@@ -2036,6 +2036,12 @@ export interface FrontendBuildSpecification {
   version: 'frontend-spec-v1';
   status: FrontendBuildSpecStatus;
   language: string;
+  /** The canonical product build type this spec was derived for. OPTIONAL and
+   *  backward compatible: absent ⇒ `web`. When `app`, generation assembles the App
+   *  Build blocks (app architecture / navigation / screen depth / app visual surface)
+   *  in place of the web-coupled hero/section/site-depth blocks, reusing every shared
+   *  authority (visual system, binding requirements, obligations, validation, review). */
+  buildType?: import('@/lib/buildType').BuildType;
   prompt: string;
 
   identity: FrontendSpecIdentity;
@@ -2124,6 +2130,30 @@ export interface FrontendBuildSpecification {
    *  (manifest), lifecycle diagnostics and pre/post-repair regression protection. Fresh builds only;
    *  absent ⇒ legacy. No new call. */
   executionObligations?: import('@/lib/webBuildExecutionObligations').ExecutionObligationRegistry;
+
+  /** Phase 2 (App Build) — the app SCREEN architecture: screen inventory (role /
+   *  user-job / entry conditions / primary info + action / data shape / relevant
+   *  lifecycle states), entry screen, relationships, shell and flows. Present ONLY
+   *  when buildType === 'app'; absent ⇒ a web build is byte-for-byte unchanged.
+   *  Deterministic; no model/network call; fail-open. */
+  appArchitecture?: import('@/lib/appBuildArchitecture').AppArchitectureContract;
+  /** Phase 2 (App Build) — the app NAVIGATION: route table, default route, pattern
+   *  (sidebar / tabs / stack / single), back behavior, deep-link identities and
+   *  router reuse. Reads appArchitecture; every route resolves to a declared screen.
+   *  Present ONLY when buildType === 'app'; absent ⇒ web build unchanged. */
+  navigation?: import('@/lib/appBuildArchitecture').NavigationContract;
+  /** Phase 3 (App Build) — the app SCREEN DEPTH & COMPLETENESS contract: per-screen
+   *  substance expectations (role-derived, not a universal count), the app interaction
+   *  patterns in play, and the honest-simulation rules (front-end only, never a real
+   *  payment/email/account/remote-save claim). Present ONLY when buildType === 'app';
+   *  absent ⇒ web build unchanged. */
+  screenDepth?: import('@/lib/appBuildScreenDepth').ScreenDepthContract;
+  /** Phase 4 (App Build) — the app VISUAL ADAPTER: app-surface concepts (shell / nav
+   *  placement / density / touch targets / chrome-vs-content), a context-aware image
+   *  strategy and a per-screen SCREEN COMPOSITION that replaces the web hero/section/
+   *  funnel model. Reuses the shared VisualSystem tokens — never a second token system.
+   *  Present ONLY when buildType === 'app'; absent ⇒ web build unchanged. */
+  appVisual?: import('@/lib/appBuildVisualAdapter').AppVisualAdapter;
 
   honestyRules: string[];
   sourceTrace: string[];

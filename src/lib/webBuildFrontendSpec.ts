@@ -26,6 +26,7 @@ import type { WebBuildLayoutPlan } from '@/lib/webBuildLayoutPlan';
 // final specification contradiction guard.
 import { resolveProductIntent } from '@/lib/webBuildProductIntent';
 import { stripLeadingFieldLabel } from '@/lib/webBuildFieldLabel';
+import { type BuildType, normalizeBuildType } from '@/lib/buildType';
 // PR #510 — deterministic Experience Architecture planner (a leaf; pure + fail-open; reads
 // only this assembled spec + the prompt, so it introduces no runtime import cycle).
 import { deriveExperienceArchitecturePlan } from '@/lib/webBuildExperienceArchitecture';
@@ -40,6 +41,9 @@ import { deriveVisualConceptContract } from '@/lib/webBuildVisualConcept';
 import { deriveExperienceIdentityContract } from '@/lib/webBuildExperienceIdentity';
 import { deriveMotionExecutionContract } from '@/lib/webBuildMotionExecution';
 import { deriveExecutionObligationRegistry } from '@/lib/webBuildExecutionObligations';
+import { deriveAppArchitectureContract, deriveNavigationContract } from '@/lib/appBuildArchitecture';
+import { deriveScreenDepthContract } from '@/lib/appBuildScreenDepth';
+import { deriveAppVisualAdapter } from '@/lib/appBuildVisualAdapter';
 import type {
   FrontendBuildSpecification, FrontendSpecSection, FrontendSpecImageSlot, FrontendSpecMotionLayer,
   FrontendSpecIdentity, FrontendSpecDesignSystem, FrontendSpecArchitecture, FrontendSpecAssetPlan,
@@ -53,6 +57,11 @@ import type {
 export interface FrontendBuildSpecInput {
   prompt: string;
   lang: string;
+  /** The canonical product build type. OPTIONAL and backward compatible: absent ⇒
+   *  `web` (the native Web Build). `app` routes derivation + the generation request
+   *  through the App Build adapters (app architecture / navigation / screen depth /
+   *  app visual surface) instead of the web-coupled hero/section/site-depth blocks. */
+  buildType?: BuildType;
   brief: WebBuildBrief;
   sectionItems: WebBuildSectionItem[];
   layoutPlan: WebBuildLayoutPlan;
@@ -256,6 +265,7 @@ function failedOpenSpec(input: FrontendBuildSpecInput): FrontendBuildSpecificati
     version: 'frontend-spec-v1',
     status: 'failed-open',
     language: str(input.lang) || 'en',
+    buildType: normalizeBuildType(input.buildType),
     prompt: str(input.prompt),
     identity: { siteType: str(input.brief?.type) || 'website' },
     designSystem: {
@@ -319,6 +329,7 @@ function slotIdsForSection(slots: ReadonlyArray<{ id: string; target: string }> 
 export function deriveFrontendBuildSpecification(input: FrontendBuildSpecInput): FrontendBuildSpecification {
   try {
     const lang = str(input.lang) || 'en';
+    const buildType: BuildType = normalizeBuildType(input.buildType);
     const brief = input.brief || ({} as WebBuildBrief);
     const items = Array.isArray(input.sectionItems) ? input.sectionItems : [];
     const plan = input.layoutPlan;
@@ -686,6 +697,7 @@ export function deriveFrontendBuildSpecification(input: FrontendBuildSpecInput):
       version: 'frontend-spec-v1',
       status,
       language: lang,
+      buildType,
       prompt: str(input.prompt),
       identity,
       designSystem: guardedDesignSystem,
@@ -918,6 +930,34 @@ export function deriveFrontendBuildSpecification(input: FrontendBuildSpecInput):
       });
       if (executionObligations) built.executionObligations = executionObligations;
     } catch { /* never block the build on obligation-registry derivation */ }
+
+    // Phase 2 (App Build) — for an APP build only, derive the app SCREEN architecture +
+    // NAVIGATION from the resolved identity + prompt intent + planned screen names. This
+    // is the app-specific planning authority that makes the multi-screen difference real
+    // (screens/roles/states/routes) instead of the web page/section model. Deterministic;
+    // no model/network call; fail-open. A web build never enters this branch, so the web
+    // spec is byte-for-byte unchanged.
+    if (buildType === 'app') {
+      try {
+        const appArchitecture = deriveAppArchitectureContract({
+          identity: built.identity,
+          prompt: built.prompt,
+          sectionNames: (built.architecture?.sections || []).map((s) => s.name || s.id),
+        });
+        built.appArchitecture = appArchitecture;
+        const navigation = deriveNavigationContract(appArchitecture);
+        if (navigation) built.navigation = navigation;
+        // Phase 3 — the app screen-depth & completeness contract (role-derived substance
+        // + interaction patterns + honest-simulation rules). Reads the architecture.
+        const screenDepth = deriveScreenDepthContract(appArchitecture);
+        if (screenDepth) built.screenDepth = screenDepth;
+        // Phase 4 — the app visual adapter + per-screen composition. Reuses the shared
+        // VisualSystem tokens (built.visualSystem); adds only app-surface concepts. The
+        // nav pattern is threaded so tab placement (top vs bottom) matches navigation.
+        const appVisual = deriveAppVisualAdapter(appArchitecture, { navPattern: navigation?.pattern });
+        if (appVisual) built.appVisual = appVisual;
+      } catch { /* never block the build on app-architecture derivation */ }
+    }
 
     return built;
   } catch {
