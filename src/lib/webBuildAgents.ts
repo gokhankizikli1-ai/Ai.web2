@@ -2133,6 +2133,16 @@ export interface FrontendBuildSpecification {
    *  absent ⇒ legacy. No new call. */
   executionObligations?: import('@/lib/webBuildExecutionObligations').ExecutionObligationRegistry;
 
+  /** App Build (buildType='app') — the app SCREEN architecture: screen inventory,
+   *  roles, hierarchy, primary entry screen, application shell and primary user
+   *  flows. Present ONLY for app builds (absent ⇒ web build); it replaces the
+   *  scrolling page-composition contracts with a routed multi-screen model. */
+  appArchitecture?: import('@/lib/appArchitecture').AppArchitectureContract;
+  /** App Build (buildType='app') — the routing/navigation contract derived from
+   *  appArchitecture: routes, default route, nav model, drill-in/modal and back
+   *  behavior. Present ONLY for app builds. Every route targets a real screen. */
+  navigation?: import('@/lib/appNavigation').NavigationContract;
+
   honestyRules: string[];
   sourceTrace: string[];
   missingInputs: string[];

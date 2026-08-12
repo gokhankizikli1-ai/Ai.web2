@@ -26,6 +26,8 @@ import type { WebBuildLayoutPlan } from '@/lib/webBuildLayoutPlan';
 // final specification contradiction guard.
 import { resolveProductIntent } from '@/lib/webBuildProductIntent';
 import { resolveBuildType } from '@/lib/buildType';
+import { deriveAppArchitectureContract } from '@/lib/appArchitecture';
+import { deriveNavigationContract } from '@/lib/appNavigation';
 import { stripLeadingFieldLabel } from '@/lib/webBuildFieldLabel';
 // PR #510 — deterministic Experience Architecture planner (a leaf; pure + fail-open; reads
 // only this assembled spec + the prompt, so it introduces no runtime import cycle).
@@ -748,10 +750,38 @@ export function deriveFrontendBuildSpecification(input: FrontendBuildSpecInput):
       });
     } catch { /* never block the build on research-direction derivation */ }
 
+    // ── APP BUILD BRANCH ──────────────────────────────────────────────────────
+    // For buildType='app' the scrolling page-composition contracts below are the
+    // WRONG mental model (hero/scroll/page-sections). Instead derive the app
+    // SCREEN architecture + navigation from the SAME already-derived authorities
+    // (identity, binding requirements, research direction, prompt) — no new call,
+    // fail-open. The web-page contracts (composition/contentNarrative/siteDepth/
+    // visualConcept/experienceIdentity/motionExecution) are then intentionally
+    // skipped so App Build never inherits marketing-page assumptions. The NEUTRAL
+    // contracts (visualSystem, experienceQuality, executionObligations, image
+    // coverage) still run — they carry no scroll/hero assumptions.
+    const isApp = built.buildType === 'app';
+    if (isApp) {
+      try {
+        const appArchitecture = deriveAppArchitectureContract({
+          identity: built.identity,
+          binding: built.bindingRequirements,
+          research: built.researchDirection,
+          sectionNames: (built.architecture?.sections || []).map((s) => s.name).filter(Boolean),
+          prompt: built.prompt,
+        });
+        if (appArchitecture) {
+          built.appArchitecture = appArchitecture;
+          const navigation = deriveNavigationContract(appArchitecture);
+          if (navigation) built.navigation = navigation;
+        }
+      } catch { /* never block the build on app-architecture derivation */ }
+    }
+
     // Phase (composition) — derive the BINDING page-composition contract from the EXISTING layout/
     // section/blueprint + art-direction + research + binding + image-coverage artifacts (deterministic;
     // no model/network call; fail-open). Absent ⇒ legacy behavior.
-    try {
+    if (!isApp) try {
       const composition = deriveCompositionContract({
         identity: built.identity,
         sections: built.architecture?.sections || [],
@@ -791,7 +821,7 @@ export function deriveFrontendBuildSpecification(input: FrontendBuildSpecInput):
     // EXISTING identity + conversion model + research/approved-claim policy + composition + binding +
     // the SANITIZED section public copy (deterministic; no model/network call; fail-open). Runs last so
     // it can read every derived contract. Absent ⇒ legacy behavior.
-    try {
+    if (!isApp) try {
       const contentNarrative = deriveContentNarrativeContract({
         identity: built.identity,
         language: built.language,
@@ -813,7 +843,7 @@ export function deriveFrontendBuildSpecification(input: FrontendBuildSpecInput):
     // composition + the section architecture + user prompt). NOT a universal section count: a restaurant,
     // a SaaS, a store, a portfolio and a minimal landing page each get a different depth profile.
     // Deterministic; no model/network call; fail-open. Absent ⇒ legacy behavior.
-    try {
+    if (!isApp) try {
       const siteDepth = deriveSiteDepthContract({
         identity: built.identity,
         language: built.language,
@@ -854,7 +884,7 @@ export function deriveFrontendBuildSpecification(input: FrontendBuildSpecInput):
     // meaning, per-image art direction, a designed motion vocabulary, visual rhythm and forbidden generic
     // patterns. Runs last so every upstream contract is available (deterministic; no model/network call;
     // fail-open). Absent ⇒ legacy behavior.
-    try {
+    if (!isApp) try {
       const visualConcept = deriveVisualConceptContract({
         identity: built.identity,
         sections: built.architecture?.sections || [],
@@ -876,7 +906,7 @@ export function deriveFrontendBuildSpecification(input: FrontendBuildSpecInput):
     // architecture, product-demonstration intent, a category-true trust model (incl. a high-stakes
     // disclaimer floor), signature behavior and emotional/functional progression. Runs last so every
     // upstream contract is available (deterministic; no model/network call; fail-open). Absent ⇒ legacy.
-    try {
+    if (!isApp) try {
       const experienceIdentity = deriveExperienceIdentityContract({
         identity: built.identity,
         sections: built.architecture?.sections,
@@ -899,7 +929,7 @@ export function deriveFrontendBuildSpecification(input: FrontendBuildSpecInput):
     // simplification, reduced-motion equivalent, performance budget, fallback, hero blueprint, animated
     // demo). Runs last so both upstream contracts are available (deterministic; no model/network call;
     // fail-open). Absent ⇒ legacy behavior.
-    try {
+    if (!isApp) try {
       const motionExecution = deriveMotionExecutionContract({
         visualConcept: built.visualConcept,
         experienceIdentity: built.experienceIdentity,
