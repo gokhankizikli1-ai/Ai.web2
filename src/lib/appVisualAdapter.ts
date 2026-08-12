@@ -64,6 +64,23 @@ export interface AppImageStrategy {
   forbid: string[];
 }
 
+/**
+ * Premium component-quality contract (UI Quality Phase 1). App-specific ADAPTATION of the
+ * shared visual system — it adds NO colour/type tokens (those stay in VisualSystemContract);
+ * it states how the app's controls must be built and behave so generated UI reads as
+ * intentionally designed software, not browser-default filler. Bounded + deterministic.
+ */
+export interface AppComponentQuality {
+  /** How to build controls from the available dependencies — never a new package. */
+  buildStrategy: string;
+  /** Per control-family quality obligations (compact, one line per family). */
+  controls: string[];
+  /** Interaction states every interactive control must express (role-appropriate, not forced). */
+  interactionStates: string;
+  /** Surface / elevation obligations — themed popovers, no theme-mismatched surfaces. */
+  surfaces: string;
+}
+
 export interface AppVisualContract {
   version: 'app-visual-v1';
   appType: AppType;
@@ -72,6 +89,8 @@ export interface AppVisualContract {
   devices: DeviceTarget[];
   screenComposition: ScreenComposition[];
   imageStrategy: AppImageStrategy;
+  /** Premium control/component quality obligations (UI Quality Phase 1). */
+  componentQuality: AppComponentQuality;
   /** App UI anti-patterns to actively avoid. */
   antiPatterns: string[];
   /** How this adapter reuses the shared visual system (no new tokens). */
@@ -213,6 +232,37 @@ function imageStrategyFor(appType: AppType): AppImageStrategy {
   };
 }
 
+/* ── Component quality (UI Quality Phase 1) ──────────────────────────────────── */
+
+/** The premium component-quality contract. Deterministic; the only variation is a
+ *  minimal-utility relaxation and a dark-theme emphasis for popup surfaces. It names the
+ *  ALREADY-AVAILABLE primitives (Radix UI / cva / clsx / tailwind-merge / lucide-react) so
+ *  the model builds themed controls without any new dependency. */
+function componentQualityFor(appType: AppType, colorMode: 'light' | 'dark' | 'mixed' | undefined): AppComponentQuality {
+  const minimal = appType === 'utility';
+  const darkPopup = colorMode === 'dark'
+    ? ' In this dark app a control must NEVER open an unrelated light/white browser-default surface.'
+    : '';
+  const buildStrategy = minimal
+    ? 'Build controls from the shared design tokens. A raw native control is acceptable here, but its closed control must fully inherit the theme (surface, border, text, radius, focus ring) — no unstyled browser-default look.'
+    : `Build controls from the shared design tokens using the ALREADY-AVAILABLE primitives — Radix UI (@radix-ui/react-*), class-variance-authority, clsx, tailwind-merge, lucide-react — never add a dependency. Where a browser-native popup (select/menu) would break the premium theme, use a Radix listbox/menu so the OPEN surface is themed too; a raw native control is acceptable only when its trigger AND surface fully inherit the theme.${darkPopup}`;
+  const controls = [
+    'Buttons: distinct primary / secondary / ghost / destructive variants, exactly one dominant primary per view; consistent height, padding, radius; icon+label aligned — not every button styled as primary.',
+    'Inputs: themed field surface, label + placeholder hierarchy, focus ring, and an error/invalid state; height consistent with buttons.',
+    'Select / dropdown: a themed trigger AND a themed menu surface, with selected + active-option states, keyboard operation and dismiss — never a white browser-default popup inside a themed app.',
+    'Tabs / segmented controls: one unmistakable active state, hover/focus, consistent geometry, and content that actually switches.',
+    'Toggles / checkboxes / radios: clear on/off + disabled state, adequate target size, integrated with the theme.',
+    'Menus / popovers / modals / sheets: an elevated surface clearly separated from the canvas and derived from the app palette, with dismiss + focus handling — no random white surface in a dark UI.',
+    'Tables: row hover, a selected state when rows are selectable, integrated search/filter controls, and consistent row-action affordances.',
+  ];
+  return {
+    buildStrategy,
+    controls,
+    interactionStates: 'Every interactive control expresses the states its role needs — hover, focus-visible ring, active/pressed, selected, disabled — applied CONSISTENTLY across the app (matching height, radius and focus treatment). Do not force every state onto simple controls.',
+    surfaces: 'Elevation and surface hierarchy are theme-derived and consistent: every dropdown, menu and dialog surface inherits the app palette rather than a browser default. Reserve borders + radius for real grouping — do not wrap every element in its own card.',
+  };
+}
+
 const APP_ANTI_PATTERNS: string[] = [
   'A giant marketing hero or oversized headline as the first viewport of a functional screen.',
   'Excessive landing-page whitespace between operational elements.',
@@ -246,6 +296,7 @@ export function deriveAppVisualContract(
     };
     const screenComposition = arch.screens.map((s) => compositionForScreen(s.id, s.role, shellType, appType));
     const imageStrategy = imageStrategyFor(appType);
+    const componentQuality = componentQualityFor(appType, visualSystem?.colorMode);
     const tokenReuse = visualSystem
       ? `Reuses the shared visual-system tokens (${visualSystem.colorMode} mode, roles: ${(visualSystem.colorRoles || []).map((r) => r.role).slice(0, 6).join(', ')}). App adapter adds only shell/nav/density/composition — no new colour or type tokens.`
       : 'Reuses the shared visual-system tokens as the brand/style source of truth; the app adapter adds only shell/nav/density/composition — no new colour or type tokens.';
@@ -262,6 +313,7 @@ export function deriveAppVisualContract(
       devices: devicesFor(appType),
       screenComposition,
       imageStrategy,
+      componentQuality,
       antiPatterns: APP_ANTI_PATTERNS,
       tokenReuse,
       notes,
@@ -286,6 +338,12 @@ export function renderAppShellBlock(contract: AppVisualContract | undefined): st
     out.push(`- ${c.screenId} [${c.role}]: first viewport = ${c.firstViewport} Primary zone = ${c.primaryZone}. Chrome = ${c.chrome} ${c.interactionHierarchy}`);
   }
   out.push(`Imagery: ${contract.imageStrategy.rationale} Prefer: ${contract.imageStrategy.preferredVisuals.join(', ')}. Avoid: ${contract.imageStrategy.forbid.join(', ')}.`);
+  const cq = contract.componentQuality;
+  out.push('Component quality (premium, design-system controls — not browser-default filler):');
+  out.push(`  ${cq.buildStrategy}`);
+  for (const c of cq.controls) out.push(`  • ${c}`);
+  out.push(`  States: ${cq.interactionStates}`);
+  out.push(`  Surfaces: ${cq.surfaces}`);
   out.push('Avoid these app UI anti-patterns:');
   for (const a of contract.antiPatterns) out.push(`  • ${a}`);
   return out;
