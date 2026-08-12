@@ -34,7 +34,7 @@ import {
 } from '@/lib/webBuildApi';
 // Owner-only DELTA quality-repair — pure, deterministic delta parser/validator/merger. No
 // network. Flag-gated + owner-gated by the caller; fail-open never triggers a second repair call.
-import { resolveWebBuildQualityRepairMode, isDeltaRepairEligible, reconstructRepairRawFromDelta } from '@/lib/webBuildDeltaRepair';
+import { resolveWebBuildQualityRepairMode, isDeltaRepairEligible, reconstructRepairRawFromDelta, resolveAppQualityRepairRouting } from '@/lib/webBuildDeltaRepair';
 // Pure guard-code classifiers (no IO) — turn a bounded raw guardBlock into the repair-artifact guard
 // diagnostic when the OPTIONAL quality repair was refused by the server ai_guard. Never enforcement.
 import { betaBlockKind, betaBlockRetryable } from '@/lib/aiGuard';
@@ -1167,11 +1167,30 @@ export async function runFrontendBuilderQualityPipeline(
     // build user (parity — a normal beta/paid user gets the same bounded quality-recovery the owner
     // gets, so their build is not left on a worse full re-emit that can regress into Safe Preview).
     const ownerEligible = opts?.ownerEligible === true;
-    const deltaEligible = isDeltaRepairEligible(repairMode, ownerEligible);
+    // Cost Phase 3 — an APP quality repair defaults to TARGETED DELTA + COMPACT context (the SAME
+    // single repair, shaped as bounded upserts over only the affected files) instead of a
+    // full-project re-emit. Unaffected screens/files are preserved byte-for-byte by the delta merge.
+    // FULL re-emit is a bounded PRE-CALL fallback, chosen ONLY when the review indicates the fix
+    // spans essentially the whole project (a wholesale problem a delta cannot express). Exactly ONE
+    // repair call either way — a delta that cannot safely apply fails OPEN to the validated project,
+    // never a second call. WEB is unchanged (env-driven owner_delta/all_delta/disabled).
+    const isAppBuild = spec?.buildType === 'app';
+    const appRouting = isAppBuild
+      ? resolveAppQualityRepairRouting({
+          fileCount: validation?.files?.length ?? 0,
+          issueFileCount: new Set(
+            (initialReview?.issues || []).flatMap((i) => i.files || []).filter((p): p is string => typeof p === 'string' && !!p),
+          ).size,
+          blockingCount: (initialReview?.issues || []).filter((i) => i.severity === 'blocker').length,
+        })
+      : undefined;
+    const appFullFallbackReason = appRouting?.fullFallbackReason;
+    const deltaEligible = isAppBuild ? appRouting!.deltaEligible : isDeltaRepairEligible(repairMode, ownerEligible);
     // Compact quality-context is eligible ONLY inside the delta path. It never touches the
-    // full-project repair, the initial review, revisions or any disabled path.
+    // full-project repair, the initial review, revisions or any disabled path. App delta always
+    // pairs with compact context (the whole point is a small, targeted repair request).
     const contextMode = resolveWebBuildQualityContextMode();
-    const compactContextEligible = isCompactContextEligible(deltaEligible, contextMode, ownerEligible);
+    const compactContextEligible = isAppBuild ? appRouting!.compactEligible : isCompactContextEligible(deltaEligible, contextMode, ownerEligible);
     let deltaDiagnostics: FrontendDeltaRepairArtifact | undefined;
     let repairRaw: FrontendBuilderRawArtifact;
     // Internal-only: the normalized changed/upsert paths from a valid reconstruction (used to build
@@ -1209,6 +1228,23 @@ export async function runFrontendBuilderQualityPipeline(
         },
       };
     };
+    // Cost Phase 3 — app quality-repair routing diagnostics (delta+compact vs justified full).
+    const appRepairExtra = (): Partial<FrontendBuilderRepairArtifact> => {
+      if (!isAppBuild) return {};
+      const inputFileCount = validation?.files?.length ?? 0;
+      const upserts = deltaDiagnostics?.returnedUpsertCount ?? 0;
+      return {
+        appRepair: {
+          mode: deltaEligible ? 'delta' : 'full',
+          contextMode: compactContextEligible ? 'compact' : 'full',
+          ...(appFullFallbackReason ? { fullFallbackReason: appFullFallbackReason } : {}),
+          targetFileCount: changedPaths?.length ?? upserts,
+          inputFileCount,
+          outputFileCount: deltaEligible ? upserts : inputFileCount,
+          unaffectedFilesPreserved: deltaEligible === true,
+        },
+      };
+    };
     if (repairRaw.status !== 'completed') {
       // An AI-usage-guard block on the OPTIONAL repair is recorded as bounded, safe diagnostics (the
       // exact guard code / kind / retryability) so the failure is diagnosable from a SAVED build; the
@@ -1223,6 +1259,7 @@ export async function runFrontendBuilderQualityPipeline(
         ...(deltaDiagnostics ? { deltaRepair: deltaDiagnostics } : {}),
         ...guardExtra,
         ...qcExtra(),
+        ...appRepairExtra(),
       });
       const acceptance = acceptanceArtifact('manual-review-required', initialProjectName, {
         initialReviewPassed: false, repairAttempted: true, repairAccepted: false, finalReviewPassed: false,
@@ -1250,6 +1287,7 @@ export async function runFrontendBuilderQualityPipeline(
         initialScore: initialReview.score,
         ...(deltaDiagnostics ? { deltaRepair: deltaDiagnostics } : {}),
         ...qcExtra(),
+        ...appRepairExtra(),
       });
       const acceptance = acceptanceArtifact('manual-review-required', initialProjectName, {
         initialReviewPassed: false, repairAttempted: true, repairAccepted: false, finalReviewPassed: false,
@@ -1433,6 +1471,7 @@ export async function runFrontendBuilderQualityPipeline(
         gateAlignment,
         majorAlignment,
         ...qcExtra(),
+        ...appRepairExtra(),
       });
       const acceptance = acceptanceArtifact('repaired-approved', 'repaired-model-native', {
         initialReviewPassed: false, repairAttempted: true, repairAccepted: true, finalReviewPassed: true,
@@ -1491,6 +1530,7 @@ export async function runFrontendBuilderQualityPipeline(
       gateAlignment,
       majorAlignment,
       ...qcExtra(),
+      ...appRepairExtra(),
     });
     const acceptance = acceptanceArtifact('manual-review-required', initialProjectName, {
       initialReviewPassed: false, repairAttempted: true, repairAccepted: false,

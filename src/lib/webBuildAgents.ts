@@ -2743,6 +2743,18 @@ export interface FrontendBuilderRepairArtifact {
   /** Owner-only DELTA quality-repair diagnostics. Present ONLY when the single quality-repair ran
    *  in `owner_delta` mode; absent for disabled/non-owner/full-mode repairs and old saved builds. */
   deltaRepair?: FrontendDeltaRepairArtifact;
+  /** Cost Phase 3 — App quality-repair routing diagnostics (app builds only; bounded, safe).
+   *  Records whether the single repair ran as a targeted DELTA (+ compact context) or a FULL
+   *  re-emit, the justified full-fallback reason (if any), and the file counts. Absent for web. */
+  appRepair?: {
+    mode: 'delta' | 'full';
+    contextMode: 'compact' | 'full';
+    fullFallbackReason?: string;
+    targetFileCount: number;
+    inputFileCount: number;
+    outputFileCount: number;
+    unaffectedFilesPreserved: boolean;
+  };
 
   /** Owner-only COMPACT quality-context diagnostics (additive, optional). Present ONLY when the
    *  quality-context mode was consulted during an `owner_delta` repair; carries the sanitized,
