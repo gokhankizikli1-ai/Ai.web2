@@ -72,10 +72,11 @@ describe('buildType — canonical authority (A/B/F/G/H)', () => {
   });
 
   it('H — the authority is pure + deterministic (no async / model call)', () => {
-    // Same input → same output, and the calls return synchronously (never a Promise).
+    // Same input → same output, and the calls return a plain synchronous value (a
+    // string build type), never a thenable/Promise from an async model round-trip.
     expect(resolveBuildType('app')).toBe(resolveBuildType('app'));
-    expect(resolveBuildType('app') instanceof Promise).toBe(false);
-    expect(normalizeBuildType('app') instanceof Promise).toBe(false);
+    expect(typeof resolveBuildType('app')).toBe('string');
+    expect(typeof normalizeBuildType('app')).toBe('string');
   });
 });
 

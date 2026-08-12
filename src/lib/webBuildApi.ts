@@ -2080,9 +2080,10 @@ function builderProjection(spec: FrontendBuildSpecification): Record<string, unk
     // (section/list/field caps applied at derivation).
     experienceArchitecture: spec.experienceArchitecture,
     // App Build (buildType 'app') — the app SCREEN architecture / navigation / screen
-    // depth / visual adapter. `undefined` for a web build, so JSON.stringify omits the
-    // keys entirely and the serialized web request is byte-for-byte unchanged.
-    buildType: spec.buildType,
+    // depth / visual adapter. Every key here is `undefined` for a web build (buildType
+    // 'web' is projected as undefined too), so JSON.stringify omits them entirely and
+    // the serialized WEB request is byte-for-byte unchanged.
+    buildType: spec.buildType === 'app' ? 'app' : undefined,
     appArchitecture: spec.appArchitecture,
     navigation: spec.navigation,
     screenDepth: spec.screenDepth,
