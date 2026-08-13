@@ -185,11 +185,16 @@ def test_cancel_running_job(client, tmp_jobs_db, alice):
     store and exercise the route-level cancel logic in isolation.
     """
     from backend.services.jobs import store as _store
-    from backend.services.jobs.types import STATUS_RUNNING
-    rid = client.post("/v2/jobs", json={"kind": "echo"}).json()["data"]["job"]["id"]
-    # Force a "running" state for the test (production runner would do this).
-    _store.update(rid, status=STATUS_RUNNING, started_at="2026-01-01T00:00:00+00:00")
-    r = client.post(f"/v2/jobs/{rid}/cancel")
+    from backend.services.jobs.types import JobRecord, STATUS_RUNNING
+    # Insert a GENUINELY running job directly (the inline runner would race to
+    # complete an `echo` job before we could force it — and the Phase-2
+    # stale-worker guard now correctly refuses to resurrect a terminal job to
+    # `running`). A directly-inserted running job exercises the cancel route on
+    # a real running job deterministically.
+    rec = _store.insert(JobRecord(kind="echo", user_id=alice.id,
+                                  status=STATUS_RUNNING,
+                                  started_at="2026-01-01T00:00:00+00:00"))
+    r = client.post(f"/v2/jobs/{rec.id}/cancel")
     assert r.status_code == 200
     assert r.json()["data"]["job"]["status"] == "cancelled"
 
