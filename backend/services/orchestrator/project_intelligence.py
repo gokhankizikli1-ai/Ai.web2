@@ -38,19 +38,24 @@ logger = logging.getLogger(__name__)
 MAX_DECISIONS = 12
 MAX_FACTS = 10
 MAX_ARTIFACTS = 6
+MAX_GOALS = 5
+MAX_KNOWLEDGE = 8
 SECTION_CHAR_BUDGET = 1600
 TOTAL_CHAR_BUDGET = 6000
 
 # Which sections each capability receives. Order = render order.
-_ALL = ("goal", "constraints", "decisions", "upstream", "facts", "artifacts")
+#   goals      → durable active-goal hierarchy (Business Brain Phase 1)
+#   knowledge  → typed business knowledge / learnings (Business Brain Phase 3)
+_ALL = ("goal", "goals", "constraints", "decisions", "upstream", "facts",
+        "knowledge", "artifacts")
 SECTIONS_BY_CAPABILITY: Dict[str, tuple] = {
-    "research":  ("goal", "constraints", "facts"),
-    "product":   ("goal", "constraints", "decisions", "upstream", "facts"),
-    "web_build": ("goal", "decisions", "upstream", "facts", "artifacts", "constraints"),
-    "app_build": ("goal", "decisions", "upstream", "facts", "artifacts", "constraints"),
-    "qa":        ("goal", "decisions", "artifacts"),
-    "launch":    ("goal", "decisions", "artifacts"),
-    "growth":    ("goal", "decisions", "artifacts"),
+    "research":  ("goal", "goals", "constraints", "knowledge", "facts"),
+    "product":   ("goal", "goals", "constraints", "decisions", "upstream", "knowledge", "facts"),
+    "web_build": ("goal", "goals", "decisions", "upstream", "facts", "artifacts", "constraints"),
+    "app_build": ("goal", "goals", "decisions", "upstream", "facts", "artifacts", "constraints"),
+    "qa":        ("goal", "goals", "decisions", "artifacts"),
+    "launch":    ("goal", "goals", "decisions", "knowledge", "artifacts"),
+    "growth":    ("goal", "goals", "decisions", "knowledge", "artifacts"),
 }
 
 
@@ -62,6 +67,51 @@ def _clip(text: str, budget: int) -> str:
 def _section_goal(ctx: dict) -> Optional[str]:
     goal = _clip(ctx.get("user_goal") or "", 400)
     return f"[PROJECT GOAL]\n{goal}" if goal else None
+
+
+def _fmt_criterion(crit: dict) -> str:
+    if not isinstance(crit, dict):
+        return ""
+    if crit.get("metric"):
+        target = crit.get("target")
+        op = crit.get("op") or ""
+        unit = crit.get("unit") or ""
+        return _clip(f"{crit.get('metric')} {op} {target} {unit}".strip(), 80)
+    return _clip(str(crit.get("text") or ""), 80)
+
+
+def _section_goals(ctx: dict) -> Optional[str]:
+    """Durable ACTIVE goals (Business Brain Phase 1) — the "why" behind the
+    work, with any structured success criteria. Bounded + provenance-free
+    (goals are user/business objectives, not sourced facts)."""
+    lines = []
+    for g in ctx.get("_goals", [])[:MAX_GOALS]:
+        crit = [c for c in (_fmt_criterion(c) for c in (g.get("success_criteria") or [])[:3]) if c]
+        suffix = (" — success: " + "; ".join(crit)) if crit else ""
+        lines.append(f"[GOAL] {_clip(g.get('title') or '', 160)}{suffix}")
+    if not lines:
+        return None
+    header = ("ACTIVE GOALS — the outcomes this work serves. Prefer actions "
+              "that advance these; explain how the work aligns.")
+    return (header + "\n" + "\n".join(lines))[:SECTION_CHAR_BUDGET]
+
+
+def _section_knowledge(ctx: dict) -> Optional[str]:
+    """Typed business knowledge + learnings (Business Brain Phase 3), each
+    with its domain, source and (when external/time-sensitive) an observed
+    date so a stale competitor fact is never read as timeless truth."""
+    lines = []
+    for k in ctx.get("_knowledge", [])[:MAX_KNOWLEDGE]:
+        domain = str(k.get("domain") or "knowledge").upper()
+        src = str(k.get("source") or "SYSTEM").upper()
+        when = k.get("observed_at") or ""
+        when_txt = f" (observed {when[:10]})" if when else ""
+        lines.append(f"[{domain} · {src}] {_clip(k.get('summary') or '', 220)}{when_txt}")
+    if not lines:
+        return None
+    header = ("BUSINESS KNOWLEDGE & LEARNINGS — accumulated, provenance-tagged, "
+              "time-aware. External facts may be stale; weigh by recency.")
+    return (header + "\n" + "\n".join(lines))[:SECTION_CHAR_BUDGET]
 
 
 def _section_constraints(ctx: dict) -> Optional[str]:
@@ -117,10 +167,12 @@ def _section_artifacts(ctx: dict) -> Optional[str]:
 
 _SECTION_FN = {
     "goal": _section_goal,
+    "goals": _section_goals,
     "constraints": _section_constraints,
     "decisions": _section_decisions,
     "upstream": _section_upstream,
     "facts": _section_facts,
+    "knowledge": _section_knowledge,
     "artifacts": _section_artifacts,
 }
 
@@ -173,15 +225,19 @@ def build_intelligence_packet(
     project_id: Optional[str],
     depends_on: Optional[List[str]] = None,
     user_goal: str = "",
+    user_id: Optional[str] = None,
     deliverables: Optional[List[dict]] = None,
     decisions: Optional[List[dict]] = None,
     upstream_block: Optional[str] = None,
+    goals: Optional[List[dict]] = None,
+    knowledge: Optional[List[dict]] = None,
 ) -> str:
     """Return a bounded, capability-aware project-intelligence context block,
     or "" when there is nothing to project. Never raises. Injectable inputs
-    (deliverables/decisions/upstream_block) support deterministic tests; by
-    default they are read from the stores scoped to `run_id`/`project_id`
-    (so cross-project/user leakage is structurally impossible)."""
+    (deliverables/decisions/upstream_block/goals/knowledge) support
+    deterministic tests; by default they are read from the stores scoped to
+    `run_id`/`project_id` (so cross-project/user leakage is structurally
+    impossible)."""
     cap = (capability or "").strip().lower()
     sections = SECTIONS_BY_CAPABILITY.get(cap, _ALL)
 
@@ -192,6 +248,19 @@ def build_intelligence_packet(
         if decisions is None and project_id:
             from backend.services.orchestrator import decisions_store as dec
             decisions = dec.active_decisions(str(project_id))
+        if goals is None and project_id:
+            from backend.services.orchestrator import goals_store
+            goals = goals_store.active_goals(str(project_id), limit=MAX_GOALS)
+        if knowledge is None and project_id and user_id and "knowledge" in sections:
+            # Only pay the Memory Plane read when this capability actually
+            # renders a knowledge section (research/product/launch/growth) AND
+            # we have the owning user_id (Memory Plane is user+project scoped,
+            # so a missing user_id means we simply don't project knowledge —
+            # never a cross-user read).
+            from backend.services.orchestrator import business_knowledge as bk
+            knowledge = bk.knowledge_for_capability(
+                user_id=str(user_id), project_id=str(project_id),
+                capability=cap, limit=MAX_KNOWLEDGE)
         if upstream_block is None:
             from backend.services.orchestrator.context_projection import (
                 build_upstream_context,
@@ -210,6 +279,8 @@ def build_intelligence_packet(
         "_upstream": upstream_block or "",
         "_facts": _gather_facts(deliverables or []),
         "_artifacts": _gather_artifacts(deliverables or []),
+        "_goals": goals or [],
+        "_knowledge": knowledge or [],
     }
 
     blocks: List[str] = []

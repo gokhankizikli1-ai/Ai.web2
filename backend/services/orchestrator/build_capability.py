@@ -195,6 +195,7 @@ def _bounded_input(build_type: str, ctx: JobContext) -> BuildExecutorInput:
             project_id=payload.get("project_id"),
             depends_on=payload.get("depends_on") or [],
             user_goal=str(payload.get("user_request") or payload.get("task_description") or ""),
+            user_id=str(ctx.record.user_id),
         )
     except Exception:  # pragma: no cover — never block a build
         upstream = ""

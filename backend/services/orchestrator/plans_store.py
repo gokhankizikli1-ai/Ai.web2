@@ -43,10 +43,24 @@ def _now() -> str:
     return datetime.utcnow().isoformat() + "Z"
 
 
+def _migrate_add_goal_id(c) -> None:
+    """Additive, idempotent: link a plan to a durable goal (Business Brain
+    Phase 1). ALTER TABLE ADD COLUMN raises if the column already exists —
+    swallow that one case so init stays idempotent. Backward compatible:
+    legacy rows get goal_id = NULL."""
+    try:
+        cols = {r["name"] for r in c.execute("PRAGMA table_info(project_plans)").fetchall()}
+        if "goal_id" not in cols:
+            c.execute("ALTER TABLE project_plans ADD COLUMN goal_id TEXT")
+    except Exception as exc:  # pragma: no cover — defensive
+        logger.debug("plans_store goal_id migration soft-failed: %s", exc)
+
+
 def init_plans_table() -> None:
     try:
         with _sqlite.connection(DB_PATH) as c:
             c.executescript(_SCHEMA)
+            _migrate_add_goal_id(c)
     except Exception as exc:  # pragma: no cover — defensive
         logger.warning("orchestrator.plans_store.init failed: %s", exc)
 
@@ -74,9 +88,14 @@ def save_plan(
     tasks: List[dict],
     project_id: Optional[str] = None,
     plan_id: Optional[str] = None,
+    goal_id: Optional[str] = None,
 ) -> str:
     """Insert a new plan or replace an existing one (bumping its version and
-    preserving its id — keeps task ids stable across edits). Returns id."""
+    preserving its id — keeps task ids stable across edits). Returns id.
+
+    `goal_id` optionally links the plan to a durable goal (Business Brain
+    Phase 1) so planned work is traceable to the outcome it serves. On a
+    replace, a provided goal_id updates the link; None leaves it unchanged."""
     init_plans_table()
     now = _now()
     try:
@@ -86,22 +105,32 @@ def save_plan(
                     "SELECT version FROM project_plans WHERE id=?", (plan_id,),
                 ).fetchone()
                 if row:
-                    c.execute(
-                        """UPDATE project_plans
-                           SET goal=?, tasks_json=?, version=?, updated_at=?
-                           WHERE id=?""",
-                        (goal or "", _dump(tasks), int(row["version"] or 1) + 1,
-                         now, plan_id),
-                    )
+                    if goal_id is not None:
+                        c.execute(
+                            """UPDATE project_plans
+                               SET goal=?, tasks_json=?, version=?, updated_at=?,
+                                   goal_id=?
+                               WHERE id=?""",
+                            (goal or "", _dump(tasks), int(row["version"] or 1) + 1,
+                             now, str(goal_id), plan_id),
+                        )
+                    else:
+                        c.execute(
+                            """UPDATE project_plans
+                               SET goal=?, tasks_json=?, version=?, updated_at=?
+                               WHERE id=?""",
+                            (goal or "", _dump(tasks), int(row["version"] or 1) + 1,
+                             now, plan_id),
+                        )
                     return plan_id
             pid = plan_id or uuid.uuid4().hex[:12]
             c.execute(
                 """INSERT INTO project_plans
                    (id, project_id, user_id, goal, version, tasks_json,
-                    created_at, updated_at)
-                   VALUES (?, ?, ?, ?, 1, ?, ?, ?)""",
+                    created_at, updated_at, goal_id)
+                   VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?)""",
                 (pid, (project_id or None), str(user_id), goal or "",
-                 _dump(tasks), now, now),
+                 _dump(tasks), now, now, (str(goal_id) if goal_id else None)),
             )
             return pid
     except Exception as exc:

@@ -172,6 +172,7 @@ def plan_goal(
     context: Optional[dict] = None,
     persist: bool = True,
     plan_id: Optional[str] = None,
+    goal_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Produce (and optionally persist) a bounded, capability-backed plan for
     a goal. The planner function is invoked EXACTLY ONCE.
@@ -179,6 +180,11 @@ def plan_goal(
     When replacing an existing plan (`plan_id`), any task whose fingerprint
     materially changed has its capability's approvals revoked, so a changed
     plan can never execute under a stale approval.
+
+    `goal_id` optionally links the persisted plan to a durable Business Brain
+    goal, so the planned work is traceable to the outcome it serves. The
+    planner remains the planning authority — the goal hierarchy sits ABOVE it,
+    it is not a second planner.
     """
     plan = _planner_fn(goal, context)
     # Defensive: re-finalize against the registry even if a custom planner
@@ -195,9 +201,11 @@ def plan_goal(
     prior = plans_store.get_plan(plan_id) if plan_id else None
     saved_id = plans_store.save_plan(
         user_id=user_id, goal=goal, tasks=result["tasks"],
-        project_id=project_id, plan_id=plan_id,
+        project_id=project_id, plan_id=plan_id, goal_id=goal_id,
     )
     result["plan_id"] = saved_id
+    if goal_id:
+        result["goal_id"] = goal_id
 
     # Invalidate approvals for materially-changed paid tasks.
     if prior:

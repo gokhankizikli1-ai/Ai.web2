@@ -50,6 +50,13 @@ MEMORY_KINDS: tuple[str, ...] = (
     "summary",         # rolling thread summary (Phase 9 panel scratchpad)
     "thesis",          # trading / decision thesis
     "artifact_ref",    # pointer to a file / document
+    # Business Brain (connected-project) — one typed kind for durable
+    # business knowledge. The DOMAIN (business/product/customer/competitor/
+    # experiment/metric/failure/learning) lives in metadata["bb_domain"], so
+    # the Memory Plane taxonomy gains ONE kind rather than eight, and callers
+    # filter by kind then narrow by domain. This is NOT a second memory
+    # system — it is a typed slice of the existing Memory Plane.
+    "business_knowledge",
 )
 
 DEFAULT_KIND = "fact"

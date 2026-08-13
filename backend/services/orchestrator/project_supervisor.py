@@ -18,10 +18,37 @@ from typing import Any, Dict, List, Optional
 NA_RESOLVE_RUNNER = "resolve_runner_error"
 NA_APPROVE = "approve_pending_operation"
 NA_RETRY_FAILED = "retry_failed_task"
+NA_RUN_CANDIDATE = "act_on_candidate_action"   # Business Brain (Phase 2/7)
 NA_UPDATE_STALE = "update_stale_artifact"
 NA_REVIEW = "review_deliverables"
 NA_REVIEW_CANCELLED = "review_cancelled"
 NA_WAIT = "wait_for_run"
+
+# ── Autonomy levels (Phase 7) — a product-facing projection of the EXISTING
+# execution policy tiers. We do NOT build a second approval system; we map
+# the policy's AUTO / APPROVAL_REQUIRED / DENIED onto the three product
+# concepts. A high-priority RESTRICTED action still cannot auto-execute.
+AUTONOMY_AUTONOMOUS = "AUTONOMOUS"   # policy AUTO — safe/reversible/internal
+AUTONOMY_REVIEW = "REVIEW"           # policy APPROVAL_REQUIRED — prepare, need approval
+AUTONOMY_RESTRICTED = "RESTRICTED"   # policy DENIED — user must explicitly initiate
+
+
+def autonomy_for_capability(capability: Optional[str]) -> str:
+    """Map a capability onto its autonomy level via the EXISTING execution
+    policy. Unknown/empty capability → REVIEW (conservative: never assume a
+    recommended action is safe to auto-run)."""
+    if not capability:
+        return AUTONOMY_REVIEW
+    try:
+        from backend.services.orchestrator import execution_policy as ep
+        tier = ep.classify_capability(str(capability))
+        if tier == ep.POLICY_AUTO:
+            return AUTONOMY_AUTONOMOUS
+        if tier == ep.POLICY_DENIED:
+            return AUTONOMY_RESTRICTED
+        return AUTONOMY_REVIEW
+    except Exception:  # pragma: no cover — fail conservative
+        return AUTONOMY_REVIEW
 
 
 def _stale_artifacts(snapshot: dict, decisions: List[dict]) -> List[dict]:
@@ -124,8 +151,149 @@ def evaluate_run(
     }
 
 
+def _significant_metric_changes(project_id: str) -> List[dict]:
+    """Deterministic, bounded scan for meaningful metric movement across a
+    project's tracked metric keys. Cause-free (Phase 5 rule). Never raises."""
+    try:
+        from backend.services.orchestrator import metrics_store as ms
+    except Exception:  # pragma: no cover
+        return []
+    out: List[dict] = []
+    try:
+        for key in ms.metric_keys(project_id)[:25]:   # bounded scan
+            change = ms.detect_change(project_id, key)
+            if change and change.get("significant"):
+                out.append(change)
+    except Exception:  # pragma: no cover — never block assessment
+        return out
+    return out
+
+
+def assess_business_brain(
+    snapshot: Optional[dict], *,
+    project_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+    decisions: Optional[List[dict]] = None,
+    goals: Optional[List[dict]] = None,
+    candidate_actions: Optional[List[dict]] = None,
+    observations: Optional[List[dict]] = None,
+    metric_changes: Optional[List[dict]] = None,
+    learnings: Optional[List[dict]] = None,
+) -> Dict[str, Any]:
+    """The Business Brain assessment — answers "WHAT MATTERS NOW?".
+
+    Composes the EXISTING deterministic operational assessment (`evaluate_run`)
+    with the Business Brain layer (active goals, recent observations, meaningful
+    metric changes, prioritized candidate actions, recent decisions/learnings)
+    and produces a single recommended next action.
+
+    OPERATIONAL PRIORITY IS PRESERVED. Execution health always wins: a runner
+    error / required approval / failed task is recommended BEFORE any business
+    action. Business recommendations slot in AFTER those blockers and BEFORE
+    stale-artifact / review. It is fully DETERMINISTIC — no model call, no
+    supervisor↔agent loop. Injectable inputs support tests; by default every
+    slice is read from its own authority, scoped to (user, project)."""
+    # Resolve scope from the snapshot when not passed explicitly.
+    run = (snapshot or {}).get("run") or {}
+    if project_id is None:
+        project_id = run.get("project_id")
+    if user_id is None:
+        user_id = run.get("user_id")
+    pid = str(project_id) if project_id else ""
+    uid = str(user_id) if user_id else ""
+
+    # ── Load the Business Brain slices (bounded, fail-soft) ──────────────
+    try:
+        if decisions is None and pid:
+            from backend.services.orchestrator import decisions_store as dec
+            decisions = dec.active_decisions(pid, limit=10)
+        if goals is None and pid:
+            from backend.services.orchestrator import goals_store
+            goals = goals_store.active_goals(pid, limit=10)
+        if candidate_actions is None and pid:
+            from backend.services.orchestrator import candidate_actions_store as cas
+            candidate_actions = cas.list_candidate_actions(pid, open_only=True, limit=50)
+        if observations is None and pid:
+            from backend.services.orchestrator import observations_store as obs
+            observations = obs.recent_observations(pid, limit=10)
+        if metric_changes is None and pid:
+            metric_changes = _significant_metric_changes(pid)
+        if learnings is None and pid and uid:
+            from backend.services.orchestrator import business_knowledge as bk
+            learnings = bk.list_knowledge(
+                user_id=uid, project_id=pid,
+                domains=[bk.DOMAIN_LEARNING], limit=8)
+    except Exception:  # pragma: no cover — never block assessment
+        pass
+
+    # Operational assessment reuses the decisions we already loaded (single read).
+    operational = evaluate_run(snapshot, decisions=decisions)
+
+    goals = goals or []
+    candidate_actions = candidate_actions or []
+    observations = observations or []
+    metric_changes = metric_changes or []
+    decisions = decisions or []
+    learnings = learnings or []
+
+    # ── Prioritize candidate actions deterministically ──────────────────
+    ranked: List[dict] = []
+    top: Optional[dict] = None
+    try:
+        from backend.services.orchestrator import action_prioritizer as ap
+        ranked = ap.rank_candidates(candidate_actions, active_goals=goals)
+        top = ranked[0] if ranked else None
+    except Exception:  # pragma: no cover
+        ranked = list(candidate_actions)
+
+    # ── Recommended next action — operational blockers ALWAYS win ────────
+    op_na = operational.get("recommended_next_action")
+    recommendation: Dict[str, Any] = {"type": "operational", "detail": op_na}
+
+    if op_na in (NA_RESOLVE_RUNNER, NA_APPROVE, NA_RETRY_FAILED):
+        # Execution health / safety blocker — never hide it behind business.
+        next_action = op_na
+    elif top is not None:
+        next_action = NA_RUN_CANDIDATE
+        cap = top.get("recommended_capability")
+        recommendation = {
+            "type": "candidate_action",
+            "candidate_id": top.get("id"),
+            "title": top.get("title"),
+            "capability": cap,
+            "autonomy": autonomy_for_capability(cap),
+            "goal_id": top.get("goal_id"),
+            "aligned_to_goal": (top.get("priority_breakdown") or {}).get("aligned_to_goal", False),
+            "priority_score": top.get("priority_score"),
+            "priority_breakdown": top.get("priority_breakdown"),
+            "evidence_refs": top.get("evidence_refs") or [],
+            "confidence": top.get("confidence"),
+        }
+    elif op_na == NA_UPDATE_STALE:
+        next_action = NA_UPDATE_STALE
+    else:
+        next_action = op_na  # review / review_cancelled / wait
+
+    return {
+        "status": operational.get("status"),
+        "operational": operational,
+        "recommended_next_action": next_action,
+        "recommendation": recommendation,
+        "goals": goals,
+        "observations": observations,
+        "metric_changes": metric_changes,
+        "candidate_actions": ranked,
+        "top_candidate": top,
+        "decisions": decisions,
+        "learnings": learnings,
+        "pending_approvals": operational.get("awaiting_approval") or [],
+        "stale_artifacts": operational.get("stale_artifacts") or [],
+    }
+
+
 __all__ = [
-    "evaluate_run",
-    "NA_RESOLVE_RUNNER", "NA_APPROVE", "NA_RETRY_FAILED", "NA_UPDATE_STALE",
-    "NA_REVIEW", "NA_REVIEW_CANCELLED", "NA_WAIT",
+    "evaluate_run", "assess_business_brain", "autonomy_for_capability",
+    "NA_RESOLVE_RUNNER", "NA_APPROVE", "NA_RETRY_FAILED", "NA_RUN_CANDIDATE",
+    "NA_UPDATE_STALE", "NA_REVIEW", "NA_REVIEW_CANCELLED", "NA_WAIT",
+    "AUTONOMY_AUTONOMOUS", "AUTONOMY_REVIEW", "AUTONOMY_RESTRICTED",
 ]
