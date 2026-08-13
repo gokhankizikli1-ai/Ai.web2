@@ -406,6 +406,33 @@ class Config:
     # multi-user installations are never blocked. Empty ⇒ no default.
     GITHUB_DEFAULT_INSTALLATION_ID: str = os.getenv("GITHUB_DEFAULT_INSTALLATION_ID", "").strip()
 
+    # ── Gmail connector (read-only source of Business Brain observations) ──
+    # Master gate for the /v2/gmail/* surface. When false: connect/status/sync/
+    # disconnect routes 503 and the OAuth callback bounces to the frontend with
+    # a generic error (dormant). Default OFF so production behaviour is
+    # byte-identical until flipped. The RUNTIME source of truth is
+    # backend.services.gmail.config (read dynamically so a Railway flip is live
+    # without a restart, mirroring the GitHub connector); these attributes
+    # register the canonical names + defaults for discoverability.
+    ENABLE_GMAIL_CONNECTOR: bool = os.getenv("ENABLE_GMAIL_CONNECTOR", "false").strip().lower() == "true"
+    # GMAIL_OAUTH_CLIENT_ID / GMAIL_OAUTH_CLIENT_SECRET: the Google OAuth Web
+    # Application credentials. The id falls back to the existing GOOGLE_CLIENT_ID
+    # (already used by the Google login verifier) so one Google project is
+    # shared; the SECRET is NEVER logged, NEVER returned to the frontend.
+    GMAIL_OAUTH_CLIENT_ID: str = os.getenv("GMAIL_OAUTH_CLIENT_ID", "").strip()
+    GMAIL_OAUTH_CLIENT_SECRET: str = os.getenv("GMAIL_OAUTH_CLIENT_SECRET", "")
+    # GMAIL_OAUTH_REDIRECT_URI: the EXACT Authorized redirect URI registered in
+    # Google Cloud. Read from env (never derived from the request Host) and must
+    # equal "<backend-public-base>/v2/gmail/oauth/callback". Empty ⇒ connect
+    # fails closed (503).
+    GMAIL_OAUTH_REDIRECT_URI: str = os.getenv("GMAIL_OAUTH_REDIRECT_URI", "").strip()
+    # KORVIX_CREDENTIAL_ENCRYPTION_KEY: Fernet key(s) (comma-separated for
+    # rotation; first encrypts, all decrypt) used to encrypt the stored Gmail
+    # refresh token AT REST. SECRET — NEVER logged. Empty ⇒ the connector fails
+    # closed (a refresh token is never stored in plaintext). Generate with:
+    #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    KORVIX_CREDENTIAL_ENCRYPTION_KEY: str = os.getenv("KORVIX_CREDENTIAL_ENCRYPTION_KEY", "")
+
     # ── Legacy per-user routes (/memory, /profile, /stats) ───────────────
     # These pre-auth routes are superseded by the auth-bound /v2/* surface
     # and are NOT called by the current frontend. They are now ownership-
