@@ -379,6 +379,33 @@ class Config:
     POLAR_SERVER: str = os.getenv("POLAR_SERVER", "sandbox").strip().lower() or "sandbox"
     POLAR_API_BASE: str = os.getenv("POLAR_API_BASE", "").strip()
 
+    # ── GitHub connector (read-only source of Business Brain observations) ─
+    # Master gate for the /v2/github/* surface. When false: connect/sync/
+    # connection routes 503 and the webhook endpoint 503s (dormant). Default
+    # OFF so production behaviour is byte-identical until flipped. The RUNTIME
+    # source of truth is backend.services.github.config (read dynamically so a
+    # Railway flip is live without a restart, mirroring billing.config); these
+    # attributes register the canonical names + defaults for discoverability.
+    ENABLE_GITHUB_CONNECTOR: bool = os.getenv("ENABLE_GITHUB_CONNECTOR", "false").strip().lower() == "true"
+    # GITHUB_APP_ID: the numeric GitHub App id (App settings → About). Not
+    # secret, but only meaningful paired with the private key.
+    GITHUB_APP_ID: str = os.getenv("GITHUB_APP_ID", "").strip()
+    # GITHUB_APP_PRIVATE_KEY: the App's PEM private key. SECRET — NEVER logged,
+    # NEVER returned to the frontend, NEVER placed in an observation. Escaped
+    # "\n" sequences (the one-line secret-store form) are restored to real
+    # newlines by github.config.private_key(). Used only backend-side to sign a
+    # short-lived App JWT; installation tokens are never persisted.
+    GITHUB_APP_PRIVATE_KEY: str = os.getenv("GITHUB_APP_PRIVATE_KEY", "")
+    # GITHUB_APP_WEBHOOK_SECRET: HMAC-SHA256 signing secret configured in the
+    # GitHub App. SECRET — NEVER logged. Empty ⇒ the webhook endpoint fails
+    # closed (503) because it cannot authenticate deliveries.
+    GITHUB_APP_WEBHOOK_SECRET: str = os.getenv("GITHUB_APP_WEBHOOK_SECRET", "").strip()
+    # GITHUB_DEFAULT_INSTALLATION_ID: OPTIONAL dev/default installation id used
+    # only as a fallback when a connect call omits one. NOT a production
+    # architecture — real connections carry their own installation id, so
+    # multi-user installations are never blocked. Empty ⇒ no default.
+    GITHUB_DEFAULT_INSTALLATION_ID: str = os.getenv("GITHUB_DEFAULT_INSTALLATION_ID", "").strip()
+
     # ── Legacy per-user routes (/memory, /profile, /stats) ───────────────
     # These pre-auth routes are superseded by the auth-bound /v2/* surface
     # and are NOT called by the current frontend. They are now ownership-
@@ -702,6 +729,29 @@ class Config:
                     ))
             except Exception:  # pragma: no cover — validation must never hard-fail
                 pass
+
+        # 3f. GitHub connector — if enabled it needs the App credentials to do
+        #     anything (auth/sync), and the webhook additionally needs its
+        #     signing secret or every delivery is rejected (503). Surface a
+        #     partial config loudly rather than letting it fail silently.
+        if self.ENABLE_GITHUB_CONNECTOR:
+            if not (self.GITHUB_APP_ID and self.GITHUB_APP_PRIVATE_KEY.strip()):
+                issues.append((
+                    "critical",
+                    "ENABLE_GITHUB_CONNECTOR is on but GITHUB_APP_ID and/or "
+                    "GITHUB_APP_PRIVATE_KEY is empty — App authentication and "
+                    "initial sync cannot run. Set both (the private key is the "
+                    "App's PEM, one-line-escaped newlines are handled).",
+                ))
+            if not self.GITHUB_APP_WEBHOOK_SECRET:
+                issues.append((
+                    "warning",
+                    "ENABLE_GITHUB_CONNECTOR is on but GITHUB_APP_WEBHOOK_SECRET "
+                    "is empty — the /v2/github/webhooks/github endpoint fails "
+                    "closed (503) and rejects every delivery. Set it to enable "
+                    "incremental webhook ingestion (initial sync still works "
+                    "without it).",
+                ))
 
         # 4. Orchestration write surface needs verified identity. If the
         #    orchestrator is enabled but auth verification is off, identity
