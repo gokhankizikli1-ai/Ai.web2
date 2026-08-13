@@ -238,6 +238,52 @@ async def approve_run_route(
     return envelope_ok(data=snapshot, endpoint=endpoint, user_id=user.id)
 
 
+class PlanRunBody(BaseModel):
+    user_request: str = Field(..., max_length=8000)
+    project_id: Optional[str] = Field(default=None, max_length=64)
+    plan_id: Optional[str] = Field(default=None, max_length=64)
+
+
+@router.post("/plan", dependencies=[Depends(require_verified_identity)])
+async def start_planned_run_route(
+    body: PlanRunBody,
+    user: User = Depends(current_user),
+) -> Any:
+    """Start a PLANNER-driven project run: the long-horizon planner's capability
+    DAG (not a static template) becomes the workflow. Paid build steps pause at
+    the approval gate."""
+    endpoint = "/v2/orchestrator/plan"
+    if not orch.is_enabled():
+        return _disabled_response(endpoint)
+    try:
+        snapshot = await orch.start_planned_project_run(
+            user_id=user.id, user_request=body.user_request,
+            project_id=body.project_id, plan_id=body.plan_id,
+        )
+    except orch.ProjectOrchestratorDisabled:
+        return _disabled_response(endpoint)
+    return envelope_ok(data=snapshot, endpoint=endpoint, user_id=user.id)
+
+
+@router.get("/runs/{run_id}/assessment")
+def run_assessment_route(
+    run_id: str = Path(..., max_length=64),
+    user: User = Depends(current_user),
+) -> Any:
+    """Deterministic supervisor assessment of a run: ready/blocked/failed/
+    completed counts, pending approvals, stale artifacts, and the recommended
+    next action. No model call."""
+    endpoint = f"/v2/orchestrator/runs/{run_id}/assessment"
+    if not orch.is_enabled():
+        return _disabled_response(endpoint)
+    snapshot = orch.get_run_snapshot(run_id, user_id=user.id)
+    if snapshot is None:
+        return _err(404, "orchestrator_run_not_found", "Run not found.", endpoint)
+    from backend.services.orchestrator import project_supervisor
+    assessment = project_supervisor.evaluate_run(snapshot)
+    return envelope_ok(data=assessment, endpoint=endpoint, user_id=user.id)
+
+
 @router.post("/runs/{run_id}/reject")
 def reject_run_route(
     run_id: str = Path(..., max_length=64),

@@ -31,6 +31,29 @@ logger = logging.getLogger(__name__)
 
 AGENT_RUN_KIND = "agent.run"
 
+# Map an agent.run node to a project-intelligence capability. The planned DAG
+# (Phase 2) carries an explicit `capability`; template runs fall back to the
+# assigned agent id / deliverable kind.
+_AGENT_TO_CAPABILITY = {
+    "researcher": "research", "research": "research",
+    "product": "product", "product_manager": "product",
+}
+
+
+def _capability_for_agent_run(payload: dict) -> str:
+    cap = str((payload or {}).get("capability") or "").strip().lower()
+    if cap:
+        return cap
+    assigned = str((payload or {}).get("assigned_agent_id") or "").strip().lower()
+    if assigned in _AGENT_TO_CAPABILITY:
+        return _AGENT_TO_CAPABILITY[assigned]
+    kind = str((payload or {}).get("deliverable_kind") or "").strip().lower()
+    if "research" in kind:
+        return "research"
+    if "product" in kind or "spec" in kind:
+        return "product"
+    return assigned or "research"
+
 
 def _mark_deliverable(deliverable_id: Optional[str], status: str,
                       *, content: Optional[dict] = None,
@@ -149,26 +172,30 @@ async def _agent_run_handler(ctx: JobContext) -> dict:
     except Exception as exc:  # pragma: no cover — never block a run
         logger.debug("generation.build_prompt soft-failed: %s", exc)
 
-    # Phase 2 — task-scoped upstream context projection.
+    # Phase 4 — capability-aware Project Intelligence packet.
     #
-    # Dependencies must mean "wait for this task AND receive its relevant
-    # output". We resolve the DIRECT dependency nodes' persisted
-    # deliverables (scoped to this run_id → no cross-project/user leakage)
-    # into a compact, provenance-tagged block and prepend it, so a
-    # downstream node genuinely builds on upstream results instead of
-    # re-deriving them. Bounded + deterministic (no extra model call);
-    # fail-open — a projection error just means no upstream block.
+    # The specialist should understand the PROJECT (goal, active decisions,
+    # relevant facts, artifact refs) tailored to its capability — not merely
+    # its direct upstream task. This EXTENDS the Phase-2 direct-upstream
+    # projection (which the packet includes as its UPSTREAM section). Bounded,
+    # deterministic (no extra model call), provenance-tagged, scoped to
+    # run_id/project_id (no cross-project/user leak); fail-open.
     try:
-        from backend.services.orchestrator.context_projection import (
-            build_upstream_context,
+        from backend.services.orchestrator.project_intelligence import (
+            build_intelligence_packet,
         )
-        _upstream = build_upstream_context(
-            str(run_id or ""), payload.get("depends_on") or [],
+        _capability = _capability_for_agent_run(payload)
+        _packet = build_intelligence_packet(
+            capability=_capability,
+            run_id=str(run_id or ""),
+            project_id=payload.get("project_id"),
+            depends_on=payload.get("depends_on") or [],
+            user_goal=str(payload.get("user_request") or ""),
         )
-        if _upstream:
-            user_message = f"{_upstream}\n\n---\n\n{user_message}"
+        if _packet:
+            user_message = f"{_packet}\n\n---\n\n{user_message}"
     except Exception as exc:  # pragma: no cover — never block a run
-        logger.debug("context projection soft-failed: %s", exc)
+        logger.debug("project intelligence soft-failed: %s", exc)
 
     # Optional Design Intelligence context (Visual + Motion) — gated by
     # ENABLE_VISUAL_CONTEXT_INJECTION (default off). Additive and fail-open: it only
@@ -208,6 +235,7 @@ async def _agent_run_handler(ctx: JobContext) -> dict:
             "run_id":   run_id,
             "node_id":  payload.get("node_id"),
             "project_id": payload.get("project_id"),
+            "capability": _capability_for_agent_run(payload),
         },
     )
 
@@ -307,7 +335,36 @@ async def _agent_run_handler(ctx: JobContext) -> dict:
         "node_id":  payload.get("node_id"),
         "artifact": artifact,
     }
+
+    # Phase 5 — normalized project knowledge. A capability's response may
+    # carry structured `project_facts` / `project_decisions` in its metadata;
+    # persist them as durable, provenance-tagged project knowledge so later
+    # capabilities understand what was decided (not just raw prose). Bounded,
+    # deterministic, fail-soft.
+    try:
+        meta_out = getattr(response, "metadata", None) or {}
+        facts = meta_out.get("project_facts")
+        if isinstance(facts, list) and facts:
+            content["facts"] = facts[:10]
+            content["source"] = _capability_for_agent_run(payload).upper()
+        decisions = meta_out.get("project_decisions")
+        if isinstance(decisions, list) and decisions and payload.get("project_id"):
+            content["decisions"] = decisions[:20]
+    except Exception:  # pragma: no cover — never block a run
+        pass
+
     _mark_deliverable(deliverable_id, "completed", content=content)
+
+    # Persist decisions AFTER the deliverable exists (for lineage).
+    try:
+        if content.get("decisions") and payload.get("project_id"):
+            from backend.services.orchestrator import decisions_store as _dec
+            _dec.ingest_decisions_from_content(
+                content, project_id=str(payload.get("project_id")),
+                user_id=user_id, source=_capability_for_agent_run(payload).upper(),
+                run_id=run_id, task_id=task_id, deliverable_id=deliverable_id)
+    except Exception:  # pragma: no cover — never block a run
+        pass
 
     from backend.services.orchestrator.execution_graph import truncate_for_summary
     _mark_task(task_id, "completed", result_summary=truncate_for_summary(

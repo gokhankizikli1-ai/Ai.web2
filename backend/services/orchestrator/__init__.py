@@ -41,7 +41,7 @@ from backend.services.orchestrator.deliverables_store import (
 from backend.services.orchestrator.service import (
     is_enabled as project_orchestrator_enabled,
     flags_snapshot,
-    start_project_run, get_run_snapshot, cancel_run,
+    start_project_run, start_planned_project_run, get_run_snapshot, cancel_run,
     approve_operation, reject_operation,
     ProjectOrchestratorDisabled, UnknownTemplateError, RunNotFoundError,
 )
@@ -62,7 +62,7 @@ __all__ = [
     "init_deliverables_table", "deliverables_stats",
     # Project Orchestrator service (Phase A.2)
     "project_orchestrator_enabled", "flags_snapshot",
-    "start_project_run", "get_run_snapshot", "cancel_run",
+    "start_project_run", "start_planned_project_run", "get_run_snapshot", "cancel_run",
     "approve_operation", "reject_operation",
     "ProjectOrchestratorDisabled", "UnknownTemplateError", "RunNotFoundError",
 ]
