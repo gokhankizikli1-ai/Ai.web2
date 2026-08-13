@@ -332,12 +332,73 @@ async def _app_build_handler(ctx: JobContext) -> dict:
     return await _run_build(BUILD_TYPE_APP, ctx)
 
 
+# ── Phase 2 — pre-dispatch approval gate ─────────────────────────────────
+
+def _capability_for_kind(job_kind: Optional[str]) -> Optional[str]:
+    if job_kind == WEB_BUILD_KIND:
+        return f"{BUILD_TYPE_WEB}_build"
+    if job_kind == APP_BUILD_KIND:
+        return f"{BUILD_TYPE_APP}_build"
+    return None
+
+
+def build_step_gate(step, user_id: str, project_id: Optional[str]):
+    """Runner pre-dispatch gate: a paid build step that requires approval
+    PAUSES (awaiting_approval) instead of dispatching + failing. Returns a
+    StepGateDecision or None (proceed). When approval enforcement is off,
+    `authorize` returns allowed → None → normal dispatch (unchanged)."""
+    if getattr(step, "kind", None) != "job":
+        return None
+    payload = getattr(step, "payload", None) or {}
+    capability = _capability_for_kind(payload.get("kind"))
+    if capability is None:
+        return None
+
+    inp = payload.get("input") or {}
+    spec = inp.get("product_spec") or inp.get("blueprint") or {}
+    from backend.services.orchestrator import execution_policy
+    decision = execution_policy.authorize(
+        user_id=user_id, capability=capability, spec=spec, project_id=project_id,
+        inline_approval=bool((inp.get("approval") or {}).get("inline")),
+    )
+    if decision.allowed:
+        return None
+
+    from backend.services.workflows.runner import StepGateDecision
+    if decision.code == execution_policy.CODE_APPROVAL_REQUIRED:
+        # Surface the pending approval on the deliverable (non-terminal) so
+        # the observability/workspace layer can render "awaiting approval".
+        _mark_deliverable(inp.get("deliverable_id"), "pending", content={
+            "build_type":        capability.split("_")[0],
+            "capability":        capability,
+            "build_status":      "awaiting_approval",
+            "requires_approval": True,
+            "fingerprint":       decision.fingerprint,
+            "node_id":           inp.get("node_id"),
+        })
+        return StepGateDecision(
+            action="await_approval", code=decision.code, reason=decision.detail,
+            fingerprint=decision.fingerprint, capability=capability,
+        )
+    # DENIED / credit / spend at gate time → deny (fail), not a pause.
+    return StepGateDecision(
+        action="deny", code=decision.code, reason=decision.detail,
+        fingerprint=decision.fingerprint, capability=capability,
+    )
+
+
 def ensure_registered() -> None:
-    """Idempotently register both build capability kinds."""
+    """Idempotently register both build capability kinds + the approval gate."""
     if not is_registered(WEB_BUILD_KIND):
         register_job(WEB_BUILD_KIND)(_web_build_handler)
     if not is_registered(APP_BUILD_KIND):
         register_job(APP_BUILD_KIND)(_app_build_handler)
+    # Register the pre-dispatch approval gate with the workflow runner.
+    try:
+        from backend.services.workflows.runner import register_step_gate
+        register_step_gate(build_step_gate)
+    except Exception:  # pragma: no cover — runner optional at import
+        pass
 
 
 ensure_registered()

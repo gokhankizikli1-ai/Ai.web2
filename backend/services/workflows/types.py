@@ -27,6 +27,7 @@ def normalize_workflow_type(t: Optional[str]) -> str:
 
 WORKFLOW_STATUSES: tuple[str, ...] = (
     "queued", "running", "completed", "failed", "cancelled",
+    "awaiting_approval",
 )
 
 STATUS_QUEUED    = "queued"
@@ -34,6 +35,12 @@ STATUS_RUNNING   = "running"
 STATUS_COMPLETED = "completed"
 STATUS_FAILED    = "failed"
 STATUS_CANCELLED = "cancelled"
+# Phase 2 (completion pass) — a workflow with no in-flight or eligible work
+# but one or more steps awaiting approval parks here. NON-terminal: the
+# driver exits (idle), and orphan-sweep does NOT auto-resume it (it resumes
+# only `running`). An explicit approval flips the step(s) back to pending,
+# sets the workflow `running`, and restarts a driver.
+STATUS_AWAITING_APPROVAL = "awaiting_approval"
 
 TERMINAL_WORKFLOW_STATUSES: frozenset[str] = frozenset({
     STATUS_COMPLETED, STATUS_FAILED, STATUS_CANCELLED,
@@ -85,7 +92,7 @@ __all__ = [
     "Step",
     "WORKFLOW_TYPES", "WORKFLOW_STATUSES",
     "STATUS_QUEUED", "STATUS_RUNNING", "STATUS_COMPLETED",
-    "STATUS_FAILED", "STATUS_CANCELLED",
+    "STATUS_FAILED", "STATUS_CANCELLED", "STATUS_AWAITING_APPROVAL",
     "TERMINAL_WORKFLOW_STATUSES",
     "normalize_workflow_type", "normalize_workflow_status",
 ]

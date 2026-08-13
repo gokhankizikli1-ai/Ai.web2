@@ -39,10 +39,15 @@ STEP_STATUS_RUNNING    = "running"
 STEP_STATUS_COMPLETED  = "completed"
 STEP_STATUS_FAILED     = "failed"
 STEP_STATUS_SKIPPED    = "skipped"
+# Phase 2 (completion pass) — a paid/external step that requires approval
+# pauses here instead of failing. NON-terminal, NOT in-flight, NOT eligible.
+# The workflow goes idle; an explicit approval flips it back to `pending`.
+STEP_STATUS_AWAITING_APPROVAL = "awaiting_approval"
 
 STEP_STATUSES: frozenset[str] = frozenset({
     STEP_STATUS_PENDING, STEP_STATUS_DISPATCHED, STEP_STATUS_RUNNING,
     STEP_STATUS_COMPLETED, STEP_STATUS_FAILED, STEP_STATUS_SKIPPED,
+    STEP_STATUS_AWAITING_APPROVAL,
 })
 
 TERMINAL_STEP_STATUSES: frozenset[str] = frozenset({
@@ -336,6 +341,7 @@ __all__ = [
     "STEP_KINDS",
     "STEP_STATUS_PENDING", "STEP_STATUS_DISPATCHED", "STEP_STATUS_RUNNING",
     "STEP_STATUS_COMPLETED", "STEP_STATUS_FAILED", "STEP_STATUS_SKIPPED",
+    "STEP_STATUS_AWAITING_APPROVAL",
     "STEP_STATUSES", "TERMINAL_STEP_STATUSES", "IN_FLIGHT_STEP_STATUSES",
     "MAX_STEPS_HARD_CAP", "MAX_PARALLEL_PER_RUN_HARD_CAP",
     "StepsParseError",

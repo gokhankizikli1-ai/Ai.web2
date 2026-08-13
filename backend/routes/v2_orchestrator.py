@@ -212,6 +212,48 @@ def cancel_run_route(
     return envelope_ok(data=snapshot, endpoint=endpoint, user_id=user.id)
 
 
+class ApproveBody(BaseModel):
+    capability: str = Field(..., max_length=64)
+    fingerprint: str = Field(..., max_length=128)
+
+
+@router.post("/runs/{run_id}/approve",
+             dependencies=[Depends(require_verified_identity)])
+async def approve_run_route(
+    body: ApproveBody,
+    run_id: str = Path(..., max_length=64),
+    user: User = Depends(current_user),
+) -> Any:
+    """Approve a paused (awaiting_approval) operation and resume the run.
+    Fingerprint-bound + ownership-checked; idempotent."""
+    endpoint = f"/v2/orchestrator/runs/{run_id}/approve"
+    if not orch.is_enabled():
+        return _disabled_response(endpoint)
+    snapshot = await orch.approve_operation(
+        run_id, user_id=user.id, capability=body.capability,
+        fingerprint=body.fingerprint,
+    )
+    if snapshot is None:
+        return _err(404, "orchestrator_run_not_found", "Run not found.", endpoint)
+    return envelope_ok(data=snapshot, endpoint=endpoint, user_id=user.id)
+
+
+@router.post("/runs/{run_id}/reject")
+def reject_run_route(
+    run_id: str = Path(..., max_length=64),
+    user: User = Depends(current_user),
+) -> Any:
+    """Reject a pending operation (cancels the run — a rejected paid
+    operation has no other resolution in the current DAG model)."""
+    endpoint = f"/v2/orchestrator/runs/{run_id}/reject"
+    if not orch.is_enabled():
+        return _disabled_response(endpoint)
+    snapshot = orch.reject_operation(run_id, user_id=user.id)
+    if snapshot is None:
+        return _err(404, "orchestrator_run_not_found", "Run not found.", endpoint)
+    return envelope_ok(data=snapshot, endpoint=endpoint, user_id=user.id)
+
+
 # ── SSE stream ────────────────────────────────────────────────────────
 
 def _sse_poll_interval() -> float:

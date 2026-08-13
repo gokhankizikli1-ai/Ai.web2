@@ -193,6 +193,12 @@ async def start_project_run(
             ensure_registered as _ensure_build_kinds,
         )
         _ensure_build_kinds()
+        # Completion pass — wire the REAL headless build executor when an
+        # operator has configured a build worker (KORVIX_BUILD_WORKER_CMD).
+        # Absent that, the default handoff executor stays in place, so
+        # behaviour is unchanged. No paid build path is activated implicitly.
+        from backend.services.orchestrator import build_executor
+        build_executor.maybe_register_from_env()
     except Exception as exc:  # pragma: no cover — defensive
         logger.warning("orchestrator | build capability registration failed: %s", exc)
 
@@ -476,7 +482,11 @@ def _build_observability(
                 pending_approvals.append({
                     "deliverable_id": d.get("id"),
                     "node_id":        d.get("node_id"),
-                    "capability":     content.get("build_type"),
+                    # `capability` is the policy capability name
+                    # (web_build/app_build) that approve_operation expects;
+                    # fall back to build_type for older rows.
+                    "capability":     content.get("capability") or content.get("build_type"),
+                    "build_type":     content.get("build_type"),
                     "fingerprint":    content.get("fingerprint"),
                 })
             if d.get("kind") in ("web_build", "app_build") and \
@@ -562,6 +572,53 @@ def cancel_run(run_id: str, *, user_id: Optional[str] = None) -> Optional[Dict[s
     _skip_open_deliverables(run_id)
 
     return get_run_snapshot(run_id, user_id=user_id)
+
+
+# ── Approve / reject a pending operation (Phase 2) ────────────────────────
+
+async def approve_operation(
+    run_id: str, *, user_id: str, capability: str, fingerprint: str,
+) -> Optional[Dict[str, Any]]:
+    """Record a durable approval for a paused operation and resume the
+    workflow. Ownership-checked and fingerprint-bound: a stale fingerprint
+    (plan changed) records an approval that won't match the current step, so
+    it re-pauses. Idempotent — repeated approval cannot double-resume or
+    double-dispatch (the runner guards resume; the jobs idempotency key
+    guards dispatch). Returns the post-approval snapshot, or None if the run
+    is unknown / not owned by the caller."""
+    from backend.services.orchestrator.runs_store import get_run
+    run = get_run(run_id)
+    if run is None or run["user_id"] != str(user_id):
+        return None
+    if not (capability and fingerprint):
+        return get_run_snapshot(run_id, user_id=user_id)
+
+    from backend.services.orchestrator import approvals_store
+    approvals_store.record_approval(
+        user_id=user_id, capability=capability, fingerprint=fingerprint,
+        project_id=run.get("project_id"), approved_by=user_id,
+        note="workspace approval",
+    )
+
+    workflow_id = (run.get("metadata") or {}).get("workflow_id")
+    if workflow_id:
+        try:
+            from backend.services.workflows import runner as wf_runner
+            await wf_runner.resume_after_approval(workflow_id, user_id=user_id)
+        except Exception as exc:  # pragma: no cover — best effort
+            logger.warning("orchestrator | resume_after_approval failed: %s", exc)
+
+    return get_run_snapshot(run_id, user_id=user_id)
+
+
+def reject_operation(
+    run_id: str, *, user_id: str,
+) -> Optional[Dict[str, Any]]:
+    """Reject a pending operation: this cancels the run (a rejected paid
+    operation has no other resolution in the current DAG model). Distinct
+    from approval; leaves a clear terminal state rather than an eternal
+    pause. Returns the post-reject snapshot."""
+    return cancel_run(run_id, user_id=user_id)
 
 
 # ── List a project's runs (the permanent conversation) ────────────────
