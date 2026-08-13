@@ -151,9 +151,13 @@ class JobManager:
             metadata=metadata or {},
         )
         import sqlite3
+        from backend.services.jobs.errors import JobIdempotencyConflict
         try:
             saved = store.insert(record)
-        except sqlite3.IntegrityError:
+        except (JobIdempotencyConflict, sqlite3.IntegrityError):
+            # Backend-agnostic idempotency collision (SQLite raises
+            # IntegrityError; both stores also raise JobIdempotencyConflict).
+            # Return the authoritative existing row.
             if idempotency_key:
                 existing = store.get_by_idempotency_key(
                     user_id=str(user_id), kind=kind, idempotency_key=idempotency_key,
@@ -292,14 +296,11 @@ class JobManager:
             progress_label=None,
         )
         # store.update doesn't support max_attempts directly (whitelist
-        # excludes it intentionally — the cap is creation-time policy);
-        # use a small private write.
-        import sqlite3
-        from backend.services.jobs.store import _conn
+        # excludes it intentionally — the cap is creation-time policy); the
+        # store exposes a single sanctioned mutator so no caller reaches into
+        # the connection (keeps the dual-backend dispatcher clean).
         try:
-            with _conn() as c:
-                c.execute("UPDATE jobs SET max_attempts=?, updated_at=? WHERE id=?",
-                          (int(new_max), _now(), job_id))
+            store.bump_max_attempts(job_id, int(new_max))
         except Exception:
             pass
 

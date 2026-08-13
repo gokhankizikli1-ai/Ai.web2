@@ -56,25 +56,19 @@ import * as aiGuard from '@/lib/aiGuard';
  *  registered in backend/services/ai/mode_manager.py. */
 export const WEBSITE_BUILDER_MODE = 'website_builder' as const;
 
-const BUNDLED_BACKEND = 'https://worker-production-1345.up.railway.app';
+// Phase 1 (headless) — execution-required browser dependencies (auth token,
+// API base, user id, fetch transport, verification redirect) are read through
+// the injectable buildRuntime. In the browser these resolve to the exact
+// previous behavior; a headless worker injects an override so the same spine
+// runs under Node without window/localStorage.
+import { buildRuntime } from '@/lib/buildRuntime';
 
 function apiBase(): string {
-  const envBase = (import.meta.env.VITE_API_URL as string | undefined)?.trim();
-  return envBase ? envBase.replace(/\/+$/, '') : BUNDLED_BACKEND;
+  return buildRuntime.getApiBase();
 }
 
 function getUserId(): string {
-  const key = 'korvix_user_id';
-  try {
-    let id = localStorage.getItem(key);
-    if (!id) {
-      id = crypto.randomUUID ? crypto.randomUUID() : `${Math.random().toString(36).slice(2)}${Date.now()}`;
-      localStorage.setItem(key, id);
-    }
-    return id;
-  } catch {
-    return 'guest_anon';
-  }
+  return buildRuntime.getUserId();
 }
 
 /**
@@ -741,12 +735,9 @@ export async function guardVerificationRequired(response: Response): Promise<voi
     code = (b?.code as string) || ((b?.metadata as Record<string, unknown> | undefined)?.code as string) || '';
   } catch { /* body unreadable — fall through */ }
   if (code === 'EMAIL_VERIFICATION_REQUIRED') {
-    try { window.dispatchEvent(new CustomEvent('korvix:verification-required')); } catch { /* noop */ }
-    try {
-      if (!String(window.location.hash || '').includes('/verify-email')) {
-        window.location.hash = '#/verify-email';
-      }
-    } catch { /* noop */ }
+    // Browser: dispatch the event + route to /verify-email. Headless: no-op
+    // (the override supplies a no-op), then the error propagates.
+    buildRuntime.onVerificationRequired();
     throw new VerificationRequiredError();
   }
 }
@@ -1769,7 +1760,7 @@ export async function generateWebBuild(
 
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   try {
-    const tok = localStorage.getItem('korvix_access_token');
+    const tok = buildRuntime.getAuthToken();
     if (tok) headers['Authorization'] = `Bearer ${tok}`;
   } catch { /* ignore */ }
   // Phase 14L.1 — founder-beta operation headers (stable idempotency key for this
@@ -1864,7 +1855,7 @@ export async function generateWebBuild(
     try {
       let response: Response;
       try {
-        response = await fetch(`${apiBase()}/chat`, {
+        response = await buildRuntime.getFetch()(`${apiBase()}/chat`, {
           method: 'POST',
           headers,
           signal: attempt.signal,
@@ -2845,8 +2836,8 @@ function backgroundDelay(ms: number, signal?: AbortSignal): Promise<void> {
 async function cancelBackgroundJob(jobId: string): Promise<void> {
   try {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    try { const tok = localStorage.getItem('korvix_access_token'); if (tok) headers['Authorization'] = `Bearer ${tok}`; } catch { /* ignore */ }
-    await fetch(`${apiBase()}/v2/ai/background/${encodeURIComponent(jobId)}/cancel`, { method: 'POST', headers, keepalive: true });
+    try { const tok = buildRuntime.getAuthToken(); if (tok) headers['Authorization'] = `Bearer ${tok}`; } catch { /* ignore */ }
+    await buildRuntime.getFetch()(`${apiBase()}/v2/ai/background/${encodeURIComponent(jobId)}/cancel`, { method: 'POST', headers, keepalive: true });
   } catch { /* best-effort */ }
 }
 
@@ -2885,8 +2876,8 @@ async function retrieveBackgroundJob(jobId: string, signal?: AbortSignal): Promi
   if (signal) { if (signal.aborted) pollTimer.abort(); else signal.addEventListener('abort', onAbort, { once: true }); }
   try {
     const headers: Record<string, string> = {};
-    try { const tok = localStorage.getItem('korvix_access_token'); if (tok) headers['Authorization'] = `Bearer ${tok}`; } catch { /* ignore */ }
-    const resp = await fetch(`${apiBase()}/v2/ai/background/${encodeURIComponent(jobId)}`, { method: 'GET', headers, signal: pollTimer.signal });
+    try { const tok = buildRuntime.getAuthToken(); if (tok) headers['Authorization'] = `Bearer ${tok}`; } catch { /* ignore */ }
+    const resp = await buildRuntime.getFetch()(`${apiBase()}/v2/ai/background/${encodeURIComponent(jobId)}`, { method: 'GET', headers, signal: pollTimer.signal });
     // 404 = missing / expired / not-owned → TERMINAL (never transient, never retried). Preserve the
     // existing synthetic failure shape when the body is unreadable.
     if (resp.status === 404) {
@@ -3080,7 +3071,7 @@ export async function generateFrontendBuilderRaw(
 
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   try {
-    const tok = localStorage.getItem('korvix_access_token');
+    const tok = buildRuntime.getAuthToken();
     if (tok) headers['Authorization'] = `Bearer ${tok}`;
   } catch { /* ignore */ }
   // Carry the STABLE Web Build operation id so ai_guard treats this frontend
@@ -3106,7 +3097,7 @@ export async function generateFrontendBuilderRaw(
   try {
     let response: Response;
     try {
-      response = await fetch(`${apiBase()}/chat`, {
+      response = await buildRuntime.getFetch()(`${apiBase()}/chat`, {
         method: 'POST',
         headers,
         signal: timer.signal,
@@ -3312,7 +3303,7 @@ async function callFrontendBuilderTask(
 ): Promise<FrontendTaskOutcome> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   try {
-    const tok = localStorage.getItem('korvix_access_token');
+    const tok = buildRuntime.getAuthToken();
     if (tok) headers['Authorization'] = `Bearer ${tok}`;
   } catch { /* ignore */ }
   // Phase 14L.1 — reuse the ACTIVE build's operation key (started by planning) so this
@@ -3332,7 +3323,7 @@ async function callFrontendBuilderTask(
   try {
     let response: Response;
     try {
-      response = await fetch(`${apiBase()}/chat`, {
+      response = await buildRuntime.getFetch()(`${apiBase()}/chat`, {
         method: 'POST',
         headers,
         signal: timer.signal,

@@ -111,9 +111,12 @@ def test_idempotency_key_unique_per_user_kind(tmp_jobs_db):
     a = jobs_store.insert(JobRecord(
         kind="echo", user_id="u1", idempotency_key="k1",
     ))
-    # Same (user, kind, key) → IntegrityError
-    import sqlite3
-    with pytest.raises(sqlite3.IntegrityError):
+    # Same (user, kind, key) → backend-agnostic idempotency conflict.
+    # (SQLite still raises sqlite3.IntegrityError natively; the store now
+    # normalizes it to JobIdempotencyConflict so the manager's dedup path is
+    # identical on Postgres.)
+    from backend.services.jobs.errors import JobIdempotencyConflict
+    with pytest.raises(JobIdempotencyConflict):
         jobs_store.insert(JobRecord(
             kind="echo", user_id="u1", idempotency_key="k1",
         ))

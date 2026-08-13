@@ -64,6 +64,16 @@ class JobQueueDisabled(JobError):
     http_status = 503
 
 
+class JobIdempotencyConflict(JobError):
+    """A backend-agnostic idempotency collision on (user_id, kind,
+    idempotency_key). Both the SQLite and Postgres stores raise THIS on a
+    duplicate create so the manager's dedup path is backend-independent
+    (SQLite raises sqlite3.IntegrityError natively; Postgres raises a
+    UniqueViolation — this normalizes both)."""
+    code = "JOB_IDEMPOTENCY_CONFLICT"
+    http_status = 409
+
+
 __all__ = [
     "JobError",
     "JobNotFound", "JobAccessDenied",

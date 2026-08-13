@@ -104,7 +104,10 @@ def tmp_jobs_db(tmp_path, monkeypatch):
     jobs_events = importlib.import_module("backend.services.jobs.events")
     jobs_registry = importlib.import_module("backend.services.jobs.registry")
     jobs_kinds = importlib.import_module("backend.services.jobs.kinds")
-    monkeypatch.setattr(jobs_store, "_INITIALIZED", False, raising=False)
+    # Phase 2 (shared jobs) — the init flag now lives on the active backend
+    # (store_sqlite / store_pg), not the dispatcher; reset via the dispatcher's
+    # _reset_for_tests so the schema is recreated against the tmp JOBS_DB_PATH.
+    jobs_store._reset_for_tests()
     jobs_store.init()
     jobs_manager._reset_for_tests()
     jobs_events._reset_for_tests()

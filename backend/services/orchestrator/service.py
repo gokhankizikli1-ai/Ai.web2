@@ -648,6 +648,156 @@ def reject_operation(
     return cancel_run(run_id, user_id=user_id)
 
 
+# ── Planner-driven project run (Phase 2 connected brain) ──────────────────
+
+# Capability → (agent.run agent id) for capabilities executed by a specialist.
+_CAPABILITY_AGENT = {"research": "researcher", "product": "product"}
+
+
+def _plan_node_step(cap, *, run_id, project_id, task_id, deliverable_id,
+                    node_id, title, deps_step_ids, user_request, capability):
+    """Build one workflow step for a planned capability task. Build
+    capabilities dispatch the real build job kinds; research/product dispatch
+    agent.run — never the legacy app_prototype."""
+    from backend.services.orchestrator import capability_registry as caps
+    route = caps.get(capability).route if caps.get(capability) else ""
+    common_input = {
+        "run_id": run_id, "node_id": node_id, "deliverable_id": deliverable_id,
+        "task_id": task_id, "project_id": project_id,
+        "depends_on": [d for d in deps_step_ids],  # node keys carried separately
+        "user_request": (user_request or "")[:4000],
+        "deliverable_kind": caps.get(capability).deliverable_kind if caps.get(capability) else capability,
+        "node_title": title, "capability": capability,
+        "product_spec": {"goal": user_request},
+    }
+    if route in ("web_build.run", "app_build.run"):
+        return {"kind": route, "input": common_input}
+    # research / product → agent.run
+    common_input["assigned_agent_id"] = _CAPABILITY_AGENT.get(capability, "supervisor")
+    common_input["task_description"] = title
+    return {"kind": "agent.run", "input": common_input}
+
+
+async def start_planned_project_run(
+    *, user_id: str, user_request: str, project_id: Optional[str] = None,
+    plan_id: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Turn a long-horizon PLAN (capability DAG) into a real project run:
+    one run + per-task deliverable/task/workflow-step, then kick the runner.
+
+    Unavailable capabilities (e.g. qa) are recorded as BLOCKED deliverables
+    with no runnable step — truthful, never fake execution. Paid build steps
+    pause at the existing approval gate. This is the production planner path;
+    static templates remain for legacy/simple runs (start_project_run)."""
+    if not is_enabled():
+        raise ProjectOrchestratorDisabled("Project Orchestrator is disabled.")
+
+    _ensure_tables()
+    try:
+        from backend.services.orchestrator.agent_run_kind import ensure_registered
+        ensure_registered()
+        from backend.services.orchestrator.build_capability import (
+            ensure_registered as _ensure_build_kinds)
+        _ensure_build_kinds()
+        from backend.services.orchestrator import build_executor
+        build_executor.maybe_register_from_env()
+    except Exception as exc:  # pragma: no cover — defensive
+        logger.warning("orchestrator | planned-run registration failed: %s", exc)
+
+    from backend.services.orchestrator import (
+        long_horizon_planner as planner, capability_registry as caps,
+        deliverables_store as dstore, tasks_store as tstore,
+    )
+    from backend.services.orchestrator.runs_store import create_run, update_run_metadata
+
+    plan = planner.plan_goal(user_request, user_id=user_id, project_id=project_id,
+                             plan_id=plan_id)
+    tasks = plan.get("tasks") or []
+    run_id = _new_id()
+
+    # Stable per-task ids. Node id == plan task id for predictable mapping.
+    step_id = {t["id"]: _new_id() for t in tasks}
+    task_row_id = {t["id"]: t["id"] for t in tasks}      # reuse plan task id
+    deliverable_id = {t["id"]: _new_id() for t in tasks}
+
+    steps_payload: List[dict] = []
+    for t in tasks:
+        tid = t["id"]
+        cap = t["capability"]
+        available = bool(t.get("available"))
+        dstore.create_deliverable(
+            deliverable_id=deliverable_id[tid], run_id=run_id, project_id=project_id,
+            agent_id=cap, node_id=tid, kind=t.get("deliverable_kind") or cap,
+            title=t.get("title") or cap,
+            status=(dstore.STATUS_PENDING if available else "skipped"),
+            metadata={"capability": cap, "available": available,
+                      "step_id": step_id[tid], "task_id": tid,
+                      "plan_id": plan.get("plan_id")},
+        )
+        tstore.create_task(
+            task_id=tid, run_id=run_id, project_id=project_id,
+            title=t.get("title") or cap, assigned_agent=cap,
+            dependencies=[d for d in t.get("depends_on") or []],
+            metadata={"capability": cap, "available": available,
+                      "deliverable_id": deliverable_id[tid], "step_id": step_id[tid]},
+        )
+        if not available:
+            continue  # no runnable step for a not-yet-available capability
+        node_deps = [step_id[d] for d in (t.get("depends_on") or []) if d in step_id]
+        payload = _plan_node_step(
+            cap, run_id=run_id, project_id=project_id, task_id=tid,
+            deliverable_id=deliverable_id[tid], node_id=tid,
+            title=t.get("title") or cap,
+            deps_step_ids=[d for d in (t.get("depends_on") or []) if d in step_id],
+            user_request=user_request, capability=cap)
+        steps_payload.append({
+            "id": step_id[tid], "label": t.get("title") or cap, "kind": "job",
+            "status": "pending", "dependencies": node_deps, "payload": payload,
+        })
+
+    workflow_id: Optional[str] = None
+    try:
+        from backend.services.workflows import client as wf_client, store as wf_store
+        wf = wf_client.create(user_id=user_id, type="research",
+                              project_id=project_id, steps=None,
+                              metadata={"run_id": run_id, "plan_id": plan.get("plan_id")})
+        if wf is not None and wf.id:
+            wf_store.update_steps(wf.id, steps=steps_payload)
+            workflow_id = wf.id
+    except Exception as exc:
+        logger.warning("orchestrator | planned workflow create failed: %s", exc)
+
+    create_run(run_id=run_id, user_id=user_id, project_id=project_id,
+               agent_id="supervisor",
+               metadata={"kind": "project_run", "planned": True,
+                         "plan_id": plan.get("plan_id"), "workflow_id": workflow_id,
+                         "user_request": (user_request or "")[:1000],
+                         "node_count": len(tasks), **(metadata or {})})
+
+    runner_started, runner_error = False, None
+    if workflow_id:
+        try:
+            from backend.services.workflows import runner as wf_runner, client as wf_client
+            if wf_runner.is_enabled():
+                await wf_client.start_run(workflow_id, user_id=user_id)
+                runner_started = True
+            else:
+                runner_error = "ENABLE_WORKFLOW_RUNNER is false"
+        except Exception as exc:
+            runner_error = f"{type(exc).__name__}: {exc}"
+    else:
+        runner_error = "workflow not created (is ENABLE_WORKFLOWS on?)"
+    update_run_metadata(run_id, {"runner_started": runner_started,
+                                 "runner_error": runner_error})
+
+    snap = get_run_snapshot(run_id, user_id=user_id) or {}
+    snap["runner_started"] = runner_started
+    snap["plan_id"] = plan.get("plan_id")
+    if runner_error:
+        snap["runner_error"] = runner_error
+    return snap
+
+
 # ── List a project's runs (the permanent conversation) ────────────────
 
 def list_project_runs(

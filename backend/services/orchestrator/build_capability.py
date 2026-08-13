@@ -181,14 +181,20 @@ def _bounded_input(build_type: str, ctx: JobContext) -> BuildExecutorInput:
     payload = ctx.record.payload or {}
     run_id = payload.get("run_id")
 
-    # Phase 2 — project the direct dependencies' persisted deliverables.
+    # Phase 4 — capability-aware Project Intelligence packet (product
+    # decisions + brand + relevant research + artifact refs + direct upstream),
+    # tailored to the build capability. Bounded + deterministic; fail-open.
     upstream = ""
     try:
-        from backend.services.orchestrator.context_projection import (
-            build_upstream_context,
+        from backend.services.orchestrator.project_intelligence import (
+            build_intelligence_packet,
         )
-        upstream = build_upstream_context(
-            str(run_id or ""), payload.get("depends_on") or [],
+        upstream = build_intelligence_packet(
+            capability=f"{build_type}_build",
+            run_id=str(run_id or ""),
+            project_id=payload.get("project_id"),
+            depends_on=payload.get("depends_on") or [],
+            user_goal=str(payload.get("user_request") or payload.get("task_description") or ""),
         )
     except Exception:  # pragma: no cover — never block a build
         upstream = ""
@@ -256,8 +262,16 @@ async def _run_build(build_type: str, ctx: JobContext) -> dict:
     executor = _EXECUTORS.get(build_type, _default_executor)
 
     try:
-        maybe = executor(inp)
-        result = await maybe if inspect.isawaitable(maybe) else maybe
+        _call = getattr(executor, "__call__", executor)
+        if inspect.iscoroutinefunction(executor) or inspect.iscoroutinefunction(_call):
+            result = await executor(inp)
+        else:
+            # A SYNC executor (e.g. NodeBuildExecutor's blocking subprocess)
+            # must not run on the event loop — offload the CALL to a worker
+            # thread so the inline job path never blocks the loop for the
+            # build's timeout window.
+            import asyncio
+            result = await asyncio.to_thread(executor, inp)
     except Exception as exc:
         detail = f"{build_type} build executor error: {type(exc).__name__}: {exc}"
         _mark_task(task_id, "failed", error=detail)
