@@ -67,15 +67,20 @@ BUILD_RUNNING = "running"
 BUILD_COMPLETED = "completed"
 BUILD_FAILED = "failed"
 BUILD_CANCELLED = "cancelled"
+BUILD_HANDOFF = "handoff"   # worker ran but deferred (executor_unavailable)
 
-BUILD_TERMINAL: FrozenSet[str] = frozenset({BUILD_COMPLETED, BUILD_FAILED, BUILD_CANCELLED})
+BUILD_TERMINAL: FrozenSet[str] = frozenset({
+    BUILD_COMPLETED, BUILD_FAILED, BUILD_CANCELLED, BUILD_HANDOFF,
+})
 
 BUILD_TRANSITIONS: Dict[str, FrozenSet[str]] = {
     BUILD_QUEUED:    frozenset({BUILD_RUNNING, BUILD_CANCELLED, BUILD_FAILED}),
-    BUILD_RUNNING:   frozenset({BUILD_COMPLETED, BUILD_FAILED, BUILD_CANCELLED}),
+    BUILD_RUNNING:   frozenset({BUILD_COMPLETED, BUILD_FAILED, BUILD_CANCELLED,
+                                BUILD_HANDOFF}),
     BUILD_COMPLETED: frozenset(),
     BUILD_FAILED:    frozenset(),
     BUILD_CANCELLED: frozenset(),
+    BUILD_HANDOFF:   frozenset(),
 }
 
 

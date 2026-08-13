@@ -58,13 +58,16 @@ def test_pending_approval_and_build_artifact_surfaced(orch_env):
     rid = runs_store.create_run(user_id="u1", agent_id="supervisor", project_id="p1")
     runs_store.update_run_metadata(rid, {"runner_started": True})
 
-    # A blocked (needs-approval) app build.
+    # A build awaiting approval. In the Phase-2 pause model an awaiting
+    # deliverable is OPEN (pending), not failed — a pending approval is only
+    # "pending" while the deliverable is still open and the run non-terminal.
     d_block = ds.create_deliverable(run_id=rid, agent_id="b", node_id="app",
                                     kind="app_build", project_id="p1")
     ds.set_content(d_block, {
-        "build_type": "app", "build_status": "blocked",
+        "build_type": "app", "capability": "app_build",
+        "build_status": "awaiting_approval",
         "requires_approval": True, "fingerprint": "abc123",
-    }, status="failed")
+    }, status="pending")
     # A completed web build (reference).
     d_web = ds.create_deliverable(run_id=rid, agent_id="b", node_id="web",
                                   kind="web_build", project_id="p1")
@@ -76,7 +79,7 @@ def test_pending_approval_and_build_artifact_surfaced(orch_env):
     snap = service.get_run_snapshot(rid, user_id="u1")
     obs = snap["observability"]
     assert len(obs["pending_approvals"]) == 1
-    assert obs["pending_approvals"][0]["capability"] == "app"
+    assert obs["pending_approvals"][0]["capability"] == "app_build"
     assert obs["pending_approvals"][0]["fingerprint"] == "abc123"
     assert len(obs["build_artifacts"]) == 1
     assert obs["build_artifacts"][0]["artifact_ref"] == "webrun:1"

@@ -40,8 +40,13 @@ STATUS_RUNNING = "running"
 STATUS_COMPLETED = "completed"
 STATUS_FAILED = "failed"
 STATUS_CANCELLED = "cancelled"
+# A worker that ran but explicitly DEFERRED (executor_unavailable) ends here.
+# Distinct from `completed` (no artifact was built) and from `failed` (the
+# worker did not error) — so reconcile stays consistent across restarts
+# instead of flipping a handoff into a spurious failure.
+STATUS_HANDOFF = "handoff"
 
-TERMINAL = frozenset({STATUS_COMPLETED, STATUS_FAILED, STATUS_CANCELLED})
+TERMINAL = frozenset({STATUS_COMPLETED, STATUS_FAILED, STATUS_CANCELLED, STATUS_HANDOFF})
 VALID = frozenset({STATUS_QUEUED, STATUS_RUNNING, *TERMINAL})
 
 _SCHEMA = """
@@ -227,6 +232,14 @@ def mark_cancelled(execution_id: str, *, error: str = "cancelled") -> bool:
     return _finalize(execution_id, STATUS_CANCELLED, error=error)
 
 
+def mark_handoff(execution_id: str, *, artifact_ref: str = "",
+                 summary: str = "", detail: str = "") -> bool:
+    """Record a truthful deferral (executor ran, produced no artifact).
+    Terminal + idempotent; reconcile returns handoff, never a false failure."""
+    return _finalize(execution_id, STATUS_HANDOFF, artifact_ref=artifact_ref,
+                     summary=summary, error=detail or None)
+
+
 def list_for_run(run_id: str) -> List[dict]:
     try:
         with _sqlite.connection(DB_PATH) as c:
@@ -241,7 +254,8 @@ def list_for_run(run_id: str) -> List[dict]:
 
 __all__ = [
     "STATUS_QUEUED", "STATUS_RUNNING", "STATUS_COMPLETED", "STATUS_FAILED",
-    "STATUS_CANCELLED", "TERMINAL", "VALID",
+    "STATUS_CANCELLED", "STATUS_HANDOFF", "TERMINAL", "VALID",
     "stable_id", "init_build_executions_table", "get", "begin_or_reconcile",
-    "mark_completed", "mark_failed", "mark_cancelled", "list_for_run",
+    "mark_completed", "mark_failed", "mark_cancelled", "mark_handoff",
+    "list_for_run",
 ]

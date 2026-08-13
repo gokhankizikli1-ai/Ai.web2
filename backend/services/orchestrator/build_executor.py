@@ -97,6 +97,15 @@ class NodeBuildExecutor:
                     cost_ref=claim.get("cost") or None,
                     detail="reconciled from prior completed build execution",
                 )
+            if status == bx.STATUS_HANDOFF:
+                # A prior run deferred — stay a handoff on restart, never
+                # flip to a spurious failure.
+                return BuildExecutorResult(
+                    status="handoff",
+                    artifact_ref=str(claim.get("artifact_ref") or ""),
+                    summary=str(claim.get("summary") or ""),
+                    detail=str(claim.get("error") or "reconciled prior handoff"),
+                )
             # Prior terminal was failed/cancelled → surface it truthfully.
             return BuildExecutorResult(
                 status="failed",
@@ -123,11 +132,14 @@ class NodeBuildExecutor:
                 summary=result.summary, cost=result.cost_ref or {},
             )
         elif result.status == "handoff":
-            # Worker explicitly deferred (executor_unavailable / not wired) —
-            # leave the row claimed→running is wrong; record as failed-soft?
-            # A handoff is not a completed build; mark the execution as a
-            # non-terminal reset so a future wired worker can pick it up.
-            bx.mark_failed(exec_id, error=result.detail or "executor unavailable (handoff)")
+            # Worker ran but explicitly DEFERRED (executor_unavailable). Record
+            # a truthful `handoff` terminal — NOT `failed` (the worker didn't
+            # error) and NOT `completed` (no artifact). This keeps the
+            # build-execution store consistent with the capability-level
+            # deliverable (build_status=handoff) and keeps restart-reconcile
+            # a handoff instead of flipping it to a failure.
+            bx.mark_handoff(exec_id, artifact_ref=result.artifact_ref,
+                            summary=result.summary, detail=result.detail)
         else:
             bx.mark_failed(exec_id, error=result.detail or "build failed")
         return result
