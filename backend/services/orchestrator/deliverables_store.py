@@ -25,6 +25,7 @@ import logging
 import os
 import sqlite3
 from backend.core.paths import resolve_db_path
+from backend.services.orchestrator import _sqlite
 import threading
 import uuid
 from contextlib import contextmanager
@@ -109,13 +110,12 @@ def _load_json(raw: Optional[str], default: Any) -> Any:
 
 @contextmanager
 def _conn() -> Iterator[sqlite3.Connection]:
-    c = sqlite3.connect(DB_PATH, timeout=10)
-    try:
-        c.row_factory = sqlite3.Row
+    # Hardened shared connection (WAL + busy_timeout + autocommit) for
+    # single-statement writes and reads. Read-modify-write helpers
+    # (`set_status`, `set_content`) use `_sqlite.writer_tx` (BEGIN
+    # IMMEDIATE) so the metadata merge + version bump can't lose updates.
+    with _sqlite.connection(DB_PATH) as c:
         yield c
-        c.commit()
-    finally:
-        c.close()
 
 
 # ── Schema ────────────────────────────────────────────────────────────
@@ -218,7 +218,7 @@ def set_status(
         return False
     now = _now()
     try:
-        with _conn() as c:
+        with _sqlite.writer_tx(DB_PATH) as c:
             row = c.execute(
                 "SELECT metadata_json FROM deliverables WHERE id = ?",
                 (deliverable_id,),
@@ -254,7 +254,7 @@ def set_content(
         return False
     now = _now()
     try:
-        with _conn() as c:
+        with _sqlite.writer_tx(DB_PATH) as c:
             row = c.execute(
                 "SELECT version, status, metadata_json FROM deliverables WHERE id = ?",
                 (deliverable_id,),

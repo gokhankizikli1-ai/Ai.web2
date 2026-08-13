@@ -25,6 +25,7 @@ import logging
 import os
 import sqlite3
 from backend.core.paths import resolve_db_path
+from backend.services.orchestrator import _sqlite
 import threading
 import uuid
 from contextlib import contextmanager
@@ -89,13 +90,11 @@ def _load_json(raw: Optional[str]) -> dict:
 
 @contextmanager
 def _conn() -> Iterator[sqlite3.Connection]:
-    c = sqlite3.connect(DB_PATH, timeout=10)
-    try:
-        c.row_factory = sqlite3.Row
+    # Hardened shared connection: WAL + busy_timeout + autocommit. Used for
+    # single-statement writes and reads. Read-modify-write helpers use
+    # `_sqlite.writer_tx` instead (BEGIN IMMEDIATE) to be lost-update safe.
+    with _sqlite.connection(DB_PATH) as c:
         yield c
-        c.commit()
-    finally:
-        c.close()
 
 
 _SCHEMA = """
@@ -173,7 +172,7 @@ def finish_run(
     """Mark a run finished. Returns True on success."""
     now = _now()
     try:
-        with _conn() as c:
+        with _sqlite.writer_tx(DB_PATH) as c:
             row = c.execute(
                 "SELECT metadata_json FROM runs WHERE id = ?", (run_id,),
             ).fetchone()
@@ -200,7 +199,7 @@ def finish_run(
 def error_run(run_id: str, *, error: str, metadata: Optional[Dict[str, Any]] = None) -> bool:
     now = _now()
     try:
-        with _conn() as c:
+        with _sqlite.writer_tx(DB_PATH) as c:
             row = c.execute(
                 "SELECT metadata_json FROM runs WHERE id = ?", (run_id,),
             ).fetchone()
@@ -217,6 +216,32 @@ def error_run(run_id: str, *, error: str, metadata: Optional[Dict[str, Any]] = N
         return True
     except Exception as exc:
         _bump("errors", f"error_run: {exc}")
+        return False
+
+
+def update_run_metadata(run_id: str, metadata: Dict[str, Any]) -> bool:
+    """Merge keys into a run's metadata_json without touching status.
+
+    Used to persist reconstructable observability truth (e.g. runner health)
+    so it survives a frontend refresh / server restart. Lost-update safe via
+    BEGIN IMMEDIATE."""
+    if not run_id or not metadata:
+        return False
+    try:
+        with _sqlite.writer_tx(DB_PATH) as c:
+            row = c.execute(
+                "SELECT metadata_json FROM runs WHERE id = ?", (run_id,),
+            ).fetchone()
+            if not row:
+                return False
+            merged = {**_load_json(row["metadata_json"]), **metadata}
+            c.execute(
+                "UPDATE runs SET metadata_json=? WHERE id=?",
+                (_dump_json(merged), run_id),
+            )
+        return True
+    except Exception as exc:
+        _bump("errors", f"update_run_metadata: {exc}")
         return False
 
 
@@ -275,6 +300,7 @@ def _row_to_dict(row: sqlite3.Row) -> dict:
 __all__ = [
     "init_runs_table",
     "create_run", "finish_run", "error_run",
+    "update_run_metadata",
     "get_run", "list_runs",
     "runs_stats",
 ]

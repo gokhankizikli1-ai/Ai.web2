@@ -31,6 +31,7 @@ import {
   type RunTurn,
 } from '@/hooks/useProjectOrchestrator';
 import DeliverablePreviewModal from '@/components/DeliverablePreviewModal';
+import RunObservabilityPanel from '@/components/RunObservabilityPanel';
 import DesignInterview from '@/components/builder/DesignInterview';
 import {
   isBuildIntentPrompt, promptHasDesignDetail, parseVisiblePrompt,
@@ -568,6 +569,9 @@ export default function ProjectRunCenter({ projectId, onOverview }: {
           // this same transcript — Korvix's questions are assistant messages
           // inline in the conversation, never a floating card over the page.
           <div className="max-w-2xl mx-auto space-y-5">
+            {/* Phase 7 — truthful run-health strip for the active run,
+                reconstructed from the backend snapshot (not localStorage). */}
+            <RunObservabilityPanel snapshot={snapshot} />
             {turns.map(turn => (
               <ConversationTurn
                 key={turn.run_id}
