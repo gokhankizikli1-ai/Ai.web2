@@ -186,7 +186,10 @@ def create_goal(
 
     if parent_id:
         parent = get_goal(parent_id)
-        if parent is None or str(parent.get("project_id")) != str(project_id):
+        # Parent must be in the SAME project AND owned by the SAME user — a
+        # goal can never be parented across project or user boundaries.
+        if parent is None or str(parent.get("project_id")) != str(project_id) \
+                or str(parent.get("user_id")) != str(user_id):
             raise GoalNotFoundError(f"parent goal {parent_id!r} not found in project")
         if str(parent_id) == gid:  # impossible for a fresh uuid, defensive
             raise GoalCycleError("a goal cannot be its own parent")
@@ -342,7 +345,8 @@ def update_goal(
         fields.append("parent_id=?"); params.append(None)
     elif parent_id is not None:
         parent = get_goal(parent_id)
-        if parent is None or str(parent.get("project_id")) != str(existing.get("project_id")):
+        if parent is None or str(parent.get("project_id")) != str(existing.get("project_id")) \
+                or str(parent.get("user_id")) != str(existing.get("user_id")):
             raise GoalNotFoundError(f"parent goal {parent_id!r} not found in project")
         if _would_create_cycle(goal_id, parent_id):
             raise GoalCycleError("re-parenting would create a cycle")

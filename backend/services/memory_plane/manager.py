@@ -88,6 +88,7 @@ class MemoryManager:
         metadata: Optional[dict] = None,
         embedding: Optional[list[float]] = None,
         dedup: bool = True,
+        auto_embed: bool = True,
     ) -> Optional[MemoryRecord]:
         """Persist a new memory.
 
@@ -137,7 +138,11 @@ class MemoryManager:
         # best-effort: a None vector falls through to text-search rank
         # and the row still persists. We embed BEFORE insert so the
         # vector lands in the same row write — no second roundtrip.
-        if embedding is None:
+        # `auto_embed=False` lets a caller persist deterministically with ZERO
+        # model/provider cost even when the embedding service is enabled (used
+        # by the Business Brain's business-knowledge writes, which must never
+        # force an embedding on write).
+        if embedding is None and auto_embed:
             try:
                 from backend.services.memory_plane.embedding import (
                     is_enabled as _embed_enabled, embed as _embed,

@@ -77,6 +77,25 @@ def test_approval_blocker_beats_business(bb):
     assert a["recommended_next_action"] == sup.NA_APPROVE
 
 
+def test_active_run_holds_business_recommendation(bb):
+    # A healthy, in-flight run (WAIT) must NOT be told to start new business
+    # work — WAIT wins — but candidates stay surfaced. A None snapshot (no run)
+    # is NOT a hold and DOES recommend the candidate.
+    sup = bb.project_supervisor
+    bb.candidate_actions_store.record_candidate_action(
+        project_id="p1", user_id="u1", title="growth op", impact="high",
+        confidence=0.9, recommended_capability="research")
+    running = {"run": {"project_id": "p1", "user_id": "u1"}, "status": "running",
+               "observability": {}, "task_graph": {"tasks": [
+                   {"id": "t1", "status": "running", "assigned_agent": "web_build"}]}}
+    a = sup.assess_business_brain(running, project_id="p1", user_id="u1")
+    assert a["recommended_next_action"] == sup.NA_WAIT
+    assert a["candidate_actions"]                 # still surfaced, not hidden
+    # No active run → business recommendation proceeds.
+    b = sup.assess_business_brain(None, project_id="p1", user_id="u1")
+    assert b["recommended_next_action"] == sup.NA_RUN_CANDIDATE
+
+
 def test_business_recommendation_when_no_blocker(bb):
     sup = bb.project_supervisor
     gid = bb.goals_store.create_goal(project_id="p1", user_id="u1",

@@ -154,7 +154,8 @@ def record_knowledge(
         ttl_seconds=ttl_seconds,
         source=SOURCE_AGENT,
         metadata=meta,
-        embedding=None,        # never force an embed — zero model cost
+        embedding=None,
+        auto_embed=False,      # never force an embed — zero model/provider cost
         dedup=dedup,
     )
     return rec.id if rec is not None else None

@@ -58,6 +58,14 @@ def test_parent_must_exist_and_same_project(goals):
         goals.create_goal(project_id="p1", user_id="u1", title="x", parent_id=other)
 
 
+def test_cross_user_parent_impossible(goals):
+    # Same project_id but a DIFFERENT owning user must not be a valid parent.
+    a_user_goal = goals.create_goal(project_id="p1", user_id="uA", title="A owns this")
+    with pytest.raises(goals.GoalNotFoundError):
+        goals.create_goal(project_id="p1", user_id="uB", title="B child",
+                          parent_id=a_user_goal)
+
+
 def test_cycle_prevention_on_reparent(goals):
     a = goals.create_goal(project_id="p1", user_id="u1", title="A")
     b = goals.create_goal(project_id="p1", user_id="u1", title="B", parent_id=a)
@@ -129,6 +137,35 @@ def test_intelligence_projects_active_goal(goals):
     assert "Get first 100 paying users" in packet
     assert "paying_users >= 100" in packet
     assert len(packet) <= TOTAL_CHAR_BUDGET
+
+
+def test_intelligence_final_packet_never_exceeds_budget():
+    # Adversarial: every section filled near its cap. The FINAL serialized
+    # packet (header + separators + blocks), not just the raw block-sum, must
+    # stay within TOTAL_CHAR_BUDGET. Regression for the header/separator
+    # over-budget defect.
+    from backend.services.orchestrator.project_intelligence import (
+        build_intelligence_packet, TOTAL_CHAR_BUDGET,
+    )
+    goals_ctx = [{"id": f"g{i}", "title": "G" * 300, "priority": 4} for i in range(5)]
+    decisions = [{"topic": f"t{i}", "value": "v" * 400, "source": "PRODUCT"} for i in range(12)]
+    up = "[UP]\n" + "z" * 5000
+    worst = 0
+    for nf in range(1, 12):
+        for tl in range(30, 241, 15):
+            deliv = [{"id": "d0", "node_id": "n0", "status": "completed",
+                      "kind": "markdown", "agent_id": "research",
+                      "content": {"facts": [{"text": "f" * tl} for _ in range(nf)]}}]
+            for cap in ("web_build", "product", "research", "app_build", "growth"):
+                p = build_intelligence_packet(
+                    capability=cap, run_id="r1", project_id="p1", user_id="u1",
+                    depends_on=["x"], user_goal="g" * 1000, deliverables=deliv,
+                    decisions=decisions, upstream_block=up, goals=goals_ctx,
+                    knowledge=[{"domain": "customer", "summary": "k" * 240,
+                                "source": "R", "observed_at": "2024-01-01"} for _ in range(8)])
+                worst = max(worst, len(p))
+                assert len(p) <= TOTAL_CHAR_BUDGET, f"{cap} packet {len(p)} > budget"
+    assert worst > 4000   # sanity: we actually exercised a large packet
 
 
 def test_intelligence_goal_isolation(goals):

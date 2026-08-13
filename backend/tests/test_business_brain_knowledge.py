@@ -131,6 +131,24 @@ def test_cross_project_isolation(mp):
     assert a == {"A-only"}
 
 
+def test_knowledge_write_never_forces_embedding(mp, monkeypatch):
+    # Even with the Memory Plane embedding service forced ON, a business-
+    # knowledge write must incur ZERO model/provider cost (auto_embed=False).
+    import backend.services.memory_plane.embedding as emb
+    calls = {"n": 0}
+
+    async def _boom(*a, **k):
+        calls["n"] += 1
+        raise RuntimeError("embedding must not be called")
+
+    monkeypatch.setattr(emb, "is_enabled", lambda: True)
+    monkeypatch.setattr(emb, "embed", _boom)
+    rid = mp.record_knowledge(user_id="u1", project_id="p1",
+                              domain=mp.DOMAIN_CUSTOMER, summary="a durable fact")
+    assert rid                      # stored via the deterministic path
+    assert calls["n"] == 0          # no embedding attempted
+
+
 def test_empty_summary_rejected(mp):
     assert mp.record_knowledge(user_id="u1", project_id="p1",
                                domain=mp.DOMAIN_BUSINESS, summary="  ") is None

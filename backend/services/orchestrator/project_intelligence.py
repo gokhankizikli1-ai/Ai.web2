@@ -283,8 +283,22 @@ def build_intelligence_packet(
         "_knowledge": knowledge or [],
     }
 
+    # The header + the "\n\n" separators are part of the FINAL serialized
+    # packet, so they MUST count against TOTAL_CHAR_BUDGET — otherwise a run of
+    # near-cap sections plus the header could push the assembled string over
+    # the bound even though the raw block-sum is under it. We charge the header
+    # up-front and each separator as its block is admitted, so the returned
+    # string is <= TOTAL_CHAR_BUDGET BY CONSTRUCTION, dropping only the
+    # lowest-priority overflow sections (order = priority) and never cutting a
+    # section mid-line.
+    header = (
+        f"PROJECT INTELLIGENCE for the {cap or 'task'} capability — the "
+        f"relevant accumulated project knowledge. Build on it as established "
+        f"truth; it is a bounded projection, not the full history."
+    )
+    _SEP = "\n\n"
     blocks: List[str] = []
-    used = 0
+    used = len(header)                      # header is always prepended
     for name in sections:
         fn = _SECTION_FN.get(name)
         if fn is None:
@@ -292,19 +306,18 @@ def build_intelligence_packet(
         block = fn(ctx)
         if not block:
             continue
-        if used + len(block) > TOTAL_CHAR_BUDGET:
+        cost = len(_SEP) + len(block)        # this block plus its joiner
+        if used + cost > TOTAL_CHAR_BUDGET:
             break
         blocks.append(block)
-        used += len(block)
+        used += cost
 
     if not blocks:
         return ""
-    header = (
-        f"PROJECT INTELLIGENCE for the {cap or 'task'} capability — the "
-        f"relevant accumulated project knowledge. Build on it as established "
-        f"truth; it is a bounded projection, not the full history."
-    )
-    return header + "\n\n" + "\n\n".join(blocks)
+    packet = header + _SEP + _SEP.join(blocks)
+    # Defensive guarantee (should never trigger given the accounting above):
+    # never return more than the canonical bound.
+    return packet[:TOTAL_CHAR_BUDGET]
 
 
 def packet_size(packet: str) -> int:

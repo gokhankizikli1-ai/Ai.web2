@@ -250,9 +250,20 @@ def assess_business_brain(
     op_na = operational.get("recommended_next_action")
     recommendation: Dict[str, Any] = {"type": "operational", "detail": op_na}
 
+    # A genuinely in-flight run (a real snapshot whose deterministic next
+    # action is WAIT) is a HOLD: we must not tell the user to start new
+    # business work while the current run is still executing. `evaluate_run`
+    # also returns WAIT for a None snapshot (no run at all) — that is NOT a
+    # hold, so business recommendations proceed for a connector-driven or
+    # reopened project with no active run.
+    run_in_flight = (snapshot is not None) and (op_na == NA_WAIT)
+
     if op_na in (NA_RESOLVE_RUNNER, NA_APPROVE, NA_RETRY_FAILED):
         # Execution health / safety blocker — never hide it behind business.
         next_action = op_na
+    elif run_in_flight:
+        # Healthy run still executing — wait for it, but keep candidates surfaced.
+        next_action = NA_WAIT
     elif top is not None:
         next_action = NA_RUN_CANDIDATE
         cap = top.get("recommended_capability")
