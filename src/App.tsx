@@ -38,6 +38,7 @@ const WebBuildMeasurementHost = lazy(() => import('./components/builder/WebBuild
 
 const ChatDashboard = lazy(() => import('./pages/ChatDashboard'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
+const ConnectorsPage = lazy(() => import('./pages/ConnectorsPage'));
 const HomeDashboard = lazy(() => import('./pages/HomeDashboard'));
 const StartupHub = lazy(() => import('./pages/StartupHub'));
 const EcommerceOS = lazy(() => import('./pages/EcommerceOS'));
@@ -378,6 +379,10 @@ export default function App() {
 
         {/* ═══ Settings / Credits / Auth ═══ */}
         <Route path="/settings" element={<ProtectedRoute guestAllowed={false}><AnimatedRoute><SettingsPage /></AnimatedRoute></ProtectedRoute>} />
+        {/* Connectors (integrations). Also the Gmail OAuth callback landing:
+             the backend redirects the browser to /#/settings/integrations?gmail=…
+             which this route + ConnectorsPage read to reconcile status. */}
+        <Route path="/settings/integrations" element={<ProtectedRoute guestAllowed={false}><AnimatedRoute><ConnectorsPage /></AnimatedRoute></ProtectedRoute>} />
         <Route path="/login" element={<AnimatedRoute><AuthPage /></AnimatedRoute>} />
         <Route path="/signup" element={<AnimatedRoute><AuthPage mode="signup" /></AnimatedRoute>} />
         <Route path="/credits" element={<ProtectedRoute guestAllowed={false} redirectTo="/signup"><AnimatedRoute><CreditsPage /></AnimatedRoute></ProtectedRoute>} />

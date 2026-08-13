@@ -9,7 +9,7 @@ import {
   Crown, Search, X,
   LogIn, Sparkles, FolderOpen,
   Bot, Plug, FileText, ChevronDown, Code2, Briefcase, MoreHorizontal,
-  BarChart3,
+  BarChart3, Blocks,
 } from 'lucide-react';
 import BrandLogo from '@/components/BrandLogo';
 import type { ChatSession, ChatFolder } from '@/types';
@@ -295,6 +295,18 @@ export default function Sidebar({
               <button type="button" onClick={() => navigate('/projects')} className={navRow}>
                 <FolderOpen className="h-4 w-4 shrink-0 text-white/50 group-hover:text-white/85 transition-colors" />
                 <span>{t('projects') || 'Projects'}</span>
+              </button>
+              {/* Connectors — project-scoped integrations (Gmail, GitHub). Visible to
+                  every authenticated user, like Projects; the page itself gates on a
+                  selected project and reflects real backend connection status. */}
+              <button
+                type="button"
+                onClick={() => navigate('/settings/integrations')}
+                aria-current={location.pathname === '/settings/integrations' ? 'page' : undefined}
+                className={`${navRow}${location.pathname === '/settings/integrations' ? ' bg-white/[0.06] text-white' : ''}`}
+              >
+                <Blocks className="h-4 w-4 shrink-0 text-white/50 group-hover:text-white/85 transition-colors" />
+                <span>Connectors</span>
               </button>
               {isOwner && (
                 <>
