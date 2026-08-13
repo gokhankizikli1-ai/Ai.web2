@@ -45,6 +45,17 @@ celery==5.4.0
 # signing seam (no real key, no real crypto call).
 PyJWT==2.8.0
 
+# Gmail connector — credential-at-rest encryption. The stored Google refresh
+# token is encrypted with Fernet (cryptography) before it touches disk; the
+# GitHub connector's RS256 App-JWT signing also uses it. Already present
+# transitively (anthropic/argon2), but declared explicitly here because both
+# connectors import it DIRECTLY. Imported lazily (backend.services.gmail.crypto
+# / backend.services.github.auth) so modules load even where the native crypto
+# backend is unavailable; the Gmail token-lifecycle tests inject a fake cipher,
+# so no real AES call is needed in CI. A floor (not an exact pin) avoids
+# conflicting with the transitive resolution.
+cryptography>=41.0.0
+
 # Phase 1 PR #2 — Argon2id password hashing.
 # Default for new hashes + lazy silent migration from the legacy
 # PBKDF2-HMAC-SHA256 format on next successful login (no forced

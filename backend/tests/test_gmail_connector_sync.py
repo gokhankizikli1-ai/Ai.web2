@@ -1,0 +1,153 @@
+# coding: utf-8
+"""Gmail connector — normalize (pure) + bounded sync (fake client)."""
+from __future__ import annotations
+
+import pytest
+
+from backend.services.gmail import crypto as gm_crypto
+from backend.services.gmail import normalize
+from backend.services.gmail import store as gm_store
+from backend.services.gmail import sync as gm_sync
+from backend.services.gmail.errors import GmailServerError
+from backend.services.orchestrator import observations_store as obs
+
+
+def _msg(mid="m1", subject="Hello", sender="a@b.com", snippet="hi there",
+         labels=("INBOX", "UNREAD"), internal="1700000000000", thread="t1"):
+    return {
+        "id": mid, "threadId": thread, "snippet": snippet,
+        "internalDate": internal, "labelIds": list(labels),
+        "payload": {"headers": [
+            {"name": "From", "value": sender},
+            {"name": "Subject", "value": subject},
+            {"name": "Date", "value": "Wed, 15 Nov 2023 00:00:00 +0000"},
+        ]},
+    }
+
+
+# ── normalize ────────────────────────────────────────────────────────────────
+
+def test_normalize_message_shape():
+    o = normalize.normalize_message(_msg(), connection_email="me@x.com")
+    assert o["source"] == "gmail"
+    assert o["kind"] == "gmail.message.received"
+    assert o["external_id"] == "m1"  # stable dedup key
+    assert "Hello" in o["summary"]
+    p = o["payload"]
+    assert p["message_id"] == "m1" and p["thread_id"] == "t1"
+    assert p["from"] == "a@b.com" and p["subject"] == "Hello"
+    assert p["connection_email"] == "me@x.com"
+    # observed_at derived from internalDate (epoch ms) → ISO Z.
+    assert o["observed_at"].endswith("Z")
+
+
+def test_normalize_bounds_snippet(monkeypatch):
+    monkeypatch.setenv("GMAIL_SNIPPET_MAX_CHARS", "5")
+    o = normalize.normalize_message(_msg(snippet="0123456789abcdef"))
+    assert len(o["payload"]["snippet"]) == 5
+
+
+def test_normalize_never_carries_body():
+    # A payload with a body part must NOT leak — normalize only reads headers +
+    # snippet, never parts/body.
+    m = _msg()
+    m["payload"]["body"] = {"data": "SECRET-BODY-BASE64"}
+    m["payload"]["parts"] = [{"body": {"data": "SECRET-PART"}}]
+    o = normalize.normalize_message(m)
+    import json
+    blob = json.dumps(o)
+    assert "SECRET-BODY" not in blob and "SECRET-PART" not in blob
+
+
+def test_normalize_rejects_no_id():
+    assert normalize.normalize_message({"threadId": "t"}) is None
+
+
+# ── sync (fake client) ───────────────────────────────────────────────────────
+
+class _FakeClient:
+    def __init__(self, ids, messages, *, list_error=None, get_errors=None):
+        self._ids = ids
+        self._messages = messages
+        self._list_error = list_error
+        self._get_errors = get_errors or {}
+
+    def list_message_ids(self, **kw):
+        if self._list_error:
+            raise self._list_error
+        return list(self._ids)
+
+    def get_message_metadata(self, mid):
+        if mid in self._get_errors:
+            raise self._get_errors[mid]
+        return self._messages.get(mid, {})
+
+
+@pytest.fixture()
+def gmail_db(tmp_path, monkeypatch):
+    path = str(tmp_path / "projects.db")
+    monkeypatch.setenv("PROJECTS_DB_PATH", path)
+    for mod in (gm_store, obs):
+        monkeypatch.setattr(mod, "DB_PATH", path, raising=False)
+    gm_crypto.set_cipher_for_tests(gm_crypto._ReversibleTestCipher())
+    gm_store._reset_for_tests()
+    gm_store.init_gmail_tables()
+    obs.init_observations_table()
+    gm_store.upsert_connection(
+        project_id="p1", owner_user_id="uA", google_email="me@x.com", scopes="",
+        refresh_token="R", access_token="A", access_token_expires="2999-01-01T00:00:00Z",
+    )
+    yield path
+    gm_crypto.set_cipher_for_tests(None)
+
+
+def test_sync_records_bounded_observations(gmail_db):
+    conn = gm_store.get_connection("p1")
+    client = _FakeClient(["m1", "m2"], {"m1": _msg("m1"), "m2": _msg("m2", subject="Two")})
+    report = gm_sync.sync_connection(conn, client=client)
+    assert report.ok is True
+    assert report.recorded == 2 and report.fetched == 2
+    kinds = {o["kind"] for o in obs.list_observations("p1")}
+    assert kinds == {"gmail.message.received"}
+    # All scoped to the connection's owner — never message content.
+    assert all(o["user_id"] == "uA" for o in obs.list_observations("p1"))
+
+
+def test_sync_is_idempotent(gmail_db):
+    conn = gm_store.get_connection("p1")
+    client = _FakeClient(["m1"], {"m1": _msg("m1")})
+    r1 = gm_sync.sync_connection(conn, client=client)
+    r2 = gm_sync.sync_connection(conn, client=client)
+    assert r1.recorded == 1
+    assert r2.recorded == 0 and r2.deduplicated == 1
+    assert len(obs.list_observations("p1")) == 1
+
+
+def test_sync_list_failure_is_truthful_not_empty_success(gmail_db):
+    conn = gm_store.get_connection("p1")
+    client = _FakeClient([], {}, list_error=GmailServerError("boom", status=500))
+    report = gm_sync.sync_connection(conn, client=client)
+    assert report.ok is False
+    assert "list" in report.errors
+    assert obs.list_observations("p1") == []
+
+
+def test_sync_per_message_failure_skips_not_aborts(gmail_db):
+    conn = gm_store.get_connection("p1")
+    client = _FakeClient(
+        ["m1", "m2"], {"m2": _msg("m2")},
+        get_errors={"m1": GmailServerError("bad", status=500)},
+    )
+    report = gm_sync.sync_connection(conn, client=client)
+    assert report.skipped == 1
+    assert report.recorded == 1  # m2 still recorded
+    assert report.ok is False   # but the failure is surfaced
+
+
+def test_sync_does_not_create_tasks_or_decisions(gmail_db):
+    conn = gm_store.get_connection("p1")
+    client = _FakeClient(["m1"], {"m1": _msg("m1")})
+    gm_sync.sync_connection(conn, client=client)
+    from backend.services.orchestrator import candidate_actions_store, tasks_store
+    assert candidate_actions_store.list_candidate_actions("p1") == []
+    assert tasks_store.list_tasks_for_project("p1") == []
