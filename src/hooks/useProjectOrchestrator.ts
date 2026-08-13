@@ -72,6 +72,30 @@ export interface WorkflowBlock {
   steps:    Array<{ id: string; label: string; status: string; dependencies: string[] }>;
 }
 
+// Phase 7 — bounded, secret-free operational summary reconstructed from
+// backend durable state (never localStorage).
+export interface PendingApproval {
+  deliverable_id: string | null;
+  node_id:        string | null;
+  capability:     string | null;
+  fingerprint:    string | null;
+}
+
+export interface BuildArtifactRef {
+  deliverable_id: string | null;
+  build_type:     string | null;
+  build_status:   string | null;
+  artifact_ref:   string | null;
+  build_ref:      string | null;
+}
+
+export interface ObservabilityBlock {
+  runner_healthy:    boolean;
+  pending_approvals: PendingApproval[];
+  build_artifacts:   BuildArtifactRef[];
+  next_action:       string;
+}
+
 export interface RunSnapshot {
   run_id:        string;
   status:        string;
@@ -82,6 +106,7 @@ export interface RunSnapshot {
   task_graph:    { run_id: string; tasks: TaskView[]; counts: Record<string, number>; total_count: number };
   runner_started?: boolean;
   runner_error?:   string;
+  observability?:  ObservabilityBlock;
   run?: { status: string; [k: string]: unknown };
 }
 

@@ -186,6 +186,15 @@ async def start_project_run(
         ensure_registered()
     except Exception as exc:  # pragma: no cover — defensive
         logger.warning("orchestrator | agent.run registration failed: %s", exc)
+    # Phase 3 — production Web/App build capability kinds (thin adapters
+    # around the real builders; distinct from legacy app_prototype).
+    try:
+        from backend.services.orchestrator.build_capability import (
+            ensure_registered as _ensure_build_kinds,
+        )
+        _ensure_build_kinds()
+    except Exception as exc:  # pragma: no cover — defensive
+        logger.warning("orchestrator | build capability registration failed: %s", exc)
 
     template = _resolve_template(template_id, user_request)
     template.validate()
@@ -259,6 +268,11 @@ async def start_project_run(
                     "deliverable_id":    deliverable_id[n.key],
                     "task_id":           task_id[n.key],
                     "project_id":        project_id,
+                    # Phase 2 — the DIRECT dependency node keys, so the
+                    # agent.run handler can project their persisted
+                    # deliverables into this task's context at execution
+                    # time (ordering + data flow, not just ordering).
+                    "depends_on":        [d for d in n.depends_on if d in step_id],
                     "user_request":      (user_request or "")[:4000],
                     # M2 — let the agent.run handler type the artifact.
                     "deliverable_kind":  n.deliverable_kind,
@@ -321,6 +335,18 @@ async def start_project_run(
             logger.warning("orchestrator | runner kick failed: %s", exc)
     else:
         runner_error = "workflow not created (is ENABLE_WORKFLOWS on?)"
+
+    # Phase 7 — persist runner health into durable run metadata so a
+    # refresh / reopen / restart reconstructs it (get_run_snapshot surfaces
+    # it from here); previously it lived only on this start response.
+    try:
+        from backend.services.orchestrator.runs_store import update_run_metadata
+        update_run_metadata(run_id, {
+            "runner_started": runner_started,
+            "runner_error":   runner_error,
+        })
+    except Exception as exc:  # pragma: no cover — best effort
+        logger.debug("orchestrator | persist runner health soft-failed: %s", exc)
 
     snapshot = get_run_snapshot(run_id, user_id=user_id) or {}
     snapshot["runner_started"] = runner_started
@@ -395,15 +421,90 @@ def get_run_snapshot(run_id: str, *, user_id: Optional[str] = None) -> Optional[
         deliverables = dstore.list_for_run(run_id)
 
     overall = wf_status or run["status"]
+
+    # Phase 7 — observability the workspace can render truthfully after a
+    # refresh/reopen. Runner health is reconstructed from durable state
+    # (persisted metadata, with a derivation fallback), and a bounded
+    # approval/next-action summary is attached. All read from backend state
+    # — never from localStorage.
+    runner_started = bool(meta.get("runner_started")) or (
+        workflow_block is not None and wf_status is not None
+    )
+    runner_error = meta.get("runner_error")
+    # Only synthesize an error when NO runner health was ever persisted for
+    # this run (legacy rows) and there is no workflow — otherwise trust the
+    # persisted truth so a healthy run isn't mislabelled on reload.
+    if runner_error is None and "runner_started" not in meta and workflow_id is None:
+        runner_error = "workflow not created (is ENABLE_WORKFLOWS on?)"
+
+    observability = _build_observability(
+        run_id, run["user_id"], run.get("project_id"),
+        deliverables, overall, runner_started, runner_error,
+    )
+
     return {
-        "run_id":       run_id,
-        "status":       overall,
-        "run":          run,
-        "template_id":  template_id,
-        "panel_id":     panel_id,
-        "workflow":     workflow_block,
-        "deliverables": deliverables,
-        "task_graph":   task_graph,
+        "run_id":         run_id,
+        "status":         overall,
+        "run":            run,
+        "template_id":    template_id,
+        "panel_id":       panel_id,
+        "workflow":       workflow_block,
+        "deliverables":   deliverables,
+        "task_graph":     task_graph,
+        "runner_started": runner_started,
+        "runner_error":   runner_error,
+        "observability":  observability,
+    }
+
+
+def _build_observability(
+    run_id: str, user_id: str, project_id: Optional[str],
+    deliverables: List[dict], overall: str,
+    runner_started: bool, runner_error: Optional[str],
+) -> Dict[str, Any]:
+    """Bounded, secret-free operational summary for the workspace.
+
+    Surfaces pending approvals (deliverables the execution policy blocked
+    awaiting approval), a compact build-artifact list (references, not
+    blobs), and a recommended next action. No hidden prompts, no secrets."""
+    pending_approvals: List[dict] = []
+    build_artifacts: List[dict] = []
+    for d in deliverables or []:
+        content = d.get("content") or {}
+        if isinstance(content, dict):
+            if content.get("requires_approval"):
+                pending_approvals.append({
+                    "deliverable_id": d.get("id"),
+                    "node_id":        d.get("node_id"),
+                    "capability":     content.get("build_type"),
+                    "fingerprint":    content.get("fingerprint"),
+                })
+            if d.get("kind") in ("web_build", "app_build") and \
+                    content.get("build_status") in ("completed", "handoff"):
+                build_artifacts.append({
+                    "deliverable_id": d.get("id"),
+                    "build_type":     content.get("build_type"),
+                    "build_status":   content.get("build_status"),
+                    "artifact_ref":   content.get("artifact_ref"),
+                    "build_ref":      content.get("build_ref"),
+                })
+
+    if runner_error:
+        next_action = "resolve_runner_error"
+    elif pending_approvals:
+        next_action = "approve_pending_operation"
+    elif overall in ("failed", "errored"):
+        next_action = "review_failure"
+    elif overall in ("completed", "finished"):
+        next_action = "review_deliverables"
+    else:
+        next_action = "wait_for_run"
+
+    return {
+        "runner_healthy":    bool(runner_started) and not runner_error,
+        "pending_approvals": pending_approvals,
+        "build_artifacts":   build_artifacts,
+        "next_action":       next_action,
     }
 
 

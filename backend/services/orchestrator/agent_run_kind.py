@@ -149,6 +149,27 @@ async def _agent_run_handler(ctx: JobContext) -> dict:
     except Exception as exc:  # pragma: no cover — never block a run
         logger.debug("generation.build_prompt soft-failed: %s", exc)
 
+    # Phase 2 — task-scoped upstream context projection.
+    #
+    # Dependencies must mean "wait for this task AND receive its relevant
+    # output". We resolve the DIRECT dependency nodes' persisted
+    # deliverables (scoped to this run_id → no cross-project/user leakage)
+    # into a compact, provenance-tagged block and prepend it, so a
+    # downstream node genuinely builds on upstream results instead of
+    # re-deriving them. Bounded + deterministic (no extra model call);
+    # fail-open — a projection error just means no upstream block.
+    try:
+        from backend.services.orchestrator.context_projection import (
+            build_upstream_context,
+        )
+        _upstream = build_upstream_context(
+            str(run_id or ""), payload.get("depends_on") or [],
+        )
+        if _upstream:
+            user_message = f"{_upstream}\n\n---\n\n{user_message}"
+    except Exception as exc:  # pragma: no cover — never block a run
+        logger.debug("context projection soft-failed: %s", exc)
+
     # Optional Design Intelligence context (Visual + Motion) — gated by
     # ENABLE_VISUAL_CONTEXT_INJECTION (default off). Additive and fail-open: it only
     # APPENDS a compact block to the page-generation prompt when the flag is on and a

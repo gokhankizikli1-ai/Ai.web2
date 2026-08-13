@@ -169,6 +169,43 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _step_idempotency_key(workflow_id: str, step_id: str) -> str:
+    """Stable idempotency identity for a workflow step's job dispatch.
+
+    Deterministic for a given (workflow, step) so a re-entrant / racing
+    dispatch dedups at the jobs UNIQUE idempotency index instead of
+    double-dispatching expensive work."""
+    return f"wf:{workflow_id}:step:{step_id}"
+
+
+# Step watchdog. Job steps are already bounded by the job's own
+# `timeout_s` (DEFAULT_TIMEOUT_S = 600s) — a hung job fails on its own and
+# the poll observes it. `agent_task` steps have NO such timeout, so a row
+# that never reaches a terminal state (the known agent_tasks trap: nothing
+# drives its rows to `completed`) would keep the driver polling forever.
+# This watchdog is the backstop: any step in-flight longer than the
+# threshold is failed with an explicit timeout, so a workflow can never
+# hang indefinitely. Set generously above the job timeout so a normal job
+# step fails via its own timeout first; the watchdog only catches genuinely
+# stuck (agent_task / disappeared-resource) steps. No new env var — derived
+# from the job default so ops has one timeout knob, not two.
+_STEP_WATCHDOG_SEC = 1800.0  # 30 min — 3× the 600s job default
+
+
+def _step_elapsed_sec(step: Step) -> Optional[float]:
+    """Seconds since the step was dispatched, or None if unknown/unparseable."""
+    started = getattr(step, "started_at", None)
+    if not started:
+        return None
+    try:
+        ts = datetime.fromisoformat(str(started))
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        return (datetime.now(timezone.utc) - ts).total_seconds()
+    except Exception:
+        return None
+
+
 def _persist_steps(workflow_id: str, steps: list[Step]) -> None:
     """Write the typed step list back to `workflows.steps_json`.
 
@@ -512,6 +549,17 @@ async def _dispatch_step(
                 kind=       str(job_kind),
                 payload=    (step.payload or {}).get("input") or {},
                 project_id= project_id,
+                # Phase 4 — cross-process idempotent dispatch. The key is
+                # stable for (this workflow, this step), so if two runner
+                # instances race (e.g. both sweep the same orphaned
+                # `running` workflow after a restart), the second
+                # `create` collides on the jobs UNIQUE idempotency index
+                # and returns the EXISTING job instead of dispatching a
+                # duplicate. This is what prevents double *paid*
+                # execution of an expensive step — reusing the jobs
+                # layer's existing idempotency authority rather than
+                # inventing a new lock framework.
+                idempotency_key=_step_idempotency_key(workflow_id, step.id),
                 metadata=   {
                     "workflow_id": workflow_id,
                     "step_id":     step.id,
@@ -599,6 +647,20 @@ async def _reconcile_in_flight(user_id: str, steps: list[Step]) -> bool:
             # workflow doesn't hang forever.
             step.status = STEP_STATUS_FAILED
             step.error = "in-flight step has no dispatched_id"
+            step.finished_at = _now_iso()
+            any_change = True
+            continue
+        # Phase 4 — step watchdog. A step that never reaches a terminal
+        # state (e.g. an agent_task row nothing ever completes) must not
+        # hang the workflow forever. Fail it once it exceeds the watchdog
+        # threshold. Survives restart because started_at is persisted.
+        elapsed = _step_elapsed_sec(step)
+        if elapsed is not None and elapsed > _STEP_WATCHDOG_SEC:
+            step.status = STEP_STATUS_FAILED
+            step.error = (
+                f"step timed out after {int(elapsed)}s "
+                f"(watchdog limit {int(_STEP_WATCHDOG_SEC)}s)"
+            )
             step.finished_at = _now_iso()
             any_change = True
             continue
