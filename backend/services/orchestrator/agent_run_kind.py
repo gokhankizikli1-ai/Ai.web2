@@ -191,6 +191,7 @@ async def _agent_run_handler(ctx: JobContext) -> dict:
             project_id=payload.get("project_id"),
             depends_on=payload.get("depends_on") or [],
             user_goal=str(payload.get("user_request") or ""),
+            user_id=user_id,
         )
         if _packet:
             user_message = f"{_packet}\n\n---\n\n{user_message}"

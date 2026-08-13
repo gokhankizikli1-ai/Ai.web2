@@ -85,8 +85,9 @@ def _new_id() -> str:
 
 
 def _ensure_tables() -> None:
-    """Idempotent bring-up of the three projects.db tables this service
-    writes to. Cheap; safe to call on every run."""
+    """Idempotent bring-up of the projects.db tables this service writes to
+    (plus the Business Brain tables so a fresh DB can be read after restart).
+    Cheap; safe to call on every run."""
     from backend.services.orchestrator.runs_store import init_runs_table
     from backend.services.orchestrator.tasks_store import init_tasks_table
     from backend.services.orchestrator.deliverables_store import (
@@ -95,6 +96,23 @@ def _ensure_tables() -> None:
     init_runs_table()
     init_tasks_table()
     init_deliverables_table()
+    # Business Brain tables (Phases 1/2/4/5/6). Each init is idempotent and
+    # additive; failures are swallowed inside each init so a bring-up hiccup
+    # never blocks a run.
+    for _mod, _fn in (
+        ("goals_store", "init_goals_table"),
+        ("candidate_actions_store", "init_candidate_actions_table"),
+        ("observations_store", "init_observations_table"),
+        ("metrics_store", "init_metrics_table"),
+        ("experiments_store", "init_experiments_table"),
+        ("decisions_store", "init_decisions_table"),
+    ):
+        try:
+            import importlib
+            getattr(importlib.import_module(
+                f"backend.services.orchestrator.{_mod}"), _fn)()
+        except Exception:  # pragma: no cover — never block a run on bring-up
+            pass
 
 
 # ── Template resolution ───────────────────────────────────────────────
