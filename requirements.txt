@@ -35,6 +35,16 @@ psycopg[binary,pool]==3.1.18
 redis==5.0.4
 celery==5.4.0
 
+# GitHub connector — GitHub App authentication (private key → RS256 App JWT →
+# short-lived installation token). PyJWT is the small, canonical primitive for
+# signing/verifying JWTs; RS256 signing uses `cryptography` (already present as
+# a transitive dep of anthropic/argon2). No GitHub SDK is added — the REST
+# client is stdlib urllib (matching backend/services/tools/github_tool.py). The
+# import is LAZY (backend.services.github.auth) so the module loads even where
+# the native crypto backend is unavailable, and the whole test-suite mocks the
+# signing seam (no real key, no real crypto call).
+PyJWT==2.8.0
+
 # Phase 1 PR #2 — Argon2id password hashing.
 # Default for new hashes + lazy silent migration from the legacy
 # PBKDF2-HMAC-SHA256 format on next successful login (no forced
