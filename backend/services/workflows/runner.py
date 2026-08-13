@@ -39,6 +39,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -53,6 +54,7 @@ from backend.services.workflows.steps import (
     STEP_STATUS_PENDING,
     STEP_STATUS_RUNNING,
     STEP_STATUS_SKIPPED,
+    STEP_STATUS_AWAITING_APPROVAL,
     Step,
     StepsParseError,
     eligible_step_ids,
@@ -65,6 +67,7 @@ from backend.services.workflows.types import (
     STATUS_COMPLETED,
     STATUS_FAILED,
     STATUS_RUNNING,
+    STATUS_AWAITING_APPROVAL,
     TERMINAL_WORKFLOW_STATUSES,
 )
 
@@ -142,6 +145,47 @@ _WORKFLOW_LOCKS: dict[str, asyncio.Lock] = {}
 # already attached.
 _LIVE_DRIVERS: dict[str, asyncio.Task] = {}
 
+# ── Pluggable pre-dispatch step gates (Phase 2) ────────────────────────────
+#
+# Keeps the runner GENERIC: it knows nothing about approvals/builds. A gate
+# is `fn(step, user_id, project_id) -> Optional[StepGateDecision]`. Before
+# dispatching an eligible step, the runner asks every registered gate; the
+# first non-None decision wins. A gate can pause a step (await approval) or
+# deny it. The build/approval logic registers a gate (build_capability).
+from dataclasses import dataclass as _dataclass
+
+
+@_dataclass
+class StepGateDecision:
+    action: str                 # "await_approval" | "deny"
+    code: str = ""
+    reason: str = ""
+    fingerprint: str = ""
+    capability: str = ""
+
+
+StepGate = "Callable[[Step, str, Optional[str]], Optional[StepGateDecision]]"
+_STEP_GATES: list = []
+
+
+def register_step_gate(fn) -> None:
+    """Register a pre-dispatch gate. Idempotent per function identity."""
+    if fn not in _STEP_GATES:
+        _STEP_GATES.append(fn)
+
+
+def _evaluate_step_gates(step: Step, user_id: str,
+                         project_id: Optional[str]) -> Optional[StepGateDecision]:
+    for gate in list(_STEP_GATES):
+        try:
+            decision = gate(step, user_id, project_id)
+        except Exception as exc:  # pragma: no cover — a gate must never crash the runner
+            logger.warning("workflow_runner | step gate error: %s", exc)
+            continue
+        if decision is not None:
+            return decision
+    return None
+
 
 def _get_or_create_lock(workflow_id: str) -> asyncio.Lock:
     lock = _WORKFLOW_LOCKS.get(workflow_id)
@@ -167,6 +211,11 @@ def _reset_for_tests() -> None:
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+# A stable-per-process identifier so a claim records which replica owns it.
+# uuid4 avoids Date/random-at-import concerns and is unique per process.
+_INSTANCE_ID = uuid.uuid4().hex[:12]
 
 
 def _step_idempotency_key(workflow_id: str, step_id: str) -> str:
@@ -352,6 +401,42 @@ async def resume_workflow(workflow_id: str) -> Optional[asyncio.Task]:
     return task
 
 
+async def resume_after_approval(
+    workflow_id: str, *, user_id: Optional[str] = None,
+) -> Optional[asyncio.Task]:
+    """Resume a workflow parked in `awaiting_approval`.
+
+    Flips every `awaiting_approval` step back to `pending`, sets the
+    workflow `running`, and attaches a driver. On re-dispatch the pre-dispatch
+    gate re-evaluates each step: a now-approved operation proceeds; any still
+    lacking approval re-pauses. Idempotent — a second call while the workflow
+    is already `running` returns the live driver without re-flipping (so a
+    repeated approve cannot double-dispatch or double-resume)."""
+    if not is_enabled():
+        return None
+    rec = wf_store.get(workflow_id)
+    if rec is None:
+        return None
+    if user_id is not None and rec.user_id != str(user_id):
+        return None
+    if rec.status == STATUS_RUNNING:
+        return _LIVE_DRIVERS.get(workflow_id)
+    if rec.status != STATUS_AWAITING_APPROVAL:
+        return None
+    steps = parse_steps(rec.steps)
+    flipped = False
+    for s in steps:
+        if s.status == STEP_STATUS_AWAITING_APPROVAL:
+            s.status = STEP_STATUS_PENDING
+            s.result = None
+            flipped = True
+    if not flipped:
+        return None
+    _persist_steps(workflow_id, steps)
+    wf_store.update(workflow_id, status=STATUS_RUNNING)
+    return await resume_workflow(workflow_id)
+
+
 async def sweep_orphans() -> int:
     """Resume drivers for every workflow that is `status=running` but
     has no live driver in this process. Returns the number of
@@ -472,7 +557,7 @@ async def _driver_loop_inner(workflow_id: str) -> None:
             # finishes deterministically; transitive-only would require
             # graph walking and adds complexity for marginal benefit.
             for s in steps:
-                if s.status == STEP_STATUS_PENDING:
+                if s.status in (STEP_STATUS_PENDING, STEP_STATUS_AWAITING_APPROVAL):
                     s.status = STEP_STATUS_SKIPPED
                     s.finished_at = _now_iso()
             _persist_steps(workflow_id, steps)
@@ -497,17 +582,56 @@ async def _driver_loop_inner(workflow_id: str) -> None:
             )
             return
 
-        # Dispatch eligible steps up to the parallel cap.
+        # Dispatch eligible steps up to the parallel cap. Each eligible step
+        # passes a pre-dispatch gate first (Phase 2): a gate can PAUSE it
+        # (await approval — non-terminal) or DENY it (fail) before any
+        # (paid) work is dispatched.
         in_flight = sum(1 for s in steps if s.is_in_flight)
         capacity = max(0, parallel_cap - in_flight)
         if capacity > 0:
             for step_id in eligible_step_ids(steps)[:capacity]:
                 step = next(s for s in steps if s.id == step_id)
+                decision = _evaluate_step_gates(step, rec.user_id, rec.project_id)
+                if decision is not None:
+                    if decision.action == "await_approval":
+                        step.status = STEP_STATUS_AWAITING_APPROVAL
+                        step.result = {
+                            "awaiting_approval": True,
+                            "capability":  decision.capability,
+                            "fingerprint": decision.fingerprint,
+                            "reason":      decision.reason,
+                        }
+                    else:  # deny → fail the step (not a pause)
+                        step.status = STEP_STATUS_FAILED
+                        step.error = f"{decision.code}: {decision.reason}".strip(": ")
+                        step.finished_at = _now_iso()
+                    any_change = True
+                    continue
                 await _dispatch_step(rec.user_id, rec.project_id, workflow_id, step)
                 any_change = True
 
         if any_change:
             _persist_steps(workflow_id, steps)
+
+        # Phase 2 — pause when nothing can progress but a step awaits
+        # approval. The driver exits idle; the workflow parks in
+        # `awaiting_approval` (non-terminal). Orphan-sweep won't auto-resume
+        # it — only an explicit approval flips the step back to pending and
+        # restarts a driver. Skip this when a step just failed/denied, so the
+        # next tick's failure handling wins.
+        if not any(s.status == STEP_STATUS_FAILED for s in steps):
+            awaiting = [s for s in steps if s.status == STEP_STATUS_AWAITING_APPROVAL]
+            if awaiting and not any(s.is_in_flight for s in steps) \
+                    and not eligible_step_ids(steps):
+                _persist_steps(workflow_id, steps)
+                wf_store.update(
+                    workflow_id, status=STATUS_AWAITING_APPROVAL,
+                    result={"awaiting_approval": [
+                        {"step_id": s.id, "label": s.label, **(s.result or {})}
+                        for s in awaiting
+                    ]},
+                )
+                return
 
         await asyncio.sleep(poll_interval)
 
@@ -543,6 +667,40 @@ async def _dispatch_step(
             step.error = "job step payload missing required `kind` field"
             step.finished_at = _now_iso()
             return
+        idem_key = _step_idempotency_key(workflow_id, step.id)
+        # Phase 3 — SHARED cross-replica dispatch claim. Only one replica
+        # wins the claim and creates the job; a loser attaches to the
+        # already-created job via the jobs idempotency index instead of
+        # double-dispatching. With Postgres (ENABLE_POSTGRES_BACKEND) the
+        # claim is genuinely shared across replicas; on a shared jobs store
+        # the attach path observes the same job. (Single-node: the claim is
+        # local and this is a no-op belt over the existing idempotency.)
+        try:
+            from backend.services.orchestrator import step_claim
+        except Exception:
+            step_claim = None
+        if step_claim is not None and not step_claim.try_claim(
+            idem_key, owner=_INSTANCE_ID, workflow_id=workflow_id,
+        ):
+            # Another replica owns dispatch. Attach to the existing job if we
+            # can see it (shared jobs store); otherwise leave the step pending
+            # so the owning replica drives it and this tick retries later.
+            try:
+                from backend.services.jobs import store as _jobs_store
+                existing = _jobs_store.get_by_idempotency_key(
+                    user_id=str(user_id), kind=str(job_kind), idempotency_key=idem_key,
+                )
+            except Exception:
+                existing = None
+            if existing is not None and getattr(existing, "id", None):
+                step.dispatched_id = existing.id
+                step.status = STEP_STATUS_DISPATCHED
+            else:
+                # Can't observe (non-shared jobs store) — stay pending; the
+                # owning replica progresses it. Reset started_at so the
+                # watchdog clock doesn't start on an un-dispatched step.
+                step.started_at = None
+            return
         try:
             record = await jobs_client.create(
                 user_id=    user_id,
@@ -559,7 +717,7 @@ async def _dispatch_step(
                 # execution of an expensive step — reusing the jobs
                 # layer's existing idempotency authority rather than
                 # inventing a new lock framework.
-                idempotency_key=_step_idempotency_key(workflow_id, step.id),
+                idempotency_key=idem_key,
                 metadata=   {
                     "workflow_id": workflow_id,
                     "step_id":     step.id,
@@ -799,7 +957,8 @@ def _snapshot_for_response(rec, steps: list[Step]) -> dict:
 
 __all__ = [
     "is_enabled",
-    "run_workflow", "resume_workflow", "sweep_orphans",
+    "run_workflow", "resume_workflow", "resume_after_approval", "sweep_orphans",
+    "register_step_gate", "StepGateDecision",
     "WorkflowRunnerDisabled", "WorkflowNotFound",
     "WorkflowAlreadyTerminalError", "WorkflowAlreadyRunningError",
     "_reset_for_tests",
