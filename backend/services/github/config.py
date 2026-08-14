@@ -163,6 +163,37 @@ def oauth_token_url() -> str:
         or f"{github_html_base()}/login/oauth/access_token"
 
 
+def oauth_authorize_url_base() -> str:
+    """GitHub's user-to-server OAuth **authorize** endpoint (where the browser is
+    sent to sign in / grant the App). Overridable for tests / Enterprise."""
+    return _env("GITHUB_OAUTH_AUTHORIZE_URL", f"{github_html_base()}/login/oauth/authorize") \
+        or f"{github_html_base()}/login/oauth/authorize"
+
+
+def authorize_url(state: str) -> str:
+    """The URL that starts a user-to-server OAuth **authorization**. Unlike
+    `install_url` (which dead-ends for users who already have the App installed
+    with no repo-access change), this path resolves for BOTH cases:
+
+      * App already installed → GitHub returns immediately with a `code`; our
+        callback discovers the accessible installation(s) via
+        `GET /user/installations` and continues to the repo picker.
+      * App NOT installed → GitHub still returns a `code`, but the user has no
+        installation of our App; the callback detects the empty set and steers
+        the frontend to `install_url` to install first.
+
+    GitHub echoes `state` back to our configured callback (the App's Setup URL /
+    OAuth callback), which is how we tie the redirect to the initiating
+    user+project. We request no extra `redirect_uri` here — GitHub uses the App's
+    registered callback, keeping the redirect target server-fixed (no open
+    redirect via query param)."""
+    import urllib.parse
+    base = oauth_authorize_url_base()
+    params = {"client_id": app_client_id(), "state": state}
+    sep = "&" if "?" in base else "?"
+    return f"{base}{sep}{urllib.parse.urlencode(params)}"
+
+
 def user_auth_configured() -> bool:
     """True iff the App's OAuth Client id + secret are present — required to
     verify the installing user's identity during the install flow."""
@@ -246,5 +277,6 @@ __all__ = [
     "app_slug", "github_html_base", "install_url", "frontend_result_base",
     "frontend_result_path", "setup_state_ttl_s", "pending_ttl_s",
     "install_repos_max", "install_configured",
-    "app_client_id", "app_client_secret", "oauth_token_url", "user_auth_configured",
+    "app_client_id", "app_client_secret", "oauth_token_url",
+    "oauth_authorize_url_base", "authorize_url", "user_auth_configured",
 ]

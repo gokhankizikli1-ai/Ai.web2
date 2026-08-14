@@ -57,6 +57,13 @@ export interface GithubRepo {
   archived: boolean;
 }
 
+/** A verified pending installation the user may connect (token-free). */
+export interface GithubPendingInstallation {
+  installation_id: string;
+  account_login: string;
+  account_type: string;
+}
+
 export interface GithubSyncReport {
   project_id: string;
   repo: string;
@@ -93,50 +100,85 @@ async function call<T>(
 }
 
 /**
- * Begin the real GitHub App installation flow for a project the user owns.
- * Returns the App install URL; the caller navigates the browser to it. The
- * installation id and repo are chosen on GitHub / picked from the verified
+ * Begin the real GitHub connection flow for a project the user owns. Returns the
+ * user-authorization URL (primary — resolves whether or not our App is already
+ * installed) plus the install URL (fallback for the "not installed yet" case).
+ * The installation id and repo are chosen on GitHub / picked from the verified
  * server-side list afterwards — never typed by the user.
  */
 export async function startGithubConnect(projectId: string) {
-  return call<{ install_url: string; state: string }>(
+  return call<{ authorize_url: string; install_url: string; state: string }>(
     `/v2/github/projects/${encodeURIComponent(projectId)}/connect/start`,
     { method: 'POST' },
   );
 }
 
 /**
- * Convenience: start the install flow and redirect the browser to GitHub's App
- * install screen. Returns an error result (without navigating) when the start
- * call fails, so the caller can surface it.
+ * Convenience: start the connect flow and redirect the browser to GitHub's
+ * user-authorization screen (which resolves an existing installation OR lets the
+ * user install when none exists). Returns an error result (without navigating)
+ * when the start call fails, so the caller can surface it.
  */
 export async function beginGithubConnectRedirect(projectId: string) {
+  const res = await startGithubConnect(projectId);
+  if (res.ok) window.location.assign(res.data.authorize_url);
+  return res;
+}
+
+/**
+ * Redirect the browser straight to GitHub's App **install** screen (the "not
+ * installed yet" fallback, used when the callback reports `needs_install`).
+ */
+export async function beginGithubInstallRedirect(projectId: string) {
   const res = await startGithubConnect(projectId);
   if (res.ok) window.location.assign(res.data.install_url);
   return res;
 }
 
 /**
- * Repositories the verified pending installation can access, for the connect
- * picker. 404 means there is no pending installation for this project (the user
- * hasn't installed the App yet, or it expired).
+ * The verified pending installations the user may connect (personal account +
+ * orgs). The frontend renders an account picker when there is more than one.
  */
-export async function getGithubPendingRepositories(projectId: string) {
-  return call<{ repositories: GithubRepo[]; count: number }>(
-    `/v2/github/projects/${encodeURIComponent(projectId)}/pending-installation/repositories`,
+export async function getGithubPendingInstallations(projectId: string) {
+  return call<{ installations: GithubPendingInstallation[]; count: number }>(
+    `/v2/github/projects/${encodeURIComponent(projectId)}/pending-installations`,
     { method: 'GET' },
   );
 }
 
 /**
- * Finalize the connection by selecting a repo from the pending installation.
- * The backend re-validates the repo against the installation server-side and
- * binds it via the authoritative connection store. No installation id is sent.
+ * Repositories a verified pending installation can access, for the connect
+ * picker. `installationId` selects which pending installation (required when
+ * several are pending). 404 means there is no matching pending installation for
+ * this project (the user hasn't installed the App yet, or it expired).
  */
-export async function selectGithubRepository(projectId: string, repoFullName: string) {
+export async function getGithubPendingRepositories(projectId: string, installationId?: string) {
+  const qs = installationId
+    ? `?installation_id=${encodeURIComponent(installationId)}`
+    : '';
+  return call<{ repositories: GithubRepo[]; count: number; installation_id: string }>(
+    `/v2/github/projects/${encodeURIComponent(projectId)}/pending-installation/repositories${qs}`,
+    { method: 'GET' },
+  );
+}
+
+/**
+ * Finalize the connection by selecting a repo from a pending installation. The
+ * backend re-validates the repo against the installation server-side and binds
+ * it via the authoritative connection store. `installationId` (validated against
+ * the server-verified pending set) selects which installation when several are
+ * pending.
+ */
+export async function selectGithubRepository(
+  projectId: string,
+  repoFullName: string,
+  installationId?: string,
+) {
+  const body: Record<string, string> = { repo_full_name: repoFullName };
+  if (installationId) body.installation_id = installationId;
   return call<{ connection: GithubConnectionView }>(
     `/v2/github/projects/${encodeURIComponent(projectId)}/connect/select`,
-    { method: 'POST', body: JSON.stringify({ repo_full_name: repoFullName }) },
+    { method: 'POST', body: JSON.stringify(body) },
   );
 }
 

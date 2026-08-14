@@ -13,12 +13,15 @@ NOT a parallel auth system):
       user + project — the callback trusts it, never a query-string id.
 
   github_pending_installations
-      A VERIFIED pending installation (installation_id we confirmed belongs to
-      our App, bound to owner + project, short TTL). Created by the callback
-      after verification; read by the "available repositories" endpoint and the
-      final connect/select. It stores the installation_id ONLY — never an
-      installation token (tokens are minted on the fly via the App JWT and never
-      persisted).
+      The VERIFIED set of installations (each installation_id we confirmed both
+      (a) belongs to our App and (b) is accessible to the authorized GitHub user,
+      bound to owner + project, short TTL). Created by the callback after
+      verification; read by the "available repositories" endpoint and the final
+      connect/select. A single authorization can surface SEVERAL accessible
+      installations (personal account + orgs), so this is a set keyed by
+      (project_id, installation_id) — the frontend picks which to connect. It
+      stores installation ids ONLY — never an installation token (tokens are
+      minted on the fly via the App JWT and never persisted).
 
 Both live in the EXISTING projects.db (co-located with projects + connections),
 using the shared `_sqlite` helper — no new database.
@@ -54,14 +57,19 @@ CREATE TABLE IF NOT EXISTS github_setup_states (
 CREATE INDEX IF NOT EXISTS ix_gh_setup_states_expiry ON github_setup_states(expires_at);
 
 CREATE TABLE IF NOT EXISTS github_pending_installations (
-    project_id      TEXT PRIMARY KEY,     -- one pending install per project
+    project_id      TEXT NOT NULL,        -- target project
+    installation_id TEXT NOT NULL,        -- VERIFIED accessible to the auth'd user
     owner_user_id   TEXT NOT NULL,        -- authoritative scope (from the state)
-    installation_id TEXT NOT NULL,        -- VERIFIED to belong to our App
+    account_login   TEXT NOT NULL DEFAULT '',  -- installation account (display only)
+    account_type    TEXT NOT NULL DEFAULT '',   -- User | Organization (display only)
     created_at      TEXT NOT NULL,
-    expires_at      TEXT NOT NULL         -- ISO; rejected past this instant
+    expires_at      TEXT NOT NULL,        -- ISO; rejected past this instant
+    PRIMARY KEY (project_id, installation_id)  -- a project may have several
+                                               -- accessible installations pending
 );
-CREATE INDEX IF NOT EXISTS ix_gh_pending_owner  ON github_pending_installations(owner_user_id);
-CREATE INDEX IF NOT EXISTS ix_gh_pending_expiry ON github_pending_installations(expires_at);
+CREATE INDEX IF NOT EXISTS ix_gh_pending_owner   ON github_pending_installations(owner_user_id);
+CREATE INDEX IF NOT EXISTS ix_gh_pending_expiry  ON github_pending_installations(expires_at);
+CREATE INDEX IF NOT EXISTS ix_gh_pending_project ON github_pending_installations(project_id);
 """
 
 
@@ -78,6 +86,8 @@ class PendingInstallation:
     project_id: str
     owner_user_id: str
     installation_id: str
+    account_login: str
+    account_type: str
     created_at: str
     expires_at: str
 
@@ -187,53 +197,117 @@ def purge_expired(*, now: Optional[datetime] = None) -> int:
 
 # ── verified pending installation ────────────────────────────────────────────
 
-def upsert_pending_installation(*, project_id: str, owner_user_id: str,
-                                installation_id: str) -> Optional[PendingInstallation]:
-    """Record a VERIFIED pending installation for a project (replaces any prior
-    pending for the same project). Stores the installation_id ONLY — never a
+def _row_to_pending(d: dict) -> PendingInstallation:
+    return PendingInstallation(
+        project_id=str(d["project_id"]),
+        owner_user_id=str(d["owner_user_id"]),
+        installation_id=str(d["installation_id"]),
+        account_login=str(d.get("account_login") or ""),
+        account_type=str(d.get("account_type") or ""),
+        created_at=str(d["created_at"]),
+        expires_at=str(d["expires_at"]),
+    )
+
+
+def replace_pending_installations(*, project_id: str, owner_user_id: str,
+                                  installations: list) -> list:
+    """Atomically replace the set of VERIFIED pending installations for a project.
+
+    `installations` is a list of dicts, each `{"installation_id", "account_login",
+    "account_type"}`. Every entry MUST already be provider-verified (accessible to
+    the authenticated GitHub user AND belonging to our App) before it is passed
+    here — this function only persists. Stores installation ids ONLY, never a
     token. `owner_user_id` MUST be the project's real owner (from the consumed
-    state), never client input."""
+    state), never client input. Returns the freshly stored records.
+
+    Replacing (delete-all-then-insert) keeps the pending set a faithful mirror of
+    what the current authorization actually grants: an installation the user lost
+    access to since a prior attempt does not linger."""
     project_id = str(project_id or "").strip()
     owner_user_id = str(owner_user_id or "").strip()
-    installation_id = str(installation_id or "").strip()
-    if not (project_id and owner_user_id and installation_id):
-        return None
+    if not (project_id and owner_user_id):
+        return []
+    rows = []
+    for item in (installations or []):
+        iid = str((item or {}).get("installation_id") or "").strip()
+        if not iid:
+            continue
+        rows.append((
+            iid,
+            str((item or {}).get("account_login") or "").strip(),
+            str((item or {}).get("account_type") or "").strip(),
+        ))
     init_github_setup_tables()
     now = _now()
     expires = now + timedelta(seconds=gh_config.pending_ttl_s())
     try:
-        with _sqlite.connection(DB_PATH) as c:
+        with _sqlite.writer_tx(DB_PATH) as c:
             c.execute(
-                """INSERT INTO github_pending_installations
-                   (project_id, owner_user_id, installation_id, created_at, expires_at)
-                   VALUES (?, ?, ?, ?, ?)
-                   ON CONFLICT(project_id) DO UPDATE SET
-                     owner_user_id=excluded.owner_user_id,
-                     installation_id=excluded.installation_id,
-                     created_at=excluded.created_at,
-                     expires_at=excluded.expires_at""",
-                (project_id, owner_user_id, installation_id, _iso(now), _iso(expires)),
+                "DELETE FROM github_pending_installations WHERE project_id=?",
+                (project_id,),
             )
-        return get_pending_installation(project_id, owner_user_id=owner_user_id)
+            for iid, login, atype in rows:
+                c.execute(
+                    """INSERT INTO github_pending_installations
+                       (project_id, installation_id, owner_user_id, account_login,
+                        account_type, created_at, expires_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    (project_id, iid, owner_user_id, login, atype, _iso(now), _iso(expires)),
+                )
     except Exception as exc:
-        logger.warning("github.setup_state.upsert_pending failed: %s", type(exc).__name__)
-        return None
+        logger.warning("github.setup_state.replace_pending failed: %s", type(exc).__name__)
+        return []
+    return list_pending_installations(project_id, owner_user_id=owner_user_id)
 
 
-def get_pending_installation(project_id: str, *, owner_user_id: str) -> Optional[PendingInstallation]:
-    """Return the non-expired pending installation for a project IFF it belongs
-    to `owner_user_id`. Owner binding is enforced here (defence in depth on top
-    of the route's ownership gate). Returns None on missing/expired/foreign."""
+def list_pending_installations(project_id: str, *, owner_user_id: str) -> list:
+    """All non-expired pending installations for a project owned by
+    `owner_user_id`, newest-account-first is not guaranteed (login-sorted for a
+    stable picker order). Owner binding enforced here (defence in depth)."""
     project_id = str(project_id or "").strip()
     owner_user_id = str(owner_user_id or "").strip()
     if not project_id or not owner_user_id:
+        return []
+    init_github_setup_tables()
+    now = _now()
+    out = []
+    try:
+        with _sqlite.connection(DB_PATH) as c:
+            cursor = c.execute(
+                "SELECT * FROM github_pending_installations WHERE project_id=? AND owner_user_id=?",
+                (project_id, owner_user_id),
+            )
+            for row in cursor.fetchall():
+                d = dict(row)
+                exp = _parse(str(d.get("expires_at") or ""))
+                if exp is None or exp < now:
+                    continue  # expired
+                out.append(_row_to_pending(d))
+    except Exception:
+        return []
+    out.sort(key=lambda p: (p.account_login.lower(), p.installation_id))
+    return out
+
+
+def get_pending_installation(project_id: str, *, owner_user_id: str,
+                             installation_id: str) -> Optional[PendingInstallation]:
+    """Return the ONE non-expired pending installation matching
+    (project_id, owner_user_id, installation_id). Owner + membership binding is
+    enforced here (defence in depth on top of the route's ownership gate): a
+    client-supplied `installation_id` that is not a currently-pending, verified,
+    owner-bound row returns None. Returns None on missing/expired/foreign."""
+    project_id = str(project_id or "").strip()
+    owner_user_id = str(owner_user_id or "").strip()
+    installation_id = str(installation_id or "").strip()
+    if not project_id or not owner_user_id or not installation_id:
         return None
     init_github_setup_tables()
     try:
         with _sqlite.connection(DB_PATH) as c:
             row = c.execute(
-                "SELECT * FROM github_pending_installations WHERE project_id=?",
-                (project_id,),
+                """SELECT * FROM github_pending_installations
+                   WHERE project_id=? AND installation_id=?""",
+                (project_id, installation_id),
             ).fetchone()
         if row is None:
             return None
@@ -243,18 +317,14 @@ def get_pending_installation(project_id: str, *, owner_user_id: str) -> Optional
         exp = _parse(str(d.get("expires_at") or ""))
         if exp is None or exp < _now():
             return None  # expired
-        return PendingInstallation(
-            project_id=str(d["project_id"]),
-            owner_user_id=str(d["owner_user_id"]),
-            installation_id=str(d["installation_id"]),
-            created_at=str(d["created_at"]),
-            expires_at=str(d["expires_at"]),
-        )
+        return _row_to_pending(d)
     except Exception:
         return None
 
 
-def delete_pending_installation(project_id: str) -> bool:
+def delete_pending_installations(project_id: str) -> bool:
+    """Remove ALL pending installations for a project (called after a successful
+    connect/select, or to clear a stale set)."""
     project_id = str(project_id or "").strip()
     if not project_id:
         return False
@@ -280,6 +350,6 @@ def _reset_for_tests() -> None:
 __all__ = [
     "SetupState", "PendingInstallation", "PROVIDER",
     "init_github_setup_tables", "create_state", "consume", "purge_expired",
-    "upsert_pending_installation", "get_pending_installation",
-    "delete_pending_installation",
+    "replace_pending_installations", "list_pending_installations",
+    "get_pending_installation", "delete_pending_installations",
 ]

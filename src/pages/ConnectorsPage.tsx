@@ -13,9 +13,10 @@ import {
   type GmailConnectionView,
 } from '@/lib/gmailConnectorApi';
 import {
-  beginGithubConnectRedirect, getGithubConnection, getGithubPendingRepositories,
+  beginGithubConnectRedirect, beginGithubInstallRedirect, getGithubConnection,
+  getGithubPendingInstallations, getGithubPendingRepositories,
   selectGithubRepository, syncGithub, disconnectGithub,
-  type GithubConnectionView, type GithubRepo,
+  type GithubConnectionView, type GithubRepo, type GithubPendingInstallation,
 } from '@/lib/githubConnectorApi';
 
 type Notify = (message: string, type: 'success' | 'error' | 'info') => void;
@@ -218,24 +219,51 @@ function GmailCard({ projectId, notify }: { projectId: string; notify: Notify })
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
-   GITHUB CARD — real GitHub App install flow via githubConnectorApi.
-   The backend contract links a repo (owner/repo) + App installation to the
-   project; it is NOT a browser OAuth redirect, so connecting uses a small form.
+   GITHUB CARD — real GitHub App connection flow via githubConnectorApi.
+   Connect starts a user-to-server authorization that resolves whether or not the
+   Korvix App is already installed (no uninstall/reinstall needed). The callback
+   surfaces the server-VERIFIED installation(s) the user can access; the user
+   picks an account (when several) and a repository. The frontend never supplies
+   an installation id or repo name of its own — both come from the verified set.
    ══════════════════════════════════════════════════════════════════════════ */
-/* GitHub install-flow state. `disconnected` = no connection and no pending
- * install (show Connect). `pending` = the App is installed and verified
- * server-side, awaiting a repo pick. `connected` = a repo is bound. */
+/* GitHub connect-flow state.
+ *   disconnected   = no connection, nothing pending → show Connect.
+ *   needs_install  = user authorized but the App is on no account → offer Install.
+ *   choose_install = several verified installations → account picker.
+ *   pending        = one installation resolved → repo picker.
+ *   connected      = a repo is bound. */
 type GhState =
   | { state: 'loading' }
   | { state: 'error'; message: string }
   | { state: 'disconnected' }
-  | { state: 'pending'; repos: GithubRepo[] }
+  | { state: 'needs_install' }
+  | { state: 'choose_install'; installations: GithubPendingInstallation[] }
+  | { state: 'pending'; installationId: string; repos: GithubRepo[] }
   | { state: 'connected'; connection: GithubConnectionView };
 
-function GithubCard({ projectId, notify }: { projectId: string; notify: Notify }) {
-  const [status, setStatus] = useState<GhState>({ state: 'loading' });
-  const [busy, setBusy] = useState<null | 'connect' | 'select' | 'sync' | 'disconnect'>(null);
+function GithubCard({
+  projectId, notify, initialGithub,
+}: { projectId: string; notify: Notify; initialGithub?: string }) {
+  // A `needs_install` callback outcome is the one state the backend can't report
+  // on a fresh load (there is nothing pending), so seed it from the callback hint.
+  const [status, setStatus] = useState<GhState>(
+    initialGithub === 'needs_install' ? { state: 'needs_install' } : { state: 'loading' },
+  );
+  const [busy, setBusy] = useState<null | 'connect' | 'install' | 'choose' | 'select' | 'sync' | 'disconnect'>(null);
   const [selectedRepo, setSelectedRepo] = useState('');
+  const [selectedInstall, setSelectedInstall] = useState('');
+  // Skip the mount load when we deliberately seeded needs_install from the hint.
+  const skipInitialLoad = useRef(initialGithub === 'needs_install');
+
+  // Resolve the repositories for ONE verified installation → the repo picker.
+  const loadReposFor = useCallback(async (installationId: string): Promise<boolean> => {
+    const repos = await getGithubPendingRepositories(projectId, installationId);
+    if (repos.ok) {
+      setStatus({ state: 'pending', installationId, repos: repos.data.repositories });
+      return true;
+    }
+    return false;
+  }, [projectId]);
 
   const load = useCallback(async () => {
     const conn = await getGithubConnection(projectId);
@@ -244,22 +272,31 @@ function GithubCard({ projectId, notify }: { projectId: string; notify: Notify }
       return;
     }
     if (!conn.ok) { setStatus({ state: 'error', message: reason(conn.status, conn.message) }); return; }
-    // Not connected — is there a verified pending installation to pick from?
-    // The backend answers 404 (fast, no GitHub call) when there is none.
-    const pend = await getGithubPendingRepositories(projectId);
-    if (pend.ok) { setStatus({ state: 'pending', repos: pend.data.repositories }); return; }
+    // Not connected — which verified installations are pending? (Cheap, no
+    // GitHub call; the backend returns an empty list when there are none.)
+    const pend = await getGithubPendingInstallations(projectId);
+    if (pend.ok && pend.data.count > 1) {
+      setStatus({ state: 'choose_install', installations: pend.data.installations });
+      return;
+    }
+    if (pend.ok && pend.data.count === 1) {
+      if (await loadReposFor(pend.data.installations[0].installation_id)) return;
+    }
     setStatus({ state: 'disconnected' });
-  }, [projectId]);
+  }, [projectId, loadReposFor]);
 
   // Load real backend status once on mount (and on project switch, via the
-  // card's key-based remount). Same mount-fetch-then-setState pattern used
-  // elsewhere (e.g. OwnerCosts); the rule is suppressed there identically.
-  // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { void load(); }, [load]);
+  // card's key-based remount). `load` is await-first (no synchronous setState),
+  // and the seeded `needs_install` state is skipped here.
+  useEffect(() => {
+    if (skipInitialLoad.current) { skipInitialLoad.current = false; return; }
+    void load();
+  }, [load]);
 
   const onRetry = () => { setStatus({ state: 'loading' }); void load(); };
 
-  // Disconnected → start the real GitHub App install flow (redirects to GitHub).
+  // Disconnected → start the user-authorization flow (resolves an existing
+  // installation OR lets the user install when none exists). Redirects to GitHub.
   const onConnect = async () => {
     setBusy('connect');
     const res = await beginGithubConnectRedirect(projectId);
@@ -267,12 +304,29 @@ function GithubCard({ projectId, notify }: { projectId: string; notify: Notify }
     // On success the browser is navigating to GitHub — leave busy set.
   };
 
+  // needs_install / "change repositories" → GitHub's App install/configure page.
+  const onInstall = async () => {
+    setBusy('install');
+    const res = await beginGithubInstallRedirect(projectId);
+    if (!res.ok) { notify(reason(res.status, res.message), 'error'); setBusy(null); }
+  };
+
+  // choose_install → resolve the chosen account's repositories → repo picker.
+  const onChoose = async (installs: GithubPendingInstallation[]) => {
+    const chosen = selectedInstall || installs[0]?.installation_id || '';
+    if (!chosen) { notify('Choose a GitHub account to connect.', 'error'); return; }
+    setBusy('choose');
+    const ok = await loadReposFor(chosen);
+    setBusy(null);
+    if (!ok) notify('Could not list repositories for that account.', 'error');
+  };
+
   // Pending → finalize by selecting one of the installation's repositories.
-  const onSelect = async (repos: GithubRepo[]) => {
+  const onSelect = async (installationId: string, repos: GithubRepo[]) => {
     const chosen = selectedRepo || repos[0]?.full_name || '';
     if (!chosen) { notify('Choose a repository to connect.', 'error'); return; }
     setBusy('select');
-    const res = await selectGithubRepository(projectId, chosen);
+    const res = await selectGithubRepository(projectId, chosen, installationId);
     setBusy(null);
     if (!res.ok) { notify(reason(res.status, res.message), 'error'); return; }
     notify(`GitHub connected — ${res.data.connection.repo_full_name}.`, 'success');
@@ -301,6 +355,8 @@ function GithubCard({ projectId, notify }: { projectId: string; notify: Notify }
   let pill: React.ReactNode = null;
   if (status.state === 'connected') pill = <StatusPill tone="connected" label="Connected" />;
   else if (status.state === 'pending') pill = <StatusPill tone="revoked" label="Choose a repository" />;
+  else if (status.state === 'choose_install') pill = <StatusPill tone="revoked" label="Choose an account" />;
+  else if (status.state === 'needs_install') pill = <StatusPill tone="revoked" label="Install needed" />;
   else if (status.state === 'disconnected') pill = <StatusPill tone="muted" label="Not connected" />;
 
   const selectCls = 'w-full h-10 rounded-lg bg-white/[0.03] border border-white/10 px-3 pr-9 text-[13px] text-white outline-none focus:border-[#3B82F6]/40 transition-colors appearance-none';
@@ -329,9 +385,50 @@ function GithubCard({ projectId, notify }: { projectId: string; notify: Notify }
             {busy === 'connect' ? <BusySpinner /> : null} Connect GitHub
           </button>
           <p className="text-[11.5px] text-white/30 leading-relaxed">
-            Opens GitHub to install the Korvix app. You choose <span className="text-white/50">All repositories</span> or
-            only specific ones on GitHub — then pick which repo to connect here.
+            Opens GitHub to authorize Korvix. If the app isn't installed yet you can add it — you choose{' '}
+            <span className="text-white/50">All repositories</span> or only specific ones on GitHub, then pick which
+            repo to connect here.
           </p>
+        </div>
+      )}
+
+      {status.state === 'needs_install' && (
+        <div className="space-y-2">
+          <div className="text-[13px] text-white/55">
+            You authorized Korvix, but it isn't installed on any GitHub account yet.
+          </div>
+          <button className={btnPrimary} disabled={busy === 'install'} onClick={onInstall}>
+            {busy === 'install' ? <BusySpinner /> : null} Install on GitHub
+          </button>
+        </div>
+      )}
+
+      {status.state === 'choose_install' && (
+        <div className="space-y-3 max-w-md">
+          <div className="text-[12.5px] text-white/45">Choose the GitHub account to connect:</div>
+          <div className="relative">
+            <select
+              aria-label="GitHub account"
+              className={selectCls}
+              value={selectedInstall || status.installations[0].installation_id}
+              onChange={(e) => setSelectedInstall(e.target.value)}
+            >
+              {status.installations.map((i) => (
+                <option key={i.installation_id} value={i.installation_id} className="bg-[#0a0a0f] text-white">
+                  {i.account_login || `Installation ${i.installation_id}`}
+                  {i.account_type ? ` (${i.account_type})` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button className={btnPrimary} disabled={busy === 'choose'} onClick={() => onChoose(status.installations)}>
+              {busy === 'choose' ? <BusySpinner /> : null} Continue
+            </button>
+            <button className={btnGhost} disabled={busy === 'install'} onClick={onInstall}>
+              {busy === 'install' ? <BusySpinner /> : null} Manage on GitHub
+            </button>
+          </div>
         </div>
       )}
 
@@ -355,11 +452,11 @@ function GithubCard({ projectId, notify }: { projectId: string; notify: Notify }
                 </select>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <button className={btnPrimary} disabled={busy === 'select'} onClick={() => onSelect(status.repos)}>
+                <button className={btnPrimary} disabled={busy === 'select'} onClick={() => onSelect(status.installationId, status.repos)}>
                   {busy === 'select' ? <BusySpinner /> : null} Connect repository
                 </button>
-                <button className={btnGhost} disabled={busy === 'connect'} onClick={onConnect}>
-                  {busy === 'connect' ? <BusySpinner /> : null} Change repositories on GitHub
+                <button className={btnGhost} disabled={busy === 'install'} onClick={onInstall}>
+                  {busy === 'install' ? <BusySpinner /> : null} Change repositories on GitHub
                 </button>
               </div>
             </>
@@ -368,8 +465,8 @@ function GithubCard({ projectId, notify }: { projectId: string; notify: Notify }
               <div className="text-[13px] text-white/55">
                 The GitHub app is installed but has access to no repositories.
               </div>
-              <button className={btnPrimary} disabled={busy === 'connect'} onClick={onConnect}>
-                {busy === 'connect' ? <BusySpinner /> : null} Grant repository access on GitHub
+              <button className={btnPrimary} disabled={busy === 'install'} onClick={onInstall}>
+                {busy === 'install' ? <BusySpinner /> : null} Grant repository access on GitHub
               </button>
             </div>
           )}
@@ -422,15 +519,24 @@ export default function ConnectorsPage() {
 
   const callbackHandled = useRef(false);
 
+  // Capture the GitHub callback outcome ONCE (before the effect below strips the
+  // params) so the card can seed a `needs_install` state the backend can't report
+  // on a plain load. Read in a lazy initializer → no state-set-from-effect.
+  const [initialGithub] = useState<{ github: string; projectId: string } | null>(() => {
+    const g = (searchParams.get('github') || '').trim();
+    if (!g) return null;
+    return { github: g, projectId: (searchParams.get('project_id') || '').trim() };
+  });
+
   /* ── Connector callback receiver ─────────────────────────────────────────
    * Both backends redirect the browser (a full page load) here:
    *   Gmail:  `?gmail=connected|error&project_id=...&reason=...`
-   *   GitHub: `?github=installed|error&project_id=...&reason=...`
-   * The cards fetch real status on mount (GitHub then shows its repo picker for
-   * a verified pending install), so here we only surface ONE toast for the
-   * outcome and strip the temporary params so a refresh can't replay it. Nothing
-   * is trusted for connection truth from the URL, and we never redirect based on
-   * a URL value — no open-redirect surface. */
+   *   GitHub: `?github=authorized|needs_install|error&project_id=...&reason=...`
+   * The cards fetch real status on mount (GitHub then shows its account/repo
+   * picker for a verified pending install), so here we only surface ONE toast for
+   * the outcome and strip the temporary params so a refresh can't replay it.
+   * Nothing is trusted for connection truth from the URL, and we never redirect
+   * based on a URL value — no open-redirect surface. */
   useEffect(() => {
     if (callbackHandled.current) return;
     const gmail = searchParams.get('gmail');
@@ -445,14 +551,17 @@ export default function ConnectorsPage() {
     } else if (gmail) {
       notify(`Gmail could not be connected${pretty}.`, 'error');
     }
-    if (github === 'installed') {
-      notify('GitHub app installed — choose a repository to connect.', 'success');
+    // `installed` kept for backward compatibility with any in-flight redirect.
+    if (github === 'authorized' || github === 'installed') {
+      notify('GitHub authorized — choose a repository to connect.', 'success');
+    } else if (github === 'needs_install') {
+      notify('Almost there — install Korvix on GitHub to finish connecting.', 'info');
     } else if (github) {
-      notify(`GitHub could not be installed${pretty}.`, 'error');
+      notify(`GitHub could not be connected${pretty}.`, 'error');
     }
 
     const next = new URLSearchParams(searchParams);
-    for (const k of ['gmail', 'github', 'project_id', 'reason', 'state', 'setup_action', 'installation_id']) next.delete(k);
+    for (const k of ['gmail', 'github', 'project_id', 'reason', 'state', 'setup_action', 'installation_id', 'code']) next.delete(k);
     setSearchParams(next, { replace: true });
   }, [searchParams, setSearchParams, notify]);
 
@@ -520,7 +629,15 @@ export default function ConnectorsPage() {
               {selectedProject && (
                 <div className="space-y-4" key={selectedProject.id}>
                   <GmailCard projectId={selectedProject.id} notify={notify} />
-                  <GithubCard projectId={selectedProject.id} notify={notify} />
+                  <GithubCard
+                    projectId={selectedProject.id}
+                    notify={notify}
+                    initialGithub={
+                      initialGithub && initialGithub.projectId === selectedProject.id
+                        ? initialGithub.github
+                        : undefined
+                    }
+                  />
                 </div>
               )}
             </>
