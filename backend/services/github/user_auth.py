@@ -34,7 +34,7 @@ import logging
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import Set
+from typing import Dict, List, Set
 
 from backend.services.github import config as gh_config
 from backend.services.github.errors import (
@@ -100,16 +100,23 @@ def exchange_code_for_user_token(code: str) -> str:
     return str(token)
 
 
-def list_user_installation_ids(user_token: str) -> Set[str]:
-    """Installation ids of OUR App that the AUTHENTICATED user may access
-    (`GET /user/installations`). Bounded pagination. Because the token is scoped
-    to our App's OAuth, this set is inherently limited to our App's installations
-    the user is authorized for — the authoritative answer to "does this user own /
-    belong to this installation"."""
+def list_user_installations(user_token: str) -> List[Dict[str, str]]:
+    """Installations of OUR App that the AUTHENTICATED user may access
+    (`GET /user/installations`), each as `{"installation_id", "account_login",
+    "account_type"}`. Bounded pagination. Because the token is scoped to our App's
+    OAuth, this list is inherently limited to our App's installations the user is
+    authorized for — the authoritative, provider-verified answer to "which
+    installations does this user own / belong to". The account fields are for
+    display in the picker only; the installation_id is the security-bearing part
+    and is still re-verified against our App downstream.
+
+    Raises GitHubAuthError if the token is rejected, GitHubServerError on
+    transport/parse failure."""
     user_token = (user_token or "").strip()
     if not user_token:
-        return set()
-    ids: Set[str] = set()
+        return []
+    out: List[Dict[str, str]] = []
+    seen: Set[str] = set()
     url = f"{gh_config.api_base()}/user/installations?per_page=100"
     pages = 0
     while url and pages < _MAX_INSTALL_PAGES:
@@ -141,11 +148,28 @@ def list_user_installation_ids(user_token: str) -> Set[str]:
 
         installs = payload.get("installations") if isinstance(payload, dict) else None
         for inst in (installs or []):
-            if isinstance(inst, dict) and inst.get("id") is not None:
-                ids.add(str(inst["id"]))
+            if not isinstance(inst, dict) or inst.get("id") is None:
+                continue
+            iid = str(inst["id"])
+            if iid in seen:
+                continue
+            seen.add(iid)
+            account = inst.get("account") if isinstance(inst.get("account"), dict) else {}
+            out.append({
+                "installation_id": iid,
+                "account_login": str((account or {}).get("login") or ""),
+                "account_type": str((account or {}).get("type") or ""),
+            })
         pages += 1
         url = _next_link(link)
-    return ids
+    return out
+
+
+def list_user_installation_ids(user_token: str) -> Set[str]:
+    """Installation ids of OUR App that the AUTHENTICATED user may access. Thin
+    wrapper over `list_user_installations` (kept for callers that only need the
+    id set)."""
+    return {rec["installation_id"] for rec in list_user_installations(user_token)}
 
 
 def user_can_access_installation(user_token: str, installation_id: str) -> bool:
@@ -176,6 +200,6 @@ def _next_link(link_header: str) -> str:
 
 
 __all__ = [
-    "exchange_code_for_user_token", "list_user_installation_ids",
-    "user_can_access_installation",
+    "exchange_code_for_user_token", "list_user_installations",
+    "list_user_installation_ids", "user_can_access_installation",
 ]

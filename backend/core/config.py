@@ -418,8 +418,17 @@ class Config:
     # for the install flow (connect/start 503s without them).
     GITHUB_APP_CLIENT_ID: str = os.getenv("GITHUB_APP_CLIENT_ID", "").strip()
     GITHUB_APP_CLIENT_SECRET: str = os.getenv("GITHUB_APP_CLIENT_SECRET", "")
+    # GITHUB_OAUTH_AUTHORIZE_URL / GITHUB_OAUTH_TOKEN_URL: OPTIONAL overrides of
+    # GitHub's user-to-server OAuth authorize + token endpoints (tests / GitHub
+    # Enterprise). Normally derived from GITHUB_HTML_BASE. The authorize URL is
+    # what connect/start sends the browser to — it resolves whether or not our App
+    # is already installed, curing the "already-installed" dead-end that
+    # installations/new hits when repo access is unchanged. Not secret.
+    GITHUB_OAUTH_AUTHORIZE_URL: str = os.getenv("GITHUB_OAUTH_AUTHORIZE_URL", "").strip()
+    GITHUB_OAUTH_TOKEN_URL: str = os.getenv("GITHUB_OAUTH_TOKEN_URL", "").strip()
     # GITHUB_APP_INSTALL_URL: OPTIONAL full override of the install URL (unusual
-    # setups); normally derived from GITHUB_APP_SLUG. Not secret.
+    # setups); normally derived from GITHUB_APP_SLUG. Used as the "not installed
+    # yet" fallback path. Not secret.
     GITHUB_APP_INSTALL_URL: str = os.getenv("GITHUB_APP_INSTALL_URL", "").strip()
     # GITHUB_FRONTEND_RESULT_URL / _PATH: where the setup callback redirects the
     # browser after install (fixed server-side — never a request-supplied URL, so

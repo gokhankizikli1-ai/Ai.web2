@@ -1,16 +1,19 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
-  startGithubConnect, beginGithubConnectRedirect,
-  getGithubPendingRepositories, selectGithubRepository,
+  startGithubConnect, beginGithubConnectRedirect, beginGithubInstallRedirect,
+  getGithubPendingInstallations, getGithubPendingRepositories, selectGithubRepository,
 } from '@/lib/githubConnectorApi';
 
 /**
- * GitHub connector — install-flow frontend client.
+ * GitHub connector — connect-flow frontend client.
  *
- * Verifies the client hits the real install-flow endpoints, attaches the session
- * bearer, and — critically for the new UX — the final selection sends ONLY the
- * repo full name (no installation id, no manual repo string typed by the user).
- * Zero real network: fetch is stubbed and inspected.
+ * Verifies the client hits the real connect-flow endpoints, attaches the session
+ * bearer, drives the browser to the user-AUTHORIZATION url by default (the path
+ * that resolves an already-installed App without uninstall/reinstall) and to the
+ * INSTALL url only for the explicit fallback, and — critically for the new UX —
+ * the final selection sends the repo full name plus (when several installations
+ * are pending) the chosen installation id, both server-verified. Zero real
+ * network: fetch is stubbed and inspected.
  */
 
 interface Captured { url: string; method: string; body: unknown; auth?: string }
@@ -63,23 +66,40 @@ function mockLocation() {
   return assign;
 }
 
-describe('githubConnectorApi — install flow', () => {
-  it('startGithubConnect POSTs connect/start with the bearer and returns the install url', async () => {
-    reply(200, { install_url: 'https://github.com/apps/korvix-ai/installations/new?state=abc', state: 'abc' });
+const startPayload = {
+  authorize_url: 'https://github.com/login/oauth/authorize?client_id=cid&state=abc',
+  install_url: 'https://github.com/apps/korvix-ai/installations/new?state=abc',
+  state: 'abc',
+};
+
+describe('githubConnectorApi — connect flow', () => {
+  it('startGithubConnect POSTs connect/start with the bearer and returns both urls', async () => {
+    reply(200, startPayload);
     const res = await startGithubConnect('p1');
     expect(res.ok).toBe(true);
-    if (res.ok) expect(res.data.install_url).toContain('/apps/korvix-ai/installations/new');
+    if (res.ok) {
+      expect(res.data.authorize_url).toContain('/login/oauth/authorize');
+      expect(res.data.install_url).toContain('/apps/korvix-ai/installations/new');
+    }
     expect(calls[0].method).toBe('POST');
     expect(calls[0].url).toMatch(/\/v2\/github\/projects\/p1\/connect\/start$/);
     expect(calls[0].auth).toBe('Bearer JWT-tok');
   });
 
-  it('beginGithubConnectRedirect navigates to the install url on success', async () => {
-    reply(200, { install_url: 'https://github.com/apps/korvix-ai/installations/new?state=xyz', state: 'xyz' });
+  it('beginGithubConnectRedirect navigates to the AUTHORIZE url on success', async () => {
+    reply(200, startPayload);
     const assign = mockLocation();
     const res = await beginGithubConnectRedirect('p1');
     expect(res.ok).toBe(true);
-    expect(assign).toHaveBeenCalledWith('https://github.com/apps/korvix-ai/installations/new?state=xyz');
+    expect(assign).toHaveBeenCalledWith(startPayload.authorize_url);
+  });
+
+  it('beginGithubInstallRedirect navigates to the INSTALL url on success', async () => {
+    reply(200, startPayload);
+    const assign = mockLocation();
+    const res = await beginGithubInstallRedirect('p1');
+    expect(res.ok).toBe(true);
+    expect(assign).toHaveBeenCalledWith(startPayload.install_url);
   });
 
   it('beginGithubConnectRedirect does NOT navigate on failure', async () => {
@@ -90,13 +110,28 @@ describe('githubConnectorApi — install flow', () => {
     expect(assign).not.toHaveBeenCalled();
   });
 
-  it('getGithubPendingRepositories GETs the pending repo list', async () => {
-    reply(200, { repositories: [{ id: '1', full_name: 'octo/hello', name: 'hello', owner: 'octo', private: false, archived: false }], count: 1 });
+  it('getGithubPendingInstallations GETs the verified installation list', async () => {
+    reply(200, { installations: [{ installation_id: '100', account_login: 'octo', account_type: 'User' }], count: 1 });
+    const res = await getGithubPendingInstallations('p1');
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.data.installations[0].account_login).toBe('octo');
+    expect(calls[0].method).toBe('GET');
+    expect(calls[0].url).toMatch(/\/v2\/github\/projects\/p1\/pending-installations$/);
+  });
+
+  it('getGithubPendingRepositories GETs the pending repo list (no id → no query)', async () => {
+    reply(200, { repositories: [{ id: '1', full_name: 'octo/hello', name: 'hello', owner: 'octo', private: false, archived: false }], count: 1, installation_id: '100' });
     const res = await getGithubPendingRepositories('p1');
     expect(res.ok).toBe(true);
     if (res.ok) expect(res.data.repositories[0].full_name).toBe('octo/hello');
     expect(calls[0].method).toBe('GET');
     expect(calls[0].url).toMatch(/\/v2\/github\/projects\/p1\/pending-installation\/repositories$/);
+  });
+
+  it('getGithubPendingRepositories passes the installation id as a query param', async () => {
+    reply(200, { repositories: [], count: 0, installation_id: '300' });
+    await getGithubPendingRepositories('p1', '300');
+    expect(calls[0].url).toMatch(/\/pending-installation\/repositories\?installation_id=300$/);
   });
 
   it('getGithubPendingRepositories surfaces 404 (no pending install) as ok:false', async () => {
@@ -106,15 +141,20 @@ describe('githubConnectorApi — install flow', () => {
     if (!res.ok) expect(res.status).toBe(404);
   });
 
-  it('selectGithubRepository POSTs ONLY the repo full name — never an installation id', async () => {
+  it('selectGithubRepository POSTs the repo full name and no installation id by default', async () => {
     reply(200, { connection: { project_id: 'p1', installation_id: '100', repo_full_name: 'octo/hello', repo_id: '42', created_at: '', updated_at: '' } });
     const res = await selectGithubRepository('p1', 'octo/hello');
     expect(res.ok).toBe(true);
     expect(calls[0].method).toBe('POST');
     expect(calls[0].url).toMatch(/\/v2\/github\/projects\/p1\/connect\/select$/);
     expect(calls[0].body).toEqual({ repo_full_name: 'octo/hello' });
-    // The whole point of the new UX: the client never sends an installation id.
-    expect(JSON.stringify(calls[0].body)).not.toContain('installation');
     expect(calls[0].auth).toBe('Bearer JWT-tok');
+  });
+
+  it('selectGithubRepository includes the installation id when one is chosen', async () => {
+    reply(200, { connection: { project_id: 'p1', installation_id: '300', repo_full_name: 'acme/widget', repo_id: '77', created_at: '', updated_at: '' } });
+    const res = await selectGithubRepository('p1', 'acme/widget', '300');
+    expect(res.ok).toBe(true);
+    expect(calls[0].body).toEqual({ repo_full_name: 'acme/widget', installation_id: '300' });
   });
 });
