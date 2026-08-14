@@ -177,6 +177,33 @@ class GitHubClient:
             next_path, next_params = _parse_next_link(headers.get("link"))
         return out
 
+    def list_installation_repositories(self, *, max_repos: Optional[int] = None) -> List[Dict[str, Any]]:
+        """List repositories accessible to THIS installation (bounded, read-only).
+
+        `GET /installation/repositories` returns pages of
+        `{"total_count": N, "repositories": [...]}`; this unwraps and flattens
+        the `repositories` arrays, following `rel="next"` up to a bounded number
+        of pages and stopping at `install_repos_max` repos. It is the
+        authoritative server-side answer to "which repos may this installation
+        see" — used to populate the connect UI and to validate a final selection.
+        """
+        cap = (gh_config.install_repos_max() if max_repos is None
+               else max(1, min(int(max_repos), 300)))
+        per_page = min(cap, 100)
+        out: List[Dict[str, Any]] = []
+        next_path: Optional[str] = "/installation/repositories"
+        next_params: Optional[Dict[str, Any]] = {"per_page": per_page}
+        pages = 0
+        while next_path and pages < 5 and len(out) < cap:
+            data, headers = self._get(next_path, params=next_params)
+            if isinstance(data, dict) and isinstance(data.get("repositories"), list):
+                out.extend(r for r in data["repositories"] if isinstance(r, dict))
+            elif isinstance(data, list):
+                out.extend(r for r in data if isinstance(r, dict))
+            pages += 1
+            next_path, next_params = _parse_next_link(headers.get("link"))
+        return out[:cap]
+
 
 # ── helpers ─────────────────────────────────────────────────────────────────
 

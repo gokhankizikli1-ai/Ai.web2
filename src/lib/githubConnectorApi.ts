@@ -47,6 +47,16 @@ export interface GithubConnectionStatus {
   connected: boolean;
 }
 
+/** A repository the verified pending installation can access (token-free). */
+export interface GithubRepo {
+  id: string;
+  full_name: string;
+  name: string;
+  owner: string;
+  private: boolean;
+  archived: boolean;
+}
+
 export interface GithubSyncReport {
   project_id: string;
   repo: string;
@@ -83,9 +93,57 @@ async function call<T>(
 }
 
 /**
- * Link a project to a GitHub repo + App installation. `repoFullName` is
- * "owner/repo"; `installationId` is optional (backend falls back to
- * GITHUB_DEFAULT_INSTALLATION_ID). No secret is sent or returned.
+ * Begin the real GitHub App installation flow for a project the user owns.
+ * Returns the App install URL; the caller navigates the browser to it. The
+ * installation id and repo are chosen on GitHub / picked from the verified
+ * server-side list afterwards — never typed by the user.
+ */
+export async function startGithubConnect(projectId: string) {
+  return call<{ install_url: string; state: string }>(
+    `/v2/github/projects/${encodeURIComponent(projectId)}/connect/start`,
+    { method: 'POST' },
+  );
+}
+
+/**
+ * Convenience: start the install flow and redirect the browser to GitHub's App
+ * install screen. Returns an error result (without navigating) when the start
+ * call fails, so the caller can surface it.
+ */
+export async function beginGithubConnectRedirect(projectId: string) {
+  const res = await startGithubConnect(projectId);
+  if (res.ok) window.location.assign(res.data.install_url);
+  return res;
+}
+
+/**
+ * Repositories the verified pending installation can access, for the connect
+ * picker. 404 means there is no pending installation for this project (the user
+ * hasn't installed the App yet, or it expired).
+ */
+export async function getGithubPendingRepositories(projectId: string) {
+  return call<{ repositories: GithubRepo[]; count: number }>(
+    `/v2/github/projects/${encodeURIComponent(projectId)}/pending-installation/repositories`,
+    { method: 'GET' },
+  );
+}
+
+/**
+ * Finalize the connection by selecting a repo from the pending installation.
+ * The backend re-validates the repo against the installation server-side and
+ * binds it via the authoritative connection store. No installation id is sent.
+ */
+export async function selectGithubRepository(projectId: string, repoFullName: string) {
+  return call<{ connection: GithubConnectionView }>(
+    `/v2/github/projects/${encodeURIComponent(projectId)}/connect/select`,
+    { method: 'POST', body: JSON.stringify({ repo_full_name: repoFullName }) },
+  );
+}
+
+/**
+ * Low-level link of a project to a GitHub repo + App installation. Retained for
+ * backward compatibility / scripting; the normal UI uses the install flow above
+ * so the user never types an installation id or repo name.
  */
 export async function connectGithub(
   projectId: string,
