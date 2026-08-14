@@ -171,12 +171,33 @@ def test_first_sync_uses_initial_page_cap_then_incremental(env, monkeypatch):
     assert set(rec2.max_pages_seen) == {1}
 
 
-def test_sync_marks_last_sync_even_on_partial_failure(env, monkeypatch):
-    monkeypatch.setattr(gh_sync, "GitHubClient", lambda iid: _FakeClient(iid, fail={"pulls"}))
-    report = gh_sync.sync_connection(gh_store.get_connection("p1"))
-    assert report.ok is False
-    # Some resources still ingested → last_sync_at is stamped (mirrors Gmail).
-    assert gh_store.get_connection("p1").last_sync_at
+def test_partial_first_sync_stays_initial_until_success(env, monkeypatch):
+    # A first sync with a failed resource must NOT complete the initial import:
+    # last_sync_at stays unset and the NEXT sync is still an initial import
+    # (fuller page cap), so the failed resource gets its intended backfill.
+    monkeypatch.setenv("GITHUB_SYNC_INITIAL_MAX_PAGES", "4")
+    monkeypatch.setenv("GITHUB_SYNC_MAX_PAGES", "1")
+
+    rec1 = _RecordingClient("100", fail={"pulls"})
+    monkeypatch.setattr(gh_sync, "GitHubClient", lambda iid: rec1)
+    r1 = gh_sync.sync_connection(gh_store.get_connection("p1"))
+    assert r1.ok is False and "pull_requests" in r1.errors
+    assert not gh_store.get_connection("p1").last_sync_at   # initial NOT completed
+    assert set(rec1.max_pages_seen) == {4}                  # initial cap used
+
+    # Retry: still treated as INITIAL (fuller cap); this time it fully succeeds.
+    rec2 = _RecordingClient("100")
+    monkeypatch.setattr(gh_sync, "GitHubClient", lambda iid: rec2)
+    r2 = gh_sync.sync_connection(gh_store.get_connection("p1"))
+    assert r2.ok is True
+    assert set(rec2.max_pages_seen) == {4}                  # retried as initial
+    assert gh_store.get_connection("p1").last_sync_at        # now complete
+
+    # Only after a fully successful sync does it flip to the incremental cap.
+    rec3 = _RecordingClient("100")
+    monkeypatch.setattr(gh_sync, "GitHubClient", lambda iid: rec3)
+    gh_sync.sync_connection(gh_store.get_connection("p1"))
+    assert set(rec3.max_pages_seen) == {1}
 
 
 def test_github_package_imports_no_ai_or_model_modules():

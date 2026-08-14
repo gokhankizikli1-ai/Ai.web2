@@ -81,6 +81,25 @@ def test_no_cross_user_leak(brain):
     assert other.connector_signals == []
 
 
+def test_non_connector_observation_not_surfaced(brain):
+    # The observation store is connector-neutral — other subsystems may record
+    # observations under non-connector sources. Those must NOT be mislabeled as
+    # connector activity; only sources in CONNECTOR_SOURCES qualify.
+    brain_client, obs = brain
+    _record(obs, user="uA", project="pA", source="github",
+            kind="github.issue.opened", summary="real connector signal", ext="gh-1")
+    _record(obs, user="uA", project="pA", source="analytics",   # NOT a connector
+            kind="metric.spike", summary="internal metric blip", ext="an-1")
+    _record(obs, user="uA", project="pA", source="internal",    # NOT a connector
+            kind="system.note", summary="internal note", ext="in-1")
+
+    b = brain_client.get("uA", "pA")
+    summaries = {s["summary"] for s in b.connector_signals}
+    assert summaries == {"real connector signal"}
+    assert all(s["source"] in ("github", "gmail") for s in b.connector_signals)
+    assert b.counts["connector_signals"] == 1
+
+
 def test_no_cross_project_leak(brain):
     brain_client, obs = brain
     _record(obs, user="uA", project="pA", source="github",

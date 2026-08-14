@@ -116,10 +116,16 @@ def sync_connection(conn: GitHubConnection, *, initial: Optional[bool] = None) -
     _run("workflow_runs", lambda: _workflow_runs(client, owner_repo, repo, max_pages))
     _run("deployments", lambda: _deployments(client, owner_repo, repo, max_pages))
     _run("commits", lambda: _commits(client, owner_repo, repo, max_pages))
-    # Stamp the successful backfill: powers the "last sync" UX and flips
-    # subsequent syncs to the lighter incremental window. Recorded even on a
-    # partial failure (some resources did ingest) — mirrors the Gmail connector.
-    mark_synced(conn.project_id)
+    # Mark the backfill complete ONLY when every resource synced cleanly. A
+    # partial failure leaves last_sync_at unset, so the NEXT sync is still
+    # treated as an INITIAL import (the fuller page cap): the resource that
+    # failed gets its intended initial backfill on retry, while the resources
+    # that already succeeded are re-read and deterministically de-duplicated
+    # (safe, no duplicates). last_sync_at therefore means "last FULLY successful
+    # sync", which is also the truthful value for the "last sync" UX. Partial
+    # errors remain reported in report.errors regardless.
+    if report.ok:
+        mark_synced(conn.project_id)
     return report
 
 

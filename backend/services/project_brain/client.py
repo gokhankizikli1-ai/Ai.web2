@@ -132,6 +132,7 @@ class ProjectBrainClient:
         try:
             from backend.services.orchestrator import observations_store as obs
             for o in obs.recent_observations(project_id, user_id=str(user_id),
+                                             sources=list(obs.CONNECTOR_SOURCES),
                                              limit=_MAX_CONNECTOR_SIGNALS):
                 brain.connector_signals.append({
                     "source":      o.get("source"),

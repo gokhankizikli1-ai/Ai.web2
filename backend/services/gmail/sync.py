@@ -115,7 +115,13 @@ def sync_connection(conn: GmailConnection, *, client: Optional[GmailClient] = No
     report.deduplicated += res.deduplicated
     report.rejected += res.rejected
 
-    mark_synced(conn.project_id)
+    # Mark complete ONLY on a fully clean sync (no list/message errors). A
+    # partial failure (e.g. an unreadable message) leaves last_sync_at unset so
+    # the next sync is still an INITIAL import (the fuller page cap) and gets its
+    # intended backfill on retry; already-ingested messages dedup deterministically.
+    # Mirrors the GitHub connector; partial errors stay reported in report.errors.
+    if report.ok:
+        mark_synced(conn.project_id)
     return report
 
 

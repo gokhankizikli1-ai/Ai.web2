@@ -166,6 +166,38 @@ def test_first_sync_uses_initial_page_cap_then_incremental(gmail_db, monkeypatch
     assert seen == [4, 1]
 
 
+def test_partial_first_sync_stays_initial_until_success(gmail_db, monkeypatch):
+    # A per-message failure makes the first sync partial → the initial import is
+    # NOT completed; the next sync is still initial (fuller cap). Only a fully
+    # clean sync flips to the incremental cap.
+    monkeypatch.setenv("GMAIL_SYNC_INITIAL_MAX_PAGES", "4")
+    monkeypatch.setenv("GMAIL_SYNC_MAX_PAGES", "1")
+    seen = []
+
+    class _Cap(_FakeClient):
+        def list_message_ids(self, **kw):
+            seen.append(kw.get("max_pages"))
+            return list(self._ids)
+
+    conn = gm_store.get_connection("p1")
+    c1 = _Cap(["m1", "m2"], {"m2": _msg("m2")},
+              get_errors={"m1": GmailServerError("bad", status=500)})
+    r1 = gm_sync.sync_connection(conn, client=c1)
+    assert r1.ok is False
+    assert not gm_store.get_connection("p1").last_sync_at   # initial NOT completed
+
+    conn2 = gm_store.get_connection("p1")                   # still last_sync_at=""
+    c2 = _Cap(["m2"], {"m2": _msg("m2")})
+    r2 = gm_sync.sync_connection(conn2, client=c2)
+    assert r2.ok is True
+    assert gm_store.get_connection("p1").last_sync_at        # now complete
+
+    conn3 = gm_store.get_connection("p1")
+    c3 = _Cap(["m2"], {"m2": _msg("m2")})
+    gm_sync.sync_connection(conn3, client=c3)
+    assert seen == [4, 4, 1]                                 # initial, initial (retry), incremental
+
+
 def test_client_list_message_ids_follows_bounded_pages(gmail_db, monkeypatch):
     # The real client follows nextPageToken up to max_pages, then stops — never a
     # full-mailbox crawl — and de-duplicates ids across pages.
