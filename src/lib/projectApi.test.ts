@@ -1,0 +1,195 @@
+/**
+ * projectApi — backend-authoritative chat↔project + product linkage (Phase 2/3).
+ *
+ * Proves the client that drives the "Move to project" and "Save to project"
+ * flows against a mocked backend that enforces ownership + idempotency, exactly
+ * like the server:
+ *   • assign a chat to a project (syncing the thread first when needed);
+ *   • MOVE a chat A → B (server detaches + rebinds, reports moved_from);
+ *   • remove a chat from its project;
+ *   • error behaviour: a 404 (not owned / not found) surfaces as ok:false/404;
+ *   • guests are a no-op (no server identity);
+ *   • attach a Web/App product (buildType preserved, idempotent, ownership).
+ */
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import type { ChatSession } from '@/types';
+
+let scope = 'user_alice';
+vi.mock('@/stores/authStore', () => ({ getAccessToken: () => 'tok' }));
+vi.mock('@/lib/storageScope', () => ({ currentStorageScope: () => scope }));
+
+import {
+  assignChatToProject,
+  removeChatFromProject,
+  getThreadProject,
+  attachProductToProject,
+} from './projectApi';
+
+// Fake backend: threads with an optional project binding, per-project ownership,
+// and a products store. `owner` is the acting user (from the mock scope).
+function makeBackend() {
+  const threads = new Map<string, { id: string; project: string | null }>();
+  // project id -> owner user id
+  const projectOwner = new Map<string, string>([
+    ['pA', 'alice'], ['pB', 'alice'], ['pOther', 'bob'],
+  ]);
+  const products: Record<string, unknown>[] = [];
+  let seq = 0;
+  const uid = () => (scope.startsWith('user_') ? scope.slice('user_'.length) : 'guest');
+
+  const handler = async (url: string, init?: RequestInit): Promise<Response> => {
+    const method = (init?.method || 'GET').toUpperCase();
+    const path = url.replace(/^https?:\/\/[^/]+/, '').split('?')[0];
+    const body = init?.body ? JSON.parse(init.body as string) : {};
+    const ok = (data: unknown) => new Response(JSON.stringify({ success: true, data }), { status: 200 });
+    const notFound = () => new Response(JSON.stringify({ success: false, error: 'not found' }), { status: 404 });
+    const ownsProject = (pid: string) => projectOwner.get(pid) === uid();
+
+    if (path === '/v2/sessions/workspaces/ensure_default' && method === 'POST') return ok({ id: 'ws' });
+    let m = path.match(/^\/v2\/sessions\/workspaces\/([^/]+)\/threads$/);
+    if (m && method === 'POST') {
+      const id = `th-${++seq}`;
+      threads.set(id, { id, project: null });
+      return ok({ id });
+    }
+    if (m && method === 'GET') return ok({ threads: [] });
+    if (m && method === 'GET') return ok({ threads: [] });
+    m = path.match(/^\/v2\/sessions\/threads\/([^/]+)\/messages$/);
+    if (m && method === 'GET') return ok({ messages: [] });
+    if (m && method === 'POST') return ok({ id: 'msg', client_message_id: body.client_message_id ?? null });
+    m = path.match(/^\/v2\/sessions\/threads\/([^/]+)\/project$/);
+    if (m) {
+      const th = threads.get(m[1]);
+      if (!th) return notFound();
+      if (method === 'GET') return ok({ thread_id: th.id, project_id: th.project });
+      if (method === 'PUT') {
+        if (!ownsProject(body.project_id)) return notFound();
+        const movedFrom = th.project && th.project !== body.project_id ? th.project : null;
+        th.project = body.project_id;
+        return ok({ thread_id: th.id, project_id: body.project_id, moved_from: movedFrom });
+      }
+      if (method === 'DELETE') {
+        const removed = th.project;
+        th.project = null;
+        return ok({ thread_id: th.id, project_id: null, removed_from: removed });
+      }
+    }
+    m = path.match(/^\/v2\/orchestrator\/projects\/([^/]+)\/products$/);
+    if (m && method === 'POST') {
+      if (!ownsProject(m[1])) return notFound();
+      const id = `savedproduct:${m[1]}:${body.source_id}`;
+      if (!products.some((p) => p.deliverable_id === id)) {
+        products.push({ deliverable_id: id, build_type: body.build_type, title: body.title, project: m[1] });
+      }
+      return ok({ deliverable_id: id, build_type: body.build_type });
+    }
+    return notFound();
+  };
+  return { threads, products, handler };
+}
+
+let backend: ReturnType<typeof makeBackend>;
+
+function session(over: Partial<ChatSession> = {}): ChatSession {
+  return {
+    id: 's1', title: 'Chat',
+    messages: [{ id: 'm1', role: 'user', content: 'hi', timestamp: new Date() }],
+    updatedAt: new Date(), ...over,
+  };
+}
+
+beforeEach(() => {
+  scope = 'user_alice';
+  backend = makeBackend();
+  vi.stubGlobal('fetch', (u: string, i?: RequestInit) => backend.handler(u, i));
+});
+afterEach(() => vi.unstubAllGlobals());
+
+describe('assignChatToProject', () => {
+  it('syncs the thread then binds it to the project', async () => {
+    const res = await assignChatToProject(session(), 'pA');
+    expect(res.ok).toBe(true);
+    expect(res.projectId).toBe('pA');
+    // The thread was created and bound server-side.
+    const th = [...backend.threads.values()][0];
+    expect(th.project).toBe('pA');
+  });
+
+  it('moves a chat A → B and reports moved_from', async () => {
+    const s = session();
+    const first = await assignChatToProject(s, 'pA');
+    // Reuse the same server thread for the move.
+    const bound: ChatSession = { ...s, serverThreadId: [...backend.threads.keys()][0] };
+    void first;
+    const moved = await assignChatToProject(bound, 'pB');
+    expect(moved.ok).toBe(true);
+    expect(moved.projectId).toBe('pB');
+    expect(moved.movedFrom).toBe('pA');
+  });
+
+  it('a project the user does not own is a 404 error', async () => {
+    const res = await assignChatToProject(session(), 'pOther');
+    expect(res.ok).toBe(false);
+    expect(res.status).toBe(404);
+  });
+
+  it('guests are a no-op (no server identity)', async () => {
+    scope = 'guest_x';
+    const res = await assignChatToProject(session(), 'pA');
+    expect(res.ok).toBe(false);
+    expect(backend.threads.size).toBe(0);
+  });
+});
+
+describe('removeChatFromProject', () => {
+  it('removes the binding', async () => {
+    const s = session();
+    await assignChatToProject(s, 'pA');
+    const bound: ChatSession = { ...s, serverThreadId: [...backend.threads.keys()][0] };
+    const res = await removeChatFromProject(bound);
+    expect(res.ok).toBe(true);
+    expect([...backend.threads.values()][0].project).toBeNull();
+  });
+
+  it('a never-synced chat has nothing to remove', async () => {
+    const res = await removeChatFromProject(session());
+    expect(res.ok).toBe(true);
+    expect(res.projectId).toBeNull();
+  });
+});
+
+describe('getThreadProject', () => {
+  it('returns the current binding', async () => {
+    const s = session();
+    await assignChatToProject(s, 'pA');
+    const tid = [...backend.threads.keys()][0];
+    expect(await getThreadProject(tid)).toBe('pA');
+  });
+});
+
+describe('attachProductToProject', () => {
+  it('attaches a web product and preserves build_type', async () => {
+    const res = await attachProductToProject('pA', { buildType: 'web', title: 'Site', sourceId: 's1' });
+    expect(res.ok).toBe(true);
+    expect(res.deliverableId).toContain('savedproduct:pA:s1');
+    expect(backend.products[0].build_type).toBe('web');
+  });
+
+  it('preserves app build_type', async () => {
+    await attachProductToProject('pA', { buildType: 'app', title: 'App', sourceId: 'a1' });
+    expect(backend.products.find((p) => p.title === 'App')!.build_type).toBe('app');
+  });
+
+  it('repeated save is idempotent (one product)', async () => {
+    await attachProductToProject('pA', { buildType: 'web', title: 'Site', sourceId: 's1' });
+    await attachProductToProject('pA', { buildType: 'web', title: 'Site', sourceId: 's1' });
+    expect(backend.products.filter((p) => p.deliverable_id === 'savedproduct:pA:s1').length).toBe(1);
+  });
+
+  it('cannot attach to a project the user does not own', async () => {
+    const res = await attachProductToProject('pOther', { buildType: 'web', sourceId: 'x' });
+    expect(res.ok).toBe(false);
+    expect(res.status).toBe(404);
+    expect(backend.products.length).toBe(0);
+  });
+});

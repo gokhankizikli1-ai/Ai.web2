@@ -87,14 +87,18 @@ class Thread:
 
 @dataclass
 class Message:
-    id:            str
-    thread_id:     str
-    role:          str
-    content:       str
-    created_at:    Optional[str] = None
-    tokens:        Optional[int] = None
-    model:         Optional[str] = None
-    metadata:      dict = field(default_factory=dict)
+    id:                str
+    thread_id:         str
+    role:              str
+    content:           str
+    created_at:        Optional[str] = None
+    tokens:            Optional[int] = None
+    model:             Optional[str] = None
+    metadata:          dict = field(default_factory=dict)
+    # Stable client idempotency key echoed back so a client can do an
+    # identity-based delta sync (post only messages the server doesn't have)
+    # instead of a fragile count watermark.
+    client_message_id: Optional[str] = None
 
     def to_dict(self) -> dict:
         return asdict(self)

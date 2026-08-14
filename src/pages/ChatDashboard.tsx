@@ -21,6 +21,7 @@ import AIActivityFeed from '@/components/AIActivityFeed';
 import CommandPalette from '@/components/CommandPalette';
 import PromptLibrary from '@/components/PromptLibrary';
 import ExportChat from '@/components/ExportChat';
+import MoveToProjectMenu from '@/components/MoveToProjectMenu';
 import ToastNotifications from '@/components/ToastNotifications';
 import AIModeSelector from '@/components/AIModeSelector';
 import PremiumBadge from '@/components/PremiumBadge';
@@ -664,6 +665,13 @@ export default function ChatDashboard() {
             <OwnerModeChip />
             {/* Permission popover, visible only when confirmed owner. */}
             <OwnerSessionIndicator />
+            {/* Move-to-project — ordinary chats only (build/tool sessions are
+                excluded); needs at least one turn so there is a chat to file. */}
+            {activeSession
+              && (activeSession.mode === undefined || activeSession.mode === 'chat')
+              && (activeSession.messages?.length ?? 0) > 0 && (
+              <MoveToProjectMenu session={activeSession} />
+            )}
             <ToolbarDropdown
               onCmd={() => setCmdOpen(true)}
               onPrompts={() => setPromptLibOpen(true)}

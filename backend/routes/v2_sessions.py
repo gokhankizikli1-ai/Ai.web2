@@ -100,6 +100,10 @@ class AppendMessageBody(BaseModel):
     model:    Optional[str] = Field(None, max_length=128)
     tokens:   Optional[int] = Field(None, ge=0)
     metadata: Optional[Dict[str, Any]] = None
+    # Stable client idempotency key (the chat message id). When present the
+    # append is idempotent per thread — a retry/duplicate never creates a
+    # second row. Optional so legacy callers keep working.
+    client_message_id: Optional[str] = Field(None, max_length=128)
 
 
 # ── Workspaces ────────────────────────────────────────────────────────────
@@ -310,10 +314,131 @@ def append_message(
     msg = sessions_client.append_message(
         thread_id=thread_id, role=body.role, content=body.content,
         model=body.model, tokens=body.tokens, metadata=body.metadata,
+        client_message_id=body.client_message_id,
     )
     return envelope_ok(
         data=msg.to_dict(),
         endpoint=f"/v2/sessions/threads/{thread_id}/messages",
+    )
+
+
+# ── Chat ↔ Project binding (backend-authoritative) ─────────────────────────
+#
+# A chat (thread) can be assigned to, moved between, or removed from any project
+# the caller owns. The association is the canonical `project_threads` binding in
+# the projects store — the SAME record Project Brain reads for a project's chats.
+#
+# Both sides are ownership-checked SERVER-SIDE, never trusting the client:
+#   * the thread must belong to the caller (thread_or_404, via its workspace)
+#   * the target project must be owned by the caller (_project_or_404)
+# so user B can neither read A's chat nor file it under A's project.
+
+class AssignProjectBody(BaseModel):
+    project_id: str = Field(..., min_length=1, max_length=64)
+
+
+def _project_or_404(project_id: str, user: User):
+    """Return the project iff it exists AND belongs to `user`. Existence-hidden
+    404 on any mismatch, mirroring thread_or_404's non-leaking contract."""
+    from backend.services.projects import store as projects_store
+    p = None
+    try:
+        p = projects_store.get_project(project_id)
+    except Exception:
+        p = None
+    if p is None or str(p.owner_user_id) != str(user.id):
+        raise NotFoundError(f"project '{project_id}' not found")
+    return p
+
+
+@router.get("/threads/{thread_id}/project")
+def get_thread_project(
+    thread_id: str,
+    user: User = Depends(current_user),
+) -> Dict[str, Any]:
+    """The project a thread is currently filed under (or null)."""
+    _ensure_enabled()
+    thread_or_404(thread_id, user)
+    from backend.services.projects import store as projects_store
+    pid = projects_store.get_project_of_thread(thread_id)
+    return envelope_ok(
+        data={"thread_id": thread_id, "project_id": pid},
+        endpoint=f"/v2/sessions/threads/{thread_id}/project",
+        user_id=user.id,
+    )
+
+
+@router.put("/threads/{thread_id}/project")
+def assign_thread_project(
+    thread_id: str,
+    body: AssignProjectBody,
+    user: User = Depends(current_user),
+) -> Dict[str, Any]:
+    """Assign or MOVE a chat to a project the caller owns. Moving is a detach of
+    any prior binding + attach of the new one, so a thread is filed under at most
+    one project. Idempotent when the thread is already in the target project."""
+    _ensure_enabled()
+    thread_or_404(thread_id, user)
+    _project_or_404(body.project_id, user)
+    from backend.services.projects import store as projects_store
+    prior = projects_store.get_project_of_thread(thread_id)
+    if prior and prior != body.project_id:
+        projects_store.detach_thread(prior, thread_id)
+    projects_store.attach_thread(body.project_id, thread_id)
+    return envelope_ok(
+        data={"thread_id": thread_id, "project_id": body.project_id,
+              "moved_from": prior if prior and prior != body.project_id else None},
+        endpoint=f"/v2/sessions/threads/{thread_id}/project",
+        user_id=user.id,
+    )
+
+
+@router.delete("/threads/{thread_id}/project")
+def remove_thread_project(
+    thread_id: str,
+    user: User = Depends(current_user),
+) -> Dict[str, Any]:
+    """Remove a chat from its project (the thread and its messages are kept —
+    only the binding is dropped)."""
+    _ensure_enabled()
+    thread_or_404(thread_id, user)
+    from backend.services.projects import store as projects_store
+    prior = projects_store.get_project_of_thread(thread_id)
+    if prior:
+        projects_store.detach_thread(prior, thread_id)
+    return envelope_ok(
+        data={"thread_id": thread_id, "project_id": None, "removed_from": prior},
+        endpoint=f"/v2/sessions/threads/{thread_id}/project",
+        user_id=user.id,
+    )
+
+
+@router.get("/projects/{project_id}/threads")
+def list_project_threads(
+    project_id: str,
+    user: User = Depends(current_user),
+) -> Dict[str, Any]:
+    """List the chats filed under a project the caller owns. Returns full thread
+    summaries (title/mode/timestamps) by resolving each binding through the
+    sessions authority; bindings whose thread is missing/foreign are skipped."""
+    _ensure_enabled()
+    _project_or_404(project_id, user)
+    from backend.services.projects import store as projects_store
+    links = projects_store.list_project_threads(project_id)
+    threads: List[Dict[str, Any]] = []
+    for link in links:
+        th = sessions_client.get_thread(link.thread_id)
+        if th is None:
+            continue
+        ws = sessions_client.get_workspace(th.workspace_id)
+        if ws is None or str(ws.user_id) != str(user.id):
+            continue   # defense-in-depth: never surface a foreign thread
+        threads.append({**th.to_dict(), "added_at": link.added_at})
+    return envelope_ok(
+        data={"threads": threads},
+        endpoint=f"/v2/sessions/projects/{project_id}/threads",
+        user_id=user.id,
+        count=len(threads),
     )
 
 

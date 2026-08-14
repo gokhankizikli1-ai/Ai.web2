@@ -81,6 +81,11 @@ export interface ChatSession {
   mode?: ConversationMode;
   /** For web_build sessions: the Web Build session id to reopen. */
   webBuildRunId?: string;
+  /** Phase 3 — the server-authoritative thread id this conversation mirrors to
+   *  (backend `/v2/sessions`). Present once the session has been synced to the
+   *  server; used to hydrate/dedupe across devices and cache clears. Absent for
+   *  guest / never-synced sessions. */
+  serverThreadId?: string;
 }
 
 export interface PromptItem {

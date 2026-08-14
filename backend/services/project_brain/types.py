@@ -21,6 +21,8 @@ class ProjectBrain:
     agent_notes:        list[str]  = field(default_factory=list)
     workflow_state:     list[dict] = field(default_factory=list)   # [{id, type, status, progress}]
     connector_signals:  list[dict] = field(default_factory=list)   # [{source, kind, summary, observed_at, importance, external_id}]
+    products:           list[dict] = field(default_factory=list)   # [{build_type, title, status, artifact_ref, build_ref, run_id, node_id, updated_at}]
+    linked_chats:       list[dict] = field(default_factory=list)   # [{thread_id, title, mode, updated_at, last_message}]
     counts:             dict       = field(default_factory=dict)   # health snapshot
 
     def to_dict(self) -> dict[str, Any]:

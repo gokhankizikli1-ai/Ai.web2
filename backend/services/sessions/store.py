@@ -128,25 +128,45 @@ CREATE INDEX IF NOT EXISTS ix_threads_workspace_id ON threads(workspace_id);
 CREATE INDEX IF NOT EXISTS ix_threads_updated_at    ON threads(updated_at);
 
 CREATE TABLE IF NOT EXISTS messages (
-    id            TEXT PRIMARY KEY,
-    thread_id     TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
-    role          TEXT NOT NULL,
-    content       TEXT NOT NULL,
-    created_at    TEXT NOT NULL,
-    tokens        INTEGER,
-    model         TEXT,
-    metadata_json TEXT NOT NULL DEFAULT '{}'
+    id                TEXT PRIMARY KEY,
+    thread_id         TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+    role              TEXT NOT NULL,
+    content           TEXT NOT NULL,
+    created_at        TEXT NOT NULL,
+    tokens            INTEGER,
+    model             TEXT,
+    metadata_json     TEXT NOT NULL DEFAULT '{}',
+    client_message_id TEXT                       -- stable client idempotency key
 );
 CREATE INDEX IF NOT EXISTS ix_messages_thread_id  ON messages(thread_id);
 CREATE INDEX IF NOT EXISTS ix_messages_created_at ON messages(created_at);
 """
 
+# The per-thread idempotency constraint. Created separately (not in _SCHEMA)
+# so it can run AFTER the additive column migration on an existing DB whose
+# messages table predates `client_message_id`. A stable client id is UNIQUE
+# within a thread, so a retried / concurrent / cross-tab append never inserts a
+# duplicate. NULL keys (legacy / server-authored rows) are exempt (partial index).
+_CLIENT_ID_INDEX = (
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_messages_client "
+    "ON messages(thread_id, client_message_id) "
+    "WHERE client_message_id IS NOT NULL"
+)
+
 
 def init() -> None:
-    """Create tables if missing. Idempotent; safe to call repeatedly."""
+    """Create tables if missing + run the additive idempotency migration.
+    Idempotent; safe to call repeatedly and on every restart."""
     try:
         with _conn() as c:
             c.executescript(_SCHEMA)
+            # Additive migration for DBs whose `messages` table predates the
+            # idempotency key: add the column if absent, THEN build the unique
+            # index (which references it). Both guarded / IF NOT EXISTS.
+            cols = {row["name"] for row in c.execute("PRAGMA table_info(messages)").fetchall()}
+            if "client_message_id" not in cols:
+                c.execute("ALTER TABLE messages ADD COLUMN client_message_id TEXT")
+            c.execute(_CLIENT_ID_INDEX)
     except Exception as e:
         logger.warning("sessions.store.init failed: %s", e)
         _bump("init_failed", str(e))
@@ -426,28 +446,61 @@ def append_message(
     model: Optional[str] = None,
     tokens: Optional[int] = None,
     metadata: Optional[dict] = None,
+    client_message_id: Optional[str] = None,
 ) -> Message:
-    m_id = _new_id()
-    now  = _now()
-    md   = json.dumps(metadata or {})
-    r    = normalize_message_role(role)
+    """Idempotently append a message.
+
+    `client_message_id` is a STABLE, client-supplied key (the chat message id).
+    When present, the append is idempotent per thread: a retried, concurrent, or
+    cross-tab/replica re-send of the same client id resolves to the ONE canonical
+    row instead of inserting a duplicate. The dedup recognises the message by its
+    client key OR by a prior server row id equal to that key (so a message the
+    client received via hydration — carrying the server row id — is also
+    recognised on a later re-send). Ordering stays a deterministic total order.
+    """
+    cid = (client_message_id or "").strip() or None
+    now = _now()
+    md  = json.dumps(metadata or {})
+    r   = normalize_message_role(role)
     try:
         with _conn() as c:
+            if cid is not None:
+                # Recognise an existing canonical row (by client key or by a
+                # server row id we previously handed out via hydration).
+                existing = c.execute(
+                    "SELECT * FROM messages WHERE thread_id=? AND (client_message_id=? OR id=?) LIMIT 1",
+                    (thread_id, cid, cid),
+                ).fetchone()
+                if existing is not None:
+                    return _row_to_message(existing)
+
+            m_id = _new_id()
+            # ON CONFLICT closes the check→insert race: two concurrent inserts of
+            # the same (thread_id, client_message_id) resolve to one row.
             c.execute(
-                "INSERT INTO messages (id, thread_id, role, content, created_at, tokens, model, metadata_json) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (m_id, thread_id, r, content, now, tokens, model, md),
+                "INSERT INTO messages "
+                "(id, thread_id, role, content, created_at, tokens, model, metadata_json, client_message_id) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(thread_id, client_message_id) WHERE client_message_id IS NOT NULL "
+                "DO NOTHING",
+                (m_id, thread_id, r, content, now, tokens, model, md, cid),
             )
-            # Bump thread updated_at so the thread floats to the top of the list.
-            c.execute(
-                "UPDATE threads SET updated_at=? WHERE id=?",
-                (now, thread_id),
-            )
-        _bump("messages_appended")
-        return Message(
-            id=m_id, thread_id=thread_id, role=r, content=content,
-            created_at=now, tokens=tokens, model=model, metadata=metadata or {},
-        )
+            # Resolve the canonical row rowcount-independently: by client key when
+            # present, else by the id we just tried to insert.
+            if cid is not None:
+                row = c.execute(
+                    "SELECT * FROM messages WHERE thread_id=? AND client_message_id=? LIMIT 1",
+                    (thread_id, cid),
+                ).fetchone()
+            else:
+                row = c.execute("SELECT * FROM messages WHERE id=?", (m_id,)).fetchone()
+            if row is None:
+                raise RuntimeError("append_message: row neither inserted nor found")
+            if row["id"] == m_id:
+                # We inserted a NEW row — bump the thread so it floats to the top.
+                c.execute("UPDATE threads SET updated_at=? WHERE id=?", (now, thread_id))
+                _bump("messages_appended")
+            return _row_to_message(row)
     except Exception as e:
         logger.warning("sessions.store.append_message thread=%s error: %s", thread_id, e)
         _bump("messages_appended", str(e))
@@ -465,7 +518,9 @@ def list_messages(
     if after_id:
         sql += " AND created_at > (SELECT created_at FROM messages WHERE id=?)"
         params.append(after_id)
-    sql += " ORDER BY created_at ASC LIMIT ?"
+    # (created_at, id) is a TOTAL order so reload/pagination are deterministic
+    # even for two messages written in the same microsecond (parity with store_pg).
+    sql += " ORDER BY created_at ASC, id ASC LIMIT ?"
     params.append(int(limit))
     try:
         with _conn() as c:
@@ -499,6 +554,7 @@ def delete_message(message_id: str) -> bool:
 
 
 def _row_to_message(row: sqlite3.Row) -> Message:
+    keys = row.keys()
     return Message(
         id=row["id"],
         thread_id=row["thread_id"],
@@ -508,6 +564,7 @@ def _row_to_message(row: sqlite3.Row) -> Message:
         tokens=row["tokens"],
         model=row["model"],
         metadata=_safe_json(row["metadata_json"]),
+        client_message_id=(row["client_message_id"] if "client_message_id" in keys else None),
     )
 
 

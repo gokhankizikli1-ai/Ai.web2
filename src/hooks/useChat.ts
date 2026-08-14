@@ -5,6 +5,12 @@ import { getRequestLocale } from '@/lib/locale';
 import { useLanguageStore } from '@/stores/languageStore';
 import { listWebBuildSessions, type WebBuildSessionMeta } from '@/lib/webBuildSession';
 import { currentStorageScope } from '@/lib/storageScope';
+import {
+  serverChatEnabled,
+  syncSession,
+  hydrateFromServer,
+  mergeServerSessions,
+} from '@/lib/sessionsSync';
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
@@ -345,6 +351,9 @@ function normalizeSession(raw: unknown): ChatSession | null {
     isDemo: !!s.isDemo,
     ...(mode ? { mode } : {}),
     ...(typeof s.webBuildRunId === 'string' ? { webBuildRunId: s.webBuildRunId } : {}),
+    // Phase 3 — preserve the server-thread binding across reloads so the
+    // localStorage cache and the server truth stay linked (dedup on hydrate).
+    ...(typeof s.serverThreadId === 'string' ? { serverThreadId: s.serverThreadId } : {}),
   };
 }
 
@@ -521,6 +530,51 @@ export function useChat() {
   // messages and can't depend on the async-batched `sessions` state).
   const sessionsRef = useRef<ChatSession[]>(sessions);
   useEffect(() => { sessionsRef.current = sessions; }, [sessions]);
+
+  // ── Phase 3: server-authoritative chat sync (best-effort, non-destructive) ──
+  //
+  // The backend `/v2/sessions` store is the canonical history; localStorage is
+  // a cache. Two thin, guarded effects keep them in sync WITHOUT changing the
+  // existing chat UX for guests or when the server is unreachable:
+  //   1. On mount (authenticated only), hydrate server threads and MERGE them
+  //      in additively — this restores real history after a cache clear or on a
+  //      new device, and can never delete a local conversation.
+  //   2. When a turn finishes (isLoading true→false), mirror the active
+  //      conversation's turns to the server, idempotently, and stash the
+  //      returned serverThreadId so the cache and server stay linked.
+  const activeSessionIdRef = useRef<string>(activeSessionId);
+  useEffect(() => { activeSessionIdRef.current = activeSessionId; }, [activeSessionId]);
+
+  useEffect(() => {
+    if (!serverChatEnabled()) return;
+    let cancelled = false;
+    // Fire-and-forget; failures resolve to [] and merge is a no-op.
+    hydrateFromServer().then((serverSessions) => {
+      if (cancelled || serverSessions.length === 0) return;
+      setSessions((prev) => mergeServerSessions(prev, serverSessions));
+    }).catch(() => { /* best-effort — never surface a hydration failure */ });
+    return () => { cancelled = true; };
+    // Run once per mount. Identity changes remount the tree (scope-keyed).
+  }, []);
+
+  const prevLoadingRef = useRef<boolean>(false);
+  useEffect(() => {
+    const was = prevLoadingRef.current;
+    prevLoadingRef.current = isLoading;
+    if (!was || isLoading) return;            // only on the true→false edge
+    if (!serverChatEnabled()) return;
+    const activeId = activeSessionIdRef.current;
+    const session = sessionsRef.current.find((s) => s.id === activeId);
+    if (!session) return;
+    syncSession(session).then((threadId) => {
+      if (!threadId || session.serverThreadId === threadId) return;
+      // Stash the freshly-created server thread id onto the session so future
+      // turns append to the same thread and hydration can dedupe it.
+      setSessions((prev) => prev.map((s) =>
+        s.id === activeId && !s.serverThreadId ? { ...s, serverThreadId: threadId } : s,
+      ));
+    }).catch(() => { /* best-effort mirror — never disrupt the chat */ });
+  }, [isLoading]);
 
   const [aiMode, setAiMode] = useState<AIMode>('fast');
   const [pinnedMessages, setPinnedMessages] = useState<Message[]>([]);

@@ -27,12 +27,44 @@ _MAX_NOTES              = 4
 _MAX_ASSETS             = 6
 _MAX_WORKFLOWS          = 4
 _MAX_CONNECTOR_SIGNALS  = 6         # recent Gmail/GitHub observations surfaced
+_MAX_PRODUCTS           = 6         # generated Web/App products surfaced
+_MAX_CHATS              = 6         # project-linked chats surfaced
+_MAX_CHAT_PREVIEW_CHARS = 160      # last-message preview per chat (bounded)
 _MAX_MEMORIES_AS_CTX    = 8
-_CTX_BLOCK_CHAR_BUDGET  = 2000      # cap the prompt-injected block
+_CTX_BLOCK_CHAR_BUDGET  = 2400      # cap the prompt-injected block
+
+# Deliverable kinds that represent a generated Web/App product. Kept in sync
+# with the build capability's deliverable kinds — the canonical build/artifact
+# authority (deliverables_store) owns the actual payload; the brain surfaces
+# only bounded references, never the source tree.
+_PRODUCT_KINDS = ("web_build", "app_build", "build")
 
 
 def is_enabled() -> bool:
     return os.getenv("ENABLE_PROJECT_BRAIN", "false").strip().lower() == "true"
+
+
+def _owns_project(user_id: str, project_id: str) -> bool:
+    """Ownership gate for project-scoped authorities that are keyed by
+    `project_id` ONLY (goals/decisions/deliverables/threads) and therefore
+    have no per-row user column to defend with.
+
+    The canonical ownership authority is the `projects` store (the same record
+    the Gmail/GitHub connector routes check on connect). A brain fetch pulls
+    project-scoped data ONLY when that record exists AND belongs to the caller,
+    so user B can never surface user A's products/chats/goals/decisions by
+    guessing a project_id. Returns False (fail-closed) on any error or when the
+    project is not in the canonical store — user-scoped slices (memory,
+    connector signals, assets…) are unaffected and still surface."""
+    if not (user_id and project_id):
+        return False
+    try:
+        from backend.services.projects import store as projects_store
+        p = projects_store.get_project(str(project_id))
+        return bool(p) and str(p.owner_user_id) == str(user_id)
+    except Exception as e:  # pragma: no cover — defensive; never break aggregation
+        logger.debug("project_brain: ownership check unavailable: %s", e)
+        return False
 
 
 class ProjectBrainClient:
@@ -145,6 +177,100 @@ class ProjectBrainClient:
         except Exception as e:
             logger.debug("project_brain: observations unavailable: %s", e)
 
+        # ── Project-scoped authorities (goals / decisions / products / chats).
+        #    These stores are keyed by project_id ONLY, so they are pulled behind
+        #    a fail-closed ownership gate (see `_owns_project`). Everything above
+        #    is already user-scoped; only this block needs the gate.
+        if _owns_project(str(user_id), project_id):
+            # Structured active goals — the authoritative Business Brain goals
+            # (hierarchy, success criteria), distinct from memory-plane goal
+            # notes. Merge titles into current_goals, deduped, staying bounded.
+            try:
+                from backend.services.orchestrator import goals_store
+                have = {g.strip().lower() for g in brain.current_goals}
+                for g in goals_store.active_goals(project_id, limit=_MAX_GOALS):
+                    title = (g.get("title") or "").strip()
+                    if title and title.lower() not in have and \
+                            len(brain.current_goals) < _MAX_GOALS:
+                        brain.current_goals.append(title)
+                        have.add(title.lower())
+            except Exception as e:
+                logger.debug("project_brain: goals_store unavailable: %s", e)
+
+            # Authoritative active decisions (topic → value), superseded-aware.
+            try:
+                from backend.services.orchestrator import decisions_store
+                have_d = {d.strip().lower() for d in brain.recent_decisions}
+                for d in decisions_store.active_decisions(project_id, limit=_MAX_DECISIONS):
+                    topic = (d.get("topic") or "").strip()
+                    value = (d.get("value") or "").strip()
+                    if not value:
+                        continue
+                    line = f"{topic}: {value}" if topic else value
+                    if line.lower() not in have_d and \
+                            len(brain.recent_decisions) < _MAX_DECISIONS:
+                        brain.recent_decisions.append(line)
+                        have_d.add(line.lower())
+            except Exception as e:
+                logger.debug("project_brain: decisions_store unavailable: %s", e)
+
+            # Generated Web/App products — bounded references from the canonical
+            # deliverables authority. The build payload/source tree stays in the
+            # artifact authority; the brain carries only refs + status + type.
+            try:
+                from backend.services.orchestrator import deliverables_store as dls
+                for d in dls.list_for_project(project_id, limit=50):
+                    if str(d.get("kind")) not in _PRODUCT_KINDS:
+                        continue
+                    content = d.get("content") or {}
+                    brain.products.append({
+                        "build_type":   content.get("build_type") or (
+                            "app" if d.get("kind") == "app_build" else "web"),
+                        "title":        (d.get("title") or "").strip()[:160],
+                        "status":       content.get("build_status") or d.get("status"),
+                        "artifact_ref": content.get("artifact_ref") or "",
+                        "build_ref":    content.get("build_ref") or "",
+                        "run_id":       d.get("run_id"),
+                        "node_id":      d.get("node_id"),
+                        "updated_at":   d.get("updated_at"),
+                    })
+                    if len(brain.products) >= _MAX_PRODUCTS:
+                        break
+            except Exception as e:
+                logger.debug("project_brain: deliverables_store unavailable: %s", e)
+
+            # Project-linked chats — the durable workspace's conversations. Reads
+            # the canonical project↔thread binding, then the sessions authority
+            # for each thread (title + a bounded last-message preview). Threads
+            # are owner-scoped defensively via their workspace.
+            try:
+                from backend.services.projects import store as projects_store
+                from backend.services.sessions import client as sc
+                links = projects_store.list_project_threads(project_id)
+                for link in links[:_MAX_CHATS]:
+                    th = sc.get_thread(link.thread_id)
+                    if th is None:
+                        continue
+                    ws = sc.get_workspace(th.workspace_id)
+                    if ws is None or str(ws.user_id) != str(user_id):
+                        continue   # defense-in-depth owner check
+                    last_msg = ""
+                    try:
+                        msgs = sc.list_messages(th.id, limit=1)
+                        if msgs:
+                            last_msg = (msgs[-1].content or "").strip()[:_MAX_CHAT_PREVIEW_CHARS]
+                    except Exception:
+                        pass
+                    brain.linked_chats.append({
+                        "thread_id":    th.id,
+                        "title":        th.title,
+                        "mode":         th.mode,
+                        "updated_at":   th.updated_at,
+                        "last_message": last_msg,
+                    })
+            except Exception as e:
+                logger.debug("project_brain: project chats unavailable: %s", e)
+
         # ── Counts: cheap health snapshot.
         brain.counts = {
             "goals":           len(brain.current_goals),
@@ -154,6 +280,8 @@ class ProjectBrainClient:
             "active_workflows":len(brain.workflow_state),
             "agent_notes":     len(brain.agent_notes),
             "connector_signals": len(brain.connector_signals),
+            "products":        len(brain.products),
+            "linked_chats":    len(brain.linked_chats),
         }
         return brain
 
@@ -197,6 +325,22 @@ class ProjectBrainClient:
         if brain.agent_notes:
             lines.append("Agent notes:")
             lines.extend(f"- {n}" for n in brain.agent_notes)
+        if brain.products:
+            lines.append("Generated products:")
+            for p in brain.products[:_MAX_PRODUCTS]:
+                title = p.get("title") or "(untitled)"
+                bt = (p.get("build_type") or "web").upper()
+                status = p.get("status") or "?"
+                lines.append(f"- [{bt}] {title} ({status})")
+        if brain.linked_chats:
+            lines.append("Project chats:")
+            for ch in brain.linked_chats[:_MAX_CHATS]:
+                title = ch.get("title") or "(untitled chat)"
+                preview = ch.get("last_message")
+                line = f"- {title}"
+                if preview:
+                    line += f" — {preview}"
+                lines.append(line)
         if brain.connector_signals:
             lines.append("Recent connector activity:")
             for s in brain.connector_signals[:_MAX_CONNECTOR_SIGNALS]:
