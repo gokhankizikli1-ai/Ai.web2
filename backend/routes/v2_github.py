@@ -41,6 +41,7 @@ from backend.services.github import config as gh_config
 from backend.services.github import setup_state as gh_setup
 from backend.services.github import store as gh_store
 from backend.services.github import sync as gh_sync
+from backend.services.github import user_auth as gh_user
 from backend.services.github import webhook as gh_webhook
 from backend.services.github.errors import GitHubConfigError, GitHubError
 from backend.services.projects import store as projects_store
@@ -141,11 +142,21 @@ def setup_callback(
     state: Optional[str] = Query(default=None, max_length=512),
     installation_id: Optional[str] = Query(default=None, max_length=40),
     setup_action: Optional[str] = Query(default=None, max_length=40),
+    code: Optional[str] = Query(default=None, max_length=512),
 ) -> RedirectResponse:
-    """GitHub App Setup URL target. GitHub redirects the browser here after an
-    install with `?installation_id=&setup_action=&state=`. Identity/target come
-    ONLY from the one-time state; the installation_id is VERIFIED server-side, not
-    trusted. Redirects to a fixed frontend result page (no open redirect)."""
+    """GitHub App Setup / user-authorization callback. With "Request user
+    authorization (OAuth) during installation" enabled, GitHub redirects the
+    browser here after an install with `?code=&installation_id=&setup_action=&
+    state=`. Trust chain (each independent, none weakened):
+      1. state          → this Korvix user + project (one-time, TTL, CSRF).
+      2. project owner  → still owns the project (re-checked).
+      3. code → user    → the GitHub user's identity (OAuth, App client id/secret).
+      4. installation   → belongs to OUR App (App-JWT).
+      5. user ↔ install → the GitHub user may access this installation
+                          (GET /user/installations) — this is what defeats
+                          installation_id spoofing.
+    Only then is a pending installation stored. Redirects to a fixed frontend
+    result page (no open redirect); NEVER trusts installation_id by itself."""
     if not gh_config.is_enabled():
         return _result_redirect(github="error", reason="disabled")
 
@@ -168,18 +179,49 @@ def setup_callback(
         return _result_redirect(github="error", reason="ownership_mismatch",
                                 project_id=project_id)
 
-    # 4. NEVER trust the installation_id blindly — prove it belongs to OUR App
-    #    and is reachable (App-JWT GET /app/installations/{id}).
+    # 4. Verify the INSTALLING GITHUB USER's identity via the App's user-to-server
+    #    OAuth. Without a code we cannot prove who installed → fail closed (the App
+    #    must have "Request user authorization (OAuth) during installation" on).
+    if not (code or "").strip():
+        return _result_redirect(github="error", reason="user_auth_required",
+                                project_id=project_id)
+    try:
+        user_token = gh_user.exchange_code_for_user_token(code)
+    except GitHubError:
+        return _result_redirect(github="error", reason="user_auth_failed",
+                                project_id=project_id)
+    except Exception:  # pragma: no cover — defensive
+        return _result_redirect(github="error", reason="server_error",
+                                project_id=project_id)
+
+    # 5. Prove the installation belongs to OUR App and is reachable (App-JWT).
     try:
         gh_app.get_installation(inst)
     except GitHubError:
         return _result_redirect(github="error", reason="installation_unverified",
                                 project_id=project_id)
-    except Exception:  # pragma: no cover — defensive; never leak a stack to a redirect
+    except Exception:  # pragma: no cover — defensive
         return _result_redirect(github="error", reason="server_error",
                                 project_id=project_id)
 
-    # 5. Store the VERIFIED pending installation (id only — never a token).
+    # 6. Prove the AUTHENTICATED GITHUB USER may access THIS installation. This is
+    #    the anti-spoofing gate: a valid state + a real installation belonging to a
+    #    DIFFERENT GitHub account is rejected here because that installation is not
+    #    in the initiating user's /user/installations. The user token is used only
+    #    here and never persisted.
+    try:
+        authorized = gh_user.user_can_access_installation(user_token, inst)
+    except GitHubError:
+        return _result_redirect(github="error", reason="authorization_check_failed",
+                                project_id=project_id)
+    except Exception:  # pragma: no cover — defensive
+        return _result_redirect(github="error", reason="server_error",
+                                project_id=project_id)
+    if not authorized:
+        return _result_redirect(github="error", reason="installation_not_authorized",
+                                project_id=project_id)
+
+    # 7. Store the VERIFIED pending installation (id only — never a token).
     pending = gh_setup.upsert_pending_installation(
         project_id=project_id, owner_user_id=consumed.owner_user_id, installation_id=inst)
     if pending is None:

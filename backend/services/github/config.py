@@ -142,6 +142,33 @@ def github_html_base() -> str:
     return _env("GITHUB_HTML_BASE", "https://github.com").rstrip("/") or "https://github.com"
 
 
+def app_client_id() -> str:
+    """The GitHub App's OAuth **Client ID** (App settings → About → Client ID) —
+    distinct from the numeric App id. Used for the user-to-server OAuth exchange
+    that proves the installing GitHub user's identity. Empty ⇒ the install flow
+    fails closed."""
+    return _env("GITHUB_APP_CLIENT_ID")
+
+
+def app_client_secret() -> str:
+    """The GitHub App's OAuth **Client Secret**. SECRET — never logged, never
+    returned to the frontend. Empty ⇒ the install flow fails closed."""
+    return _env("GITHUB_APP_CLIENT_SECRET")
+
+
+def oauth_token_url() -> str:
+    """GitHub's user-to-server OAuth token endpoint. Overridable for tests /
+    Enterprise."""
+    return _env("GITHUB_OAUTH_TOKEN_URL", f"{github_html_base()}/login/oauth/access_token") \
+        or f"{github_html_base()}/login/oauth/access_token"
+
+
+def user_auth_configured() -> bool:
+    """True iff the App's OAuth Client id + secret are present — required to
+    verify the installing user's identity during the install flow."""
+    return bool(app_client_id() and app_client_secret())
+
+
 def install_url(state: str) -> str:
     """The URL that starts a NEW installation of our App. GitHub echoes the
     `state` param to the App's configured Setup URL after install, which is how
@@ -200,9 +227,16 @@ def install_repos_max() -> int:
 
 
 def install_configured() -> bool:
-    """True iff the install flow can run: App credentials present AND a slug (or
-    a full install-URL override) to build the redirect."""
-    return bool(configured() and (app_slug() or _env("GITHUB_APP_INSTALL_URL")))
+    """True iff the install flow can run end-to-end: App credentials present, a
+    slug (or full install-URL override) to build the redirect, AND the OAuth
+    Client id/secret needed to VERIFY the installing user's identity. Requiring
+    user auth here is what makes the flow fail closed rather than fall back to
+    trusting the setup callback's installation_id alone."""
+    return bool(
+        configured()
+        and (app_slug() or _env("GITHUB_APP_INSTALL_URL"))
+        and user_auth_configured()
+    )
 
 
 __all__ = [
@@ -212,4 +246,5 @@ __all__ = [
     "app_slug", "github_html_base", "install_url", "frontend_result_base",
     "frontend_result_path", "setup_state_ttl_s", "pending_ttl_s",
     "install_repos_max", "install_configured",
+    "app_client_id", "app_client_secret", "oauth_token_url", "user_auth_configured",
 ]

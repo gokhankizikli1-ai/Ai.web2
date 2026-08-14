@@ -408,6 +408,16 @@ class Config:
     # GITHUB_APP_SLUG: the App's github.com/apps/<slug> handle — needed to build
     # the install URL the user is redirected to (connect/start). Not secret.
     GITHUB_APP_SLUG: str = os.getenv("GITHUB_APP_SLUG", "").strip()
+    # GITHUB_APP_CLIENT_ID / GITHUB_APP_CLIENT_SECRET: the App's user-to-server
+    # OAuth credentials (App settings → Client ID / a generated client secret),
+    # distinct from GITHUB_APP_ID / private key. Used ONLY to verify the
+    # installing GitHub user's identity during the install flow (exchange the
+    # setup-callback `code`, then confirm the installation is in the user's
+    # /user/installations) so a spoofed installation_id is rejected. The SECRET is
+    # never logged / returned; the user token is never persisted. Both required
+    # for the install flow (connect/start 503s without them).
+    GITHUB_APP_CLIENT_ID: str = os.getenv("GITHUB_APP_CLIENT_ID", "").strip()
+    GITHUB_APP_CLIENT_SECRET: str = os.getenv("GITHUB_APP_CLIENT_SECRET", "")
     # GITHUB_APP_INSTALL_URL: OPTIONAL full override of the install URL (unusual
     # setups); normally derived from GITHUB_APP_SLUG. Not secret.
     GITHUB_APP_INSTALL_URL: str = os.getenv("GITHUB_APP_INSTALL_URL", "").strip()
