@@ -73,11 +73,13 @@ async function call<T>(
   let body: Envelope<T> | null = null;
   try { body = (await resp.json()) as Envelope<T>; } catch { /* keep null */ }
   if (!resp.ok || !body?.success) {
-    return {
-      ok: false,
-      status: resp.status,
-      message: body?.error || `Request failed (HTTP ${resp.status}).`,
-    };
+    // Prefer the backend's structured error message when present (the connector
+    // routes return `detail.message` for HTTPExceptions) — matches the GitHub
+    // client so partial/failed states report the same truthful reason.
+    let message = body?.error || `Request failed (HTTP ${resp.status}).`;
+    const detail = (body as unknown as { detail?: { message?: string } } | null)?.detail;
+    if (detail?.message) message = detail.message;
+    return { ok: false, status: resp.status, message };
   }
   return { ok: true, data: (body.data as T) };
 }

@@ -51,6 +51,16 @@ IMPORTANCE_NORMAL = "normal"
 IMPORTANCE_HIGH = "high"
 _IMPORTANCE_HINTS = (IMPORTANCE_LOW, IMPORTANCE_NORMAL, IMPORTANCE_HIGH)
 
+# Canonical classification of which observation `source` values are first-party
+# CONNECTOR providers (external systems Korvix connects to and ingests read-only
+# activity from). This is the SINGLE registry the Business Brain / Project Brain
+# use to tell connector activity apart from other observation sources (the store
+# is deliberately connector-neutral and future subsystems may record non-connector
+# observations here). Each connector's `normalize.SOURCE` MUST be listed here;
+# extend it when a new connector ships (e.g. add "vercel") — nothing else needs
+# to change for that provider to flow through the same authority.
+CONNECTOR_SOURCES = ("github", "gmail")
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS observations (
     id            TEXT PRIMARY KEY,
@@ -198,11 +208,23 @@ def get_observation(observation_id: str) -> Optional[dict]:
 
 def list_observations(
     project_id: str, *, kind: Optional[str] = None,
-    source: Optional[str] = None, limit: int = 100,
+    source: Optional[str] = None, sources: Optional[List[str]] = None,
+    user_id: Optional[str] = None, limit: int = 100,
 ) -> List[dict]:
     """Observations for a project, most-recently-OBSERVED first (source time,
     not ingest time — so a late-arriving old event sorts by when it actually
-    happened, never masquerading as the newest change)."""
+    happened, never masquerading as the newest change).
+
+    `user_id`, when supplied, additionally scopes the read to that owner — a
+    defense-in-depth filter for callers (e.g. the Project Brain aggregate) whose
+    entry point is keyed by (user, project) and must never surface another
+    user's rows even if handed an unowned project_id. Omitted ⇒ project-only
+    scoping (the existing behaviour for the orchestrator assessment).
+
+    `sources`, when supplied (non-empty), restricts to that set of source values
+    (e.g. `CONNECTOR_SOURCES`) so a caller can ask specifically for connector
+    activity without misclassifying other observation sources. `source`
+    (singular) still filters to exactly one; both may be combined."""
     if not project_id:
         return []
     try:
@@ -212,6 +234,12 @@ def list_observations(
             clauses.append("kind=?"); params.append(str(kind))
         if source:
             clauses.append("source=?"); params.append(str(source))
+        src_list = [str(s) for s in (sources or []) if s]
+        if src_list:
+            clauses.append(f"source IN ({','.join('?' for _ in src_list)})")
+            params.extend(src_list)
+        if user_id:
+            clauses.append("user_id=?"); params.append(str(user_id))
         params.append(max(1, min(int(limit or 100), 500)))
         with _sqlite.connection(DB_PATH) as c:
             rows = c.execute(
@@ -224,9 +252,13 @@ def list_observations(
         return []
 
 
-def recent_observations(project_id: str, *, limit: int = 10) -> List[dict]:
-    """Bounded recent-observations slice for the Business Brain assessment."""
-    return list_observations(project_id, limit=limit)
+def recent_observations(project_id: str, *, user_id: Optional[str] = None,
+                        sources: Optional[List[str]] = None,
+                        limit: int = 10) -> List[dict]:
+    """Bounded recent-observations slice for the Business Brain assessment.
+    `user_id` optionally adds owner-scoping; `sources` optionally restricts to a
+    set of source values (e.g. `CONNECTOR_SOURCES`). See `list_observations`."""
+    return list_observations(project_id, user_id=user_id, sources=sources, limit=limit)
 
 
 def observations_stats(project_id: str) -> Dict[str, int]:
@@ -237,7 +269,7 @@ def observations_stats(project_id: str) -> Dict[str, int]:
 
 
 __all__ = [
-    "IMPORTANCE_LOW", "IMPORTANCE_NORMAL", "IMPORTANCE_HIGH",
+    "IMPORTANCE_LOW", "IMPORTANCE_NORMAL", "IMPORTANCE_HIGH", "CONNECTOR_SOURCES",
     "init_observations_table", "record_observation", "get_observation",
     "list_observations", "recent_observations", "observations_stats",
 ]

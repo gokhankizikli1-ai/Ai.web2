@@ -111,13 +111,26 @@ def sync_page_size() -> int:
 
 
 def sync_max_pages() -> int:
-    """Hard cap on pages fetched per resource during initial sync — the guard
-    that makes the backfill BOUNDED (never crawls full history). Clamped
-    [1, 5]."""
+    """Hard cap on pages fetched per resource during an INCREMENTAL (already
+    backfilled) sync — the guard that makes the top-of-list refresh BOUNDED
+    (never crawls full history). Clamped [1, 5]."""
     try:
         n = int(os.getenv("GITHUB_SYNC_MAX_PAGES", "1") or 1)
     except (TypeError, ValueError):
         n = 1
+    return max(1, min(n, 5))
+
+
+def sync_initial_max_pages() -> int:
+    """Pages fetched per resource on the FIRST sync of a connection (the initial
+    import). Larger than the incremental cap so a newly connected project pulls
+    enough recent context in ONE click instead of forcing the user to press
+    "Sync now" repeatedly — while still enforcing the same hard ceiling
+    (never a full-history crawl). Clamped [1, 5]; default 3."""
+    try:
+        n = int(os.getenv("GITHUB_SYNC_INITIAL_MAX_PAGES", "3") or 3)
+    except (TypeError, ValueError):
+        n = 3
     return max(1, min(n, 5))
 
 
@@ -273,7 +286,7 @@ def install_configured() -> bool:
 __all__ = [
     "is_enabled", "app_id", "private_key", "default_installation_id",
     "webhook_secret", "webhook_max_bytes", "api_base", "request_timeout_s",
-    "sync_page_size", "sync_max_pages", "configured",
+    "sync_page_size", "sync_max_pages", "sync_initial_max_pages", "configured",
     "app_slug", "github_html_base", "install_url", "frontend_result_base",
     "frontend_result_path", "setup_state_ttl_s", "pending_ttl_s",
     "install_repos_max", "install_configured",

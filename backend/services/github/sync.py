@@ -24,13 +24,14 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
+from backend.services.github import config as gh_config
 from backend.services.github import normalize
 from backend.services.github.client import GitHubClient
 from backend.services.github.errors import GitHubError
 from backend.services.github.ingest import IngestResult, ingest_many
-from backend.services.github.store import GitHubConnection, get_connection
+from backend.services.github.store import GitHubConnection, get_connection, mark_synced
 
 logger = logging.getLogger(__name__)
 
@@ -78,10 +79,21 @@ def initial_sync(project_id: str) -> SyncReport:
     return sync_connection(conn)
 
 
-def sync_connection(conn: GitHubConnection) -> SyncReport:
+def sync_connection(conn: GitHubConnection, *, initial: Optional[bool] = None) -> SyncReport:
+    """Bounded backfill for a connected project.
+
+    On the FIRST sync of a connection (no prior `last_sync_at`) each resource
+    fetches up to `sync_initial_max_pages` pages so the useful recent context
+    lands in ONE click; subsequent syncs use the lighter `sync_max_pages`
+    incremental cap. BOTH paths are hard-capped (never a full-history crawl) and
+    idempotent (deterministic external ids dedup on re-sync). `initial` can be
+    forced for tests; by default it is inferred from the connection state."""
     report = SyncReport(project_id=conn.project_id, repo_full_name=conn.repo_full_name)
     client = GitHubClient(conn.installation_id)
     owner_repo = conn.repo_full_name
+
+    is_initial = (not (conn.last_sync_at or "").strip()) if initial is None else bool(initial)
+    max_pages = gh_config.sync_initial_max_pages() if is_initial else gh_config.sync_max_pages()
 
     # Resolve the repo once for the stable numeric id (repo rename resilience)
     # and to fail fast+truthfully on a bad installation/repo before fanning out.
@@ -99,11 +111,21 @@ def sync_connection(conn: GitHubConnection) -> SyncReport:
             return
         report._merge(ingest_many(conn, items))
 
-    _run("pull_requests", lambda: _pull_requests(client, owner_repo, repo))
-    _run("issues", lambda: _issues(client, owner_repo, repo))
-    _run("workflow_runs", lambda: _workflow_runs(client, owner_repo, repo))
-    _run("deployments", lambda: _deployments(client, owner_repo, repo))
-    _run("commits", lambda: _commits(client, owner_repo, repo))
+    _run("pull_requests", lambda: _pull_requests(client, owner_repo, repo, max_pages))
+    _run("issues", lambda: _issues(client, owner_repo, repo, max_pages))
+    _run("workflow_runs", lambda: _workflow_runs(client, owner_repo, repo, max_pages))
+    _run("deployments", lambda: _deployments(client, owner_repo, repo, max_pages))
+    _run("commits", lambda: _commits(client, owner_repo, repo, max_pages))
+    # Mark the backfill complete ONLY when every resource synced cleanly. A
+    # partial failure leaves last_sync_at unset, so the NEXT sync is still
+    # treated as an INITIAL import (the fuller page cap): the resource that
+    # failed gets its intended initial backfill on retry, while the resources
+    # that already succeeded are re-read and deterministically de-duplicated
+    # (safe, no duplicates). last_sync_at therefore means "last FULLY successful
+    # sync", which is also the truthful value for the "last sync" UX. Partial
+    # errors remain reported in report.errors regardless.
+    if report.ok:
+        mark_synced(conn.project_id)
     return report
 
 
@@ -113,10 +135,12 @@ def _owner_repo(full: str) -> str:
     return full.strip().strip("/")
 
 
-def _pull_requests(client: GitHubClient, full: str, repo: Dict[str, Any]) -> List[Dict[str, Any]]:
+def _pull_requests(client: GitHubClient, full: str, repo: Dict[str, Any],
+                   max_pages: Optional[int] = None) -> List[Dict[str, Any]]:
     items = client.paginate(
         f"/repos/{_owner_repo(full)}/pulls",
         params={"state": "all", "sort": "updated", "direction": "desc"},
+        max_pages=max_pages,
     )
     out = []
     for pr in items:
@@ -126,10 +150,12 @@ def _pull_requests(client: GitHubClient, full: str, repo: Dict[str, Any]) -> Lis
     return out
 
 
-def _issues(client: GitHubClient, full: str, repo: Dict[str, Any]) -> List[Dict[str, Any]]:
+def _issues(client: GitHubClient, full: str, repo: Dict[str, Any],
+            max_pages: Optional[int] = None) -> List[Dict[str, Any]]:
     items = client.paginate(
         f"/repos/{_owner_repo(full)}/issues",
         params={"state": "all", "sort": "updated", "direction": "desc"},
+        max_pages=max_pages,
     )
     out = []
     for issue in items:
@@ -139,10 +165,12 @@ def _issues(client: GitHubClient, full: str, repo: Dict[str, Any]) -> List[Dict[
     return out
 
 
-def _workflow_runs(client: GitHubClient, full: str, repo: Dict[str, Any]) -> List[Dict[str, Any]]:
+def _workflow_runs(client: GitHubClient, full: str, repo: Dict[str, Any],
+                   max_pages: Optional[int] = None) -> List[Dict[str, Any]]:
     data = client.paginate(
         f"/repos/{_owner_repo(full)}/actions/runs",
         params={"status": "completed"},
+        max_pages=max_pages,
     )
     # The Actions runs endpoint wraps the list in {"workflow_runs":[...]}. When
     # a single page is returned as that dict, unwrap it; when paginate already
@@ -161,8 +189,9 @@ def _workflow_runs(client: GitHubClient, full: str, repo: Dict[str, Any]) -> Lis
     return out
 
 
-def _deployments(client: GitHubClient, full: str, repo: Dict[str, Any]) -> List[Dict[str, Any]]:
-    items = client.paginate(f"/repos/{_owner_repo(full)}/deployments")
+def _deployments(client: GitHubClient, full: str, repo: Dict[str, Any],
+                 max_pages: Optional[int] = None) -> List[Dict[str, Any]]:
+    items = client.paginate(f"/repos/{_owner_repo(full)}/deployments", max_pages=max_pages)
     out = []
     for dep in items:
         o = normalize.normalize_deployment(dep, repo)
@@ -171,8 +200,9 @@ def _deployments(client: GitHubClient, full: str, repo: Dict[str, Any]) -> List[
     return out
 
 
-def _commits(client: GitHubClient, full: str, repo: Dict[str, Any]) -> List[Dict[str, Any]]:
-    items = client.paginate(f"/repos/{_owner_repo(full)}/commits")
+def _commits(client: GitHubClient, full: str, repo: Dict[str, Any],
+             max_pages: Optional[int] = None) -> List[Dict[str, Any]]:
+    items = client.paginate(f"/repos/{_owner_repo(full)}/commits", max_pages=max_pages)
     out = []
     for commit in items:
         o = normalize.normalize_commit(commit, repo)

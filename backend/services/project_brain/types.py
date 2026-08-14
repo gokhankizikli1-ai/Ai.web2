@@ -20,6 +20,7 @@ class ProjectBrain:
     recent_decisions:   list[str]  = field(default_factory=list)
     agent_notes:        list[str]  = field(default_factory=list)
     workflow_state:     list[dict] = field(default_factory=list)   # [{id, type, status, progress}]
+    connector_signals:  list[dict] = field(default_factory=list)   # [{source, kind, summary, observed_at, importance, external_id}]
     counts:             dict       = field(default_factory=dict)   # health snapshot
 
     def to_dict(self) -> dict[str, Any]:

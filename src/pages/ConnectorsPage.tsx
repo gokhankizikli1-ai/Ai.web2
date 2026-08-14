@@ -95,6 +95,22 @@ function reason(status: number, message: string): string {
   return message || `Request failed (HTTP ${status}).`;
 }
 
+/* Standardized, TRUTHFUL sync summary shared by Gmail + GitHub:
+ *   "12 new · 40 already known"  and, when a source failed partway,
+ *   "… · 1 source had errors" with an 'info' (not 'success') tone so a partial
+ * sync never reads as a clean success. Both report shapes expose the same
+ * recorded/deduplicated/errors/ok fields, so one helper serves both. */
+function summarizeSync(s: {
+  recorded: number; deduplicated: number; errors?: Record<string, string>; ok: boolean;
+}): { text: string; tone: 'success' | 'info' } {
+  const errCount = s.errors ? Object.keys(s.errors).length : 0;
+  let text = `${s.recorded} new · ${s.deduplicated} already known`;
+  if (errCount > 0) {
+    text += ` · ${errCount} ${errCount === 1 ? 'source' : 'sources'} had errors`;
+  }
+  return { text, tone: s.ok ? 'success' : 'info' };
+}
+
 /* ══════════════════════════════════════════════════════════════════════════
    GMAIL CARD — real OAuth flow via gmailConnectorApi (reused, not duplicated).
    ══════════════════════════════════════════════════════════════════════════ */
@@ -134,8 +150,8 @@ function GmailCard({ projectId, notify }: { projectId: string; notify: Notify })
     const res = await syncGmail(projectId);
     setBusy(null);
     if (!res.ok) { notify(reason(res.status, res.message), 'error'); return; }
-    const s = res.data.sync;
-    notify(`Gmail synced — ${s.recorded} new, ${s.deduplicated} already known.`, s.ok ? 'success' : 'info');
+    const { text, tone } = summarizeSync(res.data.sync);
+    notify(`Gmail synced — ${text}.`, tone);
     void load();
   };
 
@@ -205,10 +221,10 @@ function GmailCard({ projectId, notify }: { projectId: string; notify: Notify })
             )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <button className={btnGhost} disabled={busy === 'sync'} onClick={onSync}>
+            <button className={btnGhost} disabled={busy !== null} onClick={onSync}>
               {busy === 'sync' ? <BusySpinner /> : <RefreshCw className="h-3.5 w-3.5" />} Sync now
             </button>
-            <button className={btnDanger} disabled={busy === 'disconnect'} onClick={onDisconnect}>
+            <button className={btnDanger} disabled={busy !== null} onClick={onDisconnect}>
               {busy === 'disconnect' ? <BusySpinner /> : null} Disconnect
             </button>
           </div>
@@ -338,8 +354,8 @@ function GithubCard({
     const res = await syncGithub(projectId);
     setBusy(null);
     if (!res.ok) { notify(reason(res.status, res.message), 'error'); return; }
-    const s = res.data.sync;
-    notify(`GitHub synced — ${s.recorded} new, ${s.deduplicated} already known.`, s.ok ? 'success' : 'info');
+    const { text, tone } = summarizeSync(res.data.sync);
+    notify(`GitHub synced — ${text}.`, tone);
     void load();
   };
 
@@ -477,12 +493,15 @@ function GithubCard({
         <div className="space-y-3">
           <div className="text-[13px] text-white/60">
             Connected to <span className="text-white font-medium">{status.connection.repo_full_name}</span>
+            {status.connection.last_sync_at && (
+              <span className="text-white/35"> · last sync {new Date(status.connection.last_sync_at).toLocaleString()}</span>
+            )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <button className={btnGhost} disabled={busy === 'sync'} onClick={onSync}>
+            <button className={btnGhost} disabled={busy !== null} onClick={onSync}>
               {busy === 'sync' ? <BusySpinner /> : <RefreshCw className="h-3.5 w-3.5" />} Sync now
             </button>
-            <button className={btnDanger} disabled={busy === 'disconnect'} onClick={onDisconnect}>
+            <button className={btnDanger} disabled={busy !== null} onClick={onDisconnect}>
               {busy === 'disconnect' ? <BusySpinner /> : null} Disconnect
             </button>
           </div>

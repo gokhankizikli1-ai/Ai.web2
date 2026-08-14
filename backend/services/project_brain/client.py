@@ -26,6 +26,7 @@ _MAX_DECISIONS          = 4
 _MAX_NOTES              = 4
 _MAX_ASSETS             = 6
 _MAX_WORKFLOWS          = 4
+_MAX_CONNECTOR_SIGNALS  = 6         # recent Gmail/GitHub observations surfaced
 _MAX_MEMORIES_AS_CTX    = 8
 _CTX_BLOCK_CHAR_BUDGET  = 2000      # cap the prompt-injected block
 
@@ -122,6 +123,28 @@ class ProjectBrainClient:
         except Exception as e:
             logger.debug("project_brain: agent_tasks unavailable: %s", e)
 
+        # ── Connector signals: recent Gmail/GitHub observations for THIS project.
+        #    Read through the canonical observation authority (no new store, no
+        #    connector-specific engine), owner-scoped defensively so a brain
+        #    fetch can never surface another user's connector activity. These are
+        #    INPUTS ONLY — read here for context/reasoning; they never create a
+        #    task/decision/run (the Business Brain remains the sole prioritizer).
+        try:
+            from backend.services.orchestrator import observations_store as obs
+            for o in obs.recent_observations(project_id, user_id=str(user_id),
+                                             sources=list(obs.CONNECTOR_SOURCES),
+                                             limit=_MAX_CONNECTOR_SIGNALS):
+                brain.connector_signals.append({
+                    "source":      o.get("source"),
+                    "kind":        o.get("kind"),
+                    "summary":     (o.get("summary") or "")[:200],
+                    "observed_at": o.get("observed_at"),
+                    "importance":  o.get("importance"),
+                    "external_id": o.get("external_id"),
+                })
+        except Exception as e:
+            logger.debug("project_brain: observations unavailable: %s", e)
+
         # ── Counts: cheap health snapshot.
         brain.counts = {
             "goals":           len(brain.current_goals),
@@ -130,6 +153,7 @@ class ProjectBrainClient:
             "linked_assets":   len(brain.linked_assets),
             "active_workflows":len(brain.workflow_state),
             "agent_notes":     len(brain.agent_notes),
+            "connector_signals": len(brain.connector_signals),
         }
         return brain
 
@@ -173,6 +197,11 @@ class ProjectBrainClient:
         if brain.agent_notes:
             lines.append("Agent notes:")
             lines.extend(f"- {n}" for n in brain.agent_notes)
+        if brain.connector_signals:
+            lines.append("Recent connector activity:")
+            for s in brain.connector_signals[:_MAX_CONNECTOR_SIGNALS]:
+                label = s.get("summary") or s.get("kind") or "activity"
+                lines.append(f"- [{s.get('source','?')}] {label}")
 
         if not lines:
             return None

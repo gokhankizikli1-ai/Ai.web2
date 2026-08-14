@@ -163,6 +163,30 @@ def sync_max_messages() -> int:
     return max(1, min(n, 100))
 
 
+def sync_max_pages() -> int:
+    """Pages of message ids followed during an INCREMENTAL (already backfilled)
+    sync. 1 by default — the newest window is enough once the initial import has
+    run. Clamped [1, 5]."""
+    try:
+        n = int(os.getenv("GMAIL_SYNC_MAX_PAGES", "1") or 1)
+    except (TypeError, ValueError):
+        n = 1
+    return max(1, min(n, 5))
+
+
+def sync_initial_max_pages() -> int:
+    """Pages of message ids followed on the FIRST sync of a connection (the
+    initial import), so a newly connected mailbox pulls enough recent context in
+    ONE click instead of forcing repeated "Sync now" presses — while still
+    enforcing a hard ceiling (at most this many × `sync_max_messages`, never a
+    full-mailbox crawl). Clamped [1, 5]; default 3."""
+    try:
+        n = int(os.getenv("GMAIL_SYNC_INITIAL_MAX_PAGES", "3") or 3)
+    except (TypeError, ValueError):
+        n = 3
+    return max(1, min(n, 5))
+
+
 def sync_query() -> str:
     """Optional Gmail search query bounding the backfill window (e.g.
     "newer_than:30d"). Default limits to recent mail so a first sync of a huge
@@ -195,5 +219,6 @@ __all__ = [
     "scope_param", "frontend_result_base", "frontend_result_path",
     "encryption_keys_raw", "auth_endpoint", "token_endpoint",
     "revoke_endpoint", "api_base", "request_timeout_s", "state_ttl_s",
-    "sync_max_messages", "sync_query", "snippet_max_chars", "oauth_configured",
+    "sync_max_messages", "sync_max_pages", "sync_initial_max_pages",
+    "sync_query", "snippet_max_chars", "oauth_configured",
 ]

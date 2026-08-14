@@ -293,3 +293,13 @@ def test_disconnect_removes_credentials(client, app, env, monkeypatch):
 def test_disconnect_foreign_project_404(client, app, env):
     _as(app, USER_B)
     assert client.delete("/v2/gmail/projects/p1/connection").status_code == 404
+
+
+def test_non_owner_cannot_sync_foreign_project(client, app, env):
+    # Phase 1 rollout: sync is ownership-gated backend-side even for a connected
+    # project — a normal user cannot sync a project they do not own.
+    gm_store.upsert_connection(project_id="p1", owner_user_id="uA",
+                               google_email="me@gmail.com", scopes="",
+                               refresh_token="RT", access_token="AT")
+    _as(app, USER_B)
+    assert client.post("/v2/gmail/projects/p1/sync").status_code == 404
