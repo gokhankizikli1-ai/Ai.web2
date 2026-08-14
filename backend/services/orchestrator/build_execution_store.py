@@ -252,10 +252,30 @@ def list_for_run(run_id: str) -> List[dict]:
         return []
 
 
+def list_for_project(project_id: str, *, limit: int = 200) -> List[dict]:
+    """Build executions for a project, most-recent first. Mirrors
+    `deliverables_store.list_for_project` so a project-scoped surface (Project
+    Brain, products endpoint) can read execution status/refs without a run id.
+    Uses the existing `ix_build_exec_project` index. Refs only — never source."""
+    if not project_id:
+        return []
+    limit = max(1, min(int(limit or 200), 1000))
+    try:
+        with _sqlite.connection(DB_PATH) as c:
+            rows = c.execute(
+                "SELECT * FROM build_executions WHERE project_id=? "
+                "ORDER BY created_at DESC LIMIT ?",
+                (str(project_id), limit),
+            ).fetchall()
+        return [_row_to_dict(r) for r in rows]
+    except Exception:
+        return []
+
+
 __all__ = [
     "STATUS_QUEUED", "STATUS_RUNNING", "STATUS_COMPLETED", "STATUS_FAILED",
     "STATUS_CANCELLED", "STATUS_HANDOFF", "TERMINAL", "VALID",
     "stable_id", "init_build_executions_table", "get", "begin_or_reconcile",
     "mark_completed", "mark_failed", "mark_cancelled", "mark_handoff",
-    "list_for_run",
+    "list_for_run", "list_for_project",
 ]

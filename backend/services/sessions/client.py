@@ -1,16 +1,24 @@
 # coding: utf-8
 # Phase M2 — SessionsClient: stable public surface for server-side session state.
+# Phase 3  — dual backend: this client is the dispatch seam between the SQLite
+#            store (dev/single-node fallback) and the Postgres store (shared,
+#            cross-replica production truth for chat history).
 #
 # Mirrors the design of backend.services.memory.MemoryClient — the new code's
-# entire surface goes through one client so M3 (Postgres) and beyond can
-# migrate the backend without touching call sites.
+# entire surface goes through one client so the backend can migrate without
+# touching call sites. Every caller (routes, sessions.auth, project_brain) goes
+# through this client, so the dispatch here is the ONLY place backend selection
+# lives — mirroring the jobs/billing dual-backend dispatchers.
 #
-# Today (M2): wraps backend.services.sessions.store, which writes to a
-#             dedicated SQLite file (sessions.db by default).
-# Tomorrow:   `store` may become a Postgres adapter; signatures unchanged.
+# Backend selection (dynamic, per-call — a Railway env flip takes effect on the
+# next request, matching the jobs store):
+#   * Postgres (`store_pg`) when ENABLE_POSTGRES_BACKEND + DATABASE_URL are set
+#     (`engine.is_enabled()`) — chat history is canonical + shared across replicas.
+#   * SQLite (`store`) otherwise — the dev/single-node default.
 import logging
 from typing import Optional
 
+from backend.services.db import engine
 from backend.services.sessions import store
 from backend.services.sessions.types import (
     Workspace, Thread, Message,
@@ -18,6 +26,19 @@ from backend.services.sessions.types import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def current_backend() -> str:
+    return "postgres" if engine.is_enabled() else "sqlite"
+
+
+def _store():
+    """The active backend module. Chosen dynamically so a Postgres enable/disable
+    takes effect without a restart (same contract as jobs.store)."""
+    if engine.is_enabled():
+        from backend.services.sessions import store_pg
+        return store_pg
+    return store
 
 
 class SessionsClient:
@@ -34,28 +55,28 @@ class SessionsClient:
         slug: Optional[str] = None,
         metadata: Optional[dict] = None,
     ) -> Workspace:
-        return store.create_workspace(
+        return _store().create_workspace(
             str(user_id), name=name, kind=kind, slug=slug, metadata=metadata,
         )
 
     def get_workspace(self, workspace_id: str) -> Optional[Workspace]:
-        return store.get_workspace(workspace_id)
+        return _store().get_workspace(workspace_id)
 
     def list_workspaces(
         self, user_id: str, *, include_archived: bool = False,
     ) -> list[Workspace]:
-        return store.list_workspaces(str(user_id), include_archived=include_archived)
+        return _store().list_workspaces(str(user_id), include_archived=include_archived)
 
     def update_workspace(
         self, workspace_id: str, *, name: Optional[str] = None, kind: Optional[str] = None,
     ) -> Optional[Workspace]:
-        return store.update_workspace(workspace_id, name=name, kind=kind)
+        return _store().update_workspace(workspace_id, name=name, kind=kind)
 
     def archive_workspace(self, workspace_id: str) -> bool:
-        return store.archive_workspace(workspace_id)
+        return _store().archive_workspace(workspace_id)
 
     def ensure_default_workspace(self, user_id: str) -> Workspace:
-        return store.ensure_default_workspace(str(user_id))
+        return _store().ensure_default_workspace(str(user_id))
 
     # ── Threads ───────────────────────────────────────────────────────────
 
@@ -63,17 +84,17 @@ class SessionsClient:
         self, *, workspace_id: str, title: str = "New thread",
         mode: Optional[str] = None, metadata: Optional[dict] = None,
     ) -> Thread:
-        return store.create_thread(
+        return _store().create_thread(
             workspace_id=workspace_id, title=title, mode=mode, metadata=metadata,
         )
 
     def get_thread(self, thread_id: str) -> Optional[Thread]:
-        return store.get_thread(thread_id)
+        return _store().get_thread(thread_id)
 
     def list_threads(
         self, workspace_id: str, *, include_archived: bool = False, limit: int = 50,
     ) -> list[Thread]:
-        return store.list_threads(
+        return _store().list_threads(
             workspace_id, include_archived=include_archived, limit=limit,
         )
 
@@ -82,12 +103,12 @@ class SessionsClient:
         mode: Optional[str] = None, status: Optional[str] = None,
         summary: Optional[str] = None,
     ) -> Optional[Thread]:
-        return store.update_thread(
+        return _store().update_thread(
             thread_id, title=title, mode=mode, status=status, summary=summary,
         )
 
     def archive_thread(self, thread_id: str) -> bool:
-        return store.archive_thread(thread_id)
+        return _store().archive_thread(thread_id)
 
     # ── Messages ──────────────────────────────────────────────────────────
 
@@ -96,7 +117,7 @@ class SessionsClient:
         model: Optional[str] = None, tokens: Optional[int] = None,
         metadata: Optional[dict] = None,
     ) -> Message:
-        return store.append_message(
+        return _store().append_message(
             thread_id=thread_id, role=role, content=content,
             model=model, tokens=tokens, metadata=metadata,
         )
@@ -104,27 +125,32 @@ class SessionsClient:
     def list_messages(
         self, thread_id: str, *, limit: int = 100, after_id: Optional[str] = None,
     ) -> list[Message]:
-        return store.list_messages(thread_id, limit=limit, after_id=after_id)
+        return _store().list_messages(thread_id, limit=limit, after_id=after_id)
 
     def get_message(self, message_id: str) -> Optional[Message]:
-        return store.get_message(message_id)
+        return _store().get_message(message_id)
 
     def delete_message(self, message_id: str) -> bool:
-        return store.delete_message(message_id)
+        return _store().delete_message(message_id)
 
     # ── Observability ─────────────────────────────────────────────────────
 
     def stats(self) -> dict:
+        st = _store()
         return {
-            "store":  store.store_stats(),
-            "counts": store.table_counts(),
-            "db_path": store.DB_PATH,
+            "backend": current_backend(),
+            "store":  st.store_stats(),
+            "counts": st.table_counts(),
+            "db_path": getattr(st, "DB_PATH", "postgres"),
         }
 
     # ── Bootstrap ─────────────────────────────────────────────────────────
 
     def init(self) -> None:
-        store.init()
+        # Initialize the ACTIVE backend. When Postgres is selected but transiently
+        # unreachable this raises — callers (import-time bootstrap) catch it, and
+        # the SQLite import-time init still guarantees the dev schema exists.
+        _store().init()
 
 
 client: SessionsClient = SessionsClient()

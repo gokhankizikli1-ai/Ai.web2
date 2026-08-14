@@ -284,6 +284,128 @@ def run_assessment_route(
     return envelope_ok(data=assessment, endpoint=endpoint, user_id=user.id)
 
 
+@router.post("/projects/{project_id}/assessment")
+def project_assessment_route(
+    project_id: str = Path(..., max_length=64),
+    user: User = Depends(current_user),
+) -> Any:
+    """LIVE Business Brain assessment for a project — "what matters now?".
+
+    This is the production seam that makes connector (Gmail/GitHub) OBSERVATIONS
+    influence a real, user-visible recommendation. It runs the EXISTING Business
+    Brain authorities and NOTHING else:
+
+      1. `synthesize_candidates` — the OBSERVE→PRIORITIZE promotion step. It
+         reads high-importance observations (already ingested by the connectors)
+         and records CANDIDATE ACTIONS. Idempotent (dedupes on the observation's
+         external id), so repeated calls never amplify a signal.
+      2. `assess_business_brain` — ranks those candidates against active goals
+         and emits a single recommended next action.
+
+    Strictly a RECOMMENDATION: it creates NO task, NO run, NO decision, and makes
+    NO model call. Operational execution health still outranks business actions
+    inside `assess_business_brain`. `snapshot=None` (no active run) is valid — a
+    connector-driven project with no run is assessed on its business state.
+
+    Ownership is enforced through the canonical `projects` authority (the same
+    record the Gmail/GitHub connectors check on connect); a project the caller
+    does not own is 404 (existence-hidden), so observations never leak.
+    """
+    endpoint = f"/v2/orchestrator/projects/{project_id}/assessment"
+    if not orch.is_enabled():
+        return _disabled_response(endpoint)
+    try:
+        from backend.services.projects import store as projects_store
+        project = projects_store.get_project(project_id)
+    except Exception:
+        project = None
+    if project is None or str(project.owner_user_id) != str(user.id):
+        return _err(404, "project_not_found", "Project not found.", endpoint)
+
+    from backend.services.orchestrator import (
+        candidate_synthesis, project_supervisor,
+    )
+    try:
+        # OBSERVE → PRIORITIZE promotion (inputs only; never executes).
+        candidate_synthesis.synthesize_candidates(project_id, str(user.id))
+    except Exception as exc:  # pragma: no cover — never block the assessment
+        logger.warning("business brain synthesis failed for %s: %s", project_id, exc)
+    assessment = project_supervisor.assess_business_brain(
+        None, project_id=project_id, user_id=str(user.id),
+    )
+    return envelope_ok(data=assessment, endpoint=endpoint, user_id=user.id)
+
+
+@router.get("/projects/{project_id}/products")
+def project_products_route(
+    project_id: str = Path(..., max_length=64),
+    user: User = Depends(current_user),
+) -> Any:
+    """The generated Web/App products of a project — the canonical, backend
+    authoritative list the project workspace + Project Brain surface.
+
+    Reads the EXISTING build/artifact authorities keyed by project_id
+    (`deliverables_store` for produced products, `build_execution_store` for
+    in-flight/failed executions) and returns bounded REFERENCES only —
+    build_type, title, status, artifact/build ref, originating run — never the
+    duplicated source tree (the artifact authority owns that). buildType=web|app
+    is preserved. Ownership is enforced through the canonical projects record.
+    """
+    endpoint = f"/v2/orchestrator/projects/{project_id}/products"
+    if not orch.is_enabled():
+        return _disabled_response(endpoint)
+    try:
+        from backend.services.projects import store as projects_store
+        project = projects_store.get_project(project_id)
+    except Exception:
+        project = None
+    if project is None or str(project.owner_user_id) != str(user.id):
+        return _err(404, "project_not_found", "Project not found.", endpoint)
+
+    from backend.services.orchestrator import (
+        deliverables_store as dls, build_execution_store as bes,
+    )
+    _PRODUCT_KINDS = ("web_build", "app_build", "build")
+    products = []
+    try:
+        for d in dls.list_for_project(project_id, limit=200):
+            if str(d.get("kind")) not in _PRODUCT_KINDS:
+                continue
+            content = d.get("content") or {}
+            products.append({
+                "deliverable_id": d.get("id"),
+                "build_type":     content.get("build_type") or (
+                    "app" if d.get("kind") == "app_build" else "web"),
+                "title":          (d.get("title") or "").strip(),
+                "status":         content.get("build_status") or d.get("status"),
+                "artifact_ref":   content.get("artifact_ref") or "",
+                "build_ref":      content.get("build_ref") or "",
+                "run_id":         d.get("run_id"),
+                "node_id":        d.get("node_id"),
+                "updated_at":     d.get("updated_at"),
+            })
+    except Exception as exc:  # pragma: no cover — never 500 the workspace
+        logger.warning("project products (deliverables) failed for %s: %s", project_id, exc)
+    executions = []
+    try:
+        for e in bes.list_for_project(project_id, limit=200):
+            executions.append({
+                "id":           e.get("id"),
+                "build_type":   e.get("build_type"),
+                "status":       e.get("status"),
+                "artifact_ref": e.get("artifact_ref") or "",
+                "build_ref":    e.get("build_ref") or "",
+                "run_id":       e.get("run_id"),
+                "updated_at":   e.get("updated_at"),
+            })
+    except Exception as exc:  # pragma: no cover
+        logger.warning("project products (executions) failed for %s: %s", project_id, exc)
+    return envelope_ok(
+        data={"products": products, "executions": executions},
+        endpoint=endpoint, user_id=user.id,
+    )
+
+
 @router.post("/runs/{run_id}/reject")
 def reject_run_route(
     run_id: str = Path(..., max_length=64),

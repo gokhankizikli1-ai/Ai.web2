@@ -465,7 +465,9 @@ def list_messages(
     if after_id:
         sql += " AND created_at > (SELECT created_at FROM messages WHERE id=?)"
         params.append(after_id)
-    sql += " ORDER BY created_at ASC LIMIT ?"
+    # (created_at, id) is a TOTAL order so reload/pagination are deterministic
+    # even for two messages written in the same microsecond (parity with store_pg).
+    sql += " ORDER BY created_at ASC, id ASC LIMIT ?"
     params.append(int(limit))
     try:
         with _conn() as c:
