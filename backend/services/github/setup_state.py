@@ -112,8 +112,123 @@ def init_github_setup_tables() -> None:
     try:
         with _sqlite.connection(DB_PATH) as c:
             c.executescript(_SCHEMA)
+        # `CREATE TABLE IF NOT EXISTS` above is a NO-OP when a table already
+        # exists — so a production DB created by #625 keeps its OLD
+        # github_pending_installations shape (project_id sole PK, no account
+        # columns). Bring it up to the composite-key + account-columns shape
+        # explicitly. Idempotent + transactional; safe to run on every init.
+        _migrate_pending_installations_schema()
     except Exception as exc:  # pragma: no cover — defensive
         logger.warning("github.setup_state.init failed: %s", exc)
+
+
+# Column/PK signature of the current (#626) github_pending_installations table.
+_PENDING_ACCOUNT_COLS = ("account_login", "account_type")
+
+
+def _pending_is_current(colinfo: dict) -> bool:
+    """True iff a github_pending_installations column map (name → PRAGMA
+    table_info row) is already the #626 shape: both account columns present AND
+    installation_id part of the primary key (pk position > 0)."""
+    inst = colinfo.get("installation_id")
+    inst_in_pk = bool(inst and int(inst.get("pk") or 0) > 0)
+    return all(col in colinfo for col in _PENDING_ACCOUNT_COLS) and inst_in_pk
+
+
+def _colinfo(conn) -> dict:
+    """name → PRAGMA table_info row (as dict) for github_pending_installations.
+    Empty dict when the table does not exist."""
+    rows = conn.execute("PRAGMA table_info(github_pending_installations)").fetchall()
+    return {str(r["name"]): dict(r) for r in rows}
+
+
+def _migrate_pending_installations_schema() -> None:
+    """Migrate github_pending_installations from the #625 single-installation
+    schema to the #626 multi-installation schema.
+
+    #625:  project_id TEXT PRIMARY KEY, owner_user_id, installation_id,
+           created_at, expires_at
+    #626:  PRIMARY KEY (project_id, installation_id) + account_login,
+           account_type
+
+    Explicit + safe:
+      * Schema is DETECTED via PRAGMA table_info (never inferred from a failed
+        insert).
+      * The rebuild (new table → copy compatible rows → drop old → rename →
+        recreate indexes) runs inside a single writer transaction (BEGIN
+        IMMEDIATE / COMMIT / ROLLBACK) — a crash mid-migration leaves the old
+        table intact.
+      * Valid rows are preserved (project_id, owner_user_id, installation_id,
+        created_at, expires_at); account_* default to '' (the #625 rows carry
+        no account metadata). Account columns are still copied when a partial
+        legacy shape happens to have them.
+      * No-op on a fresh DB, an already-#626 DB, and repeated init — this is
+        NOT a new migration framework, just this one table's bring-up.
+    """
+    # Cheap probe outside any transaction: already current (or absent) → return.
+    try:
+        with _sqlite.connection(DB_PATH) as probe:
+            colinfo = _colinfo(probe)
+    except Exception:  # pragma: no cover — defensive
+        return
+    if not colinfo or _pending_is_current(colinfo):
+        return
+
+    try:
+        with _sqlite.writer_tx(DB_PATH) as c:
+            # Re-check under the write lock: another process may have migrated
+            # between the probe and acquiring the lock. Also gives us the
+            # authoritative column set to copy from.
+            colinfo = _colinfo(c)
+            if not colinfo or _pending_is_current(colinfo):
+                return  # nothing to do (COMMIT of a no-op transaction)
+
+            has_inst = "installation_id" in colinfo
+            login_expr = "account_login" if "account_login" in colinfo else "''"
+            type_expr = "account_type" if "account_type" in colinfo else "''"
+
+            c.execute("DROP TABLE IF EXISTS github_pending_installations_new")
+            c.execute(
+                """CREATE TABLE github_pending_installations_new (
+                    project_id      TEXT NOT NULL,
+                    installation_id TEXT NOT NULL,
+                    owner_user_id   TEXT NOT NULL,
+                    account_login   TEXT NOT NULL DEFAULT '',
+                    account_type    TEXT NOT NULL DEFAULT '',
+                    created_at      TEXT NOT NULL,
+                    expires_at      TEXT NOT NULL,
+                    PRIMARY KEY (project_id, installation_id)
+                )"""
+            )
+            # Only copy when the security-bearing installation_id column exists
+            # (the #625 shape has it). An unrecognisable legacy table without it
+            # has nothing valid to preserve → rebuild empty rather than guess.
+            if has_inst:
+                c.execute(
+                    f"""INSERT OR IGNORE INTO github_pending_installations_new
+                        (project_id, installation_id, owner_user_id,
+                         account_login, account_type, created_at, expires_at)
+                        SELECT project_id, installation_id, owner_user_id,
+                               {login_expr}, {type_expr}, created_at, expires_at
+                        FROM github_pending_installations
+                        WHERE project_id IS NOT NULL
+                          AND installation_id IS NOT NULL
+                          AND owner_user_id IS NOT NULL
+                          AND created_at IS NOT NULL
+                          AND expires_at IS NOT NULL"""
+                )
+            c.execute("DROP TABLE github_pending_installations")
+            c.execute(
+                "ALTER TABLE github_pending_installations_new "
+                "RENAME TO github_pending_installations"
+            )
+            c.execute("CREATE INDEX IF NOT EXISTS ix_gh_pending_owner   ON github_pending_installations(owner_user_id)")
+            c.execute("CREATE INDEX IF NOT EXISTS ix_gh_pending_expiry  ON github_pending_installations(expires_at)")
+            c.execute("CREATE INDEX IF NOT EXISTS ix_gh_pending_project ON github_pending_installations(project_id)")
+        logger.info("github.setup_state: migrated github_pending_installations "
+                    "to the composite-key (multi-installation) schema")
+    except Exception as exc:
+        logger.warning("github.setup_state.migrate_pending failed: %s", type(exc).__name__)
 
 
 # ── one-time CSRF state ──────────────────────────────────────────────────────
