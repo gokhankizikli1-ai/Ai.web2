@@ -3,11 +3,16 @@ import {
   currentStorageScope, scopedKey,
   claimLegacyGlobal, quarantineLegacyGlobal, dropLegacyGlobal,
 } from '@/lib/storageScope';
+import { getAccessToken } from '@/stores/authStore';
 
 const STORAGE_KEY = 'korvix_projects';
 const AGENTS_KEY = 'korvix_project_agents';
 const TASKS_KEY = 'korvix_project_tasks';
-const MIGRATION_FLAG = 'korvix_projects_migrated_v1';
+// Per-identity "backend sync done" marker (base key; namespaced via scopedKey).
+// Replaces the legacy global `korvix_projects_migrated_v1` gate so the one-time
+// backfill re-runs exactly once per identity under the aligned (bearer) auth,
+// creating each identity's local projects under its authenticated JWT owner.
+const BACKEND_SYNC_FLAG = 'korvix_projects_backend_synced_v2';
 
 /* ─── Phase 14D — per-identity local isolation ───────────────────────────────
  * Projects, per-project agents and per-project tasks are now namespaced by the
@@ -152,6 +157,28 @@ function getProjectUserId(): string {
   }
 }
 
+/* ─── Authenticated identity on backend calls (ownership alignment) ───────────
+ * The backend resolves project ownership from the AUTHENTICATED identity: with a
+ * verified `Authorization: Bearer <jwt>` present it uses the JWT subject (see
+ * backend resolve_authoritative_uid / resolve_principal), ignoring body/query
+ * user_id. That JWT subject is the SAME identity the connector routes enforce
+ * (require_auth). Previously these mirror calls sent NO bearer, so projects were
+ * owned by the guest `korvix_user_id` nonce and the connector's ownership check
+ * (JWT) never matched. Sending the bearer here aligns the two.
+ *
+ * The token comes from the existing auth authority (authStore.getAccessToken) —
+ * the same key the chat/orchestrator hooks use — never a second credential. A
+ * guest (no token) gets no Authorization header, exactly preserving the legacy
+ * nonce-owned behaviour for anonymous usage. */
+function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
+  const h: Record<string, string> = { ...extra };
+  try {
+    const tok = getAccessToken();
+    if (tok) h['Authorization'] = `Bearer ${tok}`;
+  } catch { /* token unreadable — fall back to guest (nonce) identity */ }
+  return h;
+}
+
 async function apiSafe<T>(fn: () => Promise<T>): Promise<T | null> {
   try {
     return await fn();
@@ -199,9 +226,9 @@ export function addProject(project: Project): boolean {
     apiSafe(async () => {
       await fetch(`${getApiBase()}/projects`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
-          user_id:     getProjectUserId(),
+          user_id:     getProjectUserId(),   // guest fallback only; JWT wins when present
           name:        project.name,
           description: project.description || '',
           project_id:  project.id,        // preserve client id
@@ -232,7 +259,7 @@ export function updateProject(id: string, updates: Partial<Project>): boolean {
     apiSafe(async () => {
       await fetch(`${getApiBase()}/projects/${id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           name:        updates.name,
           description: updates.description,
@@ -249,7 +276,7 @@ export function deleteProject(id: string) {
   try { localStorage.removeItem(agentsKey(id)); } catch { /* ignore */ }
   try { localStorage.removeItem(tasksKey(id)); } catch { /* ignore */ }
   apiSafe(async () => {
-    await fetch(`${getApiBase()}/projects/${id}`, { method: 'DELETE' });
+    await fetch(`${getApiBase()}/projects/${id}`, { method: 'DELETE', headers: authHeaders() });
   });
 }
 
@@ -270,7 +297,7 @@ export async function listProjectMemory(projectId: string, opts?: { kind?: strin
   if (opts?.kind) q.set('kind', opts.kind);
   if (opts?.limit) q.set('limit', String(opts.limit));
   const res = await apiSafe(async () => {
-    const r = await fetch(`${getApiBase()}/projects/${projectId}/memory?${q.toString()}`);
+    const r = await fetch(`${getApiBase()}/projects/${projectId}/memory?${q.toString()}`, { headers: authHeaders() });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     return await r.json();
   });
@@ -285,7 +312,7 @@ export async function addProjectMemory(
   return await apiSafe(async () => {
     const r = await fetch(`${getApiBase()}/projects/${projectId}/memory`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
         content,
         kind:   opts?.kind   ?? 'note',
@@ -353,7 +380,7 @@ export function addProjectAgent(projectId: string, agent: ProjectAgent) {
   apiSafe(async () => {
     await fetch(`${getApiBase()}/projects/${projectId}/agents`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
         agent_id:      agent.id,
         name:          agent.name,
@@ -385,7 +412,7 @@ export function updateProjectAgent(projectId: string, agentId: string, updates: 
     apiSafe(async () => {
       await fetch(`${getApiBase()}/projects/${projectId}/agents/${agentId}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           name: updates.name,
           role: updates.role,
@@ -401,6 +428,7 @@ export function removeProjectAgent(projectId: string, agentId: string) {
   apiSafe(async () => {
     await fetch(`${getApiBase()}/projects/${projectId}/agents/${agentId}`, {
       method: 'DELETE',
+      headers: authHeaders(),
     });
   });
 }
@@ -526,7 +554,9 @@ export function createAgent(roleId: string, name: string, customRole?: string): 
    2. PUSH (backfill) — for every project that exists in localStorage
       but NOT on the backend, POST it (preserving the original id so
       stored agent/task references keep working). Marks itself done
-      via MIGRATION_FLAG so we never re-run.
+      via a per-identity flag (BACKEND_SYNC_FLAG) so it runs once per
+      identity — under the authenticated bearer, so rows land under the
+      JWT owner the connectors enforce.
 
    3. Per-project agents are hydrated lazily inside the workspace
       page (not here) to keep the cold-start payload small.
@@ -537,9 +567,11 @@ async function hydrateAndBackfill(): Promise<void> {
   const base = getApiBase();
   const userId = getProjectUserId();
 
-  // 1. PULL — fetch backend projects
+  // 1. PULL — fetch backend projects. With a bearer present the backend scopes
+  //    the list to the authenticated JWT identity (ignoring the query user_id);
+  //    guests fall back to the nonce in the query string.
   const remote = await apiSafe(async () => {
-    const r = await fetch(`${base}/projects?user_id=${encodeURIComponent(userId)}`);
+    const r = await fetch(`${base}/projects?user_id=${encodeURIComponent(userId)}`, { headers: authHeaders() });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     return await r.json();
   });
@@ -579,9 +611,17 @@ async function hydrateAndBackfill(): Promise<void> {
     saveProjects(merged);
   }
 
-  // 2. PUSH — one-time backfill of local-only projects
-  if (localStorage.getItem(MIGRATION_FLAG) === 'true') return;
-  if (!remote) return;  // backend unreachable — can't safely mark migrated
+  // 2. PUSH — backfill local-only projects, ONCE PER IDENTITY.
+  //    The gate is per-identity (scopedKey) rather than the old global flag, so
+  //    an identity that was already backfilled under the pre-alignment nonce
+  //    flow runs exactly once more — this time with the bearer — creating its
+  //    local projects under the authenticated JWT owner (the identity the
+  //    connectors enforce). Server-side this is idempotent: create_project
+  //    returns the existing row on id-conflict and create_agent is INSERT OR
+  //    REPLACE, so a re-run never duplicates.
+  const syncedFlag = scopedKey(BACKEND_SYNC_FLAG);
+  if (localStorage.getItem(syncedFlag) === 'true') return;
+  if (!remote) return;  // backend unreachable — can't safely mark synced
 
   const remoteIds = new Set(
     (remote.projects || []).map((p: { id: string }) => p.id),
@@ -591,9 +631,9 @@ async function hydrateAndBackfill(): Promise<void> {
     await apiSafe(async () => {
       await fetch(`${base}/projects`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
-          user_id:     userId,
+          user_id:     userId,   // guest fallback only; JWT wins when present
           name:        lp.name,
           description: lp.description || '',
           project_id:  lp.id,
@@ -607,7 +647,7 @@ async function hydrateAndBackfill(): Promise<void> {
       await apiSafe(async () => {
         await fetch(`${base}/projects/${lp.id}/agents`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: authHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({
             agent_id: a.id,
             name:     a.name,
@@ -620,7 +660,7 @@ async function hydrateAndBackfill(): Promise<void> {
       });
     }
   }
-  try { localStorage.setItem(MIGRATION_FLAG, 'true'); } catch { /* ignore */ }
+  try { localStorage.setItem(syncedFlag, 'true'); } catch { /* ignore */ }
 }
 
 // Browser-only side-effect. Wrapped in a typeof check so SSR/Vitest
