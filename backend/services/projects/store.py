@@ -32,6 +32,22 @@ logger = logging.getLogger(__name__)
 DB_PATH = resolve_db_path("projects.db", "PROJECTS_DB_PATH")
 
 _LOCK = threading.Lock()
+
+# ── Lazy schema initialization ───────────────────────────────────────────────
+# The projects schema must exist before ANY caller reads/writes it — including
+# the Gmail/GitHub connector routes, which call get_project() to enforce
+# ownership and are gated by their OWN flags (not ENABLE_PROJECTS). Previously
+# the schema was only created when routes/projects.py imported under
+# ENABLE_PROJECTS=true, so a connector-only deploy hit
+# `sqlite3.OperationalError: no such table: projects`.
+#
+# Fix (matching observations_store / the github+gmail connector stores, which
+# all self-init on access): _conn() ensures the schema exists on every access,
+# ONCE per DB path. Keyed by path — not a single boolean — so a test that
+# repoints PROJECTS_DB_PATH re-initializes the new file instead of skipping on a
+# stale flag. Idempotent (CREATE TABLE IF NOT EXISTS) and safe on every restart.
+_INITIALIZED_PATHS: set = set()
+_INIT_LOCK = threading.Lock()
 _COUNTS = {
     "projects_created":   0,
     "projects_listed":    0,
@@ -93,7 +109,12 @@ def _dump_json(value: Optional[dict]) -> str:
 
 @contextmanager
 def _conn() -> Iterator[sqlite3.Connection]:
-    """One connection per call. SQLite is process-safe with serialized writes."""
+    """One connection per call. SQLite is process-safe with serialized writes.
+
+    Guarantees the schema exists before the connection is used, so NO caller —
+    project route, Gmail/GitHub connector ownership check, or otherwise — can
+    ever hit an uninitialized store."""
+    _ensure_init()
     c = sqlite3.connect(DB_PATH, timeout=10)
     try:
         c.row_factory = sqlite3.Row
@@ -172,14 +193,48 @@ CREATE INDEX IF NOT EXISTS ix_project_files_project ON project_files(project_id)
 """
 
 
-def init() -> None:
-    """Create tables if missing. Idempotent; safe to call repeatedly."""
+def _init_schema(path: str) -> None:
+    """Create the schema at `path` on a RAW connection. Deliberately does NOT go
+    through _conn() (which calls _ensure_init) — that would recurse."""
+    c = sqlite3.connect(path, timeout=10)
     try:
-        with _conn() as c:
-            c.executescript(_SCHEMA)
-    except Exception as e:
-        logger.warning("projects.store.init failed: %s", e)
-        _bump("errors", str(e))
+        c.executescript(_SCHEMA)
+        c.commit()
+    finally:
+        c.close()
+
+
+def _ensure_init(force: bool = False) -> None:
+    """Ensure the schema exists for the current DB_PATH, exactly once per path.
+    Thread-safe (double-checked). Never raises — a bring-up failure is logged so
+    a read still surfaces its own error rather than a confusing init crash."""
+    path = DB_PATH
+    if not force and path in _INITIALIZED_PATHS:
+        return
+    with _INIT_LOCK:
+        if not force and path in _INITIALIZED_PATHS:
+            return
+        try:
+            _init_schema(path)
+            _INITIALIZED_PATHS.add(path)
+        except Exception as e:  # pragma: no cover — defensive; never crash a request
+            logger.warning("projects.store schema init failed: %s", e)
+            _bump("errors", str(e))
+
+
+def init() -> None:
+    """Create tables if missing. Idempotent; safe to call repeatedly. Preserved
+    as the explicit entry point (tests / routes/projects.py on ENABLE_PROJECTS);
+    `force=True` re-runs the idempotent CREATE-IF-NOT-EXISTS schema and (re)marks
+    the current path initialized."""
+    _ensure_init(force=True)
+
+
+def _reset_for_tests() -> None:
+    """Forget which DB paths have been initialized so a test that repoints
+    PROJECTS_DB_PATH gets a fresh lazy init. Never touches data."""
+    with _INIT_LOCK:
+        _INITIALIZED_PATHS.clear()
 
 
 # ══════════════════════════════════════════════════════════════════════════
