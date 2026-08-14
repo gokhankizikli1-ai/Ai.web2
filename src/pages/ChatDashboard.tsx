@@ -6,7 +6,7 @@ import { useJobActivities } from '@/hooks/useJobs';
 import { useOrchestrationFeed } from '@/hooks/useOrchestrationFeed';
 import { useToast } from '@/hooks/useToast';
 import { useApp } from '@/contexts/AppContext';
-import type { WorkspaceTab } from '@/types';
+import type { WorkspaceTab, ChatSession } from '@/types';
 
 import Sidebar from '@/components/Sidebar';
 import RightSidebar from '@/components/RightSidebar';
@@ -21,7 +21,8 @@ import AIActivityFeed from '@/components/AIActivityFeed';
 import CommandPalette from '@/components/CommandPalette';
 import PromptLibrary from '@/components/PromptLibrary';
 import ExportChat from '@/components/ExportChat';
-import MoveToProjectMenu from '@/components/MoveToProjectMenu';
+import ProjectBindingSection from '@/components/MoveToProjectMenu';
+import { isOrdinaryChat } from '@/lib/projectBinding';
 import ToastNotifications from '@/components/ToastNotifications';
 import AIModeSelector from '@/components/AIModeSelector';
 import PremiumBadge from '@/components/PremiumBadge';
@@ -64,16 +65,22 @@ const DEMO_ACTIVITIES = [
 // the chip itself is gated on isOwner OR a stored token, so casual
 // users never see it).
 function ToolbarDropdown({
-  onCmd, onPrompts, onExport, onToggleRight, onUpgrade,
+  onCmd, onPrompts, onExport, onToggleRight, onUpgrade, activeSession,
 }: {
   onCmd: () => void;
   onPrompts: () => void;
   onExport: () => void;
   onToggleRight: () => void;
   onUpgrade: () => void;
+  activeSession?: ChatSession | null;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null!);
+  // Show the "Add / Move to project" section only for an ordinary chat that has
+  // at least one turn (so there is a real conversation to file). Build/tool
+  // sessions are excluded by isOrdinaryChat.
+  const showProject = isOrdinaryChat(activeSession)
+    && (activeSession?.messages?.length ?? 0) > 0;
 
   useEffect(() => {
     const handle = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
@@ -108,9 +115,15 @@ function ToolbarDropdown({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 4, scale: 0.98 }}
             transition={{ duration: 0.15 }}
-            className="absolute top-full right-0 mt-1.5 w-48 rounded-xl border shadow-2xl overflow-hidden z-50 py-1"
+            className={`absolute top-full right-0 mt-1.5 ${showProject ? 'w-60' : 'w-48'} rounded-xl border shadow-2xl overflow-hidden z-50 py-1`}
             style={{ borderColor: 'rgba(255,255,255,0.06)', background: 'rgba(17, 23, 34,0.96)', backdropFilter: 'blur(24px)' }}
           >
+            {showProject && activeSession && (
+              <>
+                <ProjectBindingSection session={activeSession} />
+                <div className="my-1 h-px" style={{ background: 'rgba(255,255,255,0.06)' }} />
+              </>
+            )}
             {items.map((item) => (
               <button
                 key={item.label}
@@ -665,19 +678,16 @@ export default function ChatDashboard() {
             <OwnerModeChip />
             {/* Permission popover, visible only when confirmed owner. */}
             <OwnerSessionIndicator />
-            {/* Move-to-project — ordinary chats only (build/tool sessions are
-                excluded); needs at least one turn so there is a chat to file. */}
-            {activeSession
-              && (activeSession.mode === undefined || activeSession.mode === 'chat')
-              && (activeSession.messages?.length ?? 0) > 0 && (
-              <MoveToProjectMenu session={activeSession} />
-            )}
+            {/* The "Add / Move to project" action lives INSIDE this kebab menu
+                (alongside Export Chat) — the natural, always-visible chat
+                actions surface — so it's discoverable instead of a lone icon. */}
             <ToolbarDropdown
               onCmd={() => setCmdOpen(true)}
               onPrompts={() => setPromptLibOpen(true)}
               onExport={() => setExportOpen(true)}
               onToggleRight={() => setRightSidebarOpen(!rightSidebarOpen)}
               onUpgrade={() => setUpgradeOpen(true)}
+              activeSession={activeSession}
             />
           </div>
         </header>
