@@ -405,6 +405,22 @@ class Config:
     # architecture — real connections carry their own installation id, so
     # multi-user installations are never blocked. Empty ⇒ no default.
     GITHUB_DEFAULT_INSTALLATION_ID: str = os.getenv("GITHUB_DEFAULT_INSTALLATION_ID", "").strip()
+    # GITHUB_APP_SLUG: the App's github.com/apps/<slug> handle — needed to build
+    # the install URL the user is redirected to (connect/start). Not secret.
+    GITHUB_APP_SLUG: str = os.getenv("GITHUB_APP_SLUG", "").strip()
+    # GITHUB_APP_INSTALL_URL: OPTIONAL full override of the install URL (unusual
+    # setups); normally derived from GITHUB_APP_SLUG. Not secret.
+    GITHUB_APP_INSTALL_URL: str = os.getenv("GITHUB_APP_INSTALL_URL", "").strip()
+    # GITHUB_FRONTEND_RESULT_URL / _PATH: where the setup callback redirects the
+    # browser after install (fixed server-side — never a request-supplied URL, so
+    # no open redirect). Falls back to PUBLIC_APP_URL + the integrations route.
+    GITHUB_FRONTEND_RESULT_URL: str = os.getenv("GITHUB_FRONTEND_RESULT_URL", "").strip()
+    GITHUB_FRONTEND_RESULT_PATH: str = os.getenv("GITHUB_FRONTEND_RESULT_PATH", "/#/settings/integrations").strip()
+    # Install-flow bounds (setup-state TTL, verified-pending-install TTL, repo
+    # list cap). Runtime source of truth is backend.services.github.config.
+    GITHUB_SETUP_STATE_TTL_S: int = int(os.getenv("GITHUB_SETUP_STATE_TTL_S", "600") or 600)
+    GITHUB_PENDING_TTL_S: int = int(os.getenv("GITHUB_PENDING_TTL_S", "900") or 900)
+    GITHUB_INSTALL_REPOS_MAX: int = int(os.getenv("GITHUB_INSTALL_REPOS_MAX", "100") or 100)
 
     # ── Gmail connector (read-only source of Business Brain observations) ──
     # Master gate for the /v2/gmail/* surface. When false: connect/status/sync/

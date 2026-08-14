@@ -27,18 +27,22 @@ from __future__ import annotations
 
 import logging
 from typing import Any, Dict, Optional, Tuple
+from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Request
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
+from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
 from backend.core.deps import require_auth
 from backend.core.responses import err as envelope_err, ok as envelope_ok
 from backend.services.auth.identity import User
+from backend.services.github import app_api as gh_app
 from backend.services.github import config as gh_config
+from backend.services.github import setup_state as gh_setup
 from backend.services.github import store as gh_store
 from backend.services.github import sync as gh_sync
 from backend.services.github import webhook as gh_webhook
+from backend.services.github.errors import GitHubConfigError, GitHubError
 from backend.services.projects import store as projects_store
 
 logger = logging.getLogger(__name__)
@@ -79,6 +83,191 @@ def _require_owned_project(project_id: str, user: User):
             detail={"code": "PROJECT_NOT_FOUND", "message": "Project not found."},
         )
     return proj
+
+
+def _ensure_install_configured() -> None:
+    """Fail closed BEFORE starting the install flow if we cannot complete it: the
+    App credentials + a slug (or a full install-URL override) must be present."""
+    if not gh_config.install_configured():
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "GITHUB_APP_NOT_CONFIGURED",
+                    "message": "GitHub App install flow is not configured "
+                               "(GITHUB_APP_ID / GITHUB_APP_PRIVATE_KEY / GITHUB_APP_SLUG)."},
+        )
+
+
+def _result_redirect(**params: Any) -> RedirectResponse:
+    """Redirect the browser to the FIXED frontend result page (never a URL from
+    the request), so the setup callback can never be an open redirect. Outcome is
+    conveyed via query params the SPA reads."""
+    base = gh_config.frontend_result_base()
+    path = gh_config.frontend_result_path()
+    sep = "&" if "?" in path else "?"
+    url = f"{base}{path}{sep}{urlencode({k: v for k, v in params.items() if v is not None})}"
+    return RedirectResponse(url=url, status_code=302, headers=_NO_STORE)
+
+
+# ── Install flow (real GitHub App installation UX) ───────────────────────────
+#
+# connect/start → GitHub App install screen → /setup/callback → repo list →
+# connect/select. The frontend never supplies an installation id or a repo name;
+# both come from the SERVER-VERIFIED pending installation.
+
+@router.post("/projects/{project_id}/connect/start")
+def connect_start(
+    project_id: str = Path(..., max_length=64),
+    user: User = Depends(require_auth),
+) -> Dict[str, Any]:
+    """Begin a GitHub App installation for a project the caller owns. Mints a
+    one-time, ownership-bound state and returns the App install URL for the
+    browser to navigate to. No installation id / repo is chosen client-side."""
+    _ensure_enabled()
+    _ensure_install_configured()
+    proj = _require_owned_project(project_id, user)
+    try:
+        gh_setup.purge_expired()
+    except Exception:  # pragma: no cover — never block connect on housekeeping
+        pass
+    state = gh_setup.create_state(owner_user_id=proj.owner_user_id, project_id=proj.id)
+    return envelope_ok(
+        data={"install_url": gh_config.install_url(state), "state": state},
+        user_id=user.id,
+    )
+
+
+@router.get("/setup/callback")
+def setup_callback(
+    state: Optional[str] = Query(default=None, max_length=512),
+    installation_id: Optional[str] = Query(default=None, max_length=40),
+    setup_action: Optional[str] = Query(default=None, max_length=40),
+) -> RedirectResponse:
+    """GitHub App Setup URL target. GitHub redirects the browser here after an
+    install with `?installation_id=&setup_action=&state=`. Identity/target come
+    ONLY from the one-time state; the installation_id is VERIFIED server-side, not
+    trusted. Redirects to a fixed frontend result page (no open redirect)."""
+    if not gh_config.is_enabled():
+        return _result_redirect(github="error", reason="disabled")
+
+    # 1. Consume the one-time, owner+project-bound state FIRST.
+    consumed = gh_setup.consume(state or "")
+    if consumed is None:
+        return _result_redirect(github="error", reason="invalid_state")
+    project_id = consumed.project_id
+
+    # 2. GitHub may redirect without an id (cancel / request) — nothing to do.
+    inst = (installation_id or "").strip()
+    if not inst:
+        return _result_redirect(github="error", reason="missing_installation",
+                                project_id=project_id)
+
+    # 3. Re-validate project ownership (defence in depth against a project
+    #    deleted/reassigned mid-flow).
+    proj = projects_store.get_project(project_id)
+    if proj is None or proj.owner_user_id != consumed.owner_user_id:
+        return _result_redirect(github="error", reason="ownership_mismatch",
+                                project_id=project_id)
+
+    # 4. NEVER trust the installation_id blindly — prove it belongs to OUR App
+    #    and is reachable (App-JWT GET /app/installations/{id}).
+    try:
+        gh_app.get_installation(inst)
+    except GitHubError:
+        return _result_redirect(github="error", reason="installation_unverified",
+                                project_id=project_id)
+    except Exception:  # pragma: no cover — defensive; never leak a stack to a redirect
+        return _result_redirect(github="error", reason="server_error",
+                                project_id=project_id)
+
+    # 5. Store the VERIFIED pending installation (id only — never a token).
+    pending = gh_setup.upsert_pending_installation(
+        project_id=project_id, owner_user_id=consumed.owner_user_id, installation_id=inst)
+    if pending is None:
+        return _result_redirect(github="error", reason="store_failed", project_id=project_id)
+
+    return _result_redirect(github="installed", project_id=project_id)
+
+
+@router.get("/projects/{project_id}/pending-installation/repositories")
+def pending_repositories(
+    project_id: str = Path(..., max_length=64),
+    user: User = Depends(require_auth),
+) -> Dict[str, Any]:
+    """Repositories the VERIFIED pending installation for this project can access.
+    Owner-only; returns bounded, token-free repo metadata for the connect picker."""
+    _ensure_enabled()
+    _require_owned_project(project_id, user)
+    pending = gh_setup.get_pending_installation(project_id, owner_user_id=user.id)
+    if pending is None:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "NO_PENDING_INSTALL",
+                    "message": "No pending GitHub installation for this project. "
+                               "Start the connect flow."},
+        )
+    try:
+        repos = gh_app.list_repositories(pending.installation_id)
+    except GitHubError:
+        raise HTTPException(
+            status_code=502,
+            detail={"code": "GITHUB_UNAVAILABLE",
+                    "message": "Could not list repositories for the installation."},
+        )
+    return envelope_ok(data={"repositories": repos, "count": len(repos)}, user_id=user.id)
+
+
+class SelectRepoBody(BaseModel):
+    repo_full_name: str = Field(..., min_length=3, max_length=140, description='"owner/repo"')
+
+
+@router.post("/projects/{project_id}/connect/select")
+def connect_select(
+    project_id: str = Path(..., max_length=64),
+    body: SelectRepoBody = ...,
+    user: User = Depends(require_auth),
+) -> Dict[str, Any]:
+    """Finalize the connection: bind the chosen repo to the project via the
+    EXISTING connection store. The installation id comes from the server-verified
+    pending install (never the client), and the repo is re-validated server-side
+    against the installation's accessible repos before it is stored."""
+    _ensure_enabled()
+    proj = _require_owned_project(project_id, user)
+    pending = gh_setup.get_pending_installation(project_id, owner_user_id=user.id)
+    if pending is None:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "NO_PENDING_INSTALL",
+                    "message": "No pending GitHub installation. Start the connect flow."},
+        )
+    # The selected repo MUST be accessible to the pending installation.
+    try:
+        repo = gh_app.installation_can_access(pending.installation_id, body.repo_full_name)
+    except GitHubError:
+        raise HTTPException(
+            status_code=502,
+            detail={"code": "GITHUB_UNAVAILABLE",
+                    "message": "Could not verify the repository against the installation."},
+        )
+    if repo is None:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "REPO_NOT_IN_INSTALLATION",
+                    "message": "That repository is not accessible to the installation."},
+        )
+    conn = gh_store.upsert_connection(
+        project_id=proj.id, owner_user_id=proj.owner_user_id,
+        installation_id=pending.installation_id,
+        repo_full_name=repo["full_name"], repo_id=str(repo.get("id") or ""),
+    )
+    if conn is None:
+        # UNIQUE(installation_id, repo) already claimed by a different project.
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "REPO_ALREADY_CONNECTED",
+                    "message": "This repo/installation is already connected to another project."},
+        )
+    gh_setup.delete_pending_installation(project_id)
+    return envelope_ok(data={"connection": _conn_public(conn)}, user_id=user.id)
 
 
 # ── Project-scoped connection management ─────────────────────────────────────
