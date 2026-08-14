@@ -51,7 +51,8 @@ CREATE TABLE IF NOT EXISTS github_connections (
     repo_full_name   TEXT NOT NULL,              -- "owner/repo"
     repo_id          TEXT NOT NULL DEFAULT '',   -- stable numeric id (survives rename)
     created_at       TEXT NOT NULL,
-    updated_at       TEXT NOT NULL
+    updated_at       TEXT NOT NULL,
+    last_sync_at     TEXT NOT NULL DEFAULT ''     -- last successful backfill (UX + first-sync detection)
 );
 -- A repo under an installation belongs to exactly one project → no cross-project leak.
 CREATE UNIQUE INDEX IF NOT EXISTS ux_ghconn_inst_repo
@@ -76,10 +77,25 @@ class GitHubConnection:
     repo_id: str
     created_at: str
     updated_at: str
+    last_sync_at: str = ""
 
 
 def _now() -> str:
     return datetime.utcnow().isoformat() + "Z"
+
+
+def _migrate_add_last_sync_at(c) -> None:
+    """Additive, idempotent: pre-existing github_connections rows (created before
+    the last_sync_at column existed) get it via ALTER. ALTER TABLE ADD COLUMN
+    raises when the column already exists — swallow that one case so init stays
+    idempotent. Legacy rows default to '' (⇒ treated as never-synced, so the
+    next sync runs the fuller initial import)."""
+    try:
+        cols = {r["name"] for r in c.execute("PRAGMA table_info(github_connections)").fetchall()}
+        if "last_sync_at" not in cols:
+            c.execute("ALTER TABLE github_connections ADD COLUMN last_sync_at TEXT NOT NULL DEFAULT ''")
+    except Exception as exc:  # pragma: no cover — defensive
+        logger.debug("github.store last_sync_at migration soft-failed: %s", exc)
 
 
 def init_github_tables() -> None:
@@ -87,6 +103,7 @@ def init_github_tables() -> None:
     try:
         with _sqlite.connection(DB_PATH) as c:
             c.executescript(_SCHEMA)
+            _migrate_add_last_sync_at(c)
     except Exception as exc:  # pragma: no cover — defensive
         logger.warning("github.store.init failed: %s", exc)
 
@@ -101,6 +118,7 @@ def _row_to_conn(row) -> GitHubConnection:
         repo_id=str(d.get("repo_id") or ""),
         created_at=str(d["created_at"]),
         updated_at=str(d["updated_at"]),
+        last_sync_at=str(d.get("last_sync_at") or ""),
     )
 
 
@@ -213,6 +231,24 @@ def delete_connection(project_id: str) -> bool:
         return False
 
 
+def mark_synced(project_id: str) -> None:
+    """Stamp the connection's last successful backfill time. Used both for the
+    Connectors UX ("last sync …") and to detect the FIRST sync of a connection
+    (empty ⇒ run the fuller bounded initial import). Best-effort; never raises."""
+    project_id = str(project_id or "").strip()
+    if not project_id:
+        return
+    init_github_tables()
+    try:
+        with _sqlite.connection(DB_PATH) as c:
+            c.execute(
+                "UPDATE github_connections SET last_sync_at=?, updated_at=? WHERE project_id=?",
+                (_now(), _now(), project_id),
+            )
+    except Exception:
+        pass
+
+
 # ── webhook delivery dedup ───────────────────────────────────────────────────
 
 def mark_delivery(delivery_id: str) -> bool:
@@ -248,5 +284,5 @@ def _reset_for_tests() -> None:
 __all__ = [
     "GitHubConnection", "init_github_tables", "upsert_connection",
     "get_connection", "find_connections_for_repo", "delete_connection",
-    "mark_delivery",
+    "mark_synced", "mark_delivery",
 ]

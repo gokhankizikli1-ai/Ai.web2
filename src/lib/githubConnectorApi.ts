@@ -40,6 +40,7 @@ export interface GithubConnectionView {
   repo_id: string;
   created_at: string;
   updated_at: string;
+  last_sync_at: string | null;
 }
 
 export interface GithubConnectionStatus {

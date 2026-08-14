@@ -198,11 +198,18 @@ def get_observation(observation_id: str) -> Optional[dict]:
 
 def list_observations(
     project_id: str, *, kind: Optional[str] = None,
-    source: Optional[str] = None, limit: int = 100,
+    source: Optional[str] = None, user_id: Optional[str] = None,
+    limit: int = 100,
 ) -> List[dict]:
     """Observations for a project, most-recently-OBSERVED first (source time,
     not ingest time — so a late-arriving old event sorts by when it actually
-    happened, never masquerading as the newest change)."""
+    happened, never masquerading as the newest change).
+
+    `user_id`, when supplied, additionally scopes the read to that owner — a
+    defense-in-depth filter for callers (e.g. the Project Brain aggregate) whose
+    entry point is keyed by (user, project) and must never surface another
+    user's rows even if handed an unowned project_id. Omitted ⇒ project-only
+    scoping (the existing behaviour for the orchestrator assessment)."""
     if not project_id:
         return []
     try:
@@ -212,6 +219,8 @@ def list_observations(
             clauses.append("kind=?"); params.append(str(kind))
         if source:
             clauses.append("source=?"); params.append(str(source))
+        if user_id:
+            clauses.append("user_id=?"); params.append(str(user_id))
         params.append(max(1, min(int(limit or 100), 500)))
         with _sqlite.connection(DB_PATH) as c:
             rows = c.execute(
@@ -224,9 +233,11 @@ def list_observations(
         return []
 
 
-def recent_observations(project_id: str, *, limit: int = 10) -> List[dict]:
-    """Bounded recent-observations slice for the Business Brain assessment."""
-    return list_observations(project_id, limit=limit)
+def recent_observations(project_id: str, *, user_id: Optional[str] = None,
+                        limit: int = 10) -> List[dict]:
+    """Bounded recent-observations slice for the Business Brain assessment.
+    `user_id` optionally adds owner-scoping (see `list_observations`)."""
+    return list_observations(project_id, user_id=user_id, limit=limit)
 
 
 def observations_stats(project_id: str) -> Dict[str, int]:

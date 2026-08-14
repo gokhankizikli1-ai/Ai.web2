@@ -137,6 +137,48 @@ def test_sync_creates_no_tasks_decisions_or_runs(env, monkeypatch):
     assert tasks_store.list_tasks_for_project("p1") == []
 
 
+# ── bounded initial import (no repeated-click backfill) ──────────────────────
+
+class _RecordingClient(_FakeClient):
+    """Captures the max_pages passed to paginate per resource."""
+    def __init__(self, installation_id, *, fail=None):
+        super().__init__(installation_id, fail=fail)
+        self.max_pages_seen = []
+
+    def paginate(self, path, params=None, max_pages=None):
+        self.max_pages_seen.append(max_pages)
+        return super().paginate(path, params=params, max_pages=max_pages)
+
+
+def test_first_sync_uses_initial_page_cap_then_incremental(env, monkeypatch):
+    # First sync of a fresh connection fetches the larger INITIAL page cap so the
+    # user does not have to press "Sync now" repeatedly; the next sync drops to
+    # the lighter incremental cap.
+    monkeypatch.setenv("GITHUB_SYNC_INITIAL_MAX_PAGES", "4")
+    monkeypatch.setenv("GITHUB_SYNC_MAX_PAGES", "1")
+    rec = _RecordingClient("100")
+    monkeypatch.setattr(gh_sync, "GitHubClient", lambda iid: rec)
+
+    gh_sync.initial_sync("p1")
+    assert rec.max_pages_seen and set(rec.max_pages_seen) == {4}   # every resource
+
+    # last_sync_at is now stamped → the second sync is incremental.
+    conn = gh_store.get_connection("p1")
+    assert conn.last_sync_at  # first sync recorded a timestamp
+    rec2 = _RecordingClient("100")
+    monkeypatch.setattr(gh_sync, "GitHubClient", lambda iid: rec2)
+    gh_sync.sync_connection(conn)
+    assert set(rec2.max_pages_seen) == {1}
+
+
+def test_sync_marks_last_sync_even_on_partial_failure(env, monkeypatch):
+    monkeypatch.setattr(gh_sync, "GitHubClient", lambda iid: _FakeClient(iid, fail={"pulls"}))
+    report = gh_sync.sync_connection(gh_store.get_connection("p1"))
+    assert report.ok is False
+    # Some resources still ingested → last_sync_at is stamped (mirrors Gmail).
+    assert gh_store.get_connection("p1").last_sync_at
+
+
 def test_github_package_imports_no_ai_or_model_modules():
     # A static guarantee that the connector cannot make a model/embedding call:
     # its source imports no provider / ai_client / embedding module.

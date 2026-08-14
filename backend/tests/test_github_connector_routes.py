@@ -99,6 +99,19 @@ def test_non_owner_cannot_connect_or_read(client, app, env):
     assert gh_store.get_connection("p1") is None
 
 
+def test_non_owner_cannot_sync_or_disconnect(client, app, env):
+    # Phase 1 rollout: a normal authenticated user cannot sync/disconnect a
+    # project they do not own — enforced backend-side, not by frontend hiding.
+    _as(app, USER_A)
+    assert client.post("/v2/github/projects/p1/connect",
+                       json={"repo_full_name": "octo/hello", "installation_id": "100"}).status_code == 200
+    _as(app, USER_B)
+    assert client.post("/v2/github/projects/p1/sync").status_code == 404
+    assert client.delete("/v2/github/projects/p1/connection").status_code == 404
+    # A's connection is untouched by B's attempts.
+    assert gh_store.get_connection("p1") is not None
+
+
 def test_repo_already_connected_elsewhere_conflicts(client, app, env):
     # A owns p1 and connects octo/hello. A second project (owned by B) cannot
     # claim the same (installation, repo).

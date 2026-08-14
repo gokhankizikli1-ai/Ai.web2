@@ -142,7 +142,7 @@ describe('githubConnectorApi — connect flow', () => {
   });
 
   it('selectGithubRepository POSTs the repo full name and no installation id by default', async () => {
-    reply(200, { connection: { project_id: 'p1', installation_id: '100', repo_full_name: 'octo/hello', repo_id: '42', created_at: '', updated_at: '' } });
+    reply(200, { connection: { project_id: 'p1', installation_id: '100', repo_full_name: 'octo/hello', repo_id: '42', created_at: '', updated_at: '', last_sync_at: null } });
     const res = await selectGithubRepository('p1', 'octo/hello');
     expect(res.ok).toBe(true);
     expect(calls[0].method).toBe('POST');
@@ -152,7 +152,7 @@ describe('githubConnectorApi — connect flow', () => {
   });
 
   it('selectGithubRepository includes the installation id when one is chosen', async () => {
-    reply(200, { connection: { project_id: 'p1', installation_id: '300', repo_full_name: 'acme/widget', repo_id: '77', created_at: '', updated_at: '' } });
+    reply(200, { connection: { project_id: 'p1', installation_id: '300', repo_full_name: 'acme/widget', repo_id: '77', created_at: '', updated_at: '', last_sync_at: null } });
     const res = await selectGithubRepository('p1', 'acme/widget', '300');
     expect(res.ok).toBe(true);
     expect(calls[0].body).toEqual({ repo_full_name: 'acme/widget', installation_id: '300' });

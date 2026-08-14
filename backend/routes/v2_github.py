@@ -546,6 +546,7 @@ def _conn_public(conn) -> Dict[str, Any]:
         "repo_id": conn.repo_id,
         "created_at": conn.created_at,
         "updated_at": conn.updated_at,
+        "last_sync_at": conn.last_sync_at or None,
     }
 
 

@@ -16,9 +16,11 @@ the method.
 
 BOUNDED
 -------
-* `list_message_ids` fetches ONE page capped at `sync_max_messages` (config,
-  ≤100). It does NOT follow `nextPageToken` — a single bounded page, never a
-  full-mailbox crawl.
+* `list_message_ids` fetches at most `max_pages` (≤5) pages, each capped at
+  `sync_max_messages` (config, ≤100), following `nextPageToken` only up to that
+  page ceiling — at most `sync_max_messages × max_pages` ids, never a
+  full-mailbox crawl. The initial import uses a few pages; incremental syncs use
+  one.
 * Message reads use `format=metadata` with an explicit header allow-list, so no
   message body and no attachments are ever downloaded. Every request has a
   wall-clock timeout and a response-size cap.
@@ -146,23 +148,42 @@ class GmailClient:
         return data if isinstance(data, dict) else {}
 
     def list_message_ids(self, *, max_results: Optional[int] = None,
-                         query: Optional[str] = None) -> List[str]:
-        """ONE bounded page of message ids (newest first), capped by
-        `sync_max_messages`. Does NOT follow nextPageToken — never a full-mailbox
-        crawl."""
+                         query: Optional[str] = None,
+                         max_pages: Optional[int] = None) -> List[str]:
+        """Bounded list of message ids (newest first). Each page holds at most
+        `sync_max_messages` ids; `max_pages` pages are followed via
+        `nextPageToken` (default 1 — a single page). BOTH caps are hard, so the
+        most this can ever return is `sync_max_messages × max_pages` ids — never
+        a full-mailbox crawl. De-duplicates ids across pages defensively."""
         cap = gm_config.sync_max_messages()
         n = cap if max_results is None else max(1, min(int(max_results), cap))
-        params: Dict[str, Any] = {"maxResults": n}
+        pages_cap = 1 if max_pages is None else max(1, min(int(max_pages), 5))
         q = gm_config.sync_query() if query is None else query
-        if q:
-            params["q"] = q
-        data = self._get("/gmail/v1/users/me/messages", params=params)
+
         out: List[str] = []
-        if isinstance(data, dict):
-            for m in (data.get("messages") or []):
-                if isinstance(m, dict) and m.get("id"):
-                    out.append(str(m["id"]))
-        return out[:n]
+        seen: set = set()
+        page_token: Optional[str] = None
+        pages = 0
+        while pages < pages_cap:
+            params: Dict[str, Any] = {"maxResults": n}
+            if q:
+                params["q"] = q
+            if page_token:
+                params["pageToken"] = page_token
+            data = self._get("/gmail/v1/users/me/messages", params=params)
+            page_token = None
+            if isinstance(data, dict):
+                for m in (data.get("messages") or []):
+                    if isinstance(m, dict) and m.get("id"):
+                        mid = str(m["id"])
+                        if mid not in seen:
+                            seen.add(mid)
+                            out.append(mid)
+                page_token = data.get("nextPageToken") or None
+            pages += 1
+            if not page_token:
+                break
+        return out
 
     def get_message_metadata(self, message_id: str) -> Dict[str, Any]:
         """users.messages.get with format=metadata + a header allow-list. Returns

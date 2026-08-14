@@ -23,6 +23,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
+from backend.services.gmail import config as gm_config
 from backend.services.gmail import normalize
 from backend.services.gmail.client import GmailClient
 from backend.services.gmail.errors import GmailError
@@ -68,16 +69,25 @@ def _err(exc: GmailError) -> str:
     return f"{type(exc).__name__}" + (f" (HTTP {status})" if status else "")
 
 
-def sync_connection(conn: GmailConnection, *, client: Optional[GmailClient] = None) -> SyncReport:
+def sync_connection(conn: GmailConnection, *, client: Optional[GmailClient] = None,
+                    initial: Optional[bool] = None) -> SyncReport:
     """Run the bounded read for a connected project. Records observations only —
-    never creates a task/decision/run, never calls a model."""
+    never creates a task/decision/run, never calls a model.
+
+    On the FIRST sync of a connection (no prior `last_sync_at`) a few bounded
+    pages are followed so the useful recent context lands in ONE click;
+    subsequent syncs read a single page. Both paths stay hard-capped and
+    idempotent. `initial` can be forced for tests; otherwise it is inferred."""
     report = SyncReport(project_id=conn.project_id, google_email=conn.google_email)
     client = client or GmailClient(conn)
+
+    is_initial = (not (conn.last_sync_at or "").strip()) if initial is None else bool(initial)
+    max_pages = gm_config.sync_initial_max_pages() if is_initial else gm_config.sync_max_pages()
 
     # 1. Bounded list of recent message ids. A failure here is fatal to the sync
     #    (we have nothing to read) and is reported truthfully.
     try:
-        message_ids = client.list_message_ids()
+        message_ids = client.list_message_ids(max_pages=max_pages)
     except GmailError as exc:
         report.errors["list"] = _err(exc)
         return report
