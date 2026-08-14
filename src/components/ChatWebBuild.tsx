@@ -20,6 +20,7 @@ import { runFrontendBuilderQualityPipeline } from '@/lib/webBuildFrontendQuality
 import { useOwnerMode } from '@/hooks/useOwnerMode';
 import { runFrontendBuilderRevision } from '@/lib/webBuildFrontendRevision';
 import { saveWebBuildPayloadToProject } from '@/lib/webBuildProject';
+import { attachProductToProject } from '@/lib/projectApi';
 import { applyImageReplacement, type ImageReplacementInput } from '@/lib/webBuildImageReplace';
 import { upsertWebBuildChatSession } from '@/lib/webBuildChatSession';
 import { stashPreview, buildLatestPreviewStash } from '@/lib/webBuildPreviewStash';
@@ -501,7 +502,17 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
     setSavedProjectId(res.project.id);
     setSavedName(res.project.name);
     setSaveStep('closed');
-  }, [payload]);
+    // Persist the project↔product association as BACKEND truth too (localStorage
+    // is now a cache/compat layer). Best-effort, idempotent by the build session
+    // id, never source-tree; a 404 (project not mirrored / not owned) is a
+    // harmless no-op. Reference only — the artifact authority owns the payload.
+    void attachProductToProject(res.project.id, {
+      buildType: payload.buildType,
+      title: res.project.name,
+      sourceId: sessionIdOf(payload),
+      threadId: sessionId,
+    }).catch(() => { /* best-effort — the local save already succeeded */ });
+  }, [payload, sessionId]);
 
   const existingProjects = useMemo(() => (saveStep === 'picker' ? getProjects() : []), [saveStep]);
 

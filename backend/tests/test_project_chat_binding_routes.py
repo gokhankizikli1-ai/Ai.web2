@@ -194,3 +194,69 @@ def test_cannot_list_foreign_project_products(env):
     env["act_as"]("userB")
     r = env["http"].get(f"/v2/orchestrator/projects/{p_a.id}/products")
     assert r.status_code == 404
+
+
+# ── Save to Project — backend-authoritative attach (Web/App build linkage) ────
+
+def test_attach_web_build_appears_in_backend_products(env):
+    env["act_as"]("userA")
+    p = env["projects"].create_project("userA", name="Builder")
+    r = env["http"].post(f"/v2/orchestrator/projects/{p.id}/products", json={
+        "build_type": "web", "title": "Landing Page",
+        "artifact_ref": "artifact://web-1", "source_id": "sess-1", "thread_id": "th-1",
+    })
+    assert r.status_code == 200
+    # Backend truth — independent of any localStorage — now lists the product.
+    got = env["http"].get(f"/v2/orchestrator/projects/{p.id}/products").json()["data"]["products"]
+    assert len(got) == 1
+    assert got[0]["build_type"] == "web"
+    assert got[0]["title"] == "Landing Page"
+    assert got[0]["artifact_ref"] == "artifact://web-1"
+
+
+def test_attach_app_build_preserves_app_provenance(env):
+    env["act_as"]("userA")
+    p = env["projects"].create_project("userA", name="Builder")
+    env["http"].post(f"/v2/orchestrator/projects/{p.id}/products", json={
+        "build_type": "app", "title": "iOS Shell", "source_id": "sess-app",
+    })
+    got = env["http"].get(f"/v2/orchestrator/projects/{p.id}/products").json()["data"]["products"]
+    assert len(got) == 1 and got[0]["build_type"] == "app"
+
+
+def test_repeated_save_is_idempotent(env):
+    env["act_as"]("userA")
+    p = env["projects"].create_project("userA", name="Builder")
+    for _ in range(3):
+        env["http"].post(f"/v2/orchestrator/projects/{p.id}/products", json={
+            "build_type": "web", "title": "Landing Page", "source_id": "sess-1",
+        })
+    got = env["http"].get(f"/v2/orchestrator/projects/{p.id}/products").json()["data"]["products"]
+    assert len(got) == 1   # same stable source id → one row, not three
+
+
+def test_cannot_attach_to_foreign_project(env):
+    env["act_as"]("userA")
+    p_a = env["projects"].create_project("userA", name="A's project")
+    env["act_as"]("userB")
+    r = env["http"].post(f"/v2/orchestrator/projects/{p_a.id}/products", json={
+        "build_type": "web", "title": "Intruder", "source_id": "x",
+    })
+    assert r.status_code == 404
+    # And nothing was written to A's project.
+    env["act_as"]("userA")
+    got = env["http"].get(f"/v2/orchestrator/projects/{p_a.id}/products").json()["data"]["products"]
+    assert got == []
+
+
+def test_attach_survives_local_cache_clear(env):
+    # The association lives in the backend deliverable authority, so a brand-new
+    # client (no localStorage) still sees the product on reload.
+    env["act_as"]("userA")
+    p = env["projects"].create_project("userA", name="Builder")
+    env["http"].post(f"/v2/orchestrator/projects/{p.id}/products", json={
+        "build_type": "app", "title": "Persisted", "source_id": "sess-9",
+    })
+    # A different backend view (simulating a fresh device) — same server truth.
+    products = env["dls"].list_for_project(p.id)
+    assert any(d["title"] == "Persisted" and d["kind"] == "app_build" for d in products)

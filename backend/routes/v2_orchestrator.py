@@ -406,6 +406,84 @@ def project_products_route(
     )
 
 
+class AttachProductBody(BaseModel):
+    build_type:   str = Field("web", max_length=16)          # "web" | "app"
+    title:        str = Field("", max_length=200)
+    artifact_ref: str = Field("", max_length=512)            # ref, NOT the source tree
+    build_ref:    str = Field("", max_length=512)
+    source_id:    Optional[str] = Field(None, max_length=128)  # stable build/session id
+    thread_id:    Optional[str] = Field(None, max_length=64)   # originating chat
+
+
+@router.post("/projects/{project_id}/products")
+def attach_product_route(
+    project_id: str = Path(..., max_length=64),
+    body: AttachProductBody = ...,
+    user: User = Depends(current_user),
+) -> Any:
+    """Attach a generated Web/App product to a project — the backend-authoritative
+    "Save to Project" write seam.
+
+    Reuses the EXISTING canonical build/artifact authority (`deliverables_store`)
+    rather than inventing a second products system: it records a bounded
+    REFERENCE (build_type, title, artifact/build ref, originating thread) — never
+    the duplicated source tree, which the artifact authority already owns. The
+    linkage is server truth, so it survives a localStorage clear and a reopen.
+
+    IDEMPOTENT: the deliverable id is derived from (project_id, stable source key)
+    so a repeated Save updates the same row instead of creating duplicates.
+    buildType `web|app` is preserved. Ownership is enforced via the canonical
+    projects record — a project the caller does not own is 404 (existence-hidden),
+    so a product can never be attached to, or read from, another user's project.
+    """
+    endpoint = f"/v2/orchestrator/projects/{project_id}/products"
+    if not orch.is_enabled():
+        return _disabled_response(endpoint)
+    try:
+        from backend.services.projects import store as projects_store
+        project = projects_store.get_project(project_id)
+    except Exception:
+        project = None
+    if project is None or str(project.owner_user_id) != str(user.id):
+        return _err(404, "project_not_found", "Project not found.", endpoint)
+
+    build_type = "app" if str(body.build_type).strip().lower() == "app" else "web"
+    kind = "app_build" if build_type == "app" else "web_build"
+    source_key = (body.source_id or body.build_ref or body.artifact_ref
+                  or (body.title or "product")).strip()[:120]
+    deliverable_id = f"savedproduct:{project_id}:{source_key}"
+    content = {
+        "build_type":   build_type,
+        "build_status": "saved",
+        "artifact_ref": (body.artifact_ref or "").strip(),
+        "build_ref":    (body.build_ref or "").strip(),
+        "source_id":    (body.source_id or "").strip(),
+        "thread_id":    (body.thread_id or "").strip(),
+    }
+    from backend.services.orchestrator import deliverables_store as dls
+    try:
+        existing = dls.get_deliverable(deliverable_id)
+        if existing is None:
+            dls.create_deliverable(
+                run_id=f"saved:{source_key}", agent_id="save_to_project",
+                node_id="product", kind=kind, title=(body.title or "").strip(),
+                project_id=project_id, status="completed", content=content,
+                deliverable_id=deliverable_id,
+            )
+        else:
+            # Idempotent upsert — repeated Save (e.g. after a revision) refreshes
+            # the same row, never adds a duplicate.
+            dls.set_content(deliverable_id, content, status="completed")
+    except Exception as exc:
+        logger.warning("attach product failed for %s: %s", project_id, exc)
+        return _err(500, "attach_failed", "Could not attach product.", endpoint)
+    return envelope_ok(
+        data={"deliverable_id": deliverable_id, "build_type": build_type,
+              "project_id": project_id, "title": (body.title or "").strip()},
+        endpoint=endpoint, user_id=user.id,
+    )
+
+
 @router.post("/runs/{run_id}/reject")
 def reject_run_route(
     run_id: str = Path(..., max_length=64),

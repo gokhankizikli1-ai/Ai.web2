@@ -32,7 +32,10 @@ import {
 } from './sessionsSync';
 
 // ── A tiny in-memory fake of the /v2/sessions backend ───────────────────────
-interface FakeThread { id: string; title: string; mode: string; messages: { id: string; role: string; content: string; created_at: string }[]; updated_at: string }
+// Mirrors the server's per-thread idempotency: an append with a client_message_id
+// that already exists (by client id OR by an existing row id) is a no-op.
+interface FakeMsg { id: string; role: string; content: string; created_at: string; client_message_id: string | null }
+interface FakeThread { id: string; title: string; mode: string; messages: FakeMsg[]; updated_at: string }
 
 function makeBackend() {
   const threads = new Map<string, FakeThread>();
@@ -64,7 +67,17 @@ function makeBackend() {
     }
     if (m && method === 'POST') {
       const t = threads.get(m[1]);
-      if (t) t.messages.push({ id: nid('msg'), role: body.role, content: body.content, created_at: '2024-01-01T00:00:01Z' });
+      if (t) {
+        const cid: string | null = body.client_message_id ?? null;
+        const dup = cid !== null && t.messages.some((x) => x.client_message_id === cid || x.id === cid);
+        if (!dup) {
+          const id = nid('msg');
+          t.messages.push({ id, role: body.role, content: body.content, created_at: '2024-01-01T00:00:01Z', client_message_id: cid });
+          return ok({ id, client_message_id: cid });
+        }
+        const canon = t.messages.find((x) => x.client_message_id === cid || x.id === cid)!;
+        return ok({ id: canon.id, client_message_id: canon.client_message_id });
+      }
       return ok({ id: 'msg' });
     }
     return new Response(JSON.stringify({ success: false, error: 'not found' }), { status: 404 });
@@ -154,10 +167,64 @@ describe('syncSession', () => {
     expect(t.messages[3].content).toBe('sure');
   });
 
+  it('two overlapping syncs of the same session do not duplicate turns', async () => {
+    const s = session();
+    // Fire both without awaiting the first — both create/mirror concurrently.
+    const [t1, t2] = await Promise.all([syncSession(s), syncSession(s)]);
+    // At least one produced a thread; both may create threads, but neither
+    // thread ends up with duplicated turns (client-id dedup per thread).
+    const ids = [t1, t2].filter(Boolean) as string[];
+    for (const id of ids) {
+      const t = backend.threads.get(id)!;
+      const cids = t.messages.map((x) => x.client_message_id);
+      expect(new Set(cids).size).toBe(cids.length); // no dupes within a thread
+      expect(t.messages.length).toBeLessThanOrEqual(2);
+    }
+  });
+
+  it('a partial-then-full retry appends only the new tail', async () => {
+    const s = session();
+    const threadId = (await syncSession(s)) as string;
+    const grown: ChatSession = {
+      ...s,
+      serverThreadId: threadId,
+      messages: [
+        ...s.messages,
+        { id: 'm3', role: 'user', content: 'again', timestamp: new Date() },
+      ],
+    };
+    // Re-sync twice — the retry must not duplicate m1/m2/m3.
+    await syncSession(grown);
+    await syncSession(grown);
+    const t = backend.threads.get(threadId)!;
+    expect(t.messages.map((x) => x.content)).toEqual(['hi', 'hello', 'again']);
+  });
+
+  it('a >page-length history never replays or duplicates', async () => {
+    const many = Array.from({ length: 120 }, (_, i) => ({
+      id: `mm-${i}`, role: (i % 2 === 0 ? 'user' : 'assistant') as 'user' | 'assistant',
+      content: `t${i}`, timestamp: new Date(),
+    }));
+    const s = session({ messages: many });
+    const threadId = (await syncSession(s)) as string;
+    // Re-sync the WHOLE history again (as a fresh device with no watermark).
+    await syncSession({ ...s, serverThreadId: threadId });
+    const t = backend.threads.get(threadId)!;
+    expect(t.messages.length).toBe(120); // exactly once each, no replay
+  });
+
   it('never mirrors Web/App Build sessions', async () => {
     const res = await syncSession(session({ mode: 'web_build' }));
     expect(res).toBeNull();
     expect(backend.threads.size).toBe(0);
+  });
+
+  it('never mirrors game/app build modes (allowlist: only chat)', async () => {
+    // Ordinary chat (mode undefined or "chat") is the ONLY mirrored kind.
+    expect(await syncSession(session({ mode: 'game_build' }))).toBeNull();
+    expect(backend.threads.size).toBe(0);
+    const chat = await syncSession(session({ mode: 'chat' }));
+    expect(chat).toBeTruthy();
   });
 });
 

@@ -79,17 +79,26 @@ CREATE INDEX IF NOT EXISTS ix_st_workspace ON sessions_threads(workspace_id);
 CREATE INDEX IF NOT EXISTS ix_st_updated   ON sessions_threads(updated_at);
 
 CREATE TABLE IF NOT EXISTS sessions_messages (
-    id            TEXT PRIMARY KEY,
-    thread_id     TEXT NOT NULL REFERENCES sessions_threads(id) ON DELETE CASCADE,
-    role          TEXT NOT NULL,
-    content       TEXT NOT NULL,
-    created_at    TEXT NOT NULL,
-    tokens        INTEGER,
-    model         TEXT,
-    metadata_json TEXT NOT NULL DEFAULT '{}'
+    id                TEXT PRIMARY KEY,
+    thread_id         TEXT NOT NULL REFERENCES sessions_threads(id) ON DELETE CASCADE,
+    role              TEXT NOT NULL,
+    content           TEXT NOT NULL,
+    created_at        TEXT NOT NULL,
+    tokens            INTEGER,
+    model             TEXT,
+    metadata_json     TEXT NOT NULL DEFAULT '{}',
+    client_message_id TEXT
 );
+-- Additive migration for a pre-existing table (parity with the SQLite store).
+ALTER TABLE sessions_messages ADD COLUMN IF NOT EXISTS client_message_id TEXT;
 CREATE INDEX IF NOT EXISTS ix_sm_thread  ON sessions_messages(thread_id);
 CREATE INDEX IF NOT EXISTS ix_sm_created ON sessions_messages(created_at);
+-- Per-thread idempotency: a stable client id is UNIQUE within a thread so a
+-- retried / concurrent / cross-replica append never inserts a duplicate. NULL
+-- keys (legacy / server-authored) are exempt via the partial index.
+CREATE UNIQUE INDEX IF NOT EXISTS ux_sm_client
+    ON sessions_messages(thread_id, client_message_id)
+    WHERE client_message_id IS NOT NULL;
 """
 
 _INITIALIZED = False
@@ -348,22 +357,57 @@ def _row_to_thread(row: dict) -> Thread:
 
 def append_message(*, thread_id: str, role: str, content: str,
                    model: Optional[str] = None, tokens: Optional[int] = None,
-                   metadata: Optional[dict] = None) -> Message:
+                   metadata: Optional[dict] = None,
+                   client_message_id: Optional[str] = None) -> Message:
+    """Idempotently append a message — Postgres parity of the SQLite store.
+
+    `client_message_id` (the stable chat message id) makes the append idempotent
+    per thread: a retried / concurrent / cross-replica re-send of the same client
+    id resolves to the ONE canonical row (recognised by client key OR by a prior
+    server row id equal to that key) instead of inserting a duplicate. The whole
+    resolve→insert→bump runs in ONE transaction so overlapping replicas are safe.
+    """
     _ensure_init()
-    m_id = _new_id()
+    cid = (client_message_id or "").strip() or None
     now = _now()
     md = json.dumps(metadata or {})
     r = normalize_message_role(role)
-    _execute(
-        "INSERT INTO sessions_messages "
-        "(id, thread_id, role, content, created_at, tokens, model, metadata_json) "
-        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
-        (m_id, thread_id, r, content, now, tokens, model, md),
-    )
-    # Bump the thread's updated_at so it floats to the top of the list.
-    _execute("UPDATE sessions_threads SET updated_at=%s WHERE id=%s", (now, thread_id))
-    return Message(id=m_id, thread_id=thread_id, role=r, content=content,
-                   created_at=now, tokens=tokens, model=model, metadata=metadata or {})
+    with engine.acquire_sync() as conn:
+        with _cursor(conn) as cur:
+            if cid is not None:
+                cur.execute(
+                    "SELECT * FROM sessions_messages "
+                    "WHERE thread_id=%s AND (client_message_id=%s OR id=%s) LIMIT 1",
+                    (thread_id, cid, cid),
+                )
+                existing = cur.fetchone()
+                if existing is not None:
+                    conn.commit()
+                    return _row_to_message(existing)
+            m_id = _new_id()
+            cur.execute(
+                "INSERT INTO sessions_messages "
+                "(id, thread_id, role, content, created_at, tokens, model, metadata_json, client_message_id) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+                "ON CONFLICT (thread_id, client_message_id) WHERE client_message_id IS NOT NULL "
+                "DO NOTHING",
+                (m_id, thread_id, r, content, now, tokens, model, md, cid),
+            )
+            if cid is not None:
+                cur.execute(
+                    "SELECT * FROM sessions_messages WHERE thread_id=%s AND client_message_id=%s LIMIT 1",
+                    (thread_id, cid),
+                )
+            else:
+                cur.execute("SELECT * FROM sessions_messages WHERE id=%s", (m_id,))
+            row = cur.fetchone()
+            if row is None:
+                conn.commit()
+                raise RuntimeError("append_message: row neither inserted nor found")
+            if row["id"] == m_id:
+                cur.execute("UPDATE sessions_threads SET updated_at=%s WHERE id=%s", (now, thread_id))
+        conn.commit()
+    return _row_to_message(row)
 
 
 def list_messages(thread_id: str, *, limit: int = 100,
@@ -400,6 +444,7 @@ def _row_to_message(row: dict) -> Message:
         content=row["content"], created_at=row["created_at"],
         tokens=row["tokens"], model=row["model"],
         metadata=_safe_json(row["metadata_json"]),
+        client_message_id=row.get("client_message_id"),
     )
 
 

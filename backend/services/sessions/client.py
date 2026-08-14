@@ -115,11 +115,12 @@ class SessionsClient:
     def append_message(
         self, *, thread_id: str, role: str, content: str,
         model: Optional[str] = None, tokens: Optional[int] = None,
-        metadata: Optional[dict] = None,
+        metadata: Optional[dict] = None, client_message_id: Optional[str] = None,
     ) -> Message:
         return _store().append_message(
             thread_id=thread_id, role=role, content=content,
             model=model, tokens=tokens, metadata=metadata,
+            client_message_id=client_message_id,
         )
 
     def list_messages(

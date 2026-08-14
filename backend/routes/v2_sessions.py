@@ -100,6 +100,10 @@ class AppendMessageBody(BaseModel):
     model:    Optional[str] = Field(None, max_length=128)
     tokens:   Optional[int] = Field(None, ge=0)
     metadata: Optional[Dict[str, Any]] = None
+    # Stable client idempotency key (the chat message id). When present the
+    # append is idempotent per thread — a retry/duplicate never creates a
+    # second row. Optional so legacy callers keep working.
+    client_message_id: Optional[str] = Field(None, max_length=128)
 
 
 # ── Workspaces ────────────────────────────────────────────────────────────
@@ -310,6 +314,7 @@ def append_message(
     msg = sessions_client.append_message(
         thread_id=thread_id, role=body.role, content=body.content,
         model=body.model, tokens=body.tokens, metadata=body.metadata,
+        client_message_id=body.client_message_id,
     )
     return envelope_ok(
         data=msg.to_dict(),

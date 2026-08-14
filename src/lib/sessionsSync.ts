@@ -21,15 +21,8 @@
  *     carry a separate payload authority and are intentionally left to it.
  */
 import type { ChatSession, Message } from '@/types';
-import { getAccessToken } from '@/stores/authStore';
 import { currentStorageScope } from '@/lib/storageScope';
-
-const BUNDLED_BACKEND = 'https://worker-production-1345.up.railway.app';
-
-function apiBase(): string {
-  const env = (import.meta.env.VITE_API_URL as string | undefined)?.trim();
-  return env ? env.replace(/\/+$/, '') : BUNDLED_BACKEND;
-}
+import { apiCall as call } from '@/lib/serverApi';
 
 /**
  * Server-authoritative chat is active for AUTHENTICATED users only — a real
@@ -47,39 +40,6 @@ export function serverChatEnabled(): boolean {
   }
 }
 
-function headers(): Record<string, string> {
-  const h: Record<string, string> = { 'Content-Type': 'application/json' };
-  try {
-    const t = getAccessToken();
-    if (t) h['Authorization'] = `Bearer ${t}`;
-  } catch {
-    /* token unreadable — the request will resolve as guest and likely 401,
-       which we treat as a no-op */
-  }
-  return h;
-}
-
-/** Best-effort JSON call returning the v2 envelope's `data`, or null. */
-async function call<T = unknown>(
-  method: string,
-  path: string,
-  body?: unknown,
-): Promise<T | null> {
-  try {
-    const res = await fetch(`${apiBase()}${path}`, {
-      method,
-      headers: headers(),
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
-    if (!res.ok) return null;
-    const json = await res.json().catch(() => null);
-    if (!json || json.success === false) return null;
-    return (json.data ?? null) as T | null;
-  } catch {
-    return null;
-  }
-}
-
 // ── Raw server shapes (only the fields we consume) ──────────────────────────
 
 interface ServerThread {
@@ -94,10 +54,18 @@ interface ServerMessage {
   role?: string;
   content?: string;
   created_at?: string | null;
+  client_message_id?: string | null;
 }
 
 const MIRRORED_ROLES = new Set(['user', 'assistant']);
-const NON_CHAT_MODES = new Set(['web_build', 'game_build']);
+// ORDINARY chat only. ChatSession.mode is the canonical ConversationMode:
+// 'chat' | 'web_build' | 'game_build', and a plain chat leaves it undefined.
+// Web AND App builds both persist as mode 'web_build' (the web|app axis lives on
+// the WebBuildPayload, not the session), and any future tool/build mode is a new
+// ConversationMode. An ALLOWLIST — mirror only when the mode is unset or 'chat' —
+// therefore excludes every build/tool session by construction, so a large build
+// or tool transcript is never mirrored into ordinary chat history.
+const CHAT_MODES = new Set(['chat']);
 const MAX_HYDRATED_THREADS = 40;
 const MAX_HYDRATED_MESSAGES = 500;
 
@@ -123,18 +91,23 @@ export function resetSessionsSync(): void {
 }
 
 function isMirrorable(session: ChatSession): boolean {
-  if (NON_CHAT_MODES.has(String(session.mode ?? ''))) return false;
-  return true;
+  // Allowlist: ordinary chat only (mode unset or 'chat'). Everything else — every
+  // build/tool mode, now or future — is excluded.
+  const mode = session.mode;
+  return mode === undefined || mode === null || CHAT_MODES.has(String(mode));
 }
 
 /**
  * Mirror a conversation's turns to the server, idempotently.
  *
  * Creates the server thread lazily on first sync (returning its id so the
- * caller can stash it on the session). Uses the SERVER's current message count
- * as the watermark and appends only the local messages beyond it — so a repeat
- * call, a retry after a partial failure, or two overlapping syncs never
- * duplicate a turn.
+ * caller can stash it on the session), then does an IDENTITY-BASED delta: it
+ * reads the message ids already on the server and posts only the local messages
+ * the server doesn't have, each carrying its STABLE chat message id as the
+ * idempotency key (`client_message_id`). This is correct regardless of history
+ * length and safe under retries / overlapping syncs / multiple tabs — the
+ * server's per-thread unique key collapses any duplicate to one canonical row
+ * (a re-post is recognised, never re-inserted). No count watermark is used.
  *
  * Returns the server thread id (existing or freshly created), or null when
  * server chat is disabled / unreachable. Never throws.
@@ -159,21 +132,31 @@ export async function syncSession(session: ChatSession): Promise<string | null> 
     threadId = created.id;
   }
 
-  // Watermark = messages already on the server. Append only the tail.
+  // Identity set of what the server already has. A local message matches by its
+  // own id OR by the stored client_message_id — so neither hydrated messages
+  // (carrying the server row id) nor previously-synced local messages are ever
+  // re-posted. (Bounded page; anything beyond it that we re-post is deduped
+  // server-side by the unique key, so correctness never depends on this GET.)
   const existing = await call<{ messages?: ServerMessage[] }>(
     'GET',
     `/v2/sessions/threads/${encodeURIComponent(threadId)}/messages?limit=${MAX_HYDRATED_MESSAGES}`,
   );
-  const alreadyStored = existing?.messages?.length ?? 0;
-  for (let i = alreadyStored; i < local.length; i++) {
-    const m = local[i];
+  const known = new Set<string>();
+  for (const m of existing?.messages || []) {
+    if (m.id) known.add(m.id);
+    if (m.client_message_id) known.add(m.client_message_id);
+  }
+
+  for (const m of local) {
+    if (known.has(m.id)) continue;
     const ok = await call('POST', `/v2/sessions/threads/${encodeURIComponent(threadId)}/messages`, {
       role: m.role,
       content: m.content,
+      client_message_id: m.id,
     });
-    // Stop on the first failed append; the next sync resumes from the server
-    // watermark, so nothing is lost or duplicated.
-    if (ok === null) break;
+    // A failed append is safe to leave for the next sync — the stable id makes
+    // the retry idempotent, so nothing is lost or duplicated.
+    if (ok !== null) known.add(m.id);
   }
   return threadId;
 }
@@ -192,7 +175,9 @@ export async function hydrateFromServer(): Promise<ChatSession[]> {
     'GET',
     `/v2/sessions/workspaces/${encodeURIComponent(wsId)}/threads?limit=${MAX_HYDRATED_THREADS}`,
   );
-  const threads = (data?.threads || []).filter((t) => !NON_CHAT_MODES.has(String(t.mode ?? '')));
+  const threads = (data?.threads || []).filter(
+    (t) => t.mode == null || t.mode === '' || CHAT_MODES.has(String(t.mode)),
+  );
   const out: ChatSession[] = [];
   for (const t of threads.slice(0, MAX_HYDRATED_THREADS)) {
     const md = await call<{ messages?: ServerMessage[] }>(
