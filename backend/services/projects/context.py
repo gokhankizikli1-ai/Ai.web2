@@ -25,9 +25,12 @@ from typing import Optional
 
 from backend.services.projects.store import get_project, list_memory
 
-# Hard cap to keep injected context bounded. ~3.5k chars ≈ ~900 tokens,
-# comfortably below any context window even paired with full chat history.
-_MAX_CONTEXT_CHARS = 3500
+# Hard cap to keep injected context bounded. Raised to ~6k chars (~1.5k tokens)
+# so the Phase-2 block PLUS the Project Brain block (goals/decisions/products/
+# connectors + bounded project-chat excerpts, itself capped at 4k) both fit
+# without silently truncating chat evidence — still comfortably below any
+# context window even paired with full chat history.
+_MAX_CONTEXT_CHARS = 6000
 _DEFAULT_MEMORY_LIMIT = 12
 
 
@@ -35,20 +38,43 @@ def _projects_enabled() -> bool:
     return os.getenv("ENABLE_PROJECTS", "false").strip().lower() == "true"
 
 
+def _project_brain_block(project_id: str, user_id: Optional[str]) -> Optional[str]:
+    """The Project Brain context block (goals/decisions/products/connectors +
+    bounded project-CHAT excerpts), when ENABLE_PROJECT_BRAIN and a user id are
+    present. This is the smallest existing seam that folds the brain aggregate
+    into the LIVE chat system prompt — the same block `GET /v2/projects/{id}/context`
+    exposes. Deterministic + bounded; NO model call. Ownership is enforced inside
+    the brain (fail-closed), so cross-user/project content never leaks. Best-
+    effort: any failure yields None and chat is unaffected."""
+    if not user_id:
+        return None
+    try:
+        from backend.services.project_brain import client as brain_client
+        if not brain_client.is_enabled():
+            return None
+        block = brain_client.build_context(str(user_id), str(project_id))
+        return block.text if block and block.text else None
+    except Exception:
+        return None
+
+
 def build_project_context_block(
     project_id: str,
     *,
     memory_limit: int = _DEFAULT_MEMORY_LIMIT,
+    user_id: Optional[str] = None,
 ) -> Optional[str]:
     """Return a system-prompt-ready string for `project_id`, or None.
 
-    Returns None when:
-      • ENABLE_PROJECTS is off (silent no-op so chat doesn't break)
-      • project_id is empty / unknown
-      • the project has no description AND no memory entries
-        (no useful context to inject)
-    Errors are swallowed and turned into None — chat must never break
-    because of a missing/broken projects table.
+    Composes, within bounds:
+      • the Phase-2 project block (name/description + shared project memory), and
+      • the Project Brain block (goals/decisions/products/connector signals +
+        bounded project-CHAT excerpts) when ENABLE_PROJECT_BRAIN + `user_id`.
+
+    Returns None when there is nothing useful to inject. Errors are swallowed and
+    turned into None — chat must never break because of a missing/broken table.
+    `user_id` is required for the brain part (owner-gated); omit it to get only
+    the Phase-2 block.
     """
     if not project_id or not _projects_enabled():
         return None
@@ -64,7 +90,9 @@ def build_project_context_block(
     except Exception:
         memory = []
 
-    if not project.description and not memory:
+    brain_block = _project_brain_block(project_id, user_id)
+
+    if not project.description and not memory and not brain_block:
         return None
 
     lines = [f"[Project Context — {project.name}]"]
@@ -78,6 +106,10 @@ def build_project_context_block(
             tag = entry.kind if entry.kind != "note" else ""
             prefix = f"- ({tag}) " if tag else "- "
             lines.append(prefix + entry.content.strip())
+
+    if brain_block:
+        lines.append("")
+        lines.append(brain_block)
 
     block = "\n".join(lines).strip()
     if len(block) > _MAX_CONTEXT_CHARS:

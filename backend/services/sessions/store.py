@@ -533,6 +533,25 @@ def list_messages(
         return []
 
 
+def list_recent_messages(thread_id: str, *, limit: int = 20) -> list[Message]:
+    """The most-recent `limit` messages of a thread, returned in CHRONOLOGICAL
+    order (oldest→newest of that recent window). Bounded by design — used to
+    build a project-chat excerpt for Project Brain without scanning full history
+    (a plain `list_messages(limit=N)` returns the OLDEST N, which is the wrong
+    end for a recency excerpt). Deterministic total order via (created_at, id)."""
+    sql = ("SELECT * FROM messages WHERE thread_id=? "
+           "ORDER BY created_at DESC, id DESC LIMIT ?")
+    try:
+        with _conn() as c:
+            rows = c.execute(sql, (thread_id, int(limit))).fetchall()
+        _bump("messages_listed")
+        return [_row_to_message(r) for r in reversed(rows)]
+    except Exception as e:
+        logger.warning("sessions.store.list_recent_messages thread=%s error: %s", thread_id, e)
+        _bump("messages_listed", str(e))
+        return []
+
+
 def get_message(message_id: str) -> Optional[Message]:
     try:
         with _conn() as c:

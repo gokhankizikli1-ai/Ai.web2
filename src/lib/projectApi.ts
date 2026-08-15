@@ -84,6 +84,20 @@ export async function bindThreadToProject(
   };
 }
 
+/**
+ * Unbind a thread from its project by SERVER THREAD ID (raw DELETE) — used by
+ * the Project Overview chat row's "Remove from project". Non-destructive: the
+ * conversation, its messages, and any products are untouched; only the project
+ * binding is dropped. Ownership enforced server-side. Best-effort; never throws.
+ */
+export async function removeThreadFromProject(threadId: string): Promise<BindingResult> {
+  const res = await apiCallDetailed<{ removed_from?: string | null }>(
+    'DELETE',
+    `/v2/sessions/threads/${encodeURIComponent(threadId)}/project`,
+  );
+  return { ok: res.ok, status: res.status, projectId: null, movedFrom: res.data?.removed_from ?? null };
+}
+
 /** Remove a chat from its project (thread + messages are kept). */
 export async function removeChatFromProject(session: ChatSession): Promise<BindingResult> {
   if (!serverChatEnabled()) return { ok: false, status: 0, projectId: null };

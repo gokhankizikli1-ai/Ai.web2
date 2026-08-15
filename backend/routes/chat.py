@@ -670,7 +670,11 @@ async def chat(req: ChatRequest, request: Request):
                     build_project_context_block,
                     set_current_project_context,
                 )
-                _block = build_project_context_block(req.project_id)
+                # Pass user_id so the Project Brain part (bounded project-chat
+                # excerpts + connectors + goals/products) can owner-gate and fold
+                # into the SAME live system-prompt seam. Owner isolation is
+                # enforced inside the brain.
+                _block = build_project_context_block(req.project_id, user_id=str(req.user_id) if req.user_id else None)
                 if _block:
                     _project_ctx_token = set_current_project_context(_block)
                     _project_id_for_meta = req.project_id

@@ -82,11 +82,16 @@ def _web_product(env, project_id, *, title="Landing Page", build_type="web",
 
 
 def _chat(env, project_id, *, owner="uA", title="How do I add pricing?",
-          user_msg="please add a pricing page"):
+          user_msg="please add a pricing page", assistant_msg=None, mode="chat",
+          attach=True):
     ws = env["sessions"].ensure_default_workspace(owner)
-    th = env["sessions"].create_thread(workspace_id=ws.id, title=title, mode="web_build")
-    env["sessions"].append_message(thread_id=th.id, role="user", content=user_msg)
-    env["projects"].attach_thread(project_id, th.id)
+    th = env["sessions"].create_thread(workspace_id=ws.id, title=title, mode=mode)
+    if user_msg:
+        env["sessions"].append_message(thread_id=th.id, role="user", content=user_msg)
+    if assistant_msg:
+        env["sessions"].append_message(thread_id=th.id, role="assistant", content=assistant_msg)
+    if attach:
+        env["projects"].attach_thread(project_id, th.id)
     return th
 
 
@@ -137,7 +142,7 @@ def test_brain_surfaces_project_linked_chats(brain):
     assert len(b.linked_chats) == 1
     ch = b.linked_chats[0]
     assert ch["title"] == "Pricing question"
-    assert ch["mode"] == "web_build"
+    assert ch["mode"] == "chat"
     assert "pricing page" in ch["last_message"]
     assert b.counts["linked_chats"] == 1
 
@@ -146,7 +151,7 @@ def test_chats_render_into_context_block(brain):
     p = _owned_project(brain)
     _chat(brain, p.id, title="Pricing question")
     block = brain["brain"].build_context("uA", p.id)
-    assert "Project chats" in block.text
+    assert "Project chat excerpts" in block.text
     assert "Pricing question" in block.text
 
 
@@ -197,3 +202,129 @@ def test_unowned_project_skips_project_scoped_pulls(brain):
     assert b is not None
     assert b.products == []
     assert b.linked_chats == []
+
+
+# ── Phase 1: bounded project-CHAT CONTENT reaches the brain (A–H) ─────────────
+
+def _thread_content_lines(brain_obj) -> str:
+    """Flatten the recent-turn content of all linked chats for assertions."""
+    out = []
+    for ch in brain_obj.linked_chats:
+        for turn in (ch.get("recent") or []):
+            out.append(f'{turn["role"]}: {turn["content"]}')
+    return "\n".join(out)
+
+
+def test_A_brain_receives_content_from_bound_chat(brain):
+    p = _owned_project(brain)
+    _chat(brain, p.id, title="Reqs", user_msg="we need dark mode and Stripe",
+          assistant_msg="Got it — dark mode + Stripe checkout.")
+    b = brain["brain"].get("uA", p.id)
+    recent = b.linked_chats[0]["recent"]
+    assert [t["role"] for t in recent] == ["user", "assistant"]
+    assert "dark mode and Stripe" in recent[0]["content"]
+    assert "Stripe checkout" in recent[1]["content"]
+    # H — the bounded evidence is rendered into the injectable context block.
+    block = brain["brain"].build_context("uA", p.id)
+    assert "Project chat excerpts" in block.text
+    assert "user: we need dark mode and Stripe" in block.text
+    assert "assistant: Got it" in block.text
+
+
+def test_B_unbound_chat_is_not_received(brain):
+    p = _owned_project(brain)
+    # A chat the user owns but NEVER attached to the project.
+    _chat(brain, p.id, title="Unrelated", user_msg="secret unbound note", attach=False)
+    b = brain["brain"].get("uA", p.id)
+    assert b.linked_chats == []
+    assert "secret unbound note" not in _thread_content_lines(b)
+
+
+def test_C_removed_chat_content_disappears(brain):
+    p = _owned_project(brain)
+    th = _chat(brain, p.id, title="Temp", user_msg="ephemeral requirement X")
+    assert "ephemeral requirement X" in _thread_content_lines(brain["brain"].get("uA", p.id))
+    # Unbind via the canonical authority → recomputed brain no longer sees it.
+    brain["projects"].detach_thread(p.id, th.id)
+    after = brain["brain"].get("uA", p.id)
+    assert after.linked_chats == []
+    assert "ephemeral requirement X" not in _thread_content_lines(after)
+
+
+def test_D_moved_chat_content_moves_with_binding(brain):
+    a = _owned_project(brain, name="Project A")
+    b = _owned_project(brain, name="Project B")
+    th = _chat(brain, a.id, title="Shared", user_msg="move me between projects")
+    assert "move me between projects" in _thread_content_lines(brain["brain"].get("uA", a.id))
+    # Move A → B (single binding).
+    brain["projects"].detach_thread(a.id, th.id)
+    brain["projects"].attach_thread(b.id, th.id)
+    assert "move me between projects" not in _thread_content_lines(brain["brain"].get("uA", a.id))
+    assert "move me between projects" in _thread_content_lines(brain["brain"].get("uA", b.id))
+
+
+def test_E_cross_user_cannot_read_chat_content(brain):
+    p = _owned_project(brain, owner="uA")
+    _chat(brain, p.id, owner="uA", title="Private", user_msg="confidential plan")
+    other = brain["brain"].get("uB", p.id)   # different user, same project id
+    assert other.linked_chats == []
+    assert "confidential plan" not in _thread_content_lines(other)
+
+
+def test_F_long_history_is_bounded_deterministically(brain):
+    from backend.services.project_brain.client import _MAX_CHAT_TURNS, _MAX_CHAT_TURN_CHARS
+    p = _owned_project(brain)
+    ws = brain["sessions"].ensure_default_workspace("uA")
+    th = brain["sessions"].create_thread(workspace_id=ws.id, title="Long", mode="chat")
+    for i in range(40):
+        brain["sessions"].append_message(thread_id=th.id, role="user", content=f"msg {i}")
+    brain["projects"].attach_thread(p.id, th.id)
+
+    b = brain["brain"].get("uA", p.id)
+    recent = b.linked_chats[0]["recent"]
+    assert len(recent) <= _MAX_CHAT_TURNS          # bounded turn count
+    # It is the RECENT tail, not the oldest window.
+    assert recent[-1]["content"] == "msg 39"
+    # Per-turn content is also bounded.
+    assert all(len(t["content"]) <= _MAX_CHAT_TURN_CHARS for t in recent)
+
+
+def test_G_build_tool_chats_are_not_dumped(brain):
+    p = _owned_project(brain)
+    # A build session bound to the project — its payload/transcript must NOT be
+    # dumped as chat content (products represent it instead).
+    _chat(brain, p.id, title="Build session", mode="web_build",
+          user_msg="GIANT BUILD PAYLOAD should not leak")
+    b = brain["brain"].get("uA", p.id)
+    # It may be listed, but carries NO extracted content.
+    for ch in b.linked_chats:
+        assert ch.get("recent") == []
+    assert "GIANT BUILD PAYLOAD" not in _thread_content_lines(b)
+    assert "GIANT BUILD PAYLOAD" not in (brain["brain"].build_context("uA", p.id) or
+                                         type("x", (), {"text": ""})()).text
+
+
+# ── Phase 3: the LIVE chat context seam folds the brain chat evidence ─────────
+
+def test_live_context_seam_folds_project_chat_evidence(brain, monkeypatch):
+    # `projects.context.build_project_context_block` is the block chat.py injects
+    # into the LIVE system prompt (via a ContextVar ask_ai reads). It must now
+    # carry the bounded project-chat evidence for the owner — and nothing for a
+    # different user (ownership enforced inside the brain).
+    monkeypatch.setenv("ENABLE_PROJECTS", "true")
+    from backend.services.projects import context as pctx
+    p = _owned_project(brain)
+    _chat(brain, p.id, title="Reqs", user_msg="must support SSO login",
+          assistant_msg="Understood: add SSO.")
+
+    block = pctx.build_project_context_block(p.id, user_id="uA")
+    assert block is not None
+    assert "Project chat excerpts" in block
+    assert "must support SSO login" in block          # actual chat content reaches the live seam
+
+    # Cross-user: the same seam yields no A content for user B.
+    block_b = pctx.build_project_context_block(p.id, user_id="uB")
+    assert not block_b or "must support SSO login" not in block_b
+
+    # Bounded: the whole injected block respects the hard cap.
+    assert len(block) <= pctx._MAX_CONTEXT_CHARS

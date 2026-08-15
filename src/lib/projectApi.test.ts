@@ -346,3 +346,20 @@ describe('listAddableChats (Add existing chat picker)', () => {
     expect(await listAddableChats('pA')).toEqual([]);
   });
 });
+
+describe('removeThreadFromProject (Project Overview remove)', () => {
+  it('unbinds a thread by id without deleting it', async () => {
+    // Seed a thread bound to pA, then remove it from the project.
+    backend.threads.set('th-x', { id: 'th-x', project: 'pA', title: 'Keep me' });
+    const { removeThreadFromProject } = await import('./projectApi');
+    const res = await removeThreadFromProject('th-x');
+    expect(res.ok).toBe(true);
+    // Binding dropped...
+    expect([...backend.threads.values()].find((t) => t.id === 'th-x')!.project).toBeNull();
+    // ...but the thread still exists (conversation preserved).
+    expect(backend.threads.has('th-x')).toBe(true);
+    // ...and no longer appears under the project.
+    const chats = await listProjectChats('pA');
+    expect(chats.map((c) => c.id)).not.toContain('th-x');
+  });
+});
