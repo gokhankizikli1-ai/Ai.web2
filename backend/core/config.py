@@ -510,6 +510,54 @@ class Config:
     VERCEL_SYNC_MAX_PAGES: int = int(os.getenv("VERCEL_SYNC_MAX_PAGES", "1") or 1)
     VERCEL_SYNC_INITIAL_MAX_PAGES: int = int(os.getenv("VERCEL_SYNC_INITIAL_MAX_PAGES", "3") or 3)
 
+    # ── Google Calendar connector (read-only source of observations) ──────
+    # Master gate for the /v2/calendar/* surface. When false: connect/status/
+    # sync/disconnect routes 503 and the OAuth callback bounces to the frontend
+    # with a generic error (dormant). Default OFF so production behaviour is
+    # byte-identical until flipped. The RUNTIME source of truth is
+    # backend.services.google_calendar.config (read dynamically so a Railway
+    # flip is live without a restart, mirroring the Gmail/Vercel connectors);
+    # these attributes register the canonical names + defaults.
+    ENABLE_CALENDAR_CONNECTOR: bool = os.getenv("ENABLE_CALENDAR_CONNECTOR", "false").strip().lower() == "true"
+    # CALENDAR_OAUTH_CLIENT_ID / _SECRET: OPTIONAL. By default the Calendar
+    # connector reuses the EXISTING Google OAuth Web client already configured
+    # for Gmail (GMAIL_OAUTH_CLIENT_ID/_SECRET → GOOGLE_CLIENT_ID/_SECRET), so
+    # no second Google auth system is created. Set these only to give Calendar
+    # a fully separate Google client. The SECRET is NEVER logged.
+    CALENDAR_OAUTH_CLIENT_ID: str = os.getenv("CALENDAR_OAUTH_CLIENT_ID", "").strip()
+    CALENDAR_OAUTH_CLIENT_SECRET: str = os.getenv("CALENDAR_OAUTH_CLIENT_SECRET", "")
+    # CALENDAR_OAUTH_REDIRECT_URI: REQUIRED. The EXACT Authorized redirect URI
+    # registered in Google Cloud for the CALENDAR flow. Read from env (never
+    # derived from the request Host) and must equal
+    # "<backend-public-base>/v2/calendar/oauth/callback" — a DISTINCT value from
+    # GMAIL_OAUTH_REDIRECT_URI so the two flows can never be confused. Empty ⇒
+    # connect fails closed (503).
+    CALENDAR_OAUTH_REDIRECT_URI: str = os.getenv("CALENDAR_OAUTH_REDIRECT_URI", "").strip()
+    # CALENDAR_FRONTEND_RESULT_URL / _PATH: where the OAuth callback redirects
+    # the browser (fixed server-side — never a request-supplied URL, so no open
+    # redirect). Falls back to PUBLIC_APP_URL + the integrations route.
+    CALENDAR_FRONTEND_RESULT_URL: str = os.getenv("CALENDAR_FRONTEND_RESULT_URL", "").strip()
+    CALENDAR_FRONTEND_RESULT_PATH: str = os.getenv("CALENDAR_FRONTEND_RESULT_PATH", "/#/settings/integrations").strip()
+    # Bounds for the explicit, read-only sync. The window is
+    # [now − PAST_DAYS, now + UPCOMING_DAYS]; volume is capped by page size ×
+    # pages AND an absolute MAX_EVENTS ceiling. Runtime source of truth is
+    # backend.services.google_calendar.config (which also clamps each value).
+    CALENDAR_OAUTH_STATE_TTL_S: int = int(os.getenv("CALENDAR_OAUTH_STATE_TTL_S", "600") or 600)
+    CALENDAR_SYNC_UPCOMING_DAYS: int = int(os.getenv("CALENDAR_SYNC_UPCOMING_DAYS", "30") or 30)
+    CALENDAR_SYNC_PAST_DAYS: int = int(os.getenv("CALENDAR_SYNC_PAST_DAYS", "7") or 7)
+    CALENDAR_SYNC_PAGE_SIZE: int = int(os.getenv("CALENDAR_SYNC_PAGE_SIZE", "50") or 50)
+    CALENDAR_SYNC_MAX_PAGES: int = int(os.getenv("CALENDAR_SYNC_MAX_PAGES", "1") or 1)
+    CALENDAR_SYNC_INITIAL_MAX_PAGES: int = int(os.getenv("CALENDAR_SYNC_INITIAL_MAX_PAGES", "3") or 3)
+    CALENDAR_SYNC_MAX_EVENTS: int = int(os.getenv("CALENDAR_SYNC_MAX_EVENTS", "200") or 200)
+    # An upcoming event starting within this many hours is flagged IMMINENT
+    # (importance "high") for the existing prioritizer.
+    CALENDAR_SOON_HOURS: int = int(os.getenv("CALENDAR_SOON_HOURS", "24") or 24)
+    # Bounded payload caps: description truncation (0 disables descriptions) and
+    # the maximum number of attendees whose {email, response_status} is copied
+    # (0 disables the per-attendee list; the total count is always recorded).
+    CALENDAR_DESCRIPTION_MAX_CHARS: int = int(os.getenv("CALENDAR_DESCRIPTION_MAX_CHARS", "200") or 200)
+    CALENDAR_ATTENDEES_MAX: int = int(os.getenv("CALENDAR_ATTENDEES_MAX", "5") or 5)
+
     # ── Legacy per-user routes (/memory, /profile, /stats) ───────────────
     # These pre-auth routes are superseded by the auth-bound /v2/* surface
     # and are NOT called by the current frontend. They are now ownership-
@@ -881,6 +929,49 @@ class Config:
                     "KORVIX_CREDENTIAL_ENCRYPTION_KEY is empty — the Vercel "
                     "access token cannot be encrypted at rest, so connect fails "
                     "closed (503). It is the SAME key the Gmail connector uses.",
+                ))
+
+        # 3h. Google Calendar connector — if enabled it needs a resolvable
+        #     Google OAuth client (its own, or the Gmail/Google one it reuses by
+        #     design), its OWN redirect URI, and the shared credential
+        #     encryption key. Surface a partial config loudly rather than letting
+        #     it fail silently at the first user click.
+        if self.ENABLE_CALENDAR_CONNECTOR:
+            _cal_id = (self.CALENDAR_OAUTH_CLIENT_ID or self.GMAIL_OAUTH_CLIENT_ID
+                       or os.getenv("GOOGLE_CLIENT_ID", "").strip())
+            _cal_secret = (self.CALENDAR_OAUTH_CLIENT_SECRET.strip()
+                           or self.GMAIL_OAUTH_CLIENT_SECRET.strip()
+                           or os.getenv("GOOGLE_CLIENT_SECRET", "").strip())
+            if not (_cal_id and _cal_secret and self.CALENDAR_OAUTH_REDIRECT_URI):
+                issues.append((
+                    "critical",
+                    "ENABLE_CALENDAR_CONNECTOR is on but the Google OAuth config "
+                    "is incomplete — the connector reuses GMAIL_OAUTH_CLIENT_ID / "
+                    "GMAIL_OAUTH_CLIENT_SECRET (or GOOGLE_CLIENT_ID / "
+                    "GOOGLE_CLIENT_SECRET) unless CALENDAR_OAUTH_CLIENT_ID / "
+                    "CALENDAR_OAUTH_CLIENT_SECRET are set, and always needs its "
+                    "OWN CALENDAR_OAUTH_REDIRECT_URI (exactly "
+                    "<backend-public-base>/v2/calendar/oauth/callback). Connect "
+                    "fails closed (503) without them.",
+                ))
+            if (self.CALENDAR_OAUTH_REDIRECT_URI
+                    and self.CALENDAR_OAUTH_REDIRECT_URI == self.GMAIL_OAUTH_REDIRECT_URI):
+                issues.append((
+                    "critical",
+                    "CALENDAR_OAUTH_REDIRECT_URI is identical to "
+                    "GMAIL_OAUTH_REDIRECT_URI — the two Google flows MUST land on "
+                    "different callback routes, otherwise a Calendar consent "
+                    "returns to the Gmail callback and is rejected as an invalid "
+                    "state.",
+                ))
+            if not self.KORVIX_CREDENTIAL_ENCRYPTION_KEY.strip():
+                issues.append((
+                    "critical",
+                    "ENABLE_CALENDAR_CONNECTOR is on but "
+                    "KORVIX_CREDENTIAL_ENCRYPTION_KEY is empty — the Calendar "
+                    "refresh token cannot be encrypted at rest, so connect fails "
+                    "closed (503). It is the SAME key the Gmail/Vercel connectors "
+                    "use.",
                 ))
 
         # 4. Orchestration write surface needs verified identity. If the

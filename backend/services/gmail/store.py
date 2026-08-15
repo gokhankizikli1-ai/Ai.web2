@@ -284,6 +284,32 @@ def delete_connection(project_id: str) -> bool:
         return False
 
 
+def count_connected_for_email(google_email: str, *, exclude_project_id: str = "") -> int:
+    """How many LIVE Gmail connections exist for a Google account.
+
+    Read-only; used by `backend.services.google_grant` to decide whether a
+    programmatic token revoke would also destroy a sibling Google connector's
+    grant on a shared Google OAuth client. A blank email matches nothing (we
+    cannot prove identity, so we must not claim a match). Adds no behaviour to
+    the Gmail connector itself."""
+    email = str(google_email or "").strip().lower()
+    if not email:
+        return 0
+    init_gmail_tables()
+    try:
+        sql = ("SELECT COUNT(*) AS n FROM gmail_connections "
+               "WHERE LOWER(google_email)=? AND status=?")
+        params = [email, STATUS_CONNECTED]
+        if str(exclude_project_id or "").strip():
+            sql += " AND project_id<>?"
+            params.append(str(exclude_project_id).strip())
+        with _sqlite.connection(DB_PATH) as c:
+            row = c.execute(sql, params).fetchone()
+        return int(row["n"]) if row else 0
+    except Exception:
+        return 0
+
+
 def decrypt_refresh_token(conn: GmailConnection) -> str:
     """Decrypt and return the stored refresh token. Raises
     CredentialEncryptionError if encryption is unavailable or the envelope is
@@ -311,5 +337,5 @@ __all__ = [
     "GmailConnection", "PROVIDER", "STATUS_CONNECTED", "STATUS_REVOKED",
     "init_gmail_tables", "upsert_connection", "get_connection",
     "update_access_token", "mark_synced", "mark_revoked", "delete_connection",
-    "decrypt_refresh_token", "decrypt_access_token",
+    "count_connected_for_email", "decrypt_refresh_token", "decrypt_access_token",
 ]

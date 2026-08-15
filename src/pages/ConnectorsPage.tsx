@@ -8,12 +8,18 @@ import { useToast } from '@/hooks/useToast';
 import { getProjects } from '@/stores/projectStore';
 import { resolveBackTarget } from '@/lib/shellNavigation';
 import type { Project } from '@/types/projects';
-import { GmailLogo, GithubLogo, VercelLogo } from '@/components/connectors/BrandLogos';
+import {
+  GmailLogo, GithubLogo, VercelLogo, GoogleCalendarLogo,
+} from '@/components/connectors/BrandLogos';
 import ConnectorSelect from '@/components/connectors/ConnectorSelect';
 import {
   beginGmailConnectRedirect, getGmailConnection, syncGmail, disconnectGmail,
   type GmailConnectionView,
 } from '@/lib/gmailConnectorApi';
+import {
+  beginCalendarConnectRedirect, getCalendarConnection, syncCalendar,
+  disconnectCalendar, type CalendarConnectionView,
+} from '@/lib/calendarConnectorApi';
 import {
   beginGithubConnectRedirect, beginGithubInstallRedirect, getGithubConnection,
   getGithubPendingInstallations, getGithubPendingRepositories,
@@ -235,6 +241,151 @@ function GmailCard({ projectId, notify }: { projectId: string; notify: Notify })
               {busy === 'disconnect' ? <BusySpinner /> : null} Disconnect
             </button>
           </div>
+        </div>
+      )}
+    </ConnectorShell>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   GOOGLE CALENDAR CARD — real OAuth flow via calendarConnectorApi.
+   Same shape as the Gmail card (both are single-step Google OAuth connections:
+   consent, then the project is connected — there is nothing further to pick),
+   so it reuses the identical states, controls and status vocabulary rather than
+   inventing a second pattern.
+   ══════════════════════════════════════════════════════════════════════════ */
+function CalendarCard({ projectId, notify }: { projectId: string; notify: Notify }) {
+  const [status, setStatus] = useState<Loaded<CalendarConnectionView>>({ state: 'loading' });
+  const [busy, setBusy] = useState<null | 'connect' | 'sync' | 'disconnect'>(null);
+
+  // `load` is await-first: it performs no synchronous setState, so the mount
+  // effect that calls it never sets state during render.
+  const load = useCallback(async () => {
+    const res = await getCalendarConnection(projectId);
+    if (res.ok) setStatus({ state: 'ready', connection: res.data.connected ? res.data.connection : null });
+    else setStatus({ state: 'error', message: reason(res.status, res.message) });
+  }, [projectId]);
+
+  // Load real backend status once on mount (and on project switch, via the
+  // card's key-based remount). Same await-first pattern as the other cards.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { void load(); }, [load]);
+
+  const onRetry = () => { setStatus({ state: 'loading' }); void load(); };
+
+  const onConnect = async () => {
+    setBusy('connect');
+    // Starts the real backend OAuth flow and redirects the browser to Google
+    // when it succeeds; only surfaces a toast if the START call fails (no
+    // navigation happened, so re-enable the button).
+    const res = await beginCalendarConnectRedirect(projectId);
+    if (!res.ok) { notify(reason(res.status, res.message), 'error'); setBusy(null); }
+  };
+
+  const onSync = async () => {
+    setBusy('sync');
+    const res = await syncCalendar(projectId);
+    setBusy(null);
+    if (!res.ok) { notify(reason(res.status, res.message), 'error'); return; }
+    const { text, tone } = summarizeSync(res.data.sync);
+    notify(`Google Calendar synced — ${text}.`, tone);
+    void load();
+  };
+
+  const onDisconnect = async () => {
+    setBusy('disconnect');
+    const res = await disconnectCalendar(projectId);
+    setBusy(null);
+    if (!res.ok) { notify(reason(res.status, res.message), 'error'); return; }
+    // Truthful about what actually happened: when another Google connector
+    // (Gmail) still shares the same Google grant, Korvix removes its own copy
+    // of the credentials but deliberately does NOT revoke at Google — saying
+    // "revoked" there would be a lie that also implies Gmail broke.
+    notify(
+      res.data.revoked_remotely
+        ? 'Google Calendar disconnected and access revoked at Google.'
+        : 'Google Calendar disconnected. Korvix no longer has access to your calendar.',
+      'success',
+    );
+    void load();
+  };
+
+  const conn = status.state === 'ready' ? status.connection : null;
+  const revoked = conn?.status === 'revoked';
+  const connected = !!conn && conn.status === 'connected';
+
+  let pill: React.ReactNode = null;
+  if (status.state === 'ready') {
+    if (connected) pill = <StatusPill tone="connected" label="Connected" />;
+    else if (revoked) pill = <StatusPill tone="revoked" label="Reconnect needed" />;
+    else pill = <StatusPill tone="muted" label="Not connected" />;
+  }
+
+  return (
+    <ConnectorShell
+      logo={<GoogleCalendarLogo size={26} />}
+      name="Google Calendar"
+      description="Upcoming meetings, recent events and cancellations for your project — turned into project observations Korvix can reason over. Read-only: Korvix can never create, move, edit, or delete an event."
+      statusPill={pill}
+    >
+      {status.state === 'loading' && (
+        <div className="flex items-center gap-2 text-[13px] text-white/40"><BusySpinner /> Checking status…</div>
+      )}
+
+      {status.state === 'error' && (
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-[13px] text-[#F87171]/90">{status.message}</span>
+          <button className={btnGhost} onClick={onRetry}><RefreshCw className="h-3.5 w-3.5" /> Retry</button>
+        </div>
+      )}
+
+      {status.state === 'ready' && !connected && !revoked && (
+        <div className="space-y-2">
+          <button className={btnPrimary} disabled={busy === 'connect'} onClick={onConnect}>
+            {busy === 'connect' ? <BusySpinner /> : null} Connect Google Calendar
+          </button>
+          <p className="text-[11.5px] text-white/30 leading-relaxed">
+            Opens Google to authorize Korvix to <span className="text-white/50">view events</span> on your
+            calendar. Connecting here does not change your Gmail connection.
+          </p>
+        </div>
+      )}
+
+      {status.state === 'ready' && revoked && (
+        <div className="flex flex-wrap items-center gap-2">
+          <button className={btnPrimary} disabled={busy === 'connect'} onClick={onConnect}>
+            {busy === 'connect' ? <BusySpinner /> : null} Reconnect Google Calendar
+          </button>
+          <button className={btnDanger} disabled={busy === 'disconnect'} onClick={onDisconnect}>
+            {busy === 'disconnect' ? <BusySpinner /> : null} Remove
+          </button>
+        </div>
+      )}
+
+      {status.state === 'ready' && connected && conn && (
+        <div className="space-y-3">
+          <div className="text-[13px] text-white/60">
+            {conn.google_email ? (
+              <>Connected as <span className="text-white font-medium">{conn.google_email}</span></>
+            ) : 'Connected.'}
+            {conn.time_zone && <span className="text-white/35"> · {conn.time_zone}</span>}
+            {conn.last_sync_at && (
+              <span className="text-white/35"> · last sync {new Date(conn.last_sync_at).toLocaleString()}</span>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button className={btnGhost} disabled={busy !== null} onClick={onSync}>
+              {busy === 'sync' ? <BusySpinner /> : <RefreshCw className="h-3.5 w-3.5" />} Sync now
+            </button>
+            <button className={btnDanger} disabled={busy !== null} onClick={onDisconnect}>
+              {busy === 'disconnect' ? <BusySpinner /> : null} Disconnect
+            </button>
+          </div>
+          <p className="text-[11.5px] text-white/30 leading-relaxed">
+            Syncing imports upcoming and recent events for this project only. To remove Korvix's
+            access to your Google account entirely, also remove it in your{' '}
+            <span className="text-white/50">Google Account → Security → Third-party access</span>.
+          </p>
         </div>
       )}
     </ConnectorShell>
@@ -812,9 +963,10 @@ export default function ConnectorsPage() {
 
   /* ── Connector callback receiver ─────────────────────────────────────────
    * Each backend redirects the browser (a full page load) here:
-   *   Gmail:  `?gmail=connected|error&project_id=...&reason=...`
-   *   GitHub: `?github=authorized|needs_install|error&project_id=...&reason=...`
-   *   Vercel: `?vercel=authorized|error&project_id=...&reason=...`
+   *   Gmail:    `?gmail=connected|error&project_id=...&reason=...`
+   *   Calendar: `?calendar=connected|error&project_id=...&reason=...`
+   *   GitHub:   `?github=authorized|needs_install|error&project_id=...&reason=...`
+   *   Vercel:   `?vercel=authorized|error&project_id=...&reason=...`
    * The cards fetch real status on mount (GitHub then shows its account/repo
    * picker for a verified pending install; Vercel shows its project picker), so
    * here we only surface ONE toast for the outcome and strip the temporary params
@@ -823,9 +975,10 @@ export default function ConnectorsPage() {
   useEffect(() => {
     if (callbackHandled.current) return;
     const gmail = searchParams.get('gmail');
+    const calendar = searchParams.get('calendar');
     const github = searchParams.get('github');
     const vercel = searchParams.get('vercel');
-    if (!gmail && !github && !vercel) return;
+    if (!gmail && !calendar && !github && !vercel) return;
     callbackHandled.current = true;
 
     const reasonCode = (searchParams.get('reason') || '').trim();
@@ -834,6 +987,11 @@ export default function ConnectorsPage() {
       notify('Gmail connected successfully.', 'success');
     } else if (gmail) {
       notify(`Gmail could not be connected${pretty}.`, 'error');
+    }
+    if (calendar === 'connected') {
+      notify('Google Calendar connected successfully.', 'success');
+    } else if (calendar) {
+      notify(`Google Calendar could not be connected${pretty}.`, 'error');
     }
     // `installed` kept for backward compatibility with any in-flight redirect.
     if (github === 'authorized' || github === 'installed') {
@@ -850,7 +1008,7 @@ export default function ConnectorsPage() {
     }
 
     const next = new URLSearchParams(searchParams);
-    for (const k of ['gmail', 'github', 'vercel', 'project_id', 'reason', 'state',
+    for (const k of ['gmail', 'calendar', 'github', 'vercel', 'project_id', 'reason', 'state',
                      'setup_action', 'installation_id', 'configurationId', 'teamId',
                      'next', 'code']) next.delete(k);
     setSearchParams(next, { replace: true });
@@ -899,7 +1057,7 @@ export default function ConnectorsPage() {
               </div>
               <h3 className="text-[15px] font-semibold text-white">No projects yet</h3>
               <p className="mt-1 text-[13px] text-white/45 max-w-sm mx-auto">
-                Connectors attach to a project. Create your first project, then come back to connect Gmail, GitHub or Vercel to it.
+                Connectors attach to a project. Create your first project, then come back to connect Gmail, Google Calendar, GitHub or Vercel to it.
               </p>
               <Link to="/projects" className={`${btnPrimary} mt-4`}>
                 <FolderOpen className="h-4 w-4" /> Go to Projects
@@ -933,6 +1091,7 @@ export default function ConnectorsPage() {
               {selectedProject && (
                 <div className="space-y-4" key={selectedProject.id}>
                   <GmailCard projectId={selectedProject.id} notify={notify} />
+                  <CalendarCard projectId={selectedProject.id} notify={notify} />
                   <GithubCard
                     projectId={selectedProject.id}
                     notify={notify}

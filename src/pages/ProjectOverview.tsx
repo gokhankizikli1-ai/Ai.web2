@@ -20,7 +20,7 @@ import { useParams, useNavigate } from 'react-router';
 import {
   ArrowLeft, MessageSquare, Plus, FolderInput, Blocks, Sparkles,
   Github, Mail, Target, Loader2, Check, X, Search,
-  MoreHorizontal, FolderMinus,
+  MoreHorizontal, FolderMinus, CalendarDays, Triangle, Activity,
 } from 'lucide-react';
 import { getProject } from '@/stores/projectStore';
 import {
@@ -40,6 +40,22 @@ function timeAgo(iso?: string | null): string {
   const h = Math.floor(m / 60);
   if (h < 24) return `${h}h ago`;
   return `${Math.floor(h / 24)}d ago`;
+}
+
+/* Icon for a connector signal, keyed by the observation `source` the backend
+ * registry emits (see observations_store.CONNECTOR_SOURCES). Unknown sources
+ * fall back to a neutral activity glyph rather than being mislabelled as one of
+ * the known providers — the previous binary "gmail ? Mail : Github" already
+ * mislabelled every Vercel signal, and would have mislabelled Calendar too. */
+function ConnectorSignalIcon({ source }: { source?: string | null }) {
+  const cls = 'h-3 w-3 shrink-0 text-white/35';
+  switch (source) {
+    case 'gmail': return <Mail className={cls} />;
+    case 'calendar': return <CalendarDays className={cls} />;
+    case 'github': return <Github className={cls} />;
+    case 'vercel': return <Triangle className={cls} />;
+    default: return <Activity className={cls} />;
+  }
 }
 
 const CARD = 'rounded-2xl border border-white/[0.06] bg-white/[0.02]';
@@ -358,7 +374,7 @@ export default function ProjectOverview() {
                 <div className="space-y-1">
                   {brain.connector_signals.slice(0, 5).map((s, i) => (
                     <div key={i} className="flex items-center gap-2 text-[12px] text-white/65">
-                      {s.source === 'gmail' ? <Mail className="h-3 w-3 shrink-0 text-white/35" /> : <Github className="h-3 w-3 shrink-0 text-white/35" />}
+                      <ConnectorSignalIcon source={s.source} />
                       <span className="flex-1 min-w-0 truncate">{s.summary || s.kind}</span>
                     </div>
                   ))}
