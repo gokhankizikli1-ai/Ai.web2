@@ -17,6 +17,11 @@ import type { ChatSession } from '@/types';
 let scope = 'user_alice';
 vi.mock('@/stores/authStore', () => ({ getAccessToken: () => 'tok' }));
 vi.mock('@/lib/storageScope', () => ({ currentStorageScope: () => scope }));
+// getProjects tells listAddableChats which owned project ids to check membership
+// for; chat membership itself remains backend truth (listProjectChats).
+vi.mock('@/stores/projectStore', () => ({
+  getProjects: () => [{ id: 'pA', name: 'Alpha' }, { id: 'pB', name: 'Beta' }],
+}));
 
 import {
   assignChatToProject,
@@ -27,6 +32,7 @@ import {
   listProjectChats,
   listProjectProducts,
   getProjectBrainContext,
+  listAddableChats,
 } from './projectApi';
 
 // Fake backend: threads with an optional project binding, per-project ownership,
@@ -56,7 +62,14 @@ function makeBackend() {
       threads.set(id, { id, project: null, title: body.title || 'Chat' });
       return ok({ id });
     }
-    if (m && method === 'GET') return ok({ threads: [] });
+    // The user's default-workspace threads (the "all my chats" seam).
+    if (m && method === 'GET') {
+      return ok({
+        threads: [...threads.values()].map((t) => ({
+          id: t.id, title: t.title, mode: 'chat', updated_at: '2024-01-01T00:00:00Z',
+        })),
+      });
+    }
     // Chats filed under a project (Project Overview → Chats).
     m = path.match(/^\/v2\/sessions\/projects\/([^/]+)\/threads$/);
     if (m && method === 'GET') {
@@ -288,5 +301,48 @@ describe('bindThreadToProject (deferred new-chat binding)', () => {
     const res = await bindThreadToProject(threadId, 'pOther');
     expect(res.ok).toBe(false);
     expect(res.status).toBe(404);
+  });
+});
+
+describe('listAddableChats (Add existing chat picker)', () => {
+  function seed() {
+    backend.threads.set('th-none', { id: 'th-none', project: null, title: 'Loose chat' });
+    backend.threads.set('th-current', { id: 'th-current', project: 'pA', title: 'Alpha chat' });
+    backend.threads.set('th-other', { id: 'th-other', project: 'pB', title: 'Beta chat' });
+  }
+
+  it('annotates add / in-project / move-here from backend membership', async () => {
+    seed();
+    const list = await listAddableChats('pA');
+    const byId = Object.fromEntries(list.map((c) => [c.id, c]));
+    expect(byId['th-none'].inCurrentProject).toBe(false);
+    expect(byId['th-none'].otherProjectId).toBeNull();          // → "Add"
+    expect(byId['th-current'].inCurrentProject).toBe(true);      // → disabled
+    expect(byId['th-other'].inCurrentProject).toBe(false);
+    expect(byId['th-other'].otherProjectId).toBe('pB');          // → "Move here"
+    expect(byId['th-other'].otherProjectName).toBe('Beta');
+  });
+
+  it('adding a loose chat binds it → then appears in the project', async () => {
+    seed();
+    const res = await bindThreadToProject('th-none', 'pA');
+    expect(res.ok).toBe(true);
+    const chats = await listProjectChats('pA');
+    expect(chats.map((c) => c.id)).toContain('th-none');
+  });
+
+  it('moving a chat from another project rebinds it (single binding)', async () => {
+    seed();
+    await bindThreadToProject('th-other', 'pA'); // move pB → pA
+    const a = await listProjectChats('pA');
+    const b = await listProjectChats('pB');
+    expect(a.map((c) => c.id)).toContain('th-other');
+    expect(b.map((c) => c.id)).not.toContain('th-other');
+  });
+
+  it('a guest gets an empty addable list (no server identity)', async () => {
+    scope = 'guest_x';
+    seed();
+    expect(await listAddableChats('pA')).toEqual([]);
   });
 });
