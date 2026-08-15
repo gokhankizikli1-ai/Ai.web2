@@ -13,6 +13,7 @@ import {
 } from '@/lib/sessionsSync';
 import { bindThreadToProject, getThreadProject } from '@/lib/projectApi';
 import { resolveOpenTarget } from '@/lib/chatSessionResolve';
+import { resolveSendProjectId as resolveSendProjectIdPure } from '@/lib/projectSendResolve';
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
@@ -650,20 +651,53 @@ export function useChat() {
   // exists we show the optimistic pending target for a chat started from a
   // project. No new project-local store — this is just a resolved view.
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+  // Cache the resolved binding KEYED BY the session it was resolved for, so a
+  // send can tell "resolved for the CURRENT session" apart from "stale from a
+  // previously-selected chat" (the switch-then-send race). Written by the
+  // resolver below; read by resolveSendProjectId().
+  const activeProjectInfoRef = useRef<{ sid: string; pid: string | null }>({ sid: '', pid: null });
   const activeServerThreadId =
     sessions.find((s) => s.id === activeSessionId)?.serverThreadId ?? null;
   useEffect(() => {
     let cancelled = false;
-    const pending = pendingProjectBindingsRef.current.get(activeSessionId) ?? null;
+    const sid = activeSessionId;
+    const pending = pendingProjectBindingsRef.current.get(sid) ?? null;
+    const apply = (pid: string | null) => {
+      if (cancelled) return;
+      activeProjectInfoRef.current = { sid, pid };
+      setActiveProjectId(pid);
+    };
     if (activeServerThreadId && serverChatEnabled()) {
       getThreadProject(activeServerThreadId)
-        .then((pid) => { if (!cancelled) setActiveProjectId(pid ?? pending); })
-        .catch(() => { if (!cancelled) setActiveProjectId(pending); });
+        .then((pid) => apply(pid ?? pending))
+        .catch(() => apply(pending));
     } else {
-      setActiveProjectId(pending);
+      apply(pending);
     }
     return () => { cancelled = true; };
   }, [activeSessionId, activeServerThreadId]);
+
+  // Resolve the project id to send with an AI request for the CURRENT active
+  // session — race-free and backend-authoritative:
+  //   • use the cached resolution ONLY if it was computed for this exact session
+  //     (never a stale id from a previously-selected chat);
+  //   • otherwise resolve authoritatively from the session's server thread
+  //     binding (getThreadProject) — so a just-switched bound chat still sends
+  //     its real project, and a just-switched UNBOUND chat sends nothing;
+  //   • a new-from-project chat with no server thread yet uses its pending
+  //     target so even the FIRST turn can receive Project context.
+  // Never derives the project from localStorage metadata. Returns null when
+  // there is no real association.
+  const resolveSendProjectId = useCallback((sid: string): Promise<string | null> => {
+    // Delegate to the pure resolver (unit-tested in projectSendResolve.test.ts).
+    return resolveSendProjectIdPure(sid, {
+      pending: pendingProjectBindingsRef.current.get(sid) ?? null,
+      cached: activeProjectInfoRef.current,
+      session: sessionsRef.current.find((s) => s.id === sid),
+      serverEnabled: serverChatEnabled(),
+      getThreadProject,
+    });
+  }, []);
 
   const [aiMode, setAiMode] = useState<AIMode>('fast');
   const [pinnedMessages, setPinnedMessages] = useState<Message[]>([]);
@@ -982,6 +1016,12 @@ export function useChat() {
        only endpoint that folds asset summaries into the system prompt
        (see backend/services/memory_plane/chat_integration.py
        build_asset_context_block). */
+    // Resolve the CURRENT active session's project once, race-free, for whichever
+    // request path we take. Backend-authoritative (getThreadProject / pending
+    // target), never localStorage. `activeSessionIdRef` is the freshest id, so a
+    // switch-then-send never leaks the previously-selected chat's project.
+    const sendProjectId = await resolveSendProjectId(activeSessionIdRef.current);
+
     const useStreaming = STREAMING_ENABLED || hasAssets;
     if (useStreaming) {
       try {
@@ -1017,6 +1057,10 @@ export function useChat() {
             // Phase 6 — same `user_id` namespace as /chat so memories
             // saved via either path are visible to the other.
             user_id: userIdRef.current,
+            // Project association of the ACTIVE chat — only when a real backend
+            // binding resolves. A routing hint only: the backend re-verifies the
+            // AUTHENTICATED user owns it before injecting Project context.
+            ...(sendProjectId ? { project_id: sendProjectId } : {}),
             ...(requestMode ? { mode: requestMode } : {}),
             // i18n — resolved locale + user's language mode so the backend
             // can enforce the answer-language policy (Auto follows the
@@ -1326,6 +1370,8 @@ export function useChat() {
           chat_id: activeSessionId,
           session_id: activeSessionId,
           platform: 'web',
+          // Project association of the ACTIVE chat (backend re-verifies ownership).
+          ...(sendProjectId ? { project_id: sendProjectId } : {}),
           ...(requestMode ? { mode: requestMode } : {}),
           ...getRequestLocale(trimmed),
         }),
@@ -1433,7 +1479,7 @@ export function useChat() {
     // demo-mode reply — in both cases the conversation got a usable
     // assistant turn, so report success to the composer.
     return true;
-  }, [activeSessionId, aiMode, currentTab]);
+  }, [activeSessionId, aiMode, currentTab, resolveSendProjectId]);
 
   const sendMessage = useCallback(
     async (
