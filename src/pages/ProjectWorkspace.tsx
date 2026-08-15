@@ -41,6 +41,7 @@ import {
   type WebBuildPayload,
 } from '@/lib/webBuildPayload';
 import { saveWebBuildPayloadToProject } from '@/lib/webBuildProject';
+import { attachProductToProject } from '@/lib/projectApi';
 import { stashPreview, buildLatestPreviewStash } from '@/lib/webBuildPreviewStash';
 import { generateWebBuild, WebBuildError, webBuildErrorKeyFor } from '@/lib/webBuildApi';
 import { useLanguageStore } from '@/stores/languageStore';
@@ -366,6 +367,16 @@ function WebBuildProjectView({ project }: { project: Project }) {
       setPayload(next);
       setAnimateStepId(next.steps[next.steps.length - 1]?.id);
       setLive(null);
+      if (saveRes.ok) {
+        // Persist the project↔product association as BACKEND truth too (so it
+        // surfaces in Project Overview → Products across devices). Best-effort,
+        // idempotent by the build session id; reference only, never source.
+        void attachProductToProject(project.id, {
+          buildType: next.buildType,
+          title: project.name,
+          sourceId: next.steps[0]?.id,
+        }).catch(() => { /* best-effort — the local save already succeeded */ });
+      }
       if (!saveRes.ok) {
         setErrorMsg(lang === 'tr'
           ? 'Revizyon uygulandı ancak projeye kalıcı olarak kaydedilemedi (depolama dolu olabilir).'
@@ -416,7 +427,7 @@ function WebBuildProjectView({ project }: { project: Project }) {
       {/* Top Bar — native project header */}
       <div className="relative shrink-0 flex items-center justify-between px-4 py-2.5" style={{ background: 'rgba(13, 17, 23,0.85)', backdropFilter: 'blur(20px)', borderBottom: '1px solid rgba(255,255,255,0.05)', zIndex: 10 }}>
         <div className="flex items-center gap-3">
-          <button onClick={() => navigate('/projects')} className="flex items-center gap-1 text-[11px] text-white/30 hover:text-white/60 transition-colors" aria-label={t('wbProjWebsiteBuild')}>
+          <button onClick={() => navigate(`/projects/${project.id}`)} className="flex items-center gap-1 text-[11px] text-white/30 hover:text-white/60 transition-colors" aria-label={t('wbProjWebsiteBuild')}>
             <ArrowLeft className="h-3.5 w-3.5" />
           </button>
           <div className="w-px h-4 bg-white/10" />
@@ -952,7 +963,7 @@ export default function ProjectWorkspace() {
       {/* Top Bar */}
       <div className="relative shrink-0 flex items-center justify-between px-4 py-2.5" style={{ background: 'rgba(13, 17, 23,0.85)', backdropFilter: 'blur(20px)', borderBottom: '1px solid rgba(255,255,255,0.05)', zIndex: 10 }}>
         <div className="flex items-center gap-3">
-          <button onClick={() => navigate('/projects')} className="flex items-center gap-1 text-[11px] text-white/30 hover:text-white/60 transition-colors">
+          <button onClick={() => navigate(`/projects/${projectId}`)} className="flex items-center gap-1 text-[11px] text-white/30 hover:text-white/60 transition-colors">
             <ArrowLeft className="h-3.5 w-3.5" />
           </button>
           <div className="w-px h-4 bg-white/10" />

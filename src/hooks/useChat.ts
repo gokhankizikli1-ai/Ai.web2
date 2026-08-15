@@ -11,6 +11,7 @@ import {
   hydrateFromServer,
   mergeServerSessions,
 } from '@/lib/sessionsSync';
+import { bindThreadToProject } from '@/lib/projectApi';
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
@@ -557,6 +558,12 @@ export function useChat() {
     // Run once per mount. Identity changes remount the tree (scope-keyed).
   }, []);
 
+  // Pending "bind this new chat to a project once its server thread exists"
+  // requests (sessionId → projectId), set by startProjectChat(). A new chat has
+  // no server thread until its first turn is mirrored, so binding is deferred to
+  // exactly that lifecycle point — never faked with frontend-only metadata.
+  const pendingProjectBindingsRef = useRef<Map<string, string>>(new Map());
+
   const prevLoadingRef = useRef<boolean>(false);
   useEffect(() => {
     const was = prevLoadingRef.current;
@@ -567,14 +574,43 @@ export function useChat() {
     const session = sessionsRef.current.find((s) => s.id === activeId);
     if (!session) return;
     syncSession(session).then((threadId) => {
-      if (!threadId || session.serverThreadId === threadId) return;
-      // Stash the freshly-created server thread id onto the session so future
-      // turns append to the same thread and hydration can dedupe it.
-      setSessions((prev) => prev.map((s) =>
-        s.id === activeId && !s.serverThreadId ? { ...s, serverThreadId: threadId } : s,
-      ));
+      if (!threadId) return;
+      if (session.serverThreadId !== threadId) {
+        // Stash the freshly-created server thread id onto the session so future
+        // turns append to the same thread and hydration can dedupe it.
+        setSessions((prev) => prev.map((s) =>
+          s.id === activeId && !s.serverThreadId ? { ...s, serverThreadId: threadId } : s,
+        ));
+      }
+      // The server thread now exists — fulfil any deferred project binding.
+      const pendingPid = pendingProjectBindingsRef.current.get(activeId);
+      if (pendingPid) {
+        pendingProjectBindingsRef.current.delete(activeId);
+        bindThreadToProject(threadId, pendingPid).catch(() => { /* best-effort */ });
+      }
     }).catch(() => { /* best-effort mirror — never disrupt the chat */ });
   }, [isLoading]);
+
+  // Open a specific conversation by id, even if it isn't in memory yet (a chat
+  // opened from the Project Overview may still be hydrating from the server).
+  // The request is fulfilled as soon as a session with that id is present.
+  const openSessionRequestRef = useRef<string | null>(null);
+  const requestOpenSession = useCallback((id: string) => {
+    if (!id) return;
+    if (sessionsRef.current.some((s) => s.id === id)) {
+      setActiveSessionId(id);
+      openSessionRequestRef.current = null;
+    } else {
+      openSessionRequestRef.current = id;   // fulfilled by the watcher below
+    }
+  }, []);
+  useEffect(() => {
+    const want = openSessionRequestRef.current;
+    if (want && sessions.some((s) => s.id === want)) {
+      setActiveSessionId(want);
+      openSessionRequestRef.current = null;
+    }
+  }, [sessions]);
 
   const [aiMode, setAiMode] = useState<AIMode>('fast');
   const [pinnedMessages, setPinnedMessages] = useState<Message[]>([]);
@@ -700,6 +736,16 @@ export function useChat() {
     setIsLoading(false);
     return newSession.id;
   }, [currentTab]);
+
+  /* ─── Create a new ordinary chat that belongs to a project ───
+     Creates a normal chat and records a DEFERRED binding: the chat is filed
+     under `projectId` as soon as its server thread exists (after the first
+     turn is mirrored). No Web/App Build is involved. */
+  const startProjectChat = useCallback((projectId: string) => {
+    const id = createNewChat();
+    if (projectId) pendingProjectBindingsRef.current.set(id, projectId);
+    return id;
+  }, [createNewChat]);
 
   const selectSession = useCallback((id: string) => {
     setActiveSessionId(id);
@@ -1413,6 +1459,8 @@ export function useChat() {
     filteredSessions,
     toolActivity,            // Phase 10 fix — current tool run, null when idle
     createNewChat,
+    startProjectChat,
+    requestOpenSession,
     selectSession,
     markSessionWebBuild,
     deleteSession,

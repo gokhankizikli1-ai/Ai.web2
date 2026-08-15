@@ -149,6 +149,7 @@ export default function ChatDashboard() {
     activeSession, activeSessionId, error, isLoading,
     aiMode, searchQuery, filteredSessions, pinnedMessages, inputText, currentTab,
     createNewChat, selectSession, deleteSession, markSessionWebBuild,
+    startProjectChat, requestOpenSession,
     toolActivity,
     sendMessage, retry, togglePin,
     setAiMode, setSearchQuery, setInputText, switchTab,
@@ -283,6 +284,28 @@ export default function ChatDashboard() {
     });
     clearParams();
   }, [searchParams, setSearchParams, selectSession]);
+
+  // Entry points FROM the Project Overview:
+  //   /chat?openSession=<threadId>        → open that project chat (once hydrated)
+  //   /chat?newChatForProject=<projectId> → new ordinary chat, auto-filed under
+  //                                          the project when its thread exists
+  // Each runs once, then clears its param so a refresh doesn't re-trigger.
+  const projectEntryRef = useRef(false);
+  useEffect(() => {
+    const openSession = searchParams.get('openSession');
+    const newChatForProject = searchParams.get('newChatForProject');
+    if (!openSession && !newChatForProject) { projectEntryRef.current = false; return; }
+    if (projectEntryRef.current) return;
+    projectEntryRef.current = true;
+
+    if (openSession) requestOpenSession(openSession);
+    else if (newChatForProject) startProjectChat(newChatForProject);
+
+    const next = new URLSearchParams(searchParams);
+    next.delete('openSession');
+    next.delete('newChatForProject');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams, requestOpenSession, startProjectChat]);
 
   // Phase 13D.1 — ACTIVE-SESSION hydration. A persisted Web Build must restore as an
   // embedded build (never normal Chat) after a refresh / deployment / navigation /
