@@ -11,6 +11,9 @@
  *                 corner and the blue "31" ticket, in the official brand
  *                 colours (the same multi-colour treatment as GmailLogo, so the
  *                 two Google connectors read as a family).
+ *  - SlackLogo  — Slack's four-colour hash/pinwheel mark, drawn from the four
+ *                 official brand colours. Multi-colour like the Google marks,
+ *                 so it reads as a real brand mark and not a Lucide glyph.
  *
  * All are decorative next to a visible text label, so they carry
  * aria-hidden and no title.
@@ -96,6 +99,31 @@ export function GoogleCalendarLogo({ size = 28, className = '' }: { size?: numbe
       >
         31
       </text>
+    </svg>
+  );
+}
+
+export function SlackLogo({ size = 28, className = '' }: { size?: number; className?: string }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      className={className}
+      aria-hidden="true"
+      focusable="false"
+    >
+      {/* Slack's mark is four two-part arms rotated around a centre. Each arm
+          is one brand colour: a rounded bar plus the small "cap" that turns the
+          pinwheel. */}
+      <path fill="#E01E5A" d="M5.04 15.17a2.53 2.53 0 1 1-2.52-2.53h2.52v2.53z" />
+      <path fill="#E01E5A" d="M6.31 15.17a2.53 2.53 0 0 1 5.05 0v6.31a2.53 2.53 0 0 1-5.05 0v-6.31z" />
+      <path fill="#36C5F0" d="M8.83 5.04a2.53 2.53 0 1 1 2.53-2.52v2.52H8.83z" />
+      <path fill="#36C5F0" d="M8.83 6.31a2.53 2.53 0 0 1 0 5.05H2.52a2.53 2.53 0 0 1 0-5.05h6.31z" />
+      <path fill="#2EB67D" d="M18.96 8.83a2.53 2.53 0 1 1 2.52 2.53h-2.52V8.83z" />
+      <path fill="#2EB67D" d="M17.69 8.83a2.53 2.53 0 0 1-5.05 0V2.52a2.53 2.53 0 0 1 5.05 0v6.31z" />
+      <path fill="#ECB22E" d="M15.17 18.96a2.53 2.53 0 1 1-2.53 2.52v-2.52h2.53z" />
+      <path fill="#ECB22E" d="M15.17 17.69a2.53 2.53 0 0 1 0-5.05h6.31a2.53 2.53 0 0 1 0 5.05h-6.31z" />
     </svg>
   );
 }

@@ -59,8 +59,9 @@ _IMPORTANCE_HINTS = (IMPORTANCE_LOW, IMPORTANCE_NORMAL, IMPORTANCE_HIGH)
 # observations here). Each connector's `normalize.SOURCE` MUST be listed here;
 # extend it when a new connector ships — nothing else needs to change for that
 # provider to flow through the same authority (adding "vercel" here is the ONLY
-# change the Vercel connector needed in the Business Brain / Project Brain path).
-CONNECTOR_SOURCES = ("github", "gmail", "vercel", "calendar")
+# change the Vercel connector needed in the Business Brain / Project Brain path,
+# and the same held for "calendar" and "slack").
+CONNECTOR_SOURCES = ("github", "gmail", "vercel", "calendar", "slack")
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS observations (
