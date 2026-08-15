@@ -670,11 +670,13 @@ async def chat(req: ChatRequest, request: Request):
                     build_project_context_block,
                     set_current_project_context,
                 )
-                # Pass user_id so the Project Brain part (bounded project-chat
-                # excerpts + connectors + goals/products) can owner-gate and fold
-                # into the SAME live system-prompt seam. Owner isolation is
-                # enforced inside the brain.
-                _block = build_project_context_block(req.project_id, user_id=str(req.user_id) if req.user_id else None)
+                # Pass the BACKEND-AUTHORITATIVE identity (resolved above via
+                # _resolve_authoritative_uid) — NEVER the client-supplied
+                # req.user_id — so the Project Brain owner-gate cannot be spoofed
+                # to inject another user's project/chat context. The brain part
+                # (bounded project-chat excerpts + connectors + goals/products)
+                # folds into the SAME live system-prompt seam under this identity.
+                _block = build_project_context_block(req.project_id, user_id=str(user_id) if user_id else None)
                 if _block:
                     _project_ctx_token = set_current_project_context(_block)
                     _project_id_for_meta = req.project_id

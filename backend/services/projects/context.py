@@ -85,6 +85,15 @@ def build_project_context_block(
     if not project:
         return None
 
+    # Ownership gate (security boundary). When a caller identity is supplied it
+    # MUST be the backend-authoritative one (chat.py passes the resolved uid, not
+    # req.user_id). If it does not own this project, inject NOTHING — neither the
+    # Phase-2 name/description/memory block nor the Project Brain block — so a
+    # spoofed/foreign project_id can never leak another user's project context.
+    # `user_id=None` (legacy callers) keeps the prior behaviour unchanged.
+    if user_id and str(project.owner_user_id) != str(user_id):
+        return None
+
     try:
         memory = list_memory(project_id, limit=memory_limit, newest_first=True)
     except Exception:
