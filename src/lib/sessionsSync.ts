@@ -205,6 +205,40 @@ export async function hydrateFromServer(): Promise<ChatSession[]> {
   return out;
 }
 
+export interface UserThread {
+  id: string;
+  title: string;
+  mode: string | null;
+  updated_at: string | null;
+}
+
+/**
+ * List the signed-in user's ORDINARY server chats (title/mode/updated_at only —
+ * no message bodies), newest first, bounded. Reuses the EXISTING sessions read
+ * seam (the user's default workspace holds every mirrored chat) — it does NOT
+ * create a second conversation index. Build/tool threads are excluded. This is
+ * the server-authoritative source for the "Add existing chat" picker; the caller
+ * must never fall back to localStorage for the available-chat list. Returns []
+ * for guests / on failure.
+ */
+export async function listUserThreads(): Promise<UserThread[]> {
+  if (!serverChatEnabled()) return [];
+  const wsId = await ensureWorkspaceId();
+  if (!wsId) return [];
+  const data = await call<{ threads?: ServerThread[] }>(
+    'GET',
+    `/v2/sessions/workspaces/${encodeURIComponent(wsId)}/threads?limit=${MAX_HYDRATED_THREADS}`,
+  );
+  return (data?.threads || [])
+    .filter((t) => t.mode == null || t.mode === '' || CHAT_MODES.has(String(t.mode)))
+    .map((t) => ({
+      id: t.id,
+      title: t.title || 'Chat',
+      mode: t.mode ?? null,
+      updated_at: t.updated_at ?? null,
+    }));
+}
+
 /**
  * Merge server-hydrated sessions into the local set WITHOUT losing local data.
  * Local sessions are always kept; a server session is added only when no local

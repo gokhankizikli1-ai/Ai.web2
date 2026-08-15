@@ -12,7 +12,8 @@
  */
 import type { ChatSession } from '@/types';
 import { apiCall, apiCallDetailed } from '@/lib/serverApi';
-import { serverChatEnabled, syncSession } from '@/lib/sessionsSync';
+import { serverChatEnabled, syncSession, listUserThreads } from '@/lib/sessionsSync';
+import { getProjects } from '@/stores/projectStore';
 import { resolveBuildType, type BuildType } from '@/lib/buildType';
 
 export interface BindingResult {
@@ -157,6 +158,55 @@ export async function listProjectChats(projectId: string): Promise<ProjectChat[]
     mode: t.mode ?? null,
     updated_at: t.updated_at ?? null,
   }));
+}
+
+export interface AddableChat {
+  id: string;                    // server thread id
+  title: string;
+  updated_at: string | null;
+  inCurrentProject: boolean;     // already filed here → disable
+  otherProjectId: string | null; // bound to a DIFFERENT project → "Move here"
+  otherProjectName: string | null;
+}
+
+/**
+ * The signed-in user's ordinary chats, annotated with their project membership,
+ * for the "Add existing chat" picker. Server-authoritative:
+ *   • the chat list comes from the sessions authority (`listUserThreads`), NEVER
+ *     localStorage;
+ *   • membership comes from the canonical per-project binding
+ *     (`listProjectChats`), queried once per owned project (few calls, not
+ *     per-thread).
+ * `getProjects()` is used ONLY to know which project ids to ask about (+ names);
+ * chat membership itself is backend truth. Ownership is enforced server-side on
+ * every read, so this can never surface another user's chats.
+ */
+export async function listAddableChats(currentProjectId: string): Promise<AddableChat[]> {
+  const threads = await listUserThreads();
+  if (threads.length === 0) return [];
+
+  // thread id → { projectId, projectName } for every project the user owns.
+  const owned = getProjects();
+  const membership = new Map<string, { id: string; name: string }>();
+  await Promise.all(
+    owned.map(async (p) => {
+      const chats = await listProjectChats(p.id);
+      for (const c of chats) membership.set(c.id, { id: p.id, name: p.name });
+    }),
+  );
+
+  return threads.map((t) => {
+    const m = membership.get(t.id) || null;
+    const inCurrent = m?.id === currentProjectId;
+    return {
+      id: t.id,
+      title: t.title,
+      updated_at: t.updated_at,
+      inCurrentProject: !!inCurrent,
+      otherProjectId: m && !inCurrent ? m.id : null,
+      otherProjectName: m && !inCurrent ? m.name : null,
+    };
+  });
 }
 
 export interface ProjectProduct {
