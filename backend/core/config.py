@@ -558,6 +558,53 @@ class Config:
     CALENDAR_DESCRIPTION_MAX_CHARS: int = int(os.getenv("CALENDAR_DESCRIPTION_MAX_CHARS", "200") or 200)
     CALENDAR_ATTENDEES_MAX: int = int(os.getenv("CALENDAR_ATTENDEES_MAX", "5") or 5)
 
+    # ── Slack connector (read-only source of observations) ────────────────
+    # Master gate for the /v2/slack/* surface. When false: connect/status/
+    # select/sync/disconnect routes 503 and the OAuth callback bounces to the
+    # frontend with a generic error (dormant). Default OFF so production
+    # behaviour is byte-identical until flipped. The RUNTIME source of truth is
+    # backend.services.slack.config (read dynamically so a Railway flip is live
+    # without a restart, mirroring the Gmail/Vercel/Calendar connectors); these
+    # attributes register the canonical names + defaults for discoverability.
+    ENABLE_SLACK_CONNECTOR: bool = os.getenv("ENABLE_SLACK_CONNECTOR", "false").strip().lower() == "true"
+    # SLACK_CLIENT_ID / SLACK_CLIENT_SECRET: the Slack app's OAuth credentials
+    # (api.slack.com → your app → Basic Information). The SECRET is NEVER
+    # logged, NEVER returned to the frontend.
+    SLACK_CLIENT_ID: str = os.getenv("SLACK_CLIENT_ID", "").strip()
+    SLACK_CLIENT_SECRET: str = os.getenv("SLACK_CLIENT_SECRET", "")
+    # SLACK_OAUTH_REDIRECT_URI: the EXACT Redirect URL registered on the Slack
+    # app. Read from env (never derived from the request Host) and must equal
+    # "<backend-public-base>/v2/slack/oauth/callback". Empty ⇒ connect fails
+    # closed (503).
+    SLACK_OAUTH_REDIRECT_URI: str = os.getenv("SLACK_OAUTH_REDIRECT_URI", "").strip()
+    # SLACK_FRONTEND_RESULT_URL / _PATH: where the OAuth callback redirects the
+    # browser (fixed server-side — never a request-supplied URL, so no open
+    # redirect). Falls back to PUBLIC_APP_URL + the integrations route.
+    SLACK_FRONTEND_RESULT_URL: str = os.getenv("SLACK_FRONTEND_RESULT_URL", "").strip()
+    SLACK_FRONTEND_RESULT_PATH: str = os.getenv("SLACK_FRONTEND_RESULT_PATH", "/#/settings/integrations").strip()
+    # Bounds for the explicit, read-only sync. Volume is capped by the selected
+    # channel count × per-channel pages AND an absolute MAX_MESSAGES ceiling
+    # (divided into a fair per-channel share); time is capped by the lookback
+    # window. Runtime source of truth is backend.services.slack.config (which
+    # also clamps each value).
+    SLACK_OAUTH_STATE_TTL_S: int = int(os.getenv("SLACK_OAUTH_STATE_TTL_S", "600") or 600)
+    SLACK_PENDING_TTL_S: int = int(os.getenv("SLACK_PENDING_TTL_S", "900") or 900)
+    SLACK_MAX_SELECTED_CHANNELS: int = int(os.getenv("SLACK_MAX_SELECTED_CHANNELS", "10") or 10)
+    SLACK_PENDING_CHANNELS_MAX: int = int(os.getenv("SLACK_PENDING_CHANNELS_MAX", "200") or 200)
+    SLACK_CHANNELS_PAGE_SIZE: int = int(os.getenv("SLACK_CHANNELS_PAGE_SIZE", "200") or 200)
+    SLACK_CHANNELS_MAX_PAGES: int = int(os.getenv("SLACK_CHANNELS_MAX_PAGES", "3") or 3)
+    SLACK_SYNC_PAGE_SIZE: int = int(os.getenv("SLACK_SYNC_PAGE_SIZE", "50") or 50)
+    SLACK_SYNC_MAX_PAGES: int = int(os.getenv("SLACK_SYNC_MAX_PAGES", "1") or 1)
+    SLACK_SYNC_INITIAL_MAX_PAGES: int = int(os.getenv("SLACK_SYNC_INITIAL_MAX_PAGES", "2") or 2)
+    SLACK_SYNC_MAX_MESSAGES: int = int(os.getenv("SLACK_SYNC_MAX_MESSAGES", "200") or 200)
+    SLACK_SYNC_LOOKBACK_DAYS: int = int(os.getenv("SLACK_SYNC_LOOKBACK_DAYS", "7") or 7)
+    SLACK_SYNC_INITIAL_LOOKBACK_DAYS: int = int(os.getenv("SLACK_SYNC_INITIAL_LOOKBACK_DAYS", "14") or 14)
+    SLACK_SYNC_THREAD_MAX_REPLIES: int = int(os.getenv("SLACK_SYNC_THREAD_MAX_REPLIES", "5") or 5)
+    SLACK_SYNC_MAX_THREADS_PER_CHANNEL: int = int(os.getenv("SLACK_SYNC_MAX_THREADS_PER_CHANNEL", "3") or 3)
+    # Upper bound on message text copied into an observation payload (0 drops
+    # message text entirely, leaving metadata-only observations).
+    SLACK_MESSAGE_MAX_CHARS: int = int(os.getenv("SLACK_MESSAGE_MAX_CHARS", "500") or 500)
+
     # ── Legacy per-user routes (/memory, /profile, /stats) ───────────────
     # These pre-auth routes are superseded by the auth-bound /v2/* surface
     # and are NOT called by the current frontend. They are now ownership-
@@ -972,6 +1019,32 @@ class Config:
                     "refresh token cannot be encrypted at rest, so connect fails "
                     "closed (503). It is the SAME key the Gmail/Vercel connectors "
                     "use.",
+                ))
+
+        # 3i. Slack connector — if enabled it needs the Slack app's OAuth
+        #     credentials (else connect/start 503s) AND the shared credential
+        #     encryption key (else the bot token could not be stored, so the
+        #     callback fails closed). Surface a partial config loudly rather
+        #     than letting it fail silently at the first user click.
+        if self.ENABLE_SLACK_CONNECTOR:
+            if not (self.SLACK_CLIENT_ID and self.SLACK_CLIENT_SECRET.strip()
+                    and self.SLACK_OAUTH_REDIRECT_URI):
+                issues.append((
+                    "critical",
+                    "ENABLE_SLACK_CONNECTOR is on but the Slack app OAuth config "
+                    "is incomplete — set SLACK_CLIENT_ID, SLACK_CLIENT_SECRET and "
+                    "SLACK_OAUTH_REDIRECT_URI (exactly "
+                    "<backend-public-base>/v2/slack/oauth/callback). Connect fails "
+                    "closed (503) without them.",
+                ))
+            if not self.KORVIX_CREDENTIAL_ENCRYPTION_KEY.strip():
+                issues.append((
+                    "critical",
+                    "ENABLE_SLACK_CONNECTOR is on but "
+                    "KORVIX_CREDENTIAL_ENCRYPTION_KEY is empty — the Slack bot "
+                    "token cannot be encrypted at rest, so connect fails closed "
+                    "(503). It is the SAME key the Gmail/Vercel/Calendar "
+                    "connectors use.",
                 ))
 
         # 4. Orchestration write surface needs verified identity. If the

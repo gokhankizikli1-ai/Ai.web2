@@ -20,7 +20,7 @@ import { useParams, useNavigate } from 'react-router';
 import {
   ArrowLeft, MessageSquare, Plus, FolderInput, Blocks, Sparkles,
   Github, Mail, Target, Loader2, Check, X, Search,
-  MoreHorizontal, FolderMinus, CalendarDays, Triangle, Activity,
+  MoreHorizontal, FolderMinus, CalendarDays, Triangle, Activity, Hash,
 } from 'lucide-react';
 import { getProject } from '@/stores/projectStore';
 import {
@@ -54,6 +54,7 @@ function ConnectorSignalIcon({ source }: { source?: string | null }) {
     case 'calendar': return <CalendarDays className={cls} />;
     case 'github': return <Github className={cls} />;
     case 'vercel': return <Triangle className={cls} />;
+    case 'slack': return <Hash className={cls} />;
     default: return <Activity className={cls} />;
   }
 }

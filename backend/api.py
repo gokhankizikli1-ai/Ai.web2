@@ -318,6 +318,7 @@ def _build_full_app():
         "backend.routes.v2_gmail",             # Gmail connector — /v2/gmail/* connect/callback/status/sync/disconnect (read-only source of observations; gated by ENABLE_GMAIL_CONNECTOR; 503 when off)
         "backend.routes.v2_vercel",            # Vercel connector — /v2/vercel/* connect/callback/pending-projects/select/status/sync/disconnect (read-only source of observations; gated by ENABLE_VERCEL_CONNECTOR; 503 when off)
         "backend.routes.v2_calendar",          # Google Calendar connector — /v2/calendar/* connect/callback/status/sync/disconnect (read-only source of observations; gated by ENABLE_CALENDAR_CONNECTOR; 503 when off)
+        "backend.routes.v2_slack",             # Slack connector — /v2/slack/* connect/callback/pending-channels/select/status/sync/disconnect (read-only source of observations; gated by ENABLE_SLACK_CONNECTOR; 503 when off)
     ]:
         try:
             _app.include_router(importlib.import_module(_mod).router)

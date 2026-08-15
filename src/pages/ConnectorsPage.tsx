@@ -9,9 +9,10 @@ import { getProjects } from '@/stores/projectStore';
 import { resolveBackTarget } from '@/lib/shellNavigation';
 import type { Project } from '@/types/projects';
 import {
-  GmailLogo, GithubLogo, VercelLogo, GoogleCalendarLogo,
+  GmailLogo, GithubLogo, VercelLogo, GoogleCalendarLogo, SlackLogo,
 } from '@/components/connectors/BrandLogos';
 import ConnectorSelect from '@/components/connectors/ConnectorSelect';
+import ConnectorMultiSelect from '@/components/connectors/ConnectorMultiSelect';
 import {
   beginGmailConnectRedirect, getGmailConnection, syncGmail, disconnectGmail,
   type GmailConnectionView,
@@ -31,6 +32,11 @@ import {
   selectVercelProject, syncVercel, disconnectVercel,
   type VercelConnectionView, type VercelPendingProject,
 } from '@/lib/vercelConnectorApi';
+import {
+  beginSlackConnectRedirect, getSlackConnection, getSlackPendingChannels,
+  selectSlackChannels, syncSlack, disconnectSlack,
+  type SlackConnectionView, type SlackPendingChannel,
+} from '@/lib/slackConnectorApi';
 
 type Notify = (message: string, type: 'success' | 'error' | 'info') => void;
 
@@ -108,16 +114,23 @@ function reason(status: number, message: string): string {
   return message || `Request failed (HTTP ${status}).`;
 }
 
-/* Standardized, TRUTHFUL sync summary shared by Gmail + GitHub:
+/* Standardized, TRUTHFUL sync summary shared by every connector:
  *   "12 new · 40 already known"  and, when a source failed partway,
  *   "… · 1 source had errors" with an 'info' (not 'success') tone so a partial
- * sync never reads as a clean success. Both report shapes expose the same
- * recorded/deduplicated/errors/ok fields, so one helper serves both. */
+ * sync never reads as a clean success. Every report shape exposes the same
+ * recorded/deduplicated/errors/ok fields, so one helper serves them all.
+ *
+ * `truncated` (currently reported by Slack) is a configured BOUND, not a
+ * failure — the read stopped at a cap rather than breaking. It is still stated
+ * out loud rather than hidden, because a silent cap reads as "we ingested
+ * everything" when we did not; it does NOT downgrade the success tone. */
 function summarizeSync(s: {
-  recorded: number; deduplicated: number; errors?: Record<string, string>; ok: boolean;
+  recorded: number; deduplicated: number; errors?: Record<string, string>;
+  ok: boolean; truncated?: boolean;
 }): { text: string; tone: 'success' | 'info' } {
   const errCount = s.errors ? Object.keys(s.errors).length : 0;
   let text = `${s.recorded} new · ${s.deduplicated} already known`;
+  if (s.truncated) text += ' · bounded read limit reached';
   if (errCount > 0) {
     text += ` · ${errCount} ${errCount === 1 ? 'source' : 'sources'} had errors`;
   }
@@ -913,6 +926,291 @@ function VercelCard({ projectId, notify }: { projectId: string; notify: Notify }
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
+   SLACK CARD — real Slack install flow via slackConnectorApi.
+   Connect starts a Slack workspace install; the callback stores the
+   installation server-side and leaves the connection awaiting a CHANNEL
+   choice (a workspace routinely holds hundreds of channels, so nothing is
+   auto-bound). The user then picks one or more from the server-provided list —
+   the frontend never types or invents a channel id, and the backend re-verifies
+   every choice against Slack (including that Korvix is actually a member)
+   before binding it.
+   ══════════════════════════════════════════════════════════════════════════ */
+/* Slack connect-flow state.
+ *   disconnected    = no installation → show Connect.
+ *   revoked         = the stored token was rejected → Reconnect / Remove.
+ *   choose_channels = installed, no channels bound yet → channel picker.
+ *   connected       = at least one channel is bound. */
+type SlState =
+  | { state: 'loading' }
+  /* `canRemove` marks the errors we hit AFTER confirming an installation
+   * exists (e.g. Slack is unreachable while listing channels), so the user is
+   * never stranded with a dangling installation and no way to clear it. */
+  | { state: 'error'; message: string; canRemove?: boolean }
+  | { state: 'disconnected' }
+  | { state: 'revoked' }
+  | { state: 'choose_channels'; channels: SlackPendingChannel[]; maxSelected: number }
+  | { state: 'connected'; connection: SlackConnectionView };
+
+function SlackCard({ projectId, notify }: { projectId: string; notify: Notify }) {
+  const [status, setStatus] = useState<SlState>({ state: 'loading' });
+  const [busy, setBusy] = useState<null | 'connect' | 'select' | 'change' | 'sync' | 'disconnect'>(null);
+  const [selectedChannels, setSelectedChannels] = useState<string[]>([]);
+
+  // Resolve the channels this installation can see → the picker. `refresh`
+  // forces a live re-read (the "change channels" path).
+  const loadChannelsFor = useCallback(async (refresh: boolean): Promise<boolean> => {
+    const res = await getSlackPendingChannels(projectId, refresh);
+    if (res.ok) {
+      setStatus({
+        state: 'choose_channels',
+        channels: res.data.channels,
+        maxSelected: res.data.max_selected,
+      });
+      return true;
+    }
+    return false;
+  }, [projectId]);
+
+  // `load` is await-first: it performs no synchronous setState, so the mount
+  // effect that calls it never sets state during render.
+  const load = useCallback(async () => {
+    const res = await getSlackConnection(projectId);
+    if (!res.ok) { setStatus({ state: 'error', message: reason(res.status, res.message) }); return; }
+    const conn = res.data.connection;
+    if (!conn) { setStatus({ state: 'disconnected' }); return; }
+    if (conn.status === 'revoked') { setStatus({ state: 'revoked' }); return; }
+    if (res.data.connected) { setStatus({ state: 'connected', connection: conn }); return; }
+    // Installed but no channels chosen yet. If Slack can't be reached to list
+    // them, say so honestly (never an empty "no channels") and still offer a way
+    // out of the half-finished connection.
+    if (await loadChannelsFor(false)) return;
+    setStatus({
+      state: 'error', canRemove: true,
+      message: 'Slack is connected, but its channels could not be listed right now.',
+    });
+  }, [projectId, loadChannelsFor]);
+
+  // Load real backend status once on mount (and on project switch, via the
+  // card's key-based remount). Same await-first pattern as the other cards.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { void load(); }, [load]);
+
+  const onRetry = () => { setStatus({ state: 'loading' }); void load(); };
+
+  const onConnect = async () => {
+    setBusy('connect');
+    // Starts the real backend flow and redirects the browser to Slack when it
+    // succeeds; only surfaces a toast if the START call fails (no navigation
+    // happened, so re-enable the button).
+    const res = await beginSlackConnectRedirect(projectId);
+    if (!res.ok) { notify(reason(res.status, res.message), 'error'); setBusy(null); }
+  };
+
+  const onSelect = async () => {
+    if (selectedChannels.length === 0) { notify('Choose at least one channel.', 'error'); return; }
+    setBusy('select');
+    const res = await selectSlackChannels(projectId, selectedChannels);
+    setBusy(null);
+    if (!res.ok) { notify(reason(res.status, res.message), 'error'); return; }
+    const count = res.data.connection.channel_count;
+    notify(`Slack connected — ${count} channel${count === 1 ? '' : 's'}.`, 'success');
+    setSelectedChannels([]);
+    void load();
+  };
+
+  // "Change channels" reuses the SAME server-authoritative selection flow, and
+  // pre-selects what is already bound so the picker starts from today's truth.
+  const onChangeChannels = async (current: SlackConnectionView | null) => {
+    setBusy('change');
+    setSelectedChannels(current ? current.channels.map((c) => c.channel_id) : []);
+    const ok = await loadChannelsFor(true);
+    setBusy(null);
+    if (!ok) notify('Could not list your Slack channels.', 'error');
+  };
+
+  const onSync = async () => {
+    setBusy('sync');
+    const res = await syncSlack(projectId);
+    setBusy(null);
+    if (!res.ok) { notify(reason(res.status, res.message), 'error'); return; }
+    const { text, tone } = summarizeSync(res.data.sync);
+    notify(`Slack synced — ${text}.`, tone);
+    void load();
+  };
+
+  const onDisconnect = async () => {
+    setBusy('disconnect');
+    const res = await disconnectSlack(projectId);
+    setBusy(null);
+    if (!res.ok) { notify(reason(res.status, res.message), 'error'); return; }
+    // Truthful about what actually happened: Slack installs an app once per
+    // workspace, so removing this project's connection deliberately leaves the
+    // workspace install (and any other project using it) alone.
+    notify(
+      res.data.workspace_still_connected
+        ? 'Slack disconnected for this project. Another project still uses this workspace, so the Slack app stays installed.'
+        : 'Slack disconnected. Korvix no longer reads this workspace for this project.',
+      'success',
+    );
+    void load();
+  };
+
+  let pill: React.ReactNode = null;
+  if (status.state === 'connected') pill = <StatusPill tone="connected" label="Connected" />;
+  else if (status.state === 'choose_channels') pill = <StatusPill tone="revoked" label="Choose channels" />;
+  else if (status.state === 'revoked') pill = <StatusPill tone="revoked" label="Reconnect needed" />;
+  else if (status.state === 'disconnected') pill = <StatusPill tone="muted" label="Not connected" />;
+
+  return (
+    <ConnectorShell
+      logo={<SlackLogo size={24} />}
+      name="Slack"
+      description="Recent conversation in the channels you choose — decisions, blockers and threads — turned into project observations Korvix can reason over. Read-only: Korvix can never send, edit, or delete a message, and never joins a channel by itself."
+      statusPill={pill}
+    >
+      {status.state === 'loading' && (
+        <div className="flex items-center gap-2 text-[13px] text-white/40"><BusySpinner /> Checking status…</div>
+      )}
+
+      {status.state === 'error' && (
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <span className="text-[13px] text-[#F87171]/90">{status.message}</span>
+          <div className="flex items-center gap-2">
+            <button className={btnGhost} onClick={onRetry}><RefreshCw className="h-3.5 w-3.5" /> Retry</button>
+            {status.canRemove && (
+              <button className={btnDanger} disabled={busy === 'disconnect'} onClick={onDisconnect}>
+                {busy === 'disconnect' ? <BusySpinner /> : null} Remove
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {status.state === 'disconnected' && (
+        <div className="space-y-2">
+          <button className={btnPrimary} disabled={busy === 'connect'} onClick={onConnect}>
+            {busy === 'connect' ? <BusySpinner /> : null} Connect Slack
+          </button>
+          <p className="text-[11.5px] text-white/30 leading-relaxed">
+            Opens Slack to add Korvix to your workspace. You then choose which channels belong to
+            this project — Korvix only reads the channels it has been{' '}
+            <span className="text-white/50">invited to</span>.
+          </p>
+        </div>
+      )}
+
+      {status.state === 'revoked' && (
+        <div className="flex flex-wrap items-center gap-2">
+          <button className={btnPrimary} disabled={busy === 'connect'} onClick={onConnect}>
+            {busy === 'connect' ? <BusySpinner /> : null} Reconnect Slack
+          </button>
+          <button className={btnDanger} disabled={busy === 'disconnect'} onClick={onDisconnect}>
+            {busy === 'disconnect' ? <BusySpinner /> : null} Remove
+          </button>
+        </div>
+      )}
+
+      {status.state === 'choose_channels' && (
+        <div className="space-y-3 max-w-md">
+          {status.channels.length > 0 ? (
+            <>
+              <div className="text-[12.5px] text-white/45">
+                Slack connected. Choose the channels that belong to this project:
+              </div>
+              <ConnectorMultiSelect
+                ariaLabel="Slack channels"
+                max={status.maxSelected}
+                selected={selectedChannels}
+                onChange={setSelectedChannels}
+                disabled={busy !== null}
+                options={status.channels.map((c) => ({
+                  value: c.channel_id,
+                  label: c.name ? `#${c.name}` : c.channel_id,
+                  hint: c.is_private ? 'private' : undefined,
+                  // Slack's own truth: a bot can only read a channel it is in.
+                  disabled: !c.is_member,
+                  disabledReason: !c.is_member ? 'invite Korvix' : undefined,
+                }))}
+              />
+              <div className="flex flex-wrap items-center gap-2">
+                <button className={btnPrimary} disabled={busy === 'select'} onClick={onSelect}>
+                  {busy === 'select' ? <BusySpinner /> : null} Connect channels
+                </button>
+                <button className={btnGhost} disabled={busy === 'change'} onClick={() => onChangeChannels(null)}>
+                  {busy === 'change' ? <BusySpinner /> : <RefreshCw className="h-3.5 w-3.5" />} Refresh list
+                </button>
+                <button className={btnDanger} disabled={busy === 'disconnect'} onClick={onDisconnect}>
+                  {busy === 'disconnect' ? <BusySpinner /> : null} Cancel
+                </button>
+              </div>
+              <p className="text-[11.5px] text-white/30 leading-relaxed">
+                Greyed-out channels are ones Korvix has not been invited to yet. Type{' '}
+                <span className="text-white/50">/invite @Korvix AI</span> in that channel in Slack,
+                then refresh this list.
+              </p>
+            </>
+          ) : (
+            <div className="space-y-2">
+              <div className="text-[13px] text-white/55">
+                Korvix is installed, but it cannot see any channels in this workspace yet.
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button className={btnGhost} disabled={busy === 'change'} onClick={() => onChangeChannels(null)}>
+                  {busy === 'change' ? <BusySpinner /> : <RefreshCw className="h-3.5 w-3.5" />} Refresh list
+                </button>
+                <button className={btnDanger} disabled={busy === 'disconnect'} onClick={onDisconnect}>
+                  {busy === 'disconnect' ? <BusySpinner /> : null} Remove
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {status.state === 'connected' && (
+        <div className="space-y-3">
+          <div className="text-[13px] text-white/60">
+            Connected to{' '}
+            <span className="text-white font-medium">
+              {status.connection.team_name || status.connection.team_id}
+            </span>
+            {status.connection.last_sync_at && (
+              <span className="text-white/35"> · last sync {new Date(status.connection.last_sync_at).toLocaleString()}</span>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {status.connection.channels.map((c) => (
+              <span
+                key={c.channel_id}
+                className="inline-flex items-center rounded-md border border-white/10 bg-white/[0.03] px-2 py-[3px] text-[11.5px] text-white/60"
+              >
+                #{c.name || c.channel_id}
+              </span>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button className={btnGhost} disabled={busy !== null} onClick={onSync}>
+              {busy === 'sync' ? <BusySpinner /> : <RefreshCw className="h-3.5 w-3.5" />} Sync now
+            </button>
+            <button className={btnGhost} disabled={busy !== null} onClick={() => onChangeChannels(status.connection)}>
+              {busy === 'change' ? <BusySpinner /> : null} Change channels
+            </button>
+            <button className={btnDanger} disabled={busy !== null} onClick={onDisconnect}>
+              {busy === 'disconnect' ? <BusySpinner /> : null} Disconnect
+            </button>
+          </div>
+          <p className="text-[11.5px] text-white/30 leading-relaxed">
+            Syncing imports recent messages from these channels only, for this project only.
+            Disconnecting removes Korvix's copy of the connection; to remove the app from your
+            workspace entirely, do it in <span className="text-white/50">Slack → Manage apps</span>.
+          </p>
+        </div>
+      )}
+    </ConnectorShell>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
    PAGE
    ══════════════════════════════════════════════════════════════════════════ */
 export default function ConnectorsPage() {
@@ -967,18 +1265,21 @@ export default function ConnectorsPage() {
    *   Calendar: `?calendar=connected|error&project_id=...&reason=...`
    *   GitHub:   `?github=authorized|needs_install|error&project_id=...&reason=...`
    *   Vercel:   `?vercel=authorized|error&project_id=...&reason=...`
+   *   Slack:    `?slack=authorized|error&project_id=...&reason=...`
    * The cards fetch real status on mount (GitHub then shows its account/repo
-   * picker for a verified pending install; Vercel shows its project picker), so
-   * here we only surface ONE toast for the outcome and strip the temporary params
-   * so a refresh can't replay it. Nothing is trusted for connection truth from the
-   * URL, and we never redirect based on a URL value — no open-redirect surface. */
+   * picker for a verified pending install; Vercel shows its project picker;
+   * Slack shows its channel picker), so here we only surface ONE toast for the
+   * outcome and strip the temporary params so a refresh can't replay it. Nothing
+   * is trusted for connection truth from the URL, and we never redirect based on
+   * a URL value — no open-redirect surface. */
   useEffect(() => {
     if (callbackHandled.current) return;
     const gmail = searchParams.get('gmail');
     const calendar = searchParams.get('calendar');
     const github = searchParams.get('github');
     const vercel = searchParams.get('vercel');
-    if (!gmail && !calendar && !github && !vercel) return;
+    const slack = searchParams.get('slack');
+    if (!gmail && !calendar && !github && !vercel && !slack) return;
     callbackHandled.current = true;
 
     const reasonCode = (searchParams.get('reason') || '').trim();
@@ -1006,9 +1307,14 @@ export default function ConnectorsPage() {
     } else if (vercel) {
       notify(`Vercel could not be connected${pretty}.`, 'error');
     }
+    if (slack === 'authorized') {
+      notify('Slack connected — choose the channels for this project.', 'success');
+    } else if (slack) {
+      notify(`Slack could not be connected${pretty}.`, 'error');
+    }
 
     const next = new URLSearchParams(searchParams);
-    for (const k of ['gmail', 'calendar', 'github', 'vercel', 'project_id', 'reason', 'state',
+    for (const k of ['gmail', 'calendar', 'github', 'vercel', 'slack', 'project_id', 'reason', 'state',
                      'setup_action', 'installation_id', 'configurationId', 'teamId',
                      'next', 'code']) next.delete(k);
     setSearchParams(next, { replace: true });
@@ -1057,7 +1363,7 @@ export default function ConnectorsPage() {
               </div>
               <h3 className="text-[15px] font-semibold text-white">No projects yet</h3>
               <p className="mt-1 text-[13px] text-white/45 max-w-sm mx-auto">
-                Connectors attach to a project. Create your first project, then come back to connect Gmail, Google Calendar, GitHub or Vercel to it.
+                Connectors attach to a project. Create your first project, then come back to connect Gmail, Google Calendar, GitHub, Vercel or Slack to it.
               </p>
               <Link to="/projects" className={`${btnPrimary} mt-4`}>
                 <FolderOpen className="h-4 w-4" /> Go to Projects
@@ -1102,6 +1408,7 @@ export default function ConnectorsPage() {
                     }
                   />
                   <VercelCard projectId={selectedProject.id} notify={notify} />
+                  <SlackCard projectId={selectedProject.id} notify={notify} />
                 </div>
               )}
             </>
