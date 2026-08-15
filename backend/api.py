@@ -316,6 +316,7 @@ def _build_full_app():
         "backend.routes.design_debug",         # PR 507 — /debug/design-trace/{build_id} developer-only trace (owner-only; gated by ENABLE_DESIGN_DEBUG; 404 when off)
         "backend.routes.v2_github",            # GitHub connector — /v2/github/* connect/sync + /webhooks/github (read-only source of observations; gated by ENABLE_GITHUB_CONNECTOR; 503 when off)
         "backend.routes.v2_gmail",             # Gmail connector — /v2/gmail/* connect/callback/status/sync/disconnect (read-only source of observations; gated by ENABLE_GMAIL_CONNECTOR; 503 when off)
+        "backend.routes.v2_vercel",            # Vercel connector — /v2/vercel/* connect/callback/pending-projects/select/status/sync/disconnect (read-only source of observations; gated by ENABLE_VERCEL_CONNECTOR; 503 when off)
     ]:
         try:
             _app.include_router(importlib.import_module(_mod).router)
