@@ -462,11 +462,53 @@ class Config:
     # fails closed (503).
     GMAIL_OAUTH_REDIRECT_URI: str = os.getenv("GMAIL_OAUTH_REDIRECT_URI", "").strip()
     # KORVIX_CREDENTIAL_ENCRYPTION_KEY: Fernet key(s) (comma-separated for
-    # rotation; first encrypts, all decrypt) used to encrypt the stored Gmail
-    # refresh token AT REST. SECRET — NEVER logged. Empty ⇒ the connector fails
-    # closed (a refresh token is never stored in plaintext). Generate with:
+    # rotation; first encrypts, all decrypt) used to encrypt EVERY connector
+    # credential AT REST — the Gmail refresh token and the Vercel access token
+    # share this ONE key and one cipher (backend.services.gmail.crypto), so
+    # there is a single credential-encryption authority, not one per connector.
+    # SECRET — NEVER logged. Empty ⇒ those connectors fail closed (a token is
+    # never stored in plaintext). Generate with:
     #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
     KORVIX_CREDENTIAL_ENCRYPTION_KEY: str = os.getenv("KORVIX_CREDENTIAL_ENCRYPTION_KEY", "")
+
+    # ── Vercel connector (read-only source of Business Brain observations) ─
+    # Master gate for the /v2/vercel/* surface. When false: connect/status/
+    # select/sync/disconnect routes 503 and the OAuth callback bounces to the
+    # frontend with a generic error (dormant). Default OFF so production
+    # behaviour is byte-identical until flipped. The RUNTIME source of truth is
+    # backend.services.vercel.config (read dynamically so a Railway flip is live
+    # without a restart, mirroring the Gmail/GitHub connectors); these
+    # attributes register the canonical names + defaults for discoverability.
+    ENABLE_VERCEL_CONNECTOR: bool = os.getenv("ENABLE_VERCEL_CONNECTOR", "false").strip().lower() == "true"
+    # VERCEL_OAUTH_CLIENT_ID / VERCEL_OAUTH_CLIENT_SECRET: the Vercel
+    # integration's OAuth credentials (Vercel dashboard → Integrations → your
+    # integration). The SECRET is NEVER logged, NEVER returned to the frontend.
+    VERCEL_OAUTH_CLIENT_ID: str = os.getenv("VERCEL_OAUTH_CLIENT_ID", "").strip()
+    VERCEL_OAUTH_CLIENT_SECRET: str = os.getenv("VERCEL_OAUTH_CLIENT_SECRET", "")
+    # VERCEL_OAUTH_REDIRECT_URI: the EXACT Redirect URL registered on the Vercel
+    # integration. Read from env (never derived from the request Host) and must
+    # equal "<backend-public-base>/v2/vercel/oauth/callback". Empty ⇒ connect
+    # fails closed (503).
+    VERCEL_OAUTH_REDIRECT_URI: str = os.getenv("VERCEL_OAUTH_REDIRECT_URI", "").strip()
+    # VERCEL_INTEGRATION_SLUG: the integration's vercel.com/integrations/<slug>
+    # handle — needed to build the install/authorization URL the browser is sent
+    # to. Not secret. VERCEL_OAUTH_INSTALL_URL is an OPTIONAL full override.
+    VERCEL_INTEGRATION_SLUG: str = os.getenv("VERCEL_INTEGRATION_SLUG", "").strip()
+    VERCEL_OAUTH_INSTALL_URL: str = os.getenv("VERCEL_OAUTH_INSTALL_URL", "").strip()
+    # VERCEL_FRONTEND_RESULT_URL / _PATH: where the OAuth callback redirects the
+    # browser (fixed server-side — never a request-supplied URL, so no open
+    # redirect; Vercel's own `next` param is ignored). Falls back to
+    # PUBLIC_APP_URL + the integrations route.
+    VERCEL_FRONTEND_RESULT_URL: str = os.getenv("VERCEL_FRONTEND_RESULT_URL", "").strip()
+    VERCEL_FRONTEND_RESULT_PATH: str = os.getenv("VERCEL_FRONTEND_RESULT_PATH", "/#/settings/integrations").strip()
+    # Bounds (state TTL, pending-selection TTL, picker cap, bounded read caps).
+    # Runtime source of truth is backend.services.vercel.config.
+    VERCEL_OAUTH_STATE_TTL_S: int = int(os.getenv("VERCEL_OAUTH_STATE_TTL_S", "600") or 600)
+    VERCEL_PENDING_TTL_S: int = int(os.getenv("VERCEL_PENDING_TTL_S", "900") or 900)
+    VERCEL_PENDING_PROJECTS_MAX: int = int(os.getenv("VERCEL_PENDING_PROJECTS_MAX", "100") or 100)
+    VERCEL_SYNC_PAGE_SIZE: int = int(os.getenv("VERCEL_SYNC_PAGE_SIZE", "20") or 20)
+    VERCEL_SYNC_MAX_PAGES: int = int(os.getenv("VERCEL_SYNC_MAX_PAGES", "1") or 1)
+    VERCEL_SYNC_INITIAL_MAX_PAGES: int = int(os.getenv("VERCEL_SYNC_INITIAL_MAX_PAGES", "3") or 3)
 
     # ── Legacy per-user routes (/memory, /profile, /stats) ───────────────
     # These pre-auth routes are superseded by the auth-bound /v2/* surface
@@ -813,6 +855,32 @@ class Config:
                     "closed (503) and rejects every delivery. Set it to enable "
                     "incremental webhook ingestion (initial sync still works "
                     "without it).",
+                ))
+
+        # 3g. Vercel connector — if enabled it needs the integration OAuth
+        #     credentials (else connect/start 503s) AND the shared credential
+        #     encryption key (else the access token could not be stored, so the
+        #     callback fails closed). Surface a partial config loudly rather
+        #     than letting it fail silently at the first user click.
+        if self.ENABLE_VERCEL_CONNECTOR:
+            if not (self.VERCEL_OAUTH_CLIENT_ID and self.VERCEL_OAUTH_CLIENT_SECRET.strip()
+                    and self.VERCEL_OAUTH_REDIRECT_URI
+                    and (self.VERCEL_INTEGRATION_SLUG or self.VERCEL_OAUTH_INSTALL_URL)):
+                issues.append((
+                    "critical",
+                    "ENABLE_VERCEL_CONNECTOR is on but the integration OAuth "
+                    "config is incomplete — set VERCEL_OAUTH_CLIENT_ID, "
+                    "VERCEL_OAUTH_CLIENT_SECRET, VERCEL_OAUTH_REDIRECT_URI "
+                    "(exactly <backend-public-base>/v2/vercel/oauth/callback) and "
+                    "VERCEL_INTEGRATION_SLUG. Connect fails closed (503) without them.",
+                ))
+            if not self.KORVIX_CREDENTIAL_ENCRYPTION_KEY.strip():
+                issues.append((
+                    "critical",
+                    "ENABLE_VERCEL_CONNECTOR is on but "
+                    "KORVIX_CREDENTIAL_ENCRYPTION_KEY is empty — the Vercel "
+                    "access token cannot be encrypted at rest, so connect fails "
+                    "closed (503). It is the SAME key the Gmail connector uses.",
                 ))
 
         # 4. Orchestration write surface needs verified identity. If the

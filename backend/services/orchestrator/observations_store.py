@@ -57,9 +57,10 @@ _IMPORTANCE_HINTS = (IMPORTANCE_LOW, IMPORTANCE_NORMAL, IMPORTANCE_HIGH)
 # use to tell connector activity apart from other observation sources (the store
 # is deliberately connector-neutral and future subsystems may record non-connector
 # observations here). Each connector's `normalize.SOURCE` MUST be listed here;
-# extend it when a new connector ships (e.g. add "vercel") — nothing else needs
-# to change for that provider to flow through the same authority.
-CONNECTOR_SOURCES = ("github", "gmail")
+# extend it when a new connector ships — nothing else needs to change for that
+# provider to flow through the same authority (adding "vercel" here is the ONLY
+# change the Vercel connector needed in the Business Brain / Project Brain path).
+CONNECTOR_SOURCES = ("github", "gmail", "vercel")
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS observations (
