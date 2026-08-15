@@ -11,7 +11,8 @@ import {
   hydrateFromServer,
   mergeServerSessions,
 } from '@/lib/sessionsSync';
-import { bindThreadToProject } from '@/lib/projectApi';
+import { bindThreadToProject, getThreadProject } from '@/lib/projectApi';
+import { resolveOpenTarget } from '@/lib/chatSessionResolve';
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
@@ -546,14 +547,19 @@ export function useChat() {
   const activeSessionIdRef = useRef<string>(activeSessionId);
   useEffect(() => { activeSessionIdRef.current = activeSessionId; }, [activeSessionId]);
 
+  // True once the mount hydration attempt has settled — lets a pending
+  // open-session request tell "still loading" apart from "genuinely not found".
+  const hydrationDoneRef = useRef<boolean>(false);
   useEffect(() => {
-    if (!serverChatEnabled()) return;
+    if (!serverChatEnabled()) { hydrationDoneRef.current = true; return; }
     let cancelled = false;
     // Fire-and-forget; failures resolve to [] and merge is a no-op.
     hydrateFromServer().then((serverSessions) => {
-      if (cancelled || serverSessions.length === 0) return;
-      setSessions((prev) => mergeServerSessions(prev, serverSessions));
-    }).catch(() => { /* best-effort — never surface a hydration failure */ });
+      if (!cancelled && serverSessions.length > 0) {
+        setSessions((prev) => mergeServerSessions(prev, serverSessions));
+      }
+    }).catch(() => { /* best-effort — never surface a hydration failure */ })
+      .finally(() => { hydrationDoneRef.current = true; });
     return () => { cancelled = true; };
     // Run once per mount. Identity changes remount the tree (scope-keyed).
   }, []);
@@ -583,34 +589,81 @@ export function useChat() {
         ));
       }
       // The server thread now exists — fulfil any deferred project binding.
+      // For a chat the user explicitly started FROM a project, losing that
+      // binding silently is wrong, so keep the pending request and RETRY on the
+      // next turn until it sticks. Only stop retrying on success or a definitive
+      // 404 (the caller doesn't own the project — retrying can't help).
       const pendingPid = pendingProjectBindingsRef.current.get(activeId);
       if (pendingPid) {
-        pendingProjectBindingsRef.current.delete(activeId);
-        bindThreadToProject(threadId, pendingPid).catch(() => { /* best-effort */ });
+        bindThreadToProject(threadId, pendingPid).then((res) => {
+          if (res.ok || res.status === 404) {
+            pendingProjectBindingsRef.current.delete(activeId);
+          }
+          // else: transient failure → keep pending, retried after the next turn.
+        }).catch(() => { /* keep pending → retried next turn */ });
       }
     }).catch(() => { /* best-effort mirror — never disrupt the chat */ });
   }, [isLoading]);
 
-  // Open a specific conversation by id, even if it isn't in memory yet (a chat
-  // opened from the Project Overview may still be hydrating from the server).
-  // The request is fulfilled as soon as a session with that id is present.
+  // Open a specific conversation requested by the Project Overview, which
+  // identifies it by SERVER THREAD ID. This is NOT the same as the local
+  // ChatSession.id: a chat that originated locally and later synced keeps its
+  // random local id while carrying serverThreadId=<threadId> (and mergeServer-
+  // Sessions dedupes the hydrated copy against it). So a request must be
+  // resolved by matching EITHER identity, then selecting the matched session's
+  // LOCAL id (the value activeSession is keyed on). Matching only by id was the
+  // live "clicking a project chat opens a blank new chat" bug. The request is
+  // retained until the matching session is present (it may still be hydrating);
+  // a genuinely missing thread surfaces a truthful error, never a new chat.
   const openSessionRequestRef = useRef<string | null>(null);
-  const requestOpenSession = useCallback((id: string) => {
-    if (!id) return;
-    if (sessionsRef.current.some((s) => s.id === id)) {
-      setActiveSessionId(id);
+  const requestOpenSession = useCallback((threadOrId: string) => {
+    if (!threadOrId) return;
+    setError(null);
+    const match = resolveOpenTarget(sessionsRef.current, threadOrId);
+    if (match) {
+      setActiveSessionId(match.id);
       openSessionRequestRef.current = null;
     } else {
-      openSessionRequestRef.current = id;   // fulfilled by the watcher below
+      openSessionRequestRef.current = threadOrId;  // fulfilled by the watcher below
     }
   }, []);
   useEffect(() => {
     const want = openSessionRequestRef.current;
-    if (want && sessions.some((s) => s.id === want)) {
-      setActiveSessionId(want);
+    if (!want) return;
+    const match = resolveOpenTarget(sessions, want);
+    if (match) {
+      setActiveSessionId(match.id);
       openSessionRequestRef.current = null;
+    } else if (hydrationDoneRef.current) {
+      // Hydration finished and the thread is still not here → it doesn't exist
+      // on this account (deleted / another user / beyond the synced window).
+      // Tell the truth instead of leaving the user on a blank chat; never mint
+      // a new conversation as a fallback.
+      openSessionRequestRef.current = null;
+      setError('That conversation could not be found on this account.');
     }
   }, [sessions]);
+
+  // The project the ACTIVE chat belongs to, for the ChatDashboard "Project: …"
+  // indicator. Backend binding is authoritative once a server thread exists
+  // (truthful even while a deferred bind is still retrying); before the thread
+  // exists we show the optimistic pending target for a chat started from a
+  // project. No new project-local store — this is just a resolved view.
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+  const activeServerThreadId =
+    sessions.find((s) => s.id === activeSessionId)?.serverThreadId ?? null;
+  useEffect(() => {
+    let cancelled = false;
+    const pending = pendingProjectBindingsRef.current.get(activeSessionId) ?? null;
+    if (activeServerThreadId && serverChatEnabled()) {
+      getThreadProject(activeServerThreadId)
+        .then((pid) => { if (!cancelled) setActiveProjectId(pid ?? pending); })
+        .catch(() => { if (!cancelled) setActiveProjectId(pending); });
+    } else {
+      setActiveProjectId(pending);
+    }
+    return () => { cancelled = true; };
+  }, [activeSessionId, activeServerThreadId]);
 
   const [aiMode, setAiMode] = useState<AIMode>('fast');
   const [pinnedMessages, setPinnedMessages] = useState<Message[]>([]);
@@ -1461,6 +1514,7 @@ export function useChat() {
     createNewChat,
     startProjectChat,
     requestOpenSession,
+    activeProjectId,
     selectSession,
     markSessionWebBuild,
     deleteSession,
