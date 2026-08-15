@@ -15,16 +15,17 @@
  *   • products        → GET /v2/orchestrator/projects/{id}/products
  *   • intelligence    → GET /v2/projects/{id}/brain
  */
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import {
   ArrowLeft, MessageSquare, Plus, FolderInput, Blocks, Sparkles,
-  Github, Mail, Target, ChevronRight, Loader2, Check, X, Search,
+  Github, Mail, Target, Loader2, Check, X, Search,
+  MoreHorizontal, FolderMinus,
 } from 'lucide-react';
 import { getProject } from '@/stores/projectStore';
 import {
   listProjectChats, listProjectProducts, getProjectBrainContext,
-  listAddableChats, bindThreadToProject,
+  listAddableChats, bindThreadToProject, removeThreadFromProject,
   type ProjectChat, type ProjectProduct, type ProjectBrainContext, type AddableChat,
 } from '@/lib/projectApi';
 
@@ -147,6 +148,66 @@ function AddExistingChatModal({
   );
 }
 
+// ── A single project chat row with an "Open / Remove from project" kebab ─────
+function ProjectChatRow({
+  chat, onOpen, onRemoved,
+}: {
+  chat: ProjectChat;
+  onOpen: (threadId: string) => void;
+  onRemoved: () => void;
+}) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setMenuOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [menuOpen]);
+
+  const remove = useCallback(async () => {
+    setBusy(true);
+    // Non-destructive unbind: the conversation + messages stay; only the project
+    // binding is dropped (server-authoritative). Refresh from backend truth.
+    const res = await removeThreadFromProject(chat.id);
+    setBusy(false);
+    setMenuOpen(false);
+    if (res.ok) onRemoved();
+  }, [chat.id, onRemoved]);
+
+  return (
+    <div ref={ref} className="group relative flex items-center gap-2.5 rounded-lg px-2.5 py-2 hover:bg-white/[0.04] transition-all">
+      <button onClick={() => onOpen(chat.id)} className="flex flex-1 min-w-0 items-center gap-2.5 text-left">
+        <MessageSquare className="h-3.5 w-3.5 shrink-0 text-white/30 group-hover:text-white/60" />
+        <span className="flex-1 min-w-0 truncate text-[12.5px] text-white/75">{chat.title}</span>
+        <span className="shrink-0 text-[10px] text-white/25">{timeAgo(chat.updated_at)}</span>
+      </button>
+      <button onClick={() => setMenuOpen((o) => !o)} aria-label="Chat actions"
+        className="shrink-0 h-6 w-6 flex items-center justify-center rounded-md text-white/30 hover:text-white/70 hover:bg-white/[0.06] transition-all">
+        <MoreHorizontal className="h-3.5 w-3.5" />
+      </button>
+      {menuOpen && (
+        <div role="menu"
+          className="absolute right-1 top-full mt-1 w-44 rounded-xl border shadow-2xl overflow-hidden z-50 py-1"
+          style={{ borderColor: 'rgba(255,255,255,0.06)', background: 'rgba(17,23,34,0.98)', backdropFilter: 'blur(24px)' }}>
+          <button role="menuitem" onClick={() => { setMenuOpen(false); onOpen(chat.id); }}
+            className="w-full flex items-center gap-2.5 px-3 py-2 text-left text-[12px] text-white/70 hover:bg-white/[0.05] transition-all">
+            <MessageSquare className="h-3.5 w-3.5 text-white/40" /> Open chat
+          </button>
+          <button role="menuitem" onClick={() => { void remove(); }} disabled={busy}
+            className="w-full flex items-center gap-2.5 px-3 py-2 text-left text-[12px] text-[#FCA5A5] hover:bg-white/[0.05] transition-all disabled:opacity-50">
+            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FolderMinus className="h-3.5 w-3.5" />} Remove from project
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ProjectOverview() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
@@ -242,13 +303,7 @@ export default function ProjectOverview() {
           ) : (
             <div className="space-y-0.5">
               {chats.map((c) => (
-                <button key={c.id} onClick={() => openChat(c.id)}
-                  className="w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left hover:bg-white/[0.04] transition-all group">
-                  <MessageSquare className="h-3.5 w-3.5 shrink-0 text-white/30 group-hover:text-white/60" />
-                  <span className="flex-1 min-w-0 truncate text-[12.5px] text-white/75">{c.title}</span>
-                  <span className="shrink-0 text-[10px] text-white/25">{timeAgo(c.updated_at)}</span>
-                  <ChevronRight className="h-3.5 w-3.5 shrink-0 text-white/15 group-hover:text-white/40" />
-                </button>
+                <ProjectChatRow key={c.id} chat={c} onOpen={openChat} onRemoved={() => { void refreshChats(); }} />
               ))}
             </div>
           )}

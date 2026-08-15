@@ -28,10 +28,13 @@ _MAX_ASSETS             = 6
 _MAX_WORKFLOWS          = 4
 _MAX_CONNECTOR_SIGNALS  = 6         # recent Gmail/GitHub observations surfaced
 _MAX_PRODUCTS           = 6         # generated Web/App products surfaced
-_MAX_CHATS              = 6         # project-linked chats surfaced
+_MAX_CHATS              = 5         # project-linked chats whose CONTENT is surfaced
 _MAX_CHAT_PREVIEW_CHARS = 160      # last-message preview per chat (bounded)
+_MAX_CHAT_TURNS         = 6         # recent user/assistant turns per chat (bounded)
+_MAX_CHAT_TURN_CHARS    = 240      # per-turn content cap (bounded)
+_ORDINARY_CHAT_MODES    = ("", "chat")  # build/tool modes are excluded from content
 _MAX_MEMORIES_AS_CTX    = 8
-_CTX_BLOCK_CHAR_BUDGET  = 2400      # cap the prompt-injected block
+_CTX_BLOCK_CHAR_BUDGET  = 4000      # cap the prompt-injected block (raised for chat evidence)
 
 # Deliverable kinds that represent a generated Web/App product. Kept in sync
 # with the build capability's deliverable kinds — the canonical build/artifact
@@ -241,32 +244,55 @@ class ProjectBrainClient:
 
             # Project-linked chats — the durable workspace's conversations. Reads
             # the canonical project↔thread binding, then the sessions authority
-            # for each thread (title + a bounded last-message preview). Threads
-            # are owner-scoped defensively via their workspace.
+            # (server messages are canonical; localStorage is never consulted).
+            # For each ORDINARY chat bound to THIS project we surface a bounded
+            # excerpt of the most-recent substantive user/assistant turns so the
+            # brain can actually reason over what was discussed — not just the
+            # title. Build/tool sessions are excluded from content (their payloads
+            # live in the artifact authority and are represented as products).
+            # Threads are owner-scoped defensively via their workspace, so a
+            # removed/moved binding immediately changes what is surfaced (this is
+            # recomputed every call — no cache).
             try:
                 from backend.services.projects import store as projects_store
                 from backend.services.sessions import client as sc
                 links = projects_store.list_project_threads(project_id)
-                for link in links[:_MAX_CHATS]:
+                for link in links:
+                    if len(brain.linked_chats) >= _MAX_CHATS:
+                        break
                     th = sc.get_thread(link.thread_id)
                     if th is None:
                         continue
                     ws = sc.get_workspace(th.workspace_id)
                     if ws is None or str(ws.user_id) != str(user_id):
                         continue   # defense-in-depth owner check
+                    is_ordinary = str(th.mode or "") in _ORDINARY_CHAT_MODES
+                    recent: list[dict] = []
                     last_msg = ""
-                    try:
-                        msgs = sc.list_messages(th.id, limit=1)
-                        if msgs:
-                            last_msg = (msgs[-1].content or "").strip()[:_MAX_CHAT_PREVIEW_CHARS]
-                    except Exception:
-                        pass
+                    if is_ordinary:
+                        try:
+                            for m in sc.list_recent_messages(th.id, limit=_MAX_CHAT_TURNS):
+                                if m.role not in ("user", "assistant"):
+                                    continue   # omit system/tool turns
+                                content = (m.content or "").strip()
+                                if not content:
+                                    continue
+                                recent.append({
+                                    "role":       m.role,
+                                    "content":    content[:_MAX_CHAT_TURN_CHARS],
+                                    "created_at": m.created_at,
+                                })
+                            if recent:
+                                last_msg = recent[-1]["content"][:_MAX_CHAT_PREVIEW_CHARS]
+                        except Exception:
+                            pass
                     brain.linked_chats.append({
                         "thread_id":    th.id,
                         "title":        th.title,
                         "mode":         th.mode,
                         "updated_at":   th.updated_at,
                         "last_message": last_msg,
+                        "recent":       recent,   # bounded substantive turns (ordinary chats)
                     })
             except Exception as e:
                 logger.debug("project_brain: project chats unavailable: %s", e)
@@ -333,14 +359,24 @@ class ProjectBrainClient:
                 status = p.get("status") or "?"
                 lines.append(f"- [{bt}] {title} ({status})")
         if brain.linked_chats:
-            lines.append("Project chats:")
+            # Each project chat is rendered as a clearly-separated block with a
+            # bounded excerpt of its recent user/assistant turns, so the model can
+            # reason over what was actually discussed/decided in this project.
+            lines.append("Project chat excerpts (most recent turns per chat):")
             for ch in brain.linked_chats[:_MAX_CHATS]:
                 title = ch.get("title") or "(untitled chat)"
-                preview = ch.get("last_message")
-                line = f"- {title}"
-                if preview:
-                    line += f" — {preview}"
-                lines.append(line)
+                lines.append(f"— Chat: {title}")
+                recent = ch.get("recent") or []
+                if recent:
+                    for turn in recent:
+                        role = turn.get("role", "user")
+                        content = (turn.get("content") or "").strip()
+                        if content:
+                            lines.append(f"  {role}: {content}")
+                else:
+                    preview = ch.get("last_message")
+                    if preview:
+                        lines.append(f"  {preview}")
         if brain.connector_signals:
             lines.append("Recent connector activity:")
             for s in brain.connector_signals[:_MAX_CONNECTOR_SIGNALS]:

@@ -426,6 +426,18 @@ def list_messages(thread_id: str, *, limit: int = 100,
     return [_row_to_message(r) for r in _fetchall(sql, tuple(params))]
 
 
+def list_recent_messages(thread_id: str, *, limit: int = 20) -> list[Message]:
+    """Most-recent `limit` messages, returned CHRONOLOGICALLY (parity with the
+    SQLite store). Bounded recency excerpt for Project Brain."""
+    _ensure_init()
+    rows = _fetchall(
+        "SELECT * FROM sessions_messages WHERE thread_id=%s "
+        "ORDER BY created_at DESC, id DESC LIMIT %s",
+        (thread_id, int(limit)),
+    )
+    return [_row_to_message(r) for r in reversed(rows)]
+
+
 def get_message(message_id: str) -> Optional[Message]:
     _ensure_init()
     row = _fetchone("SELECT * FROM sessions_messages WHERE id=%s", (message_id,))
@@ -476,6 +488,7 @@ __all__ = [
     "create_workspace", "get_workspace", "list_workspaces", "update_workspace",
     "archive_workspace", "ensure_default_workspace",
     "create_thread", "get_thread", "list_threads", "update_thread", "archive_thread",
-    "append_message", "list_messages", "get_message", "delete_message",
+    "append_message", "list_messages", "list_recent_messages",
+    "get_message", "delete_message",
     "store_stats", "table_counts",
 ]

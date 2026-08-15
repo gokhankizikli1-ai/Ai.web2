@@ -128,6 +128,9 @@ class SessionsClient:
     ) -> list[Message]:
         return _store().list_messages(thread_id, limit=limit, after_id=after_id)
 
+    def list_recent_messages(self, thread_id: str, *, limit: int = 20) -> list[Message]:
+        return _store().list_recent_messages(thread_id, limit=limit)
+
     def get_message(self, message_id: str) -> Optional[Message]:
         return _store().get_message(message_id)
 
