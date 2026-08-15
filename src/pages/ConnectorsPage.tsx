@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useSearchParams } from 'react-router';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router';
 import { motion } from 'framer-motion';
 import { ArrowLeft, RefreshCw, Loader2, CheckCircle2, AlertTriangle, FolderOpen } from 'lucide-react';
 import Navbar from '@/sections/Navbar';
 import ToastNotifications from '@/components/ToastNotifications';
 import { useToast } from '@/hooks/useToast';
 import { getProjects } from '@/stores/projectStore';
+import { resolveBackTarget } from '@/lib/shellNavigation';
 import type { Project } from '@/types/projects';
 import { GmailLogo, GithubLogo, VercelLogo } from '@/components/connectors/BrandLogos';
+import ConnectorSelect from '@/components/connectors/ConnectorSelect';
 import {
   beginGmailConnectRedirect, getGmailConnection, syncGmail, disconnectGmail,
   type GmailConnectionView,
@@ -380,8 +382,6 @@ function GithubCard({
   else if (status.state === 'needs_install') pill = <StatusPill tone="revoked" label="Install needed" />;
   else if (status.state === 'disconnected') pill = <StatusPill tone="muted" label="Not connected" />;
 
-  const selectCls = 'w-full h-10 rounded-lg bg-white/[0.03] border border-white/10 px-3 pr-9 text-[13px] text-white outline-none focus:border-[#3B82F6]/40 transition-colors appearance-none';
-
   return (
     <ConnectorShell
       logo={<GithubLogo size={24} className="text-white" />}
@@ -427,21 +427,17 @@ function GithubCard({
       {status.state === 'choose_install' && (
         <div className="space-y-3 max-w-md">
           <div className="text-[12.5px] text-white/45">Choose the GitHub account to connect:</div>
-          <div className="relative">
-            <select
-              aria-label="GitHub account"
-              className={selectCls}
-              value={selectedInstall || status.installations[0].installation_id}
-              onChange={(e) => setSelectedInstall(e.target.value)}
-            >
-              {status.installations.map((i) => (
-                <option key={i.installation_id} value={i.installation_id} className="bg-[#0a0a0f] text-white">
-                  {i.account_login || `Installation ${i.installation_id}`}
-                  {i.account_type ? ` (${i.account_type})` : ''}
-                </option>
-              ))}
-            </select>
-          </div>
+          <ConnectorSelect
+            ariaLabel="GitHub account"
+            value={selectedInstall || status.installations[0].installation_id}
+            onChange={setSelectedInstall}
+            disabled={busy !== null}
+            options={status.installations.map((i) => ({
+              value: i.installation_id,
+              label: i.account_login || `Installation ${i.installation_id}`,
+              hint: i.account_type || undefined,
+            }))}
+          />
           <div className="flex flex-wrap items-center gap-2">
             <button className={btnPrimary} disabled={busy === 'choose'} onClick={() => onChoose(status.installations)}>
               {busy === 'choose' ? <BusySpinner /> : null} Continue
@@ -458,20 +454,17 @@ function GithubCard({
           {status.repos.length > 0 ? (
             <>
               <div className="text-[12.5px] text-white/45">GitHub app installed. Choose a repository to connect:</div>
-              <div className="relative">
-                <select
-                  aria-label="Repository"
-                  className={selectCls}
-                  value={selectedRepo || status.repos[0].full_name}
-                  onChange={(e) => setSelectedRepo(e.target.value)}
-                >
-                  {status.repos.map((r) => (
-                    <option key={r.id || r.full_name} value={r.full_name} className="bg-[#0a0a0f] text-white">
-                      {r.full_name}{r.private ? ' (private)' : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <ConnectorSelect
+                ariaLabel="Repository"
+                value={selectedRepo || status.repos[0].full_name}
+                onChange={setSelectedRepo}
+                disabled={busy !== null}
+                options={status.repos.map((r) => ({
+                  value: r.full_name,
+                  label: r.full_name,
+                  hint: r.private ? 'private' : undefined,
+                }))}
+              />
               <div className="flex flex-wrap items-center gap-2">
                 <button className={btnPrimary} disabled={busy === 'select'} onClick={() => onSelect(status.installationId, status.repos)}>
                   {busy === 'select' ? <BusySpinner /> : null} Connect repository
@@ -636,8 +629,6 @@ function VercelCard({ projectId, notify }: { projectId: string; notify: Notify }
   else if (status.state === 'revoked') pill = <StatusPill tone="revoked" label="Reconnect needed" />;
   else if (status.state === 'disconnected') pill = <StatusPill tone="muted" label="Not connected" />;
 
-  const selectCls = 'w-full h-10 rounded-lg bg-white/[0.03] border border-white/10 px-3 pr-9 text-[13px] text-white outline-none focus:border-[#3B82F6]/40 transition-colors appearance-none';
-
   return (
     <ConnectorShell
       logo={<VercelLogo size={22} className="text-white" />}
@@ -691,20 +682,17 @@ function VercelCard({ projectId, notify }: { projectId: string; notify: Notify }
           {status.projects.length > 0 ? (
             <>
               <div className="text-[12.5px] text-white/45">Vercel authorized. Choose the project to connect:</div>
-              <div className="relative">
-                <select
-                  aria-label="Vercel project"
-                  className={selectCls}
-                  value={selectedProject || status.projects[0].vercel_project_id}
-                  onChange={(e) => setSelectedProject(e.target.value)}
-                >
-                  {status.projects.map((p) => (
-                    <option key={p.vercel_project_id} value={p.vercel_project_id} className="bg-[#0a0a0f] text-white">
-                      {p.name || p.vercel_project_id}{p.framework ? ` (${p.framework})` : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <ConnectorSelect
+                ariaLabel="Vercel project"
+                value={selectedProject || status.projects[0].vercel_project_id}
+                onChange={setSelectedProject}
+                disabled={busy !== null}
+                options={status.projects.map((p) => ({
+                  value: p.vercel_project_id,
+                  label: p.name || p.vercel_project_id,
+                  hint: p.framework || undefined,
+                }))}
+              />
               <div className="flex flex-wrap items-center gap-2">
                 <button className={btnPrimary} disabled={busy === 'select'} onClick={() => onSelect(status.projects)}>
                   {busy === 'select' ? <BusySpinner /> : null} Connect project
@@ -786,6 +774,19 @@ export default function ConnectorsPage() {
   }, []);
 
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  /* Back — pop the in-app history entry the user came from, so they land back
+   * on the exact surface they left. On a cold entry (bookmark, hard refresh, or
+   * a connector OAuth callback, which arrives as a fresh document load and so
+   * has nothing to pop) fall back to the chat surface instead. The decision
+   * itself lives in `resolveBackTarget` so it can be tested without a router. */
+  const goBack = useCallback(() => {
+    const target = resolveBackTarget({ locationKey: location.key });
+    if (target.kind === 'history') navigate(-1);
+    else navigate(target.route);
+  }, [navigate, location.key]);
 
   // Initial project selection. The Gmail OAuth callback returns to
   // `/#/settings/integrations?...&project_id=<id>`; if that id is one the user
@@ -859,13 +860,26 @@ export default function ConnectorsPage() {
 
   return (
     <div className="min-h-screen bg-[#0a0a0f] text-foreground">
-      <Navbar />
-      <div className="px-4 sm:px-6 py-8">
+      {/* `surface="dark"` matches the other dark pages that host this shared
+          navbar (About, Legal); the default light surface renders slate text on
+          this near-black page. */}
+      <Navbar surface="dark" />
+      {/* `pt-24` clears the FIXED h-14 navbar, matching every other page that
+          renders it (SettingsPage pt-24; About/Legal/Features/Pricing pt-28).
+          With the previous `py-8` the Back control sat at y≈32px — underneath
+          the navbar's full-width fixed header — so clicks hit the navbar and
+          never reached the link. That, not the route, is why Back appeared
+          dead. */}
+      <div className="px-4 sm:px-6 pt-24 pb-12">
         <div className="max-w-3xl mx-auto">
           {/* Back + heading */}
-          <Link to="/chat" className="inline-flex items-center gap-1.5 text-[13px] text-white/45 hover:text-white/80 transition-colors">
+          <button
+            type="button"
+            onClick={goBack}
+            className="inline-flex items-center gap-1.5 text-[13px] text-white/45 hover:text-white/80 transition-colors"
+          >
             <ArrowLeft className="h-4 w-4" /> Back
-          </Link>
+          </button>
           <div className="mt-4 mb-6">
             <h1 className="text-[22px] sm:text-[26px] font-semibold text-white tracking-tight">Connectors</h1>
             <p className="mt-1 text-[13.5px] text-white/45">
@@ -893,24 +907,24 @@ export default function ConnectorsPage() {
             </motion.div>
           ) : (
             <>
-              {/* Project selector — connector authority is project-scoped. */}
+              {/* Project selector — connector authority is project-scoped. The
+                  heading is presentational (the control is a Radix button, not
+                  an <input>, so it carries its own accessible name via
+                  `ariaLabel` rather than a `htmlFor` pairing). */}
               <div className="mb-5">
-                <label htmlFor="connector-project" className="block text-[11px] font-medium uppercase tracking-wider text-white/35 mb-1.5">
+                <div className="block text-[11px] font-medium uppercase tracking-wider text-white/35 mb-1.5">
                   Project
-                </label>
-                <div className="relative max-w-md">
-                  <select
-                    id="connector-project"
+                </div>
+                <div className="max-w-md">
+                  <ConnectorSelect
+                    ariaLabel="Project"
                     value={selectedProjectId}
-                    onChange={(e) => setSelectedProjectId(e.target.value)}
-                    className="w-full h-10 rounded-lg bg-white/[0.03] border border-white/10 px-3 pr-9 text-[13px] text-white outline-none focus:border-[#3B82F6]/40 transition-colors appearance-none"
-                  >
-                    {projects.map((p) => (
-                      <option key={p.id} value={p.id} className="bg-[#0a0a0f] text-white">
-                        {p.name || 'Untitled project'}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={setSelectedProjectId}
+                    options={projects.map((p) => ({
+                      value: p.id,
+                      label: p.name || 'Untitled project',
+                    }))}
+                  />
                 </div>
               </div>
 

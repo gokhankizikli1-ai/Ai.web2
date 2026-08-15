@@ -662,7 +662,14 @@ export default function ChatDashboard() {
             scrollbar-none`), so we get bleed protection AND popovers
             that escape the header bounds. */}
         <header className="relative flex items-center justify-between gap-2 h-11 px-3 border-b shrink-0 z-20" style={{ borderColor: 'rgba(255,255,255,0.04)', background: 'rgba(13, 17, 23,0.7)', backdropFilter: 'blur(20px)' }}>
-          <div className="flex items-center gap-2 min-w-0 flex-1 overflow-x-auto scrollbar-none">
+          {/* Left header cluster. This used to be `overflow-x-auto` because it
+              carried the old Chat / Web Build / Game Build tab strip; those are
+              gone, so its only children are the sidebar toggle and the project
+              chip. Horizontal SCROLLING is the wrong behaviour for them — it is
+              exactly what surfaced as a sideways-bleeding header. `min-w-0 +
+              overflow-hidden` makes the chip TRUNCATE into the space actually
+              left over by the right-hand control cluster instead. */}
+          <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
             {!sidebarOpen && (
               <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
                 onClick={() => setSidebarOpen(true)}
@@ -682,10 +689,15 @@ export default function ChatDashboard() {
               <button
                 onClick={() => navigate(`/projects/${activeProjectId}`)}
                 title="Back to project"
-                className="shrink-0 flex items-center gap-1.5 rounded-lg border border-[#3B82F6]/25 bg-[#3B82F6]/[0.1] px-2.5 h-7 text-[11.5px] text-[#93C5FD] hover:bg-[#3B82F6]/[0.18] transition-all max-w-[45vw]"
+                // `min-w-0` (not `shrink-0`) is what lets the chip give way and
+                // ellipsize when the project name is long. The previous
+                // `max-w-[45vw]` was an arbitrary viewport cap that ignored how
+                // much room the right-hand controls actually leave, so a long
+                // name still pushed the header sideways on narrow windows.
+                className="min-w-0 flex items-center gap-1.5 rounded-lg border border-[#3B82F6]/25 bg-[#3B82F6]/[0.1] px-2.5 h-7 text-[11.5px] text-[#93C5FD] hover:bg-[#3B82F6]/[0.18] transition-all"
               >
                 <FolderOpen className="h-3.5 w-3.5 shrink-0" />
-                <span className="truncate">Project: {getProject(activeProjectId)?.name || 'Untitled'}</span>
+                <span className="min-w-0 truncate">Project: {getProject(activeProjectId)?.name || 'Untitled'}</span>
               </button>
             )}
           </div>
