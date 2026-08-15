@@ -141,7 +141,7 @@ export default function AgentChatPage() {
         <div className="flex items-center gap-1">
           {agent.projectId && (
             <button
-              onClick={() => navigate(`/projects/${agent.projectId}`)}
+              onClick={() => navigate(`/projects/${agent.projectId}/studio`)}
               className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] text-[#60A5FA]/60 transition-all"
               style={{ background: 'rgba(59, 130, 246,0.04)', border: '1px solid rgba(59, 130, 246,0.08)' }}
             >

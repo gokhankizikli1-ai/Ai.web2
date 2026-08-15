@@ -432,7 +432,9 @@ export default function AgentBuilder() {
 
     // Navigate based on mode
     if (config.usageMode === 'project' && config.projectId) {
-      navigate(`/projects/${config.projectId}`);
+      // Agent flows land in the Build Studio (which hosts the agent/orchestrator
+      // surface); the project Overview is the card's default entry point.
+      navigate(`/projects/${config.projectId}/studio`);
     } else {
       navigate(`/agents/${agent.id}`);
     }

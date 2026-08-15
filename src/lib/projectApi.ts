@@ -61,6 +61,28 @@ export async function assignChatToProject(
   };
 }
 
+/**
+ * Bind an ALREADY-SYNCED thread to a project (raw PUT, no re-sync). Used by the
+ * chat lifecycle once a new chat's server thread exists — the point at which a
+ * "new chat from a project" can be filed. Best-effort; never throws.
+ */
+export async function bindThreadToProject(
+  threadId: string,
+  projectId: string,
+): Promise<BindingResult> {
+  const res = await apiCallDetailed<{ project_id?: string; moved_from?: string | null }>(
+    'PUT',
+    `/v2/sessions/threads/${encodeURIComponent(threadId)}/project`,
+    { project_id: projectId },
+  );
+  return {
+    ok: res.ok,
+    status: res.status,
+    projectId: res.data?.project_id ?? (res.ok ? projectId : null),
+    movedFrom: res.data?.moved_from ?? null,
+  };
+}
+
 /** Remove a chat from its project (thread + messages are kept). */
 export async function removeChatFromProject(session: ChatSession): Promise<BindingResult> {
   if (!serverChatEnabled()) return { ok: false, status: 0, projectId: null };
@@ -111,4 +133,69 @@ export async function attachProductToProject(
     },
   );
   return { ok: res.ok, status: res.status, deliverableId: res.data?.deliverable_id ?? null };
+}
+
+// ── Project Overview reads (backend-authoritative; localStorage is never the
+//    authority for these) ────────────────────────────────────────────────────
+
+export interface ProjectChat {
+  id: string;              // server thread id — the ChatSession id after hydrate
+  title: string;
+  mode: string | null;
+  updated_at: string | null;
+}
+
+/** Chats filed under a project (server truth). [] on failure / unavailable. */
+export async function listProjectChats(projectId: string): Promise<ProjectChat[]> {
+  const data = await apiCall<{ threads?: ProjectChat[] }>(
+    'GET',
+    `/v2/sessions/projects/${encodeURIComponent(projectId)}/threads`,
+  );
+  return (data?.threads || []).map((t) => ({
+    id: t.id,
+    title: t.title || 'Chat',
+    mode: t.mode ?? null,
+    updated_at: t.updated_at ?? null,
+  }));
+}
+
+export interface ProjectProduct {
+  deliverable_id?: string;
+  build_type?: string;     // "web" | "app"
+  title?: string;
+  status?: string;
+  artifact_ref?: string;
+  build_ref?: string;
+  run_id?: string;
+  updated_at?: string;
+}
+
+/** Generated Web/App products for a project (server truth). [] on failure. */
+export async function listProjectProducts(projectId: string): Promise<ProjectProduct[]> {
+  const data = await apiCall<{ products?: ProjectProduct[] }>(
+    'GET',
+    `/v2/orchestrator/projects/${encodeURIComponent(projectId)}/products`,
+  );
+  return data?.products || [];
+}
+
+export interface ProjectBrainContext {
+  project_summary?: string;
+  current_goals?: string[];
+  connector_signals?: { source?: string; kind?: string; summary?: string }[];
+  counts?: Record<string, number>;
+}
+
+/**
+ * Bounded Project Brain snapshot (goals / connector signals / counts). Reads the
+ * existing deterministic aggregate endpoint — NO model call. Returns null when
+ * the brain is disabled/empty so the Overview simply omits the section.
+ */
+export async function getProjectBrainContext(projectId: string): Promise<ProjectBrainContext | null> {
+  const data = await apiCall<{ brain?: ProjectBrainContext | null; empty?: boolean }>(
+    'GET',
+    `/v2/projects/${encodeURIComponent(projectId)}/brain`,
+  );
+  if (!data || data.empty || !data.brain) return null;
+  return data.brain;
 }

@@ -57,6 +57,7 @@ const Automations = lazy(() => import('./pages/Automations'));
 const MultiAgentSwarm = lazy(() => import('./pages/MultiAgentSwarm'));
 const ProjectsDashboard = lazy(() => import('./pages/ProjectsDashboard'));
 const ProjectWorkspace = lazy(() => import('./pages/ProjectWorkspace'));
+const ProjectOverview = lazy(() => import('./pages/ProjectOverview'));
 const ProjectResults = lazy(() => import('./pages/ProjectResults'));
 const AgentsPage = lazy(() => import('./pages/AgentsPage'));
 const AgentChatPage = lazy(() => import('./pages/AgentChatPage'));
@@ -346,7 +347,11 @@ export default function App() {
 
         {/* Project-based Multi-Agent Workspace */}
         <Route path="/projects" element={<ProtectedRoute guestAllowed={false} redirectTo="/signup"><ProjectsDashboard /></ProtectedRoute>} />
-        <Route path="/projects/:projectId" element={<ProtectedRoute guestAllowed={false} redirectTo="/signup"><ProjectWorkspace /></ProtectedRoute>} />
+        {/* A Project's DEFAULT surface is the Overview (durable workspace:
+            chats + products + intelligence). Build Studio is an explicit tool
+            at /studio — deep links to it keep working. */}
+        <Route path="/projects/:projectId" element={<ProtectedRoute guestAllowed={false} redirectTo="/signup"><ProjectOverview /></ProtectedRoute>} />
+        <Route path="/projects/:projectId/studio" element={<ProtectedRoute guestAllowed={false} redirectTo="/signup"><ProjectWorkspace /></ProtectedRoute>} />
         <Route path="/projects/:projectId/runs" element={<ProtectedRoute guestAllowed={false} redirectTo="/signup"><ProjectResults /></ProtectedRoute>} />
 
         {/* Agents */}

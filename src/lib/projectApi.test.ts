@@ -23,12 +23,16 @@ import {
   removeChatFromProject,
   getThreadProject,
   attachProductToProject,
+  bindThreadToProject,
+  listProjectChats,
+  listProjectProducts,
+  getProjectBrainContext,
 } from './projectApi';
 
 // Fake backend: threads with an optional project binding, per-project ownership,
 // and a products store. `owner` is the acting user (from the mock scope).
 function makeBackend() {
-  const threads = new Map<string, { id: string; project: string | null }>();
+  const threads = new Map<string, { id: string; project: string | null; title: string }>();
   // project id -> owner user id
   const projectOwner = new Map<string, string>([
     ['pA', 'alice'], ['pB', 'alice'], ['pOther', 'bob'],
@@ -49,11 +53,19 @@ function makeBackend() {
     let m = path.match(/^\/v2\/sessions\/workspaces\/([^/]+)\/threads$/);
     if (m && method === 'POST') {
       const id = `th-${++seq}`;
-      threads.set(id, { id, project: null });
+      threads.set(id, { id, project: null, title: body.title || 'Chat' });
       return ok({ id });
     }
     if (m && method === 'GET') return ok({ threads: [] });
-    if (m && method === 'GET') return ok({ threads: [] });
+    // Chats filed under a project (Project Overview → Chats).
+    m = path.match(/^\/v2\/sessions\/projects\/([^/]+)\/threads$/);
+    if (m && method === 'GET') {
+      if (!ownsProject(m[1])) return notFound();
+      const list = [...threads.values()].filter((t) => t.project === m![1]).map((t) => ({
+        id: t.id, title: t.title, mode: 'chat', updated_at: '2024-01-01T00:00:00Z',
+      }));
+      return ok({ threads: list });
+    }
     m = path.match(/^\/v2\/sessions\/threads\/([^/]+)\/messages$/);
     if (m && method === 'GET') return ok({ messages: [] });
     if (m && method === 'POST') return ok({ id: 'msg', client_message_id: body.client_message_id ?? null });
@@ -82,6 +94,23 @@ function makeBackend() {
         products.push({ deliverable_id: id, build_type: body.build_type, title: body.title, project: m[1] });
       }
       return ok({ deliverable_id: id, build_type: body.build_type });
+    }
+    if (m && method === 'GET') {
+      if (!ownsProject(m[1])) return notFound();
+      return ok({ products: products.filter((p) => p.project === m![1]), executions: [] });
+    }
+    // Project Brain (deterministic aggregate — no model call).
+    m = path.match(/^\/v2\/projects\/([^/]+)\/brain$/);
+    if (m && method === 'GET') {
+      if (!ownsProject(m[1])) return ok({ brain: null, empty: true });
+      return ok({
+        brain: {
+          current_goals: ['Reach 100 users'],
+          connector_signals: [{ source: 'github', kind: 'github.check.failed', summary: 'CI failed on main' }],
+          counts: { products: 1 },
+        },
+        empty: false,
+      });
     }
     return notFound();
   };
@@ -191,5 +220,73 @@ describe('attachProductToProject', () => {
     expect(res.ok).toBe(false);
     expect(res.status).toBe(404);
     expect(backend.products.length).toBe(0);
+  });
+});
+
+describe('Project Overview reads', () => {
+  it('listProjectChats returns chats filed under the project', async () => {
+    const s = session();
+    await assignChatToProject(s, 'pA');
+    const chats = await listProjectChats('pA');
+    expect(chats.length).toBe(1);
+    expect(chats[0].id).toBe([...backend.threads.keys()][0]);
+    expect(chats[0].title).toBeTruthy();
+  });
+
+  it('listProjectChats is empty for a project with no chats', async () => {
+    expect(await listProjectChats('pB')).toEqual([]);
+  });
+
+  it('listProjectChats 404 for a foreign project → []', async () => {
+    expect(await listProjectChats('pOther')).toEqual([]);
+  });
+
+  it('listProjectProducts returns saved products', async () => {
+    await attachProductToProject('pA', { buildType: 'app', title: 'iOS', sourceId: 's9' });
+    const products = await listProjectProducts('pA');
+    expect(products.length).toBe(1);
+    expect(products[0].build_type).toBe('app');
+    expect(products[0].title).toBe('iOS');
+  });
+
+  it('listProjectProducts for a foreign project → []', async () => {
+    await attachProductToProject('pA', { buildType: 'web', title: 'x', sourceId: 's1' });
+    // acting as owner works; a non-owner sees []
+    scope = 'user_bob';
+    expect(await listProjectProducts('pA')).toEqual([]);
+  });
+
+  it('getProjectBrainContext returns a bounded snapshot for the owner', async () => {
+    const brain = await getProjectBrainContext('pA');
+    expect(brain).not.toBeNull();
+    expect(brain!.current_goals).toContain('Reach 100 users');
+    expect(brain!.connector_signals!.length).toBe(1);
+  });
+
+  it('getProjectBrainContext returns null for a foreign/empty project', async () => {
+    expect(await getProjectBrainContext('pOther')).toBeNull();
+  });
+});
+
+describe('bindThreadToProject (deferred new-chat binding)', () => {
+  it('binds an already-synced thread to a project', async () => {
+    // Simulate a freshly-created server thread.
+    const s = session();
+    const threadId = (await assignChatToProject(s, 'pA')).projectId ? [...backend.threads.keys()][0] : '';
+    // Now bind that same thread to pB directly (the lifecycle path).
+    const res = await bindThreadToProject(threadId, 'pB');
+    expect(res.ok).toBe(true);
+    expect(res.projectId).toBe('pB');
+    const chats = await listProjectChats('pB');
+    expect(chats.map((c) => c.id)).toContain(threadId);
+  });
+
+  it('binding to a foreign project is a 404', async () => {
+    const s = session();
+    await assignChatToProject(s, 'pA');
+    const threadId = [...backend.threads.keys()][0];
+    const res = await bindThreadToProject(threadId, 'pOther');
+    expect(res.ok).toBe(false);
+    expect(res.status).toBe(404);
   });
 });
