@@ -1333,7 +1333,7 @@ export default function ConnectorsPage() {
       {/* `surface="dark"` matches the other dark pages that host this shared
           navbar (About, Legal); the default light surface renders slate text on
           this near-black page. */}
-      <Navbar surface="dark" />
+      <Navbar surface="dark" variant="app" />
       {/* `pt-24` clears the FIXED h-14 navbar, matching every other page that
           renders it (SettingsPage pt-24; About/Legal/Features/Pricing pt-28).
           With the previous `py-8` the Back control sat at y≈32px — underneath

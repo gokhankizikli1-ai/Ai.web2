@@ -33,7 +33,10 @@ export default function BrandLogo({
   className = '',
 }: BrandLogoProps) {
   const wordColor = tone === 'onDark' ? '#F5F7FA' : '#0F1729';
-  const aiColor = tone === 'onDark' ? '#5A6774' : '#64748B';
+  // The muted "AI" suffix previously read at 4.47:1 on porcelain and 3.11:1 on
+  // the dark surfaces — both below AA for 17px text. These tones keep the same
+  // quiet relationship to the wordmark while clearing 4.5:1 on each surface.
+  const aiColor = tone === 'onDark' ? '#93A3B8' : '#5B6879';
 
   return (
     <span className={`inline-flex items-center gap-2.5 ${className}`}>

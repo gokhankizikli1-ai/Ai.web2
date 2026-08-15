@@ -115,7 +115,8 @@ export default function SettingsPage() {
 
   return (
     <div className="min-h-screen bg-[#0a0a0f] text-foreground">
-      <Navbar />
+      {/* App surface: the marketing mega menus never render here. */}
+      <Navbar variant="app" />
 
       <main className="pt-24 pb-12 px-4 sm:px-6">
         <div className="max-w-5xl mx-auto">

@@ -1,98 +1,66 @@
 import { Link } from 'react-router';
 import { useLanguageStore } from '@/stores/languageStore';
 import BrandLogo from '@/components/BrandLogo';
+import { FOOTER_COLUMNS } from '@/lib/marketingNav';
 
 /**
- * Shared marketing footer — v8 "Ink" dark style.
+ * Shared marketing footer — four real columns (Product / Resources / Company /
+ * Legal & trust) rendered from the single public-IA source of truth in
+ * `@/lib/marketingNav`.
  *
- * Phase 14I.2 — the footer now advertises ONLY honest, public-facing
- * destinations. The previous "Product" and "Resources" columns linked to
- * owner-only / authenticated-only surfaces (Workspace, Startup Radar,
- * Ecommerce Builder, Game Builder, Agents — several gated by OwnerRoute) and to
- * pages that did not exist (Changelog, Security). Advertising those in the
- * public footer either leaked internal product architecture or produced links
- * that just funneled a logged-out visitor to /signup.
+ * Honesty rules kept from the previous footer and enforced by
+ * `marketingNav.test.ts`:
+ *   • every destination is a REGISTERED PUBLIC route with real content —
+ *     no `href="#"`, no placeholder, no authenticated-only surface;
+ *   • no invented social accounts, no support email, no company address,
+ *     no "Status" page (there is no real status source in this repository);
+ *   • labels resolve through the centralized `t()` system (en / tr / de).
  *
- * Every link below points DIRECTLY to a real, registered PUBLIC route
- * (see src/App.tsx). No auth-conditional routing is needed anymore because
- * nothing in the footer is an app surface. All labels are resolved through the
- * centralized `t()` locale system (en / tr / de) — no hardcoded English.
+ * "Contact" and "Careers" are still deliberately absent: the repository exposes
+ * no verified contact channel and no open roles, and inventing either is not
+ * allowed. The Help Center under Resources is the honest self-service answer.
  */
-
-type FooterLink = { labelKey: string; to: string };
-
-const companyLinks: FooterLink[] = [
-  // About is a real public marketing route (/about). Contact is intentionally
-  // omitted: the repository exposes no verified public contact channel (no
-  // support email/form/address; the in-app assistant is an AI, not a support
-  // desk), and inventing one is not allowed.
-  { labelKey: 'footerAbout', to: '/about' },
-];
-
-const legalLinks: FooterLink[] = [
-  { labelKey: 'legalNavPrivacy', to: '/privacy' },
-  { labelKey: 'legalNavTerms', to: '/terms' },
-  { labelKey: 'legalNavCookies', to: '/cookies' },
-  { labelKey: 'legalNavKvkk', to: '/kvkk' },
-  { labelKey: 'legalNavAup', to: '/acceptable-use' },
-];
-
-function FooterColumn({
-  title,
-  links,
-  t,
-}: {
-  title: string;
-  links: FooterLink[];
-  t: (key: string) => string;
-}) {
-  return (
-    <div>
-      <h5 className="mb-3.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-[#6C7A88]">
-        {title}
-      </h5>
-      <ul className="space-y-2.5">
-        {links.map((l) => (
-          <li key={l.labelKey}>
-            <Link
-              to={l.to}
-              className="text-[13px] text-[#93A3B5] transition-colors hover:text-[#F5F7FA]"
-            >
-              {t(l.labelKey)}
-            </Link>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
 export default function Footer() {
   const { t } = useLanguageStore();
 
   return (
-    <footer className="border-t border-[#28323D] bg-[#0A0D11] pt-14 pb-6">
-      <div className="mx-auto max-w-6xl px-7">
-        <div className="grid grid-cols-2 gap-8 md:grid-cols-[2fr_1fr_1fr] md:gap-8">
-          <div className="col-span-2 md:col-span-1">
-            <BrandLogo tone="onDark" />
-            <p className="mt-3.5 max-w-[30ch] text-[12.5px] leading-relaxed text-[#93A3B5]">
+    <footer className="border-t border-[color:var(--mkt-deep-border)] bg-[color:var(--mkt-deep)] pb-8 pt-16 text-[color:var(--mkt-deep-body)]">
+      <div className="mkt-wrap">
+        <div className="grid gap-10 md:grid-cols-[minmax(220px,1.3fr)_repeat(4,minmax(120px,1fr))] md:gap-8">
+          <div className="max-w-[34ch]">
+            <BrandLogo tone="onDark" wordSize={17} markSize={28} />
+            <p className="mt-4 text-[13px] leading-relaxed text-[color:var(--mkt-deep-muted)]">
               {t('footerTagline')}
             </p>
           </div>
-          <FooterColumn title={t('footerCompany')} links={companyLinks} t={t} />
-          <FooterColumn title={t('footerLegal')} links={legalLinks} t={t} />
+
+          {FOOTER_COLUMNS.map((col) => (
+            <nav key={col.titleKey} aria-label={t(col.titleKey)}>
+              <h2 className="mb-3.5 font-mono text-[10.5px] font-semibold uppercase tracking-[0.1em] text-[color:var(--mkt-deep-muted)]">
+                {t(col.titleKey)}
+              </h2>
+              <ul className="m-0 list-none space-y-2.5 p-0">
+                {col.items.map((item) => (
+                  <li key={`${col.titleKey}-${item.to}-${item.labelKey}`}>
+                    <Link
+                      to={item.to}
+                      className="text-[13px] text-[color:var(--mkt-deep-body)] transition-colors hover:text-white"
+                    >
+                      {t(item.labelKey)}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </nav>
+          ))}
         </div>
 
-        {/* Phase 14I.1 — the X / LinkedIn / GitHub icons previously pointed at
-            dead `href="#"` placeholders (they only jumped to the top of the
-            page). No real KorvixAI social destinations exist in the repo/config,
-            and inventing handles is not allowed, so the social row is removed
-            rather than shipping dead links. Re-add here with real HTTPS targets
-            (target="_blank" rel="noopener noreferrer") once accounts exist. */}
-        <div className="mt-9 flex items-center border-t border-white/[0.06] pt-6">
-          <span className="text-[12px] text-[#4C5967]">
+        <div className="mt-12 flex flex-wrap items-center justify-between gap-3 border-t border-white/[0.07] pt-6">
+          <span className="text-[12px] text-[color:var(--mkt-deep-muted)]">
             &copy; {new Date().getFullYear()} KorvixAI. {t('footerRights')}
+          </span>
+          <span className="text-[12px] text-[color:var(--mkt-deep-muted)]">
+            {t('footerEarlyAccess')}
           </span>
         </div>
       </div>

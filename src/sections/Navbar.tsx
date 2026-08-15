@@ -1,223 +1,360 @@
 import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router';
-import { Button } from '@/components/ui/button';
-import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
-import { Menu, Rocket, Cpu, LayoutDashboard, LogOut } from 'lucide-react';
-import { motion } from 'framer-motion';
+import * as NavigationMenuPrimitive from '@radix-ui/react-navigation-menu';
+import { Sheet, SheetContent, SheetTrigger, SheetTitle } from '@/components/ui/sheet';
+import {
+  Accordion, AccordionContent, AccordionItem, AccordionTrigger,
+} from '@/components/ui/accordion';
+import { Menu, ChevronDown, LogOut, ArrowRight } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 import { useLanguageStore } from '@/stores/languageStore';
 import BrandLogo from '@/components/BrandLogo';
 import { LanguageMenu, LanguageOptionsList } from '@/components/LanguageMenu';
-
-// Public nav — matches the consolidated Web-Build-first landing (Phase 14J.3).
-// "How it works" points at the animated three-step product story (#how); the
-// former Product/Visual Edit anchors were folded into that story. Each href is
-// a real landing section id; labels resolve through t().
-const NAV_LINKS = [
-  { key: 'navHowItWorks', href: '/#how', icon: Cpu },
-  { key: 'navResearch', href: '/#research', icon: Rocket },
-];
+import { PRIMARY_NAV, CONNECTORS, type NavEntry } from '@/lib/marketingNav';
+import {
+  GithubLogo, SlackLogo, VercelLogo, GmailLogo, GoogleCalendarLogo,
+} from '@/components/connectors/BrandLogos';
 
 /**
- * Which page surface the shared Navbar sits on. This drives every
- * surface-dependent color (logo tone, nav text, auth controls, scrolled
- * background, borders, mobile trigger) from ONE place so the same component
- * reads correctly on both the porcelain landing and the dark public pages.
+ * Public marketing header.
  *
- *   'light' (default) → the original porcelain landing styling, UNCHANGED.
- *   'dark'            → readable on the dark public pages (About + legal).
+ * Rebuilt (this PR) from a two-anchor bar into the platform-level information
+ * architecture Korvix actually has: Product / Solutions / Resources mega menus
+ * plus Company and Pricing. The IA itself lives in `@/lib/marketingNav` so the
+ * header, the footer, and the routing tests all read ONE source of truth.
+ *
+ * Behaviour:
+ *  • Desktop menus are Radix `NavigationMenu` (the primitive already vendored in
+ *    `components/ui/navigation-menu.tsx`), so hover intent, keyboard operation,
+ *    Escape-to-close, click-outside, focus management and ARIA semantics come
+ *    from the accessible primitive rather than a hand-rolled popover. The panel
+ *    is rendered without the shared viewport so each menu positions under its
+ *    own trigger with no width animation and no layout jump.
+ *  • Below `lg` the desktop menus are NOT reproduced: the existing Sheet pattern
+ *    hosts a nested accordion, which is the correct touch interaction.
+ *  • Auth behaviour is unchanged: authenticated visitors keep a reliable route
+ *    into the workspace (/chat) plus sign-out in the mobile sheet; logged-out
+ *    visitors get Sign in + Get started. No public nav entry points at an
+ *    authenticated-only surface.
+ *
+ * `variant="app"` renders only the brand + language + account controls. That is
+ * what the authenticated Settings / Connectors surfaces use, so those pages keep
+ * their in-app chrome instead of suddenly sprouting marketing mega menus.
  */
+
 export type NavbarSurface = 'light' | 'dark';
 
-export default function Navbar({ surface = 'light' }: { surface?: NavbarSurface }) {
-  const [isOpen, setIsOpen] = useState(false);
-  const [scrolled, setScrolled] = useState(false);
-  const location = useLocation();
-  const { isAuthenticated, user, logout } = useAuthStore();
+const CONNECTOR_MARK: Record<string, (p: { size?: number }) => React.ReactElement> = {
+  github: ({ size = 16 }) => <GithubLogo size={size} />,
+  slack: ({ size = 16 }) => <SlackLogo size={size} />,
+  vercel: ({ size = 16 }) => <VercelLogo size={size} />,
+  gmail: ({ size = 16 }) => <GmailLogo size={size} />,
+  calendar: ({ size = 16 }) => <GoogleCalendarLogo size={size} />,
+};
+
+/** One mega-menu panel (groups + optional single featured row). */
+function MenuPanel({ entry }: { entry: Extract<NavEntry, { kind: 'menu' }> }) {
   const { t } = useLanguageStore();
-
-  useEffect(() => {
-    const handleScroll = () => setScrolled(window.scrollY > 20);
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
-
-  const isActive = (href: string) => {
-    if (href === '/') return location.pathname === '/';
-    return location.pathname === href;
-  };
-
-  // Centralized surface tokens. The `light` values are byte-identical to the
-  // original single-surface Navbar, so the landing appearance is preserved
-  // exactly; `dark` supplies light-on-dark equivalents for the dark pages.
-  const isDark = surface === 'dark';
-  const s = {
-    logoTone: (isDark ? 'onDark' : 'onLight') as 'onLight' | 'onDark',
-    scrolled: isDark
-      ? 'bg-[#0a0a0f]/80 backdrop-blur-xl border-b border-white/[0.08]'
-      : 'bg-white/80 backdrop-blur-xl border-b border-slate-200/60',
-    navActive: isDark ? 'text-white bg-white/10' : 'text-slate-900 bg-slate-100',
-    navIdle: isDark
-      ? 'text-slate-300 hover:text-white hover:bg-white/[0.06]'
-      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/60',
-    ghost: isDark
-      ? 'text-slate-300 hover:text-white hover:bg-white/10'
-      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100',
-    ghostSubtle: isDark
-      ? 'text-slate-300 hover:text-white hover:bg-white/[0.06]'
-      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/60',
-    divider: isDark ? 'border-white/10' : 'border-border',
-    avatarWrap: isDark ? 'bg-white/10 border-white/15' : 'bg-[#EEF1F4] border-[#DDE3EA]',
-    avatarText: isDark ? 'text-slate-100' : 'text-[#52677A]',
-    userName: isDark ? 'text-slate-300' : 'text-slate-600',
-    trigger: isDark ? 'text-slate-200 hover:text-white' : 'text-muted-foreground hover:text-foreground',
-  };
+  const cols = String(entry.groups.length) as '1' | '2' | '3';
 
   return (
-    <motion.header
-      initial={{ opacity: 0, y: -8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4 }}
-      className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
-        scrolled ? s.scrolled : 'bg-transparent'
-      }`}
+    <div className="mkt-menupanel" style={{ width: entry.size === 'wide' ? 'min(760px, 92vw)' : 'min(340px, 92vw)' }}>
+      <div className="mkt-menugrid" data-cols={cols}>
+        {entry.groups.map((group) => (
+          <div key={group.titleKey}>
+            <p className="mkt-menugroup-title">{t(group.titleKey)}</p>
+            <ul className="list-none p-0 m-0">
+              {group.items.map((item) => (
+                <li key={item.to}>
+                  <NavigationMenuPrimitive.Link asChild>
+                    <Link to={item.to} className="mkt-menulink">
+                      <span className="t">{t(item.labelKey)}</span>
+                      {item.descKey && <span className="d">{t(item.descKey)}</span>}
+                    </Link>
+                  </NavigationMenuPrimitive.Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+
+      {entry.featured && (
+        <div className="mkt-menufeatured">
+          <div className="fx">
+            <div className="ft">{t(entry.featured.titleKey)}</div>
+            <div className="fb">{t(entry.featured.bodyKey)}</div>
+          </div>
+          <div className="mkt-menumarks" aria-hidden="true">
+            {CONNECTORS.map((c) => {
+              const Mark = CONNECTOR_MARK[c.id];
+              return <span key={c.id} title={c.name}>{Mark ? <Mark size={16} /> : null}</span>;
+            })}
+          </div>
+          <NavigationMenuPrimitive.Link asChild>
+            <Link to={entry.featured.to} className="mkt-textlink">
+              {t(entry.featured.ctaKey)}
+              <ArrowRight aria-hidden="true" />
+            </Link>
+          </NavigationMenuPrimitive.Link>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DesktopNav() {
+  const { t } = useLanguageStore();
+  const location = useLocation();
+
+  return (
+    <NavigationMenuPrimitive.Root
+      delayDuration={120}
+      skipDelayDuration={280}
+      className="relative hidden lg:flex"
     >
-      <div className="max-w-6xl mx-auto px-4 sm:px-6">
-        <div className="flex items-center justify-between h-14">
-          {/* Shared Korvix logo — wordmark tone follows the page surface */}
-          <Link to="/" className="group">
-            <BrandLogo tone={s.logoTone} wordSize={17} />
-          </Link>
-
-          {/* Desktop Nav */}
-          <nav className="hidden md:flex items-center gap-1">
-            {NAV_LINKS.map((link) => (
-              <Link
-                key={link.key}
-                to={link.href}
-                className={`px-3 py-1.5 rounded-lg text-[13px] font-medium transition-all duration-200 ${
-                  isActive(link.href) ? s.navActive : s.navIdle
-                }`}
+      <NavigationMenuPrimitive.List className="m-0 flex list-none items-center gap-0.5 p-0">
+        {PRIMARY_NAV.map((entry) => {
+          if (entry.kind === 'link') {
+            const active = location.pathname === entry.to;
+            return (
+              <NavigationMenuPrimitive.Item key={entry.id}>
+                <NavigationMenuPrimitive.Link asChild active={active}>
+                  <Link to={entry.to} className="mkt-navitem" aria-current={active ? 'page' : undefined}>
+                    {t(entry.labelKey)}
+                  </Link>
+                </NavigationMenuPrimitive.Link>
+              </NavigationMenuPrimitive.Item>
+            );
+          }
+          return (
+            <NavigationMenuPrimitive.Item key={entry.id}>
+              <NavigationMenuPrimitive.Trigger className="mkt-navitem">
+                {t(entry.labelKey)}
+                <ChevronDown className="chev" aria-hidden="true" />
+              </NavigationMenuPrimitive.Trigger>
+              <NavigationMenuPrimitive.Content
+                className="absolute left-0 top-full pt-2 data-[motion=from-end]:animate-in data-[motion=from-start]:animate-in data-[motion^=from-]:fade-in data-[motion^=to-]:fade-out data-[motion^=to-]:animate-out"
               >
-                {t(link.key)}
-              </Link>
-            ))}
-          </nav>
+                <MenuPanel entry={entry} />
+              </NavigationMenuPrimitive.Content>
+            </NavigationMenuPrimitive.Item>
+          );
+        })}
+      </NavigationMenuPrimitive.List>
+    </NavigationMenuPrimitive.Root>
+  );
+}
 
-          {/* Right Side — Auth CTAs */}
-          <div className="hidden md:flex items-center gap-2.5">
-            <LanguageMenu surface={surface} />
+function MobileNav({ surface }: { surface: NavbarSurface }) {
+  const [open, setOpen] = useState(false);
+  const { t } = useLanguageStore();
+  const { isAuthenticated, logout } = useAuthStore();
+  const close = () => setOpen(false);
+
+  return (
+    <Sheet open={open} onOpenChange={setOpen}>
+      <SheetTrigger asChild className="lg:hidden">
+        <button
+          type="button"
+          className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg transition-colors ${
+            surface === 'dark'
+              ? 'text-slate-200 hover:bg-white/10'
+              : 'text-[color:var(--mkt-body)] hover:bg-[rgba(11,16,32,0.05)]'
+          }`}
+          aria-label={open ? t('menuClose') : t('menuOpen')}
+        >
+          <Menu aria-hidden="true" className="h-5 w-5" />
+        </button>
+      </SheetTrigger>
+      <SheetContent
+        side="right"
+        className="mkt w-[min(360px,88vw)] overflow-y-auto bg-white p-0"
+      >
+        <SheetTitle className="sr-only">{t('menuOpen')}</SheetTitle>
+        <div className="border-b border-[color:var(--mkt-border)] px-4 py-3.5">
+          <Link to="/" onClick={close} className="mkt-brandlink">
+            <BrandLogo wordSize={16} />
+          </Link>
+        </div>
+
+        <nav className="p-3" aria-label={t('navPrimaryLabel')}>
+          <Accordion type="multiple" className="w-full">
+            {PRIMARY_NAV.map((entry) =>
+              entry.kind === 'link' ? (
+                <Link
+                  key={entry.id}
+                  to={entry.to}
+                  onClick={close}
+                  className="mkt-mnav-item px-3 py-3"
+                >
+                  {t(entry.labelKey)}
+                </Link>
+              ) : (
+                <AccordionItem key={entry.id} value={entry.id} className="border-0">
+                  <AccordionTrigger className="mkt-mnav-item px-3 py-3 hover:no-underline">
+                    {t(entry.labelKey)}
+                  </AccordionTrigger>
+                  <AccordionContent className="pb-1">
+                    {entry.groups.map((group) => (
+                      <div key={group.titleKey}>
+                        {entry.groups.length > 1 && (
+                          <p className="mkt-mnav-group px-3 pb-1 pl-6 pt-2.5">{t(group.titleKey)}</p>
+                        )}
+                        {group.items.map((item) => (
+                          <Link
+                            key={item.to}
+                            to={item.to}
+                            onClick={close}
+                            className="mkt-mnav-sub py-2.5 pl-6 pr-3"
+                          >
+                            {t(item.labelKey)}
+                          </Link>
+                        ))}
+                      </div>
+                    ))}
+                  </AccordionContent>
+                </AccordionItem>
+              ),
+            )}
+          </Accordion>
+
+          <hr className="mkt-rule my-3" />
+          <LanguageOptionsList onSelect={close} />
+          <hr className="mkt-rule my-3" />
+
+          <div className="flex flex-col gap-2 px-1 pb-4">
             {isAuthenticated ? (
               <>
-                <Link to="/workspace">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className={`${s.ghost} text-[13px] gap-1.5 h-8`}
-                  >
-                    <LayoutDashboard className="h-3.5 w-3.5" />
-                    Workspace
-                  </Button>
+                <Link to="/chat" onClick={close} className="mkt-btn mkt-btn-primary w-full">
+                  {t('navOpenWorkspace')}
                 </Link>
-                <div className={`flex items-center gap-2 pl-2.5 border-l ${s.divider}`}>
-                  <div className={`flex h-7 w-7 items-center justify-center rounded-full border ${s.avatarWrap}`}>
-                    <span className={`text-[10px] font-semibold ${s.avatarText}`}>
-                      {(user?.name || 'U').slice(0, 2).toUpperCase()}
-                    </span>
-                  </div>
-                  <span className={`text-[12px] ${s.userName} max-w-[80px] truncate`}>{user?.name || 'You'}</span>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => { logout(); close(); }}
+                  className="mkt-btn mkt-btn-ghost w-full"
+                >
+                  <LogOut aria-hidden="true" className="h-4 w-4" /> {t('signOut')}
+                </button>
               </>
             ) : (
               <>
-                <Link to="/login">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className={`${s.ghostSubtle} text-[13px] h-8`}
-                  >
-                    {t('signIn')}
-                  </Button>
+                <Link to="/signup" onClick={close} className="mkt-btn mkt-btn-primary w-full">
+                  {t('ctaGetStarted')}
                 </Link>
-                <Link to="/signup">
-                  <Button
-                    size="sm"
-                    className="bg-[#1B2230] text-white hover:bg-[#202736] font-semibold text-[13px] h-8 px-4 rounded-lg border border-white/[0.08] shadow-sm transition-all duration-200"
-                  >
-                    {t('ctaStartBuilding')}
-                  </Button>
+                <Link to="/login" onClick={close} className="mkt-btn mkt-btn-outline w-full">
+                  {t('signIn')}
                 </Link>
               </>
             )}
           </div>
+        </nav>
+      </SheetContent>
+    </Sheet>
+  );
+}
 
-          {/* Mobile Menu */}
-          <Sheet open={isOpen} onOpenChange={setIsOpen}>
-            <SheetTrigger asChild className="md:hidden">
-              <Button
-                variant="ghost"
-                size="icon"
-                className={`${s.trigger} h-8 w-8`}
-                aria-label={isOpen ? t('menuClose') : t('menuOpen')}
-              >
-                <Menu aria-hidden="true" className="h-5 w-5" />
-              </Button>
-            </SheetTrigger>
-            <SheetContent side="right" className="w-72 bg-card border-border">
-              <div className="flex flex-col gap-1 mt-8">
-                {NAV_LINKS.map((link) => (
-                  <Link
-                    key={link.key}
-                    to={link.href}
-                    onClick={() => setIsOpen(false)}
-                    className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
-                      isActive(link.href)
-                        ? 'text-slate-900 bg-slate-100'
-                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/60'
-                    }`}
-                  >
-                    <link.icon aria-hidden="true" className="h-4 w-4" />
-                    {t(link.key)}
+export default function Navbar({
+  surface = 'light',
+  variant = 'marketing',
+  announcement = null,
+}: {
+  surface?: NavbarSurface;
+  variant?: 'marketing' | 'app';
+  /** Optional strip rendered above the nav row, inside the fixed header. */
+  announcement?: React.ReactNode;
+}) {
+  const [scrolled, setScrolled] = useState(false);
+  const { isAuthenticated, user } = useAuthStore();
+  const { t } = useLanguageStore();
+
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 8);
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
+  const isDark = surface === 'dark';
+
+  return (
+    <header className="mkt mkt-header">
+      {announcement}
+      <div
+        className="mkt-headbar"
+        data-scrolled={scrolled ? 'true' : 'false'}
+        data-surface={surface}
+      >
+      <div className="mkt-wrap mkt-headrow">
+        <Link to="/" className="mkt-brandlink" aria-label="KorvixAI">
+          <BrandLogo tone={isDark ? 'onDark' : 'onLight'} wordSize={17} markSize={28} />
+        </Link>
+
+        {variant === 'marketing' && (
+          <>
+            <div className="ml-3 flex-1">
+              <DesktopNav />
+            </div>
+
+            <div className="hidden items-center gap-2 lg:flex">
+              <LanguageMenu surface={surface} />
+              {isAuthenticated ? (
+                <>
+                  <Link to="/chat" className="mkt-btn mkt-btn-primary mkt-btn-sm">
+                    {t('navOpenWorkspace')}
                   </Link>
-                ))}
-                <hr className="border-border my-2" />
-                {/* Language section — reuses setMode (no second modal). */}
-                <LanguageOptionsList onSelect={() => setIsOpen(false)} />
-                <hr className="border-border my-2" />
-                {isAuthenticated ? (
-                  <>
-                    <Link to="/workspace" onClick={() => setIsOpen(false)}>
-                      <Button className="w-full bg-[#1B2230] text-white hover:bg-[#202736] font-semibold rounded-xl mb-2 gap-2 h-10 border border-white/[0.08]">
-                        <LayoutDashboard className="h-4 w-4" />
-                        Workspace
-                      </Button>
-                    </Link>
-                    <button
-                      onClick={() => { logout(); setIsOpen(false); }}
-                      className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
-                    >
-                      <LogOut className="h-4 w-4" /> Sign Out
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <Link to="/login" onClick={() => setIsOpen(false)}>
-                      <Button className="w-full bg-[#1B2230] text-white hover:bg-[#202736] font-semibold rounded-xl mb-2 h-10 border border-white/[0.08]">
-                        {t('signIn')}
-                      </Button>
-                    </Link>
-                    <Link to="/signup" onClick={() => setIsOpen(false)}>
-                      <Button variant="outline" className="w-full border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300 font-semibold rounded-xl h-10 bg-white">
-                        {t('ctaStartBuilding')}
-                      </Button>
-                    </Link>
-                  </>
-                )}
-              </div>
-            </SheetContent>
-          </Sheet>
+                  <span
+                    className={`grid h-8 w-8 place-items-center rounded-full border text-[10px] font-semibold ${
+                      isDark
+                        ? 'border-white/15 bg-white/10 text-slate-100'
+                        : 'border-[color:var(--mkt-border)] bg-[color:var(--mkt-section)] text-[color:var(--mkt-muted)]'
+                    }`}
+                    title={user?.name || 'You'}
+                    aria-hidden="true"
+                  >
+                    {(user?.name || 'U').slice(0, 2).toUpperCase()}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <Link to="/login" className="mkt-btn mkt-btn-ghost mkt-btn-sm">
+                    {t('signIn')}
+                  </Link>
+                  <Link to="/signup" className="mkt-btn mkt-btn-primary mkt-btn-sm">
+                    {t('ctaGetStarted')}
+                  </Link>
+                </>
+              )}
+            </div>
+
+            {/* Compact CTA kept visible on small screens: the primary action
+                should not be hidden behind the menu button. */}
+            <Link
+              to={isAuthenticated ? '/chat' : '/signup'}
+              className="mkt-btn mkt-btn-primary mkt-btn-sm ml-auto max-w-[46vw] truncate lg:hidden"
+            >
+              {isAuthenticated ? t('navOpenWorkspace') : t('ctaGetStarted')}
+            </Link>
+            <MobileNav surface={surface} />
+          </>
+        )}
+
+        {variant === 'app' && (
+          <div className="ml-auto flex items-center gap-2">
+            <LanguageMenu surface={surface} />
+            {isAuthenticated ? (
+              <Link to="/chat" className="mkt-btn mkt-btn-primary mkt-btn-sm">
+                {t('navOpenWorkspace')}
+              </Link>
+            ) : (
+              <Link to="/login" className="mkt-btn mkt-btn-outline mkt-btn-sm">
+                {t('signIn')}
+              </Link>
+            )}
+          </div>
+        )}
         </div>
       </div>
-    </motion.header>
+    </header>
   );
 }

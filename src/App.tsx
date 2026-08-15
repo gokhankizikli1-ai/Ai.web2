@@ -23,13 +23,21 @@ import { shouldRunPreviewMeasurement } from '@/lib/webBuildMeasurementService';
 // any routing or auth behavior. Suspense (below) covers the one-time chunk
 // fetch with a neutral fallback.
 import LandingPage from './pages/LandingPage';
-import FeaturesPage from './pages/FeaturesPage';
-import UseCasesPage from './pages/UseCasesPage';
+import ProductPage from './pages/ProductPage';
+import SolutionsPage from './pages/SolutionsPage';
 import PricingPage from './pages/PricingPage';
 import AboutPage from './pages/AboutPage';
 import LegalPage from './pages/LegalPage';
+import DocsPage from './pages/DocsPage';
+import TutorialsPage from './pages/TutorialsPage';
+import TutorialPage from './pages/TutorialPage';
+import ChangelogPage from './pages/ChangelogPage';
+import HelpPage from './pages/HelpPage';
+import SecurityPage from './pages/SecurityPage';
+import RegionalPrivacyPage from './pages/RegionalPrivacyPage';
 import ComingSoon from './pages/ComingSoon';
 import AuthPage from './pages/AuthPage';
+import { isPublicPath } from '@/lib/publicRoutes';
 
 // Authenticated app surfaces — code-split (see note above).
 // PR #518 — the app-level hidden measurement host. Lazy + flag-gated so its Sandpack chunk is
@@ -229,40 +237,25 @@ function IdentityScopeBoundary({ children }: { children: React.ReactNode }) {
 
 function AppLayout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
-  const isLanding = location.pathname === '/';
-  const showParticles = !isLanding;
-  // Public / unauthenticated marketing + auth surfaces. The owner
-  // welcome toast must never render here — it would either leak the
-  // existence of an owner session to other visitors on a shared
-  // screen, or simply look out of place on a marketing page.
-  // Everything NOT in this set is treated as authenticated app shell
-  // (chat, projects, settings, etc.) where the toast is allowed.
-  const PUBLIC_ROUTE_PREFIXES = [
-    '/',          // landing
-    '/features',
-    '/use-cases',
-    '/pricing',
-    '/about',
-    '/login',
-    '/signup',
-    '/blog',
-    '/careers',
-    '/privacy',
-    '/terms',
-    '/cookies',
-    '/kvkk',
-    '/acceptable-use',
-    // Checkout return is reached via an EXTERNAL redirect (a cold boot, possibly
-    // on a different origin with no session). It renders for everyone and reads
-    // the token-authenticated /v2/billing/me for truth — so it must NOT carry
-    // the authenticated app shell (BottomNav / particles / owner toast) or be
-    // gated by ProtectedRoute (which would bounce a tokenless return to /signup).
-    '/billing/return',
-  ];
-  const isPublicRoute = (
-    location.pathname === '/' ||
-    PUBLIC_ROUTE_PREFIXES.some((p) => p !== '/' && location.pathname.startsWith(p))
-  );
+  // Public / unauthenticated marketing + auth surfaces. The owner welcome toast
+  // must never render here — it would either leak the existence of an owner
+  // session to other visitors on a shared screen, or simply look out of place
+  // on a marketing page. Everything NOT public is treated as authenticated app
+  // shell (chat, projects, settings, etc.) where the toast is allowed.
+  //
+  // The route list itself lives in `@/lib/publicRoutes` — ONE source of truth
+  // shared with the public-IA definition, so a marketing link can never point
+  // at a route this check does not know about (and a public page can never
+  // accidentally render authenticated chrome). Note `/billing/return` and
+  // `/verify-email` are public on purpose: both are reached via an external
+  // redirect on a possibly-tokenless cold boot.
+  const isPublicRoute = isPublicPath(location.pathname);
+  // Decorative drifting particles belong to the authenticated app shell. They
+  // used to render on every route except the landing page, which meant they
+  // also drifted across the public marketing/legal pages — motion with no
+  // meaning on exactly the surfaces that should feel composed. Gate them on the
+  // same public-route check as the rest of the app chrome.
+  const showParticles = !isPublicRoute;
   // Phase 14I.1 — the mobile BottomNav is AUTHENTICATED app navigation (Chat /
   // Web Build / Projects, all guest-blocked). It must never render on public
   // routes — especially /login and /signup, where it showed a misleading
@@ -331,10 +324,22 @@ export default function App() {
         <Route path="/" element={<RootEntry />} />
 
         {/* ═══ Marketing pages — fully public (viewable while logged out) ═══ */}
-        <Route path="/features" element={<AnimatedRoute><FeaturesPage /></AnimatedRoute>} />
-        <Route path="/use-cases" element={<AnimatedRoute><UseCasesPage /></AnimatedRoute>} />
+        <Route path="/product" element={<AnimatedRoute><ProductPage /></AnimatedRoute>} />
+        <Route path="/solutions" element={<AnimatedRoute><SolutionsPage /></AnimatedRoute>} />
         <Route path="/pricing" element={<AnimatedRoute><PricingPage /></AnimatedRoute>} />
         <Route path="/about" element={<AnimatedRoute><AboutPage /></AnimatedRoute>} />
+        {/* Legacy marketing paths — kept so existing links/bookmarks resolve
+             instead of hitting an unmatched route (which renders nothing). */}
+        <Route path="/features" element={<Navigate to="/product" replace />} />
+        <Route path="/use-cases" element={<Navigate to="/solutions" replace />} />
+
+        {/* ═══ Public resources — real content, linked from nav + footer ═══ */}
+        <Route path="/docs" element={<AnimatedRoute><DocsPage /></AnimatedRoute>} />
+        <Route path="/tutorials" element={<AnimatedRoute><TutorialsPage /></AnimatedRoute>} />
+        <Route path="/tutorials/:slug" element={<AnimatedRoute><TutorialPage /></AnimatedRoute>} />
+        <Route path="/changelog" element={<AnimatedRoute><ChangelogPage /></AnimatedRoute>} />
+        <Route path="/help" element={<AnimatedRoute><HelpPage /></AnimatedRoute>} />
+        <Route path="/security" element={<AnimatedRoute><SecurityPage /></AnimatedRoute>} />
 
         {/* ═══ App surfaces — REQUIRE an account. A logged-out visitor
              (incl. anonymous guests) is redirected to /signup and never
@@ -430,8 +435,14 @@ export default function App() {
         <Route path="/privacy" element={<AnimatedRoute><LegalPage doc="privacy" /></AnimatedRoute>} />
         <Route path="/terms" element={<AnimatedRoute><LegalPage doc="terms" /></AnimatedRoute>} />
         <Route path="/cookies" element={<AnimatedRoute><LegalPage doc="cookies" /></AnimatedRoute>} />
-        <Route path="/kvkk" element={<AnimatedRoute><LegalPage doc="kvkk" /></AnimatedRoute>} />
         <Route path="/acceptable-use" element={<AnimatedRoute><LegalPage doc="acceptableUse" /></AnimatedRoute>} />
+        {/* Regional privacy rights — a hub plus one page per region. The KVKK
+             information notice is reproduced (unchanged, still localized) on the
+             Türkiye page, and the old `/kvkk` URL redirects there so any
+             external/bookmarked link keeps working instead of 404-ing. */}
+        <Route path="/privacy/regional" element={<AnimatedRoute><RegionalPrivacyPage /></AnimatedRoute>} />
+        <Route path="/privacy/regional/:region" element={<AnimatedRoute><RegionalPrivacyPage /></AnimatedRoute>} />
+        <Route path="/kvkk" element={<Navigate to="/privacy/regional/turkiye" replace />} />
 
         {/* ═══ Coming soon placeholders ═══ */}
         <Route path="/blog" element={<AnimatedRoute><ComingSoon title="Blog" pageType="blog" /></AnimatedRoute>} />
