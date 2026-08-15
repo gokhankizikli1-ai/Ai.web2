@@ -433,6 +433,55 @@ async def stream_chat(body: StreamChatRequest, request: Request):
             },
         )
 
+    # ═══════════════════════════════════════════════════════════════════════
+    # Project Context / Project Brain — LIVE injection for the STREAMING path.
+    #
+    # The legacy /chat route injects a "Project Context" block (project
+    # name/description + shared project memory + the Project Brain aggregate:
+    # goals/decisions/products/connector signals + bounded project-CHAT
+    # excerpts) whenever a project_id is present. The streaming path — the
+    # REAL user path when VITE_CHAT_STREAMING is on — previously did NOT, so
+    # project-aware answers ("what's my favourite car in this project?") only
+    # worked on the legacy endpoint. Fixing only /chat would leave the live
+    # user path broken.
+    #
+    # We now fold the SAME block in here, built through the SAME authority:
+    #   build_project_context_block(project_id, user_id=<backend-resolved uid>)
+    # `user_id` is the backend-authoritative identity already resolved by
+    # _resolve_user_id (verified JWT → guest nonce → body → anonymous) —
+    # NEVER the client's claimed body.user_id for ownership. The builder
+    # owner-gates the WHOLE block (fail-closed): a spoofed or foreign
+    # project_id yields None, so no other user's project context can ever
+    # leak into this stream. The frontend project_id is a routing HINT only;
+    # this ownership check is the security boundary. Deterministic, bounded
+    # (~6k chars), NO extra model call. Any failure degrades to None and the
+    # chat streams normally.
+    # ═══════════════════════════════════════════════════════════════════════
+    project_context_injected = False
+    if body.project_id and user_id and user_id != "anonymous":
+        try:
+            from backend.services.projects.context import (
+                build_project_context_block,
+            )
+            project_block = build_project_context_block(
+                body.project_id, user_id=str(user_id),
+            )
+            if project_block:
+                # Fold into the same system-prompt slot the memory plane
+                # uses so the downstream composition (position-0 merge)
+                # carries BOTH memory and project context.
+                if mp_system_prompt:
+                    mp_system_prompt = f"{mp_system_prompt}\n\n{project_block}"
+                else:
+                    mp_system_prompt = project_block
+                project_context_injected = True
+        except Exception as e:
+            logger.warning("stream_chat.project_context injection error: %s", e)
+    logger.info(
+        "stream_chat.project_context | uid=%s | project_id=%s | injected=%s",
+        user_id, body.project_id or "-", project_context_injected,
+    )
+
     # ── Compose the final messages array ──────────────────────────────────
     # If we have a memory-aware system prompt, fold it in. Two cases:
     #   a) The body already has a `role: system` message at position 0 —
