@@ -118,8 +118,15 @@ export default function Sidebar({
   const displaySessions = filteredSessions;
 
   // Shared Kimi-style nav row styles — larger, readable, comfortable spacing.
-  const navRow = 'group w-full flex items-center gap-3 px-3 h-10 rounded-xl text-[13px] font-medium text-white/70 hover:text-white hover:bg-white/[0.05] transition-colors';
-  const navSub = 'w-full flex items-center gap-2.5 pl-3 pr-3 h-9 rounded-lg text-[12.5px] text-white/55 hover:text-white/90 hover:bg-white/[0.04] transition-colors';
+  // `min-w-0` lets the row shrink below its intrinsic content width, which is
+  // what allows `navLabel`'s truncation to engage; without it a long localized
+  // label sets the row's min-content width and pushes past the sidebar edge.
+  const navRow = 'group w-full min-w-0 flex items-center gap-3 px-3 h-10 rounded-xl text-[13px] font-medium text-white/70 hover:text-white hover:bg-white/[0.05] transition-colors';
+  const navSub = 'w-full min-w-0 flex items-center gap-2.5 pl-3 pr-3 h-9 rounded-lg text-[12.5px] text-white/55 hover:text-white/90 hover:bg-white/[0.04] transition-colors';
+  // Every nav label ellipsizes rather than widening its row. Labels come from
+  // t(...) so their length varies per language — this must hold for all of them,
+  // not just the ones that happen to be short in English.
+  const navLabel = 'flex-1 min-w-0 text-left truncate';
 
   /* ─── Session row ─── */
   const SessionRow = ({ session }: { session: ChatSession }) => {
@@ -294,7 +301,7 @@ export default function Sidebar({
             <div className="space-y-0.5">
               <button type="button" onClick={() => navigate('/projects')} className={navRow}>
                 <FolderOpen className="h-4 w-4 shrink-0 text-white/50 group-hover:text-white/85 transition-colors" />
-                <span>{t('projects') || 'Projects'}</span>
+                <span className={navLabel}>{t('projects') || 'Projects'}</span>
               </button>
               {/* Connectors — project-scoped integrations (Gmail, GitHub). Visible to
                   every authenticated user, like Projects; the page itself gates on a
@@ -306,13 +313,13 @@ export default function Sidebar({
                 className={`${navRow}${location.pathname === '/settings/integrations' ? ' bg-white/[0.06] text-white' : ''}`}
               >
                 <Blocks className="h-4 w-4 shrink-0 text-white/50 group-hover:text-white/85 transition-colors" />
-                <span>Connectors</span>
+                <span className={navLabel}>Connectors</span>
               </button>
               {isOwner && (
                 <>
                   <button type="button" onClick={() => navigate('/agents')} className={navRow}>
                     <Bot className="h-4 w-4 shrink-0 text-[#60A5FA]" />
-                    <span>{t('agents')}</span>
+                    <span className={navLabel}>{t('agents')}</span>
                   </button>
                   {/* Owner-only Web Build cost analytics. Router-native navigation
                       (HashRouter resolves the /owner/costs hash). Backend enforces
@@ -324,30 +331,30 @@ export default function Sidebar({
                     className={`${navRow}${isCostsActive ? ' bg-white/[0.06] text-white' : ''}`}
                   >
                     <BarChart3 className={`h-4 w-4 shrink-0 transition-colors ${isCostsActive ? 'text-[#60A5FA]' : 'text-white/50 group-hover:text-white/85'}`} />
-                    <span>{t('navCostAnalytics')}</span>
+                    <span className={navLabel}>{t('navCostAnalytics')}</span>
                   </button>
                   <button type="button" className={navRow}>
                     <Plug className="h-4 w-4 shrink-0 text-white/50 group-hover:text-white/85 transition-colors" />
-                    <span>Plugins</span>
+                    <span className={navLabel}>Plugins</span>
                   </button>
                   <button type="button" className={navRow}>
                     <FileText className="h-4 w-4 shrink-0 text-white/50 group-hover:text-white/85 transition-colors" />
-                    <span>Skills</span>
+                    <span className={navLabel}>Skills</span>
                   </button>
                   <button type="button" onClick={() => setMoreOpen((v) => !v)} aria-expanded={moreOpen} className={navRow}>
                     <MoreHorizontal className="h-4 w-4 shrink-0 text-white/50 group-hover:text-white/85 transition-colors" />
-                    <span>More</span>
-                    <ChevronDown className={`ml-auto h-3.5 w-3.5 text-white/35 transition-transform ${moreOpen ? 'rotate-180' : ''}`} />
+                    <span className={navLabel}>More</span>
+                    <ChevronDown className={`shrink-0 h-3.5 w-3.5 text-white/35 transition-transform ${moreOpen ? 'rotate-180' : ''}`} />
                   </button>
                   {moreOpen && (
                     <div className="ml-4 space-y-0.5" style={{ borderLeft: '1px solid rgba(255,255,255,0.05)' }}>
                       <button type="button" className={navSub}>
                         <Code2 className="h-3.5 w-3.5 shrink-0 text-white/40" />
-                        <span>Korvix Code</span>
+                        <span className={navLabel}>Korvix Code</span>
                       </button>
                       <button type="button" className={navSub}>
                         <Briefcase className="h-3.5 w-3.5 shrink-0 text-white/40" />
-                        <span>Korvix Work</span>
+                        <span className={navLabel}>Korvix Work</span>
                       </button>
                     </div>
                   )}
