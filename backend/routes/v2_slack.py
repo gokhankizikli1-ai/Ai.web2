@@ -532,10 +532,29 @@ def get_connection(
     project_id: str = Path(..., max_length=64),
     user: User = Depends(require_auth),
 ) -> Dict[str, Any]:
-    """Safe connection metadata only — NEVER a token/secret."""
+    """Safe connection metadata only — NEVER a token/secret.
+
+    OWNER DRIFT IS REDACTED, NOT ERRORED
+    Every other read/write path (`pending-channels`, `connect/select`, `sync`)
+    goes through `_require_live_connection`, which refuses outright when the
+    stored `owner_user_id` no longer matches the project's current owner. A
+    STATUS endpoint cannot do that: the UI needs an answer here to know it should
+    offer Reconnect / Disconnect, and a 409 (or a bare `null`) would strand the
+    stale row with no way to clean it up.
+
+    So this path fails SAFE rather than closed — it answers, but through
+    `owner_mismatch_view()`, which withholds the workspace identity (`team_id`,
+    `team_name`, `bot_user_id`, `scopes`) and every bound channel name. Those
+    belong to the previous owner; a project changing hands must not disclose them
+    to the new one."""
     _ensure_enabled()
     _require_owned_project(project_id, user)
     conn = sl_store.get_connection(project_id)
+    if conn is not None and conn.owner_user_id != user.id:
+        return envelope_ok(
+            data={"connection": conn.owner_mismatch_view(), "connected": False},
+            user_id=user.id,
+        )
     return envelope_ok(
         data={"connection": conn.public_view() if conn else None,
               "connected": bool(conn and conn.is_connected)},
@@ -610,7 +629,16 @@ def disconnect_project(
     `workspace_still_connected` reports truthfully whether another live Korvix
     connection remains for this workspace, so the UI can explain what did and did
     not change. To remove Korvix from Slack entirely the user does it in Slack →
-    Manage apps (the UI says so)."""
+    Manage apps (the UI says so).
+
+    THE ONE DELIBERATE OWNER-DRIFT EXEMPTION
+    This is the ONLY path that reads the connection without the owner-drift gate,
+    and that is required: if the stored `owner_user_id` ever diverged from the
+    project's current owner, this is the route that lets the current owner CLEAN
+    THE STALE ROW UP. Gating it would make a stale connection permanently
+    undeletable. Disclosure is not a concern here because the response carries
+    three booleans and no workspace identity — `team_id` is only read locally to
+    count siblings, and is never returned."""
     _ensure_enabled()
     _require_owned_project(project_id, user)
     sl_setup.delete_pending_channels(project_id)

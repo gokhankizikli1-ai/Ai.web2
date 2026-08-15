@@ -135,6 +135,30 @@ describe('slackConnectorApi', () => {
       expect(res.ok && res.data.connection).toBeNull();
     });
 
+    it('carries an owner_mismatch status with every workspace field redacted', async () => {
+      // The backend answers (so the UI can offer Reconnect/Remove) but withholds
+      // the previous owner's Slack identity and channels.
+      reply(200, {
+        connection: {
+          ...CONNECTION, team_id: null, team_name: null, bot_user_id: null,
+          scopes: [], channels: [], channel_count: 0,
+          status: 'owner_mismatch', connected: false,
+          needs_channel_selection: false, last_sync_at: null,
+        },
+        connected: false,
+      });
+      const res = await getSlackConnection('p1');
+      expect(res.ok).toBe(true);
+      if (res.ok) {
+        expect(res.data.connection?.status).toBe('owner_mismatch');
+        expect(res.data.connected).toBe(false);
+        expect(res.data.connection?.team_name).toBeNull();
+        expect(res.data.connection?.channels).toEqual([]);
+      }
+      expect(JSON.stringify(res)).not.toContain('Korvix HQ');
+      expect(JSON.stringify(res)).not.toContain('T_WORKSPACE');
+    });
+
     it('surfaces the backend detail message on an error', async () => {
       nextResponse = {
         status: 409,

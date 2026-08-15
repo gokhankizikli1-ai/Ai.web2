@@ -65,7 +65,13 @@ export interface SlackConnectionView {
   scopes: string[];
   channels: SlackBoundChannel[];
   channel_count: number;
-  status: 'pending_selection' | 'connected' | 'revoked' | string;
+  /**
+   * `owner_mismatch` is a projection-only status: a stale connection row exists
+   * whose stored owner is no longer the project's owner. The backend withholds
+   * that row's workspace identity and channels, so every one of those fields
+   * arrives empty — treat it like `revoked` (reconnect or remove).
+   */
+  status: 'pending_selection' | 'connected' | 'revoked' | 'owner_mismatch' | string;
   connected: boolean;
   needs_channel_selection: boolean;
   created_at: string;

@@ -808,6 +808,88 @@ def test_the_route_module_never_calls_a_model_or_a_scheduler():
         assert forbidden not in src
 
 
+def test_status_redacts_a_stale_owners_workspace_metadata(client, app, env,
+                                                          monkeypatch):
+    """GET /connection must ANSWER on owner drift (the UI needs it to offer
+    Reconnect / Disconnect) but must not echo the previous owner's Slack
+    identity: no workspace id or name, no bot identity, no granted scopes, and
+    no bound channel names."""
+    _connected(client, app, monkeypatch, channels=("C_GENERAL", "C_PRODUCT"))
+    from backend.services.orchestrator import _sqlite
+    with _sqlite.connection(env) as c:
+        c.execute("UPDATE slack_connections SET owner_user_id='uSTALE' WHERE project_id='p1'")
+
+    _as(app, USER_A)
+    r = client.get("/v2/slack/projects/p1/connection")
+    assert r.status_code == 200
+    data = r.json()["data"]
+    body = json.dumps(r.json())
+
+    # The row is still reported as PRESENT, so the UI can offer a way out...
+    assert data["connection"] is not None
+    assert data["connection"]["status"] == "owner_mismatch"
+    assert data["connected"] is False
+    # ...but nothing identifying the previous owner's workspace survives.
+    assert data["connection"]["team_id"] is None
+    assert data["connection"]["team_name"] is None
+    assert data["connection"]["bot_user_id"] is None
+    assert data["connection"]["scopes"] == []
+    assert data["connection"]["channels"] == []
+    assert data["connection"]["channel_count"] == 0
+    for leaked in ("T_WORKSPACE", "Korvix HQ", "U0BOT", "C_GENERAL", "C_PRODUCT",
+                   "general", "product", "channels:history"):
+        assert leaked not in body, f"{leaked} leaked to a non-owner"
+    assert BOT_TOKEN not in body and SECRET not in body
+
+
+def test_status_is_unaffected_when_the_owner_still_matches(client, app, env,
+                                                           monkeypatch):
+    """The redaction must trigger ONLY on drift — the normal path is untouched."""
+    _connected(client, app, monkeypatch, channels=("C_GENERAL",))
+    _as(app, USER_A)
+    data = client.get("/v2/slack/projects/p1/connection").json()["data"]
+    assert data["connected"] is True
+    assert data["connection"]["status"] == "connected"
+    assert data["connection"]["team_name"] == "Korvix HQ"
+    assert [c["channel_id"] for c in data["connection"]["channels"]] == ["C_GENERAL"]
+
+
+def test_a_stale_connection_stays_deletable_by_the_current_owner(client, app, env,
+                                                                 monkeypatch):
+    """Redacting the status must not strand the row: disconnect is deliberately
+    the ONE path exempt from the owner-drift gate, so it can still be cleaned
+    up — and it discloses no workspace identity while doing so."""
+    _connected(client, app, monkeypatch, channels=("C_GENERAL",))
+    from backend.services.orchestrator import _sqlite
+    with _sqlite.connection(env) as c:
+        c.execute("UPDATE slack_connections SET owner_user_id='uSTALE' WHERE project_id='p1'")
+
+    _as(app, USER_A)
+    r = client.delete("/v2/slack/projects/p1/connection")
+    assert r.status_code == 200
+    assert r.json()["data"]["removed"] is True
+    assert "T_WORKSPACE" not in json.dumps(r.json())
+    assert sl_store.get_connection("p1") is None
+    # ...and the project is now cleanly reconnectable.
+    assert client.get("/v2/slack/projects/p1/connection").json()["data"] == {
+        "connection": None, "connected": False}
+
+
+def test_a_stale_owner_marker_is_never_persisted(client, app, env, monkeypatch):
+    """`owner_mismatch` is a PROJECTION-only status — it must never reach the
+    database, or a reconnect would have to clear it."""
+    _connected(client, app, monkeypatch)
+    from backend.services.orchestrator import _sqlite
+    with _sqlite.connection(env) as c:
+        c.execute("UPDATE slack_connections SET owner_user_id='uSTALE' WHERE project_id='p1'")
+    _as(app, USER_A)
+    client.get("/v2/slack/projects/p1/connection")
+    with _sqlite.connection(env) as c:
+        row = dict(c.execute("SELECT status FROM slack_connections WHERE project_id='p1'").fetchone())
+    assert row["status"] == sl_store.STATUS_CONNECTED
+    assert sl_store.STATUS_OWNER_MISMATCH == "owner_mismatch"
+
+
 def test_a_connection_owned_by_another_account_fails_closed(client, app, env,
                                                             monkeypatch):
     """`owner_user_id` on the connection row is what scopes every ingested

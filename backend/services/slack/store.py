@@ -91,6 +91,13 @@ STATUS_PENDING_SELECTION = "pending_selection"
 STATUS_CONNECTED = "connected"
 STATUS_REVOKED = "revoked"
 
+# A PROJECTION-ONLY lifecycle value. It is NEVER written to `slack_connections`
+# and never returned by `get_connection()` — it exists solely so the status route
+# can describe a row whose `owner_user_id` no longer matches the project's
+# current owner, WITHOUT echoing that row's workspace identity. See
+# `SlackConnection.owner_mismatch_view()`.
+STATUS_OWNER_MISMATCH = "owner_mismatch"
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS slack_connections (
     project_id      TEXT PRIMARY KEY,          -- one Slack connection per Korvix project
@@ -190,6 +197,39 @@ class SlackConnection:
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "last_sync_at": self.last_sync_at or None,
+        }
+
+    def owner_mismatch_view(self) -> Dict[str, Any]:
+        """REDACTED projection for a row whose `owner_user_id` no longer matches
+        the project's current owner.
+
+        `public_view()` carries the workspace identity (`team_id`, `team_name`,
+        `bot_user_id`, granted `scopes`) and every bound channel NAME. That is
+        the previous owner's Slack information, and a project changing hands must
+        not hand it to the new owner — so this projection states only that a
+        stale connection EXISTS and must be re-established. It deliberately
+        answers instead of erroring, because the status endpoint is what tells
+        the UI to offer Reconnect / Disconnect; erasing the row from the response
+        entirely would strand it with no way to clean it up.
+
+        Carries no token material, no workspace identity, and no channel data."""
+        return {
+            "project_id": self.project_id,
+            "provider": self.provider,
+            "team_id": None,
+            "team_name": None,
+            "bot_user_id": None,
+            "scopes": [],
+            "channels": [],
+            "channel_count": 0,
+            "status": STATUS_OWNER_MISMATCH,
+            "connected": False,
+            "needs_channel_selection": False,
+            # Timestamps describe the ROW, not the workspace, and the UI needs
+            # them to explain that something stale is present.
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+            "last_sync_at": None,
         }
 
 
@@ -499,6 +539,7 @@ def _reset_for_tests() -> None:
 __all__ = [
     "SlackConnection", "SelectedChannel", "PROVIDER",
     "STATUS_PENDING_SELECTION", "STATUS_CONNECTED", "STATUS_REVOKED",
+    "STATUS_OWNER_MISMATCH",
     "init_slack_tables", "upsert_installation", "set_selected_channels",
     "list_selected_channels", "get_connection",
     "mark_synced", "mark_revoked", "delete_connection",

@@ -978,7 +978,13 @@ function SlackCard({ projectId, notify }: { projectId: string; notify: Notify })
     if (!res.ok) { setStatus({ state: 'error', message: reason(res.status, res.message) }); return; }
     const conn = res.data.connection;
     if (!conn) { setStatus({ state: 'disconnected' }); return; }
-    if (conn.status === 'revoked') { setStatus({ state: 'revoked' }); return; }
+    // `owner_mismatch` means a stale connection row exists whose stored owner is
+    // no longer this project's owner. The backend redacts its workspace details
+    // (there is nothing left to display), and the fix is exactly the revoked
+    // path: Reconnect re-installs under the current owner, Remove clears the row.
+    if (conn.status === 'revoked' || conn.status === 'owner_mismatch') {
+      setStatus({ state: 'revoked' }); return;
+    }
     if (res.data.connected) { setStatus({ state: 'connected', connection: conn }); return; }
     // Installed but no channels chosen yet. If Slack can't be reached to list
     // them, say so honestly (never an empty "no channels") and still offer a way
