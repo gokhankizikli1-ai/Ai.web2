@@ -23,6 +23,7 @@ import PromptLibrary from '@/components/PromptLibrary';
 import ExportChat from '@/components/ExportChat';
 import ProjectBindingSection from '@/components/MoveToProjectMenu';
 import { isOrdinaryChat } from '@/lib/projectBinding';
+import { getProject } from '@/stores/projectStore';
 import ToastNotifications from '@/components/ToastNotifications';
 import AIModeSelector from '@/components/AIModeSelector';
 import PremiumBadge from '@/components/PremiumBadge';
@@ -149,7 +150,7 @@ export default function ChatDashboard() {
     activeSession, activeSessionId, error, isLoading,
     aiMode, searchQuery, filteredSessions, pinnedMessages, inputText, currentTab,
     createNewChat, selectSession, deleteSession, markSessionWebBuild,
-    startProjectChat, requestOpenSession,
+    startProjectChat, requestOpenSession, activeProjectId,
     toolActivity,
     sendMessage, retry, togglePin,
     setAiMode, setSearchQuery, setInputText, switchTab,
@@ -674,6 +675,19 @@ export default function ChatDashboard() {
             {/* Top Chat / Web Build / Game Build nav removed for a cleaner
                 Chat home. Those pages keep their standalone routes; the empty
                 home's mode chips still route to them. */}
+            {/* Project-context indicator — shown when the active chat belongs to
+                (or was started from) a project. Clicking returns to that project.
+                Reuses the backend binding authority via useChat.activeProjectId. */}
+            {activeProjectId && (
+              <button
+                onClick={() => navigate(`/projects/${activeProjectId}`)}
+                title="Back to project"
+                className="shrink-0 flex items-center gap-1.5 rounded-lg border border-[#3B82F6]/25 bg-[#3B82F6]/[0.1] px-2.5 h-7 text-[11.5px] text-[#93C5FD] hover:bg-[#3B82F6]/[0.18] transition-all max-w-[45vw]"
+              >
+                <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">Project: {getProject(activeProjectId)?.name || 'Untitled'}</span>
+              </button>
+            )}
           </div>
 
           <div className="flex items-center gap-1.5 shrink-0">
