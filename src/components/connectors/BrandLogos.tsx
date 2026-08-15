@@ -7,6 +7,10 @@
  *                 `currentColor` so the card controls the tone (white on dark).
  *  - VercelLogo — Vercel's triangle mark. Monochrome by design (that IS the
  *                 brand); uses `currentColor` like the GitHub mark.
+ *  - GoogleCalendarLogo — Google Calendar's rounded square with the folded
+ *                 corner and the blue "31" ticket, in the official brand
+ *                 colours (the same multi-colour treatment as GmailLogo, so the
+ *                 two Google connectors read as a family).
  *
  * All are decorative next to a visible text label, so they carry
  * aria-hidden and no title.
@@ -59,6 +63,39 @@ export function VercelLogo({ size = 28, className = '' }: { size?: number; class
       fill="currentColor"
     >
       <path d="M12 2 22.5 20.5H1.5L12 2z" />
+    </svg>
+  );
+}
+
+export function GoogleCalendarLogo({ size = 28, className = '' }: { size?: number; className?: string }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 48 48"
+      className={className}
+      aria-hidden="true"
+      focusable="false"
+    >
+      {/* White page. The four Google brand colours sit in the corners of the
+          frame, and the blue "31" is the mark's defining feature. */}
+      <rect x="7" y="7" width="34" height="34" rx="5" fill="#ffffff" />
+      <path fill="#4285f4" d="M7 12a5 5 0 0 1 5-5h5v9H7z" />
+      <path fill="#ea4335" d="M31 7h5a5 5 0 0 1 5 5v4h-10z" />
+      <path fill="#fbbc04" d="M41 32v4a5 5 0 0 1-5 5h-5v-9z" />
+      <path fill="#34a853" d="M17 41h-5a5 5 0 0 1-5-5v-4h10z" />
+      <text
+        x="24"
+        y="24"
+        textAnchor="middle"
+        dominantBaseline="central"
+        fill="#1a73e8"
+        fontFamily="Helvetica, Arial, sans-serif"
+        fontSize="17"
+        fontWeight="700"
+      >
+        31
+      </text>
     </svg>
   );
 }

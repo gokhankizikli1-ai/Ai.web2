@@ -60,7 +60,7 @@ _IMPORTANCE_HINTS = (IMPORTANCE_LOW, IMPORTANCE_NORMAL, IMPORTANCE_HIGH)
 # extend it when a new connector ships — nothing else needs to change for that
 # provider to flow through the same authority (adding "vercel" here is the ONLY
 # change the Vercel connector needed in the Business Brain / Project Brain path).
-CONNECTOR_SOURCES = ("github", "gmail", "vercel")
+CONNECTOR_SOURCES = ("github", "gmail", "vercel", "calendar")
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS observations (

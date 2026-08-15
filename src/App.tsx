@@ -384,9 +384,11 @@ export default function App() {
 
         {/* ═══ Settings / Credits / Auth ═══ */}
         <Route path="/settings" element={<ProtectedRoute guestAllowed={false}><AnimatedRoute><SettingsPage /></AnimatedRoute></ProtectedRoute>} />
-        {/* Connectors (integrations). Also the Gmail OAuth callback landing:
-             the backend redirects the browser to /#/settings/integrations?gmail=…
-             which this route + ConnectorsPage read to reconcile status. */}
+        {/* Connectors (integrations). Also the SHARED connector OAuth callback
+             landing: each backend redirects the browser to
+             /#/settings/integrations?<provider>=… (gmail / calendar / github /
+             vercel), which this route + ConnectorsPage read to reconcile status.
+             One receiver for every connector — no per-provider landing route. */}
         <Route path="/settings/integrations" element={<ProtectedRoute guestAllowed={false}><AnimatedRoute><ConnectorsPage /></AnimatedRoute></ProtectedRoute>} />
         <Route path="/login" element={<AnimatedRoute><AuthPage /></AnimatedRoute>} />
         <Route path="/signup" element={<AnimatedRoute><AuthPage mode="signup" /></AnimatedRoute>} />

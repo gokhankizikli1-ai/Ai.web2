@@ -303,7 +303,8 @@ export default function Sidebar({
                 <FolderOpen className="h-4 w-4 shrink-0 text-white/50 group-hover:text-white/85 transition-colors" />
                 <span className={navLabel}>{t('projects') || 'Projects'}</span>
               </button>
-              {/* Connectors — project-scoped integrations (Gmail, GitHub). Visible to
+              {/* Connectors — project-scoped integrations (Gmail, Google Calendar,
+                  GitHub, Vercel). Visible to
                   every authenticated user, like Projects; the page itself gates on a
                   selected project and reflects real backend connection status. */}
               <button

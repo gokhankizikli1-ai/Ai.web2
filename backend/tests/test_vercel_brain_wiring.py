@@ -114,8 +114,12 @@ def bb(tmp_path, monkeypatch):
 def test_vercel_is_registered_in_the_canonical_source_registry(bb):
     from backend.services.orchestrator import observations_store as obs
     assert "vercel" in obs.CONNECTOR_SOURCES
-    # ...and it is still the single registry the connectors share.
-    assert set(obs.CONNECTOR_SOURCES) == {"github", "gmail", "vercel"}
+    # ...and it is still the single registry EVERY connector shares. New
+    # connectors extend this tuple (Google Calendar added "calendar"), so the
+    # invariant is "every shipped connector is registered here", not a frozen
+    # set — pinning the exact membership would just have to be edited by each
+    # new connector without asserting anything stronger.
+    assert {"github", "gmail", "vercel", "calendar"} <= set(obs.CONNECTOR_SOURCES)
     assert bb.vc_norm.SOURCE in obs.CONNECTOR_SOURCES
 
 
