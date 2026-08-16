@@ -32,6 +32,7 @@ import {
   listProjectChats,
   listProjectProducts,
   getProjectBrainContext,
+  getProjectWorkspace,
   listAddableChats,
 } from './projectApi';
 
@@ -123,6 +124,33 @@ function makeBackend() {
           counts: { products: 1 },
         },
         empty: false,
+      });
+    }
+    // Project Workspace read model — the ONE read the Project page makes.
+    // Ownership is server-enforced and a foreign/unknown project is 404
+    // (existence-hidden), exactly like the real route.
+    m = path.match(/^\/v2\/projects\/([^/]+)\/workspace$/);
+    if (m && method === 'GET') {
+      if (!ownsProject(m[1])) return notFound();
+      return ok({
+        project: { id: m[1], name: 'Alpha', description: 'Desc', created_at: '', updated_at: '' },
+        summary: { text: 'A project.', source: 'brain' },
+        goals: [{ id: 'g1', title: 'Reach 100 users', priority: 3, source: 'goals' }],
+        attention: [{ id: 'a1', severity: 'blocking', reason: 'ci_failed', source: 'github',
+                      kind: 'github.check.failed', title: 'CI failed on main', context: 'acme/site',
+                      observed_at: '2026-06-01T10:00:00Z', ref: '' }],
+        activity: [{ id: 'o1', source: 'github', kind: 'github.check.failed',
+                     title: 'CI failed on main', occurred_at: '2026-06-01T10:00:00Z', ref: '' }],
+        products: products.filter((p) => p.project === m![1]),
+        chats: [{ thread_id: 't1', title: 'Chat', mode: 'chat', updated_at: '2026-06-01T09:00:00Z' }],
+        connectors: [{ provider: 'github', label: 'GitHub', resource_kind: 'single',
+                       resource_noun: 'repository', resources: ['acme/site'], resource_count: 1,
+                       status: 'connected', last_sync_at: '2026-06-01T08:00:00Z' }],
+        freshness: { generated_at: '2026-06-01T12:00:00Z', last_activity_at: '2026-06-01T10:00:00Z',
+                     last_connector_sync_at: '2026-06-01T08:00:00Z',
+                     last_observation_at: '2026-06-01T10:00:00Z', last_chat_at: '2026-06-01T09:00:00Z',
+                     last_product_at: '' },
+        counts: { attention: 1 },
       });
     }
     return notFound();
@@ -278,6 +306,48 @@ describe('Project Overview reads', () => {
 
   it('getProjectBrainContext returns null for a foreign/empty project', async () => {
     expect(await getProjectBrainContext('pOther')).toBeNull();
+  });
+});
+
+describe('getProjectWorkspace (the Project page read model)', () => {
+  it('returns the bounded snapshot for the owner', async () => {
+    const res = await getProjectWorkspace('pA');
+    expect(res.notFound).toBe(false);
+    expect(res.workspace).not.toBeNull();
+    expect(res.workspace!.project.id).toBe('pA');
+    expect(res.workspace!.attention[0].reason).toBe('ci_failed');
+    expect(res.workspace!.goals[0].title).toBe('Reach 100 users');
+    expect(res.workspace!.connectors[0].resources).toEqual(['acme/site']);
+  });
+
+  it("a project the caller does not own is existence-hidden (404), not an error", async () => {
+    const res = await getProjectWorkspace('pOther');
+    expect(res.workspace).toBeNull();
+    expect(res.status).toBe(404);
+    expect(res.notFound).toBe(true);
+  });
+
+  it('an unknown project id answers identically to a foreign one', async () => {
+    const unknown = await getProjectWorkspace('does-not-exist');
+    const foreign = await getProjectWorkspace('pOther');
+    expect(unknown.status).toBe(foreign.status);
+    expect(unknown.notFound).toBe(foreign.notFound);
+  });
+
+  it('the same project id read as another user leaks nothing', async () => {
+    expect((await getProjectWorkspace('pA')).workspace).not.toBeNull();
+    scope = 'user_bob';
+    const res = await getProjectWorkspace('pA');
+    expect(res.workspace).toBeNull();
+    expect(res.notFound).toBe(true);
+  });
+
+  it('a transport failure is reported as retryable, NOT as "not found"', async () => {
+    vi.stubGlobal('fetch', () => Promise.reject(new Error('offline')));
+    const res = await getProjectWorkspace('pA');
+    expect(res.workspace).toBeNull();
+    expect(res.status).toBe(0);
+    expect(res.notFound).toBe(false);
   });
 });
 

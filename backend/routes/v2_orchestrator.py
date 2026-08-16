@@ -362,44 +362,12 @@ def project_products_route(
     if project is None or str(project.owner_user_id) != str(user.id):
         return _err(404, "project_not_found", "Project not found.", endpoint)
 
-    from backend.services.orchestrator import (
-        deliverables_store as dls, build_execution_store as bes,
-    )
-    _PRODUCT_KINDS = ("web_build", "app_build", "build")
-    products = []
-    try:
-        for d in dls.list_for_project(project_id, limit=200):
-            if str(d.get("kind")) not in _PRODUCT_KINDS:
-                continue
-            content = d.get("content") or {}
-            products.append({
-                "deliverable_id": d.get("id"),
-                "build_type":     content.get("build_type") or (
-                    "app" if d.get("kind") == "app_build" else "web"),
-                "title":          (d.get("title") or "").strip(),
-                "status":         content.get("build_status") or d.get("status"),
-                "artifact_ref":   content.get("artifact_ref") or "",
-                "build_ref":      content.get("build_ref") or "",
-                "run_id":         d.get("run_id"),
-                "node_id":        d.get("node_id"),
-                "updated_at":     d.get("updated_at"),
-            })
-    except Exception as exc:  # pragma: no cover — never 500 the workspace
-        logger.warning("project products (deliverables) failed for %s: %s", project_id, exc)
-    executions = []
-    try:
-        for e in bes.list_for_project(project_id, limit=200):
-            executions.append({
-                "id":           e.get("id"),
-                "build_type":   e.get("build_type"),
-                "status":       e.get("status"),
-                "artifact_ref": e.get("artifact_ref") or "",
-                "build_ref":    e.get("build_ref") or "",
-                "run_id":       e.get("run_id"),
-                "updated_at":   e.get("updated_at"),
-            })
-    except Exception as exc:  # pragma: no cover
-        logger.warning("project products (executions) failed for %s: %s", project_id, exc)
+    # The ONE project-product projection — shared verbatim with the Project
+    # Brain aggregate and the Project Workspace read model, so a new build kind
+    # is understood by every surface at once. Both helpers fail soft to [].
+    from backend.services.orchestrator import project_products
+    products = project_products.list_products(project_id)
+    executions = project_products.list_executions(project_id)
     return envelope_ok(
         data={"products": products, "executions": executions},
         endpoint=endpoint, user_id=user.id,
