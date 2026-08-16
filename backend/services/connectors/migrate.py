@@ -65,6 +65,12 @@ class MigrationReport:
     skipped_existing: int = 0
     skipped_unsafe: List[str] = field(default_factory=list)
     errors: List[str] = field(default_factory=list)
+    #: Grants that arrived with their credentials already wiped (a legacy
+    #: `mark_revoked`) and were therefore migrated as revoked, not authorized.
+    revoked_without_credentials: List[str] = field(default_factory=list)
+    #: Authorizations this run adopted, so the finalization pass can inspect
+    #: exactly the rows it touched and nothing else.
+    _adopted: List[str] = field(default_factory=list, repr=False)
 
     def as_dict(self) -> Dict[str, Any]:
         return {
@@ -72,6 +78,7 @@ class MigrationReport:
             "bindings_created": self.bindings_created,
             "skipped_existing": self.skipped_existing,
             "skipped_unsafe": list(self.skipped_unsafe),
+            "revoked_without_credentials": list(self.revoked_without_credentials),
             "errors": list(self.errors),
             "ok": not self.errors,
         }
@@ -143,6 +150,8 @@ def _adopt(
         return
     if had_auth is None:
         report.authorizations_created += 1
+    if auth.id not in report._adopted:
+        report._adopted.append(auth.id)
 
     bound = shared.set_binding(
         project_id=project_id, authorization_id=auth.id,
@@ -311,6 +320,39 @@ def _migrate_slack(report: MigrationReport) -> None:
         )
 
 
+def _finalize_credential_status(report: MigrationReport) -> None:
+    """Mark an adopted authorization REVOKED when it holds no usable credential.
+
+    Legacy `mark_revoked()` wiped a connection's tokens in place and left the row
+    behind so the UI could offer a reconnect. Migrating such a row produces an
+    authorization with EMPTY credentials — and since `upsert_authorization`
+    creates rows as `authorized`, the account-level Connectors card would report
+    a dead grant as "Connected" while every sync failed. That is the one state
+    the account view must never claim.
+
+    The check runs AFTER every provider, because it is order-dependent: a mailbox
+    with one revoked and one live legacy row merges into ONE grant that IS usable
+    (the live row contributes the credential), and it must stay authorized. Only
+    a grant where NOTHING contributed a credential is revoked here.
+
+    Providers that store no credential by design (GitHub — the App mints
+    short-lived installation tokens on demand) are exempt: for them, "no
+    credential" is the correct and healthy state."""
+    for auth_id in list(report._adopted):
+        auth = shared.get_authorization(auth_id)
+        if auth is None or auth.is_revoked:
+            continue
+        spec = registry.spec(auth.provider)
+        if spec is None or not spec.credential_fields:
+            continue  # nothing to store ⇒ nothing to be missing
+        if any(auth.credential(f) for f in spec.credential_fields):
+            continue  # a usable credential survived
+        shared.mark_authorization_revoked(auth.id)
+        report.revoked_without_credentials.append(
+            f"{auth.provider}[{auth.account_label or auth.account_key}]: "
+            f"migrated with no usable credential — reconnect required")
+
+
 def migrate_legacy_connections() -> MigrationReport:
     """Run the whole migration. Idempotent; safe to call on every boot."""
     report = MigrationReport()
@@ -330,7 +372,13 @@ def migrate_legacy_connections() -> MigrationReport:
         except Exception as exc:  # pragma: no cover — one provider must not stop the rest
             report.errors.append(f"{name}: {type(exc).__name__}")
             logger.warning("connectors.migrate %s failed: %s", name, type(exc).__name__)
-    if report.authorizations_created or report.bindings_created or report.skipped_unsafe:
+    try:
+        _finalize_credential_status(report)
+    except Exception as exc:  # pragma: no cover — defensive
+        report.errors.append(f"finalize: {type(exc).__name__}")
+        logger.warning("connectors.migrate finalize failed: %s", type(exc).__name__)
+    if (report.authorizations_created or report.bindings_created
+            or report.skipped_unsafe or report.revoked_without_credentials):
         logger.info("connectors.migrate report: %s", report.as_dict())
     return report
 

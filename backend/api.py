@@ -250,6 +250,8 @@ def _build_full_app():
                 )
             for _skipped in _conn_report.skipped_unsafe:
                 logger.warning("Connectors | migration skipped — %s", _skipped)
+            for _dead in _conn_report.revoked_without_credentials:
+                logger.warning("Connectors | migrated as revoked — %s", _dead)
         except Exception as _conn_err:
             logger.warning(
                 "connectors legacy migration (non-fatal): %s", _conn_err,

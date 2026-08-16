@@ -108,6 +108,12 @@ def remote_revoke_is_safe(*, provider: str, google_email: str,
     if not email:
         # Identity unknown ⇒ we cannot prove no sibling shares this account.
         return False
+    if provider not in _LIVE_CONNECTION_COUNTERS:
+        # An unregistered provider has no counter, so the scan below would skip
+        # its own connections entirely and could answer "safe" for a grant we
+        # cannot actually reason about. Fail closed, in BOTH client
+        # configurations — the separate-client branch already did.
+        return False
     if not _shares_google_client():
         # Independent Google clients ⇒ independent grants for the OTHER
         # connectors. This connector's own other projects still share a client
@@ -174,6 +180,10 @@ def remote_revoke_is_safe_for_authorization(
     auth_id = str(authorization_id or "").strip()
     if not email:
         # Identity unknown ⇒ we cannot prove no sibling shares this account.
+        return False
+    if provider not in _LIVE_AUTHORIZATION_COUNTERS:
+        # See the note in `remote_revoke_is_safe`: an unregistered provider is
+        # not something this guard can reason about, so it never gets a "safe".
         return False
     if not _shares_google_client():
         counter = _LIVE_AUTHORIZATION_COUNTERS.get(provider)
