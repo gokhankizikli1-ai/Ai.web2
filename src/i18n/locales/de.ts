@@ -321,6 +321,10 @@ export const de: Record<string, string> = {
   projectNoChats: "Noch keine Chats in diesem Projekt",
   removeFromProject: "Aus Projekt entfernen",
   deleteChat: "Chat löschen",
+  newProject: "Neues Projekt",
+  moveToProject: "In Projekt verschieben",
+  moveFailed: "Chat konnte nicht verschoben werden — bitte erneut versuchen.",
+  moveNoAccess: "Du hast keinen Zugriff auf dieses Projekt.",
 
   // ── Owner-Kostenanalyse (nur Owner) ──
   navCostAnalytics: "Kostenanalyse",
