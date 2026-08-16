@@ -99,7 +99,10 @@ describe('connectorSummaryLine', () => {
     expect(connectorSummaryLine(c)).toBe('Korvix AI · 2 projects · 3 channels');
   });
 
-  it('counts GitHub repositories with the right noun', () => {
+  it('does not restate the project count as a resource count for a single-resource provider', () => {
+    // GitHub binds exactly one repository per project, so "1 project · 1
+    // repository" is noise — and for Vercel (resource noun "project") it would
+    // read "2 projects · 2 projects".
     const c = connector({
       provider: 'github', label: 'GitHub', resource_kind: 'single',
       resource_noun: 'repository', requires_resource_selection: true,
@@ -108,7 +111,7 @@ describe('connectorSummaryLine', () => {
         projects: [usage({ resource_count: 1 })],
       }),
     });
-    expect(connectorSummaryLine(c)).toBe('korvix-ai · 1 project · 1 repository');
+    expect(connectorSummaryLine(c)).toBe('korvix-ai · 1 project');
   });
 
   it('never invents a resource count for a whole-account provider', () => {
@@ -130,7 +133,7 @@ describe('connectorSummaryLine', () => {
         projects: [usage({ resource_count: 1 }), usage({ project_id: 'p2', status: 'pending_selection' })],
       }),
     });
-    expect(connectorSummaryLine(c)).toBe('Acme · 2 projects · 1 project · 1 needs setup');
+    expect(connectorSummaryLine(c)).toBe('Acme · 2 projects · 1 needs setup');
   });
 });
 

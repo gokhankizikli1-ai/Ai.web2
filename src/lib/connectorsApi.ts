@@ -130,15 +130,27 @@ export async function getConnector(provider: string) {
  * user; this client only navigates to the returned public URL.
  */
 export async function startAccountConnect(provider: string) {
-  return call<{ authorization_url: string; state: string; scopes: string[] }>(
-    `/v2/connectors/${encodeURIComponent(provider)}/connect/start`, { method: 'POST' });
+  return call<{
+    authorization_url: string; state: string; scopes: string[];
+    /** GitHub only: where to send a user who authorized but has not installed
+     *  the App on any account (the `needs_install` outcome). Server-built. */
+    install_url?: string;
+  }>(`/v2/connectors/${encodeURIComponent(provider)}/connect/start`, { method: 'POST' });
 }
 
 /** Convenience: start the flow and redirect. Returns the error result without
- *  navigating when the start call fails, so the caller can surface it. */
-export async function beginAccountConnectRedirect(provider: string) {
+ *  navigating when the start call fails, so the caller can surface it.
+ *
+ *  `useInstallUrl` targets the provider's INSTALL screen instead of its
+ *  authorize screen — the only way out of GitHub's `needs_install` outcome,
+ *  where re-running authorize would loop the user. Falls back to the authorize
+ *  URL when the provider has no separate install step. */
+export async function beginAccountConnectRedirect(provider: string, useInstallUrl = false) {
   const res = await startAccountConnect(provider);
-  if (res.ok) window.location.assign(res.data.authorization_url);
+  if (res.ok) {
+    const target = (useInstallUrl && res.data.install_url) || res.data.authorization_url;
+    window.location.assign(target);
+  }
   return res;
 }
 

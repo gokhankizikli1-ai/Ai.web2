@@ -116,10 +116,12 @@ const PROVIDER_BLURB: Record<string, string> = {
    ══════════════════════════════════════════════════════════════════════════ */
 
 function ConnectorCard({
-  connector, busy, onConnect, onSync, onManage,
+  connector, busy, needsInstall, onConnect, onSync, onManage,
 }: {
   connector: ConnectorSummary;
   busy: 'connect' | 'sync' | null;
+  /** The provider authorized us but its app is not installed anywhere yet. */
+  needsInstall?: boolean;
   onConnect: () => void;
   onSync: () => void;
   onManage: () => void;
@@ -158,13 +160,13 @@ function ConnectorCard({
       </div>
 
       {/* Row 3 — primary action */}
-      <div className="flex items-center gap-1.5 pt-0.5">
+      <div className="flex items-center gap-1.5 pt-0.5 flex-wrap">
         {!connector.enabled ? (
           <span className="text-[11.5px] text-white/30">Unavailable on this deployment</span>
         ) : !authorized ? (
           <button type="button" onClick={onConnect} disabled={busy === 'connect'} className={btnPrimary}>
             {busy === 'connect' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
-            Connect
+            {needsInstall ? `Install on ${connector.label}` : 'Connect'}
           </button>
         ) : (
           <>
@@ -191,12 +193,15 @@ function ProjectConnectorConfig({
 }: { provider: string; projectId: string; notify: Notify }) {
   // Each provider's OWN card, scoped to this project. Same endpoints, same
   // server-side revalidation of every chosen resource — reused, never re-done.
+  // `variant="inline"` drops the logo/name/description the drawer header already
+  // shows, so the picker is a focused configuration surface rather than a second
+  // full card.
   switch (provider) {
-    case 'gmail': return <GmailCard projectId={projectId} notify={notify} />;
-    case 'calendar': return <CalendarCard projectId={projectId} notify={notify} />;
-    case 'github': return <GithubCard projectId={projectId} notify={notify} />;
-    case 'vercel': return <VercelCard projectId={projectId} notify={notify} />;
-    case 'slack': return <SlackCard projectId={projectId} notify={notify} />;
+    case 'gmail': return <GmailCard projectId={projectId} notify={notify} variant="inline" />;
+    case 'calendar': return <CalendarCard projectId={projectId} notify={notify} variant="inline" />;
+    case 'github': return <GithubCard projectId={projectId} notify={notify} variant="inline" />;
+    case 'vercel': return <VercelCard projectId={projectId} notify={notify} variant="inline" />;
+    case 'slack': return <SlackCard projectId={projectId} notify={notify} variant="inline" />;
     default: return null;
   }
 }
@@ -458,6 +463,16 @@ export default function ConnectorsPage() {
      open is therefore derived once, in a lazy initializer, from the outcome
      params — never set from inside an effect (that would be a render cascade,
      and it would fight the user closing the drawer). */
+  /* A provider whose callback said "authorized, but the app is not installed".
+     The card then offers Install instead of Connect, because re-running the
+     authorize URL would just loop the user back here. Derived ONCE from the
+     callback params (a fresh document load), never set from inside an effect. */
+  const [needsInstall] = useState<string | null>(() => {
+    for (const key of ['gmail', 'calendar', 'github', 'vercel', 'slack']) {
+      if ((searchParams.get(key) || '').trim() === 'needs_install') return key;
+    }
+    return null;
+  });
   const [manageProvider, setManageProvider] = useState<string | null>(() => {
     for (const key of ['gmail', 'calendar', 'github', 'vercel', 'slack']) {
       const value = (searchParams.get(key) || '').trim();
@@ -528,6 +543,8 @@ export default function ConnectorsPage() {
       // outcome.
       notify(`${label} connected. Choose which projects may use it.`, 'success');
     } else if (value === 'needs_install') {
+      // Authorized but the App is not installed on any account. The card is
+      // already offering Install (derived above); this only reports why.
       notify(`Almost there — install Korvix on ${label} to finish connecting.`, 'info');
     } else {
       notify(`${label} could not be connected${pretty}.`, 'error');
@@ -540,9 +557,9 @@ export default function ConnectorsPage() {
     setSearchParams(next, { replace: true });
   }, [searchParams, setSearchParams, notify]);
 
-  const connect = useCallback(async (provider: string) => {
+  const connect = useCallback(async (provider: string, useInstallUrl = false) => {
     setBusy({ provider, kind: 'connect' });
-    const res = await beginAccountConnectRedirect(provider);
+    const res = await beginAccountConnectRedirect(provider, useInstallUrl);
     if (!res.ok) { setBusy(null); notify(res.message, 'error'); }
     // On success the browser navigates away; leave the spinner in place.
   }, [notify]);
@@ -628,7 +645,8 @@ export default function ConnectorsPage() {
                   key={c.provider}
                   connector={c}
                   busy={busy?.provider === c.provider ? busy.kind : null}
-                  onConnect={() => { void connect(c.provider); }}
+                  needsInstall={needsInstall === c.provider}
+                  onConnect={() => { void connect(c.provider, needsInstall === c.provider); }}
                   onSync={() => { void sync(c); }}
                   onManage={() => setManageProvider(c.provider)}
                 />

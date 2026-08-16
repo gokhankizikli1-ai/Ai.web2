@@ -237,6 +237,7 @@ def connect_start(
     authorization to exactly this account and nothing else."""
     _require_known(provider)
     _require_enabled(provider)
+    install_url = ""
 
     if provider == registry.PROVIDER_GMAIL:
         from backend.services.gmail import (
@@ -269,6 +270,11 @@ def connect_start(
             )
         state = states.create_state(owner_user_id=user.id, project_id="")
         url = cfg.authorize_url(state)
+        # A user who authorizes us but has NOT installed the App on any account
+        # comes back as `needs_install`, and re-running the authorize URL would
+        # just loop them. Hand the install URL back alongside it so the caller
+        # has a real way forward. Both are server-built (never a request value).
+        install_url = cfg.install_url(state) if cfg.install_configured() else ""
         scopes = []
     elif provider == registry.PROVIDER_VERCEL:
         from backend.services.gmail import crypto as gm_crypto
@@ -288,7 +294,8 @@ def connect_start(
         scopes = cfg.scopes()
 
     return envelope_ok(
-        data={"authorization_url": url, "state": state, "scopes": list(scopes or [])},
+        data={"authorization_url": url, "state": state, "scopes": list(scopes or []),
+              **({"install_url": install_url} if install_url else {})},
         user_id=user.id,
     )
 

@@ -61,15 +61,37 @@ type Loaded<T> = { state: 'loading' } | { state: 'error'; message: string } | { 
 /* ══════════════════════════════════════════════════════════════════════════
    Shared card shell — premium dark, minimal, consistent with Korvix.
    ══════════════════════════════════════════════════════════════════════════ */
+/** Where a card is being rendered.
+ *
+ *  'card'   — a standalone surface that names the provider itself.
+ *  'inline' — inside a provider's Manage drawer, where the header ALREADY shows
+ *             the logo, provider name and connected account, and the row above
+ *             names the project. Repeating all of that would be the exact
+ *             oversized-card problem this refactor removed, so the inline
+ *             variant renders only the configuration body. */
+export type CardVariant = 'card' | 'inline';
+
 function ConnectorShell({
-  logo, name, description, statusPill, children,
+  logo, name, description, statusPill, children, variant = 'card',
 }: {
   logo: React.ReactNode;
   name: string;
   description: string;
   statusPill?: React.ReactNode;
   children: React.ReactNode;
+  variant?: CardVariant;
 }) {
+  if (variant === 'inline') {
+    return (
+      <div
+        className="rounded-lg p-3 min-w-0"
+        style={{ background: 'rgba(255,255,255,0.015)', border: '1px solid rgba(255,255,255,0.05)' }}
+      >
+        {statusPill && <div className="mb-2">{statusPill}</div>}
+        <div className="min-w-0">{children}</div>
+      </div>
+    );
+  }
   return (
     <div
       className="rounded-2xl p-5 sm:p-6"
@@ -154,7 +176,7 @@ function summarizeSync(s: {
 /* ══════════════════════════════════════════════════════════════════════════
    GMAIL CARD — real OAuth flow via gmailConnectorApi (reused, not duplicated).
    ══════════════════════════════════════════════════════════════════════════ */
-export function GmailCard({ projectId, notify }: { projectId: string; notify: Notify }) {
+export function GmailCard({ projectId, notify, variant }: { projectId: string; notify: Notify; variant?: CardVariant }) {
   const [status, setStatus] = useState<Loaded<GmailConnectionView>>({ state: 'loading' });
   const [busy, setBusy] = useState<null | 'connect' | 'sync' | 'disconnect'>(null);
 
@@ -217,6 +239,7 @@ export function GmailCard({ projectId, notify }: { projectId: string; notify: No
 
   return (
     <ConnectorShell
+      variant={variant}
       logo={<GmailLogo size={26} />}
       name="Gmail"
       description="Read relevant email activity so Korvix understands what's happening around your project. Read-only — Korvix never sends, deletes, or changes any mail."
@@ -281,7 +304,7 @@ export function GmailCard({ projectId, notify }: { projectId: string; notify: No
    so it reuses the identical states, controls and status vocabulary rather than
    inventing a second pattern.
    ══════════════════════════════════════════════════════════════════════════ */
-export function CalendarCard({ projectId, notify }: { projectId: string; notify: Notify }) {
+export function CalendarCard({ projectId, notify, variant }: { projectId: string; notify: Notify; variant?: CardVariant }) {
   const [status, setStatus] = useState<Loaded<CalendarConnectionView>>({ state: 'loading' });
   const [busy, setBusy] = useState<null | 'connect' | 'sync' | 'disconnect'>(null);
 
@@ -350,6 +373,7 @@ export function CalendarCard({ projectId, notify }: { projectId: string; notify:
 
   return (
     <ConnectorShell
+      variant={variant}
       logo={<GoogleCalendarLogo size={26} />}
       name="Google Calendar"
       description="Upcoming meetings, recent events and cancellations for your project — turned into project observations Korvix can reason over. Read-only: Korvix can never create, move, edit, or delete an event."
@@ -443,8 +467,8 @@ type GhState =
   | { state: 'connected'; connection: GithubConnectionView };
 
 export function GithubCard({
-  projectId, notify, initialGithub,
-}: { projectId: string; notify: Notify; initialGithub?: string }) {
+  projectId, notify, initialGithub, variant,
+}: { projectId: string; notify: Notify; initialGithub?: string; variant?: CardVariant }) {
   // A `needs_install` callback outcome is the one state the backend can't report
   // on a fresh load (there is nothing pending), so seed it from the callback hint.
   const [status, setStatus] = useState<GhState>(
@@ -562,6 +586,7 @@ export function GithubCard({
 
   return (
     <ConnectorShell
+      variant={variant}
       logo={<GithubLogo size={24} className="text-white" />}
       name="GitHub"
       description="Repository activity, pull requests, checks and development context — turned into project observations. Read-only: Korvix never pushes, merges, or changes your repo."
@@ -712,7 +737,7 @@ type VcState =
   | { state: 'choose_project'; projects: VercelPendingProject[] }
   | { state: 'connected'; connection: VercelConnectionView };
 
-export function VercelCard({ projectId, notify }: { projectId: string; notify: Notify }) {
+export function VercelCard({ projectId, notify, variant }: { projectId: string; notify: Notify; variant?: CardVariant }) {
   const [status, setStatus] = useState<VcState>({ state: 'loading' });
   const [busy, setBusy] = useState<null | 'connect' | 'select' | 'change' | 'sync' | 'disconnect'>(null);
   const [selectedProject, setSelectedProject] = useState('');
@@ -809,6 +834,7 @@ export function VercelCard({ projectId, notify }: { projectId: string; notify: N
 
   return (
     <ConnectorShell
+      variant={variant}
       logo={<VercelLogo size={22} className="text-white" />}
       name="Vercel"
       description="Deployment status for your live product — production and preview builds, successes and failures — turned into project observations. Read-only: Korvix can never deploy, roll back, change environment variables, or delete anything."
@@ -965,7 +991,7 @@ type SlState =
   | { state: 'choose_channels'; channels: SlackPendingChannel[]; maxSelected: number }
   | { state: 'connected'; connection: SlackConnectionView };
 
-export function SlackCard({ projectId, notify }: { projectId: string; notify: Notify }) {
+export function SlackCard({ projectId, notify, variant }: { projectId: string; notify: Notify; variant?: CardVariant }) {
   const [status, setStatus] = useState<SlState>({ state: 'loading' });
   const [busy, setBusy] = useState<null | 'connect' | 'select' | 'change' | 'sync' | 'disconnect'>(null);
   const [selectedChannels, setSelectedChannels] = useState<string[]>([]);
@@ -1083,6 +1109,7 @@ export function SlackCard({ projectId, notify }: { projectId: string; notify: No
 
   return (
     <ConnectorShell
+      variant={variant}
       logo={<SlackLogo size={24} />}
       name="Slack"
       description="Recent conversation in the channels you choose — decisions, blockers and threads — turned into project observations Korvix can reason over. Read-only: Korvix can never send, edit, or delete a message, and never joins a channel by itself."

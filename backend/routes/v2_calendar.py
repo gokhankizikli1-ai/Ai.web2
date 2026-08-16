@@ -246,9 +246,10 @@ def oauth_callback(
     #    effort: failing here must not abort a successful token exchange.
     identity = cal_oauth.fetch_calendar_identity(tokens.access_token)
 
-    # 7. Persist the connection with the refresh token ENCRYPTED at rest. A
-    #    missing encryption key fails closed (no plaintext ever written). This
-    #    writes ONLY calendar_connections.
+    # 7. Persist with the refresh token ENCRYPTED at rest. A missing encryption
+    #    key fails closed (no plaintext ever written). This writes ONLY the
+    #    CALENDAR authorization (provider='calendar') in the shared connector
+    #    authority — the Gmail authorization is never read-modify-written here.
     from datetime import datetime, timedelta
     access_expires = (datetime.utcnow() + timedelta(seconds=max(0, tokens.expires_in))).isoformat() + "Z"
     try:

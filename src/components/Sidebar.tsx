@@ -86,6 +86,69 @@ function loadExpanded(): Record<string, boolean> {
   } catch { return {}; }
 }
 
+  /* ─── Chat row ───
+   One compact line: icon · title · timestamp. The timestamp shares the row
+   with the title (it no longer takes a second line), so twelve chats fit in
+   the space seven used to. Selection is a soft tinted surface + a hairline
+   rail rather than a hard border/glow. */
+function ChatRow({
+  title, updatedAt, active, onOpen, onRemove, removeLabel, removeIcon, busy,
+}: {
+  title: string;
+  updatedAt: Date;
+  active: boolean;
+  onOpen: () => void;
+  onRemove: () => void;
+  removeLabel: string;
+  removeIcon: 'trash' | 'unbind';
+  busy?: boolean;
+}) {
+  return (
+  <div className="group/row relative min-w-0 overflow-hidden">
+    <button
+      onClick={onOpen}
+      aria-current={active ? 'true' : undefined}
+      title={title}
+      className={`w-full min-w-0 flex items-center gap-2 rounded-lg pl-2 pr-7 h-[30px] text-left transition-colors duration-150 ${
+        active
+          ? 'bg-[#3B82F6]/[0.10] text-[#F1F5F9]'
+          : 'text-white/55 hover:bg-white/[0.045] hover:text-white/85'
+      }`}
+    >
+      {/* Selection rail — softer than the previous border + glow. */}
+      <span
+        aria-hidden
+        className={`absolute left-0 top-1/2 -translate-y-1/2 w-[2px] rounded-full transition-all duration-200 ${
+          active ? 'h-4 bg-[#60A5FA]' : 'h-0 bg-transparent'
+        }`}
+      />
+      <MessageSquare className={`h-3 w-3 shrink-0 ${active ? 'text-[#60A5FA]' : 'text-white/25'}`} />
+      <span className="flex-1 min-w-0 truncate whitespace-nowrap overflow-hidden text-ellipsis text-[11.5px] leading-none">
+        {title}
+      </span>
+      <span className="shrink-0 text-[9.5px] tabular-nums text-white/20 group-hover/row:opacity-0 transition-opacity">
+        {timeAgo(updatedAt)}
+      </span>
+    </button>
+
+    {/* Row action — keyboard reachable (focus-visible), revealed on hover. */}
+    <button
+      onClick={(e) => { e.stopPropagation(); onRemove(); }}
+      disabled={busy}
+      aria-label={removeLabel}
+      title={removeLabel}
+      className="absolute right-0.5 top-1/2 -translate-y-1/2 p-1 rounded text-white/25 opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100 hover:text-[#F87171] hover:bg-[#F87171]/[0.08] focus:outline-none focus-visible:ring-1 focus-visible:ring-[#60A5FA]/50 transition-all disabled:opacity-40"
+    >
+      {busy
+        ? <Loader2 className="h-3 w-3 animate-spin" />
+        : removeIcon === 'trash'
+          ? <Trash2 className="h-3 w-3" />
+          : <FolderMinus className="h-3 w-3" />}
+    </button>
+  </div>
+  );
+}
+
 /* ═══════════════════════════════════════════
    COMPONENT
    ═══════════════════════════════════════════ */
@@ -191,66 +254,6 @@ export default function Sidebar({
   const navLabel = 'flex-1 min-w-0 text-left truncate';
   const sectionLabel = 'text-[9.5px] font-semibold uppercase tracking-[0.08em] text-white/25';
 
-  /* ─── Chat row ───
-     One compact line: icon · title · timestamp. The timestamp shares the row
-     with the title (it no longer takes a second line), so twelve chats fit in
-     the space seven used to. Selection is a soft tinted surface + a hairline
-     rail rather than a hard border/glow. */
-  const ChatRow = ({
-    title, updatedAt, active, onOpen, onRemove, removeLabel, removeIcon, busy,
-  }: {
-    title: string;
-    updatedAt: Date;
-    active: boolean;
-    onOpen: () => void;
-    onRemove: () => void;
-    removeLabel: string;
-    removeIcon: 'trash' | 'unbind';
-    busy?: boolean;
-  }) => (
-    <div className="group/row relative min-w-0 overflow-hidden">
-      <button
-        onClick={onOpen}
-        aria-current={active ? 'true' : undefined}
-        title={title}
-        className={`w-full min-w-0 flex items-center gap-2 rounded-lg pl-2 pr-7 h-[30px] text-left transition-colors duration-150 ${
-          active
-            ? 'bg-[#3B82F6]/[0.10] text-[#F1F5F9]'
-            : 'text-white/55 hover:bg-white/[0.045] hover:text-white/85'
-        }`}
-      >
-        {/* Selection rail — softer than the previous border + glow. */}
-        <span
-          aria-hidden
-          className={`absolute left-0 top-1/2 -translate-y-1/2 w-[2px] rounded-full transition-all duration-200 ${
-            active ? 'h-4 bg-[#60A5FA]' : 'h-0 bg-transparent'
-          }`}
-        />
-        <MessageSquare className={`h-3 w-3 shrink-0 ${active ? 'text-[#60A5FA]' : 'text-white/25'}`} />
-        <span className="flex-1 min-w-0 truncate whitespace-nowrap overflow-hidden text-ellipsis text-[11.5px] leading-none">
-          {title}
-        </span>
-        <span className="shrink-0 text-[9.5px] tabular-nums text-white/20 group-hover/row:opacity-0 transition-opacity">
-          {timeAgo(updatedAt)}
-        </span>
-      </button>
-
-      {/* Row action — keyboard reachable (focus-visible), revealed on hover. */}
-      <button
-        onClick={(e) => { e.stopPropagation(); onRemove(); }}
-        disabled={busy}
-        aria-label={removeLabel}
-        title={removeLabel}
-        className="absolute right-0.5 top-1/2 -translate-y-1/2 p-1 rounded text-white/25 opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100 hover:text-[#F87171] hover:bg-[#F87171]/[0.08] focus:outline-none focus-visible:ring-1 focus-visible:ring-[#60A5FA]/50 transition-all disabled:opacity-40"
-      >
-        {busy
-          ? <Loader2 className="h-3 w-3 animate-spin" />
-          : removeIcon === 'trash'
-            ? <Trash2 className="h-3 w-3" />
-            : <FolderMinus className="h-3 w-3" />}
-      </button>
-    </div>
-  );
 
   const openProjectChat = (c: SidebarChatItem) => {
     // A chat present locally opens by its LOCAL id (what the active session is

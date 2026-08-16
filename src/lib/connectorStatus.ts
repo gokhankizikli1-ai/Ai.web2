@@ -80,11 +80,13 @@ export function connectorSummaryLine(connector: ConnectorSummary): string {
     parts.push('not used by any project yet');
   } else {
     parts.push(`${plural(projects, 'project')}`);
-    // Only providers that actually bind named resources may report a count.
+    // Only a MULTI provider reports a resource count. A SINGLE provider binds
+    // exactly one resource per project, so its count would always restate the
+    // project count — and for Vercel (whose resource noun is "project") it would
+    // read "2 projects · 2 projects". An ACCOUNT provider has no resource at all,
+    // so it must never show a count: "3 channels" under Gmail would be a lie the
+    // shared model would otherwise make easy.
     if (connector.resource_kind === 'multi' && resources > 0) {
-      parts.push(`${plural(resources, connector.resource_noun || 'resource')}`);
-    } else if (connector.resource_kind === 'single' && resources > 0
-               && connector.requires_resource_selection) {
       parts.push(`${plural(resources, connector.resource_noun || 'resource')}`);
     }
     if (pending > 0) {
