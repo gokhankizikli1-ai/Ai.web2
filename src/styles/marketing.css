@@ -1,0 +1,1316 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   KorvixAI public marketing design system — "Porcelain + Navy + Cobalt".
+
+   ONE stylesheet, ONE scope. Every rule below is nested under `.mkt`, so this
+   never leaks into the authenticated app (which keeps using the Tailwind token
+   system in src/index.css and tailwind.config.js). It is imported exactly once,
+   by `src/components/marketing/MarketingPage.tsx` — the shared shell every
+   public surface renders inside — so no page has to re-declare tokens and there
+   is no second design system to keep in sync.
+
+   Why a scoped stylesheet rather than more Tailwind classes: the marketing
+   surface needs a typographic + spacing rhythm (editorial headings, section
+   cadence, deep/light surface alternation) that is a *system*, not a set of
+   one-off utilities. Layout inside sections is still plain Tailwind/inline
+   flex-grid where that reads better; this file owns the shared language:
+   surfaces, ink, borders, radii, shadows, widths, buttons, headings, eyebrows.
+
+   Palette identity (locked):
+     porcelain #F7F8FA · ink/navy #0B1020 · brand indigo #4F46E5
+     accent cyan #22D3EE (very restrained) · deep #0E1628 · border #DCE2EA
+
+   Rhythm: light surfaces dominate; deep navy is used as a contrast device for
+   product moments (~30% of the page), never as the whole site.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.mkt {
+  /* ── Surfaces (light) ── */
+  --mkt-porcelain: #f7f8fa;
+  --mkt-porcelain-2: #eef1f5;
+  --mkt-surface: #ffffff;
+  --mkt-section: #edf1f6;
+
+  /* ── Ink / text ── */
+  --mkt-ink: #0b1020;
+  --mkt-body: #3a4459;
+  --mkt-muted: #616d82;
+  /* #8D97A8 read at 2.8:1 on porcelain — below AA for the small mono labels and
+     timestamps that use it. Darkened to ~4.9:1 while staying visibly quiet. */
+  --mkt-faint: #636e80;
+
+  /* ── Lines ── */
+  --mkt-border: #dce2ea;
+  --mkt-border-strong: #c6cfdc;
+
+  /* ── Brand ── */
+  --mkt-brand: #4f46e5;
+  --mkt-brand-deep: #4338ca;
+  --mkt-brand-soft: #6366f1;
+  --mkt-brand-wash: rgba(79, 70, 229, 0.08);
+  --mkt-accent: #22d3ee;
+
+  /* ── Deep surfaces (product moments) ── */
+  --mkt-deep: #0e1628;
+  --mkt-deep-2: #131d33;
+  --mkt-deep-3: #18243d;
+  --mkt-deep-border: #26334c;
+  --mkt-deep-line: rgba(255, 255, 255, 0.07);
+  --mkt-deep-ink: #f4f6fb;
+  --mkt-deep-body: #c9d3e4;
+  --mkt-deep-muted: #8d9ab3;
+
+  /* ── Radii ── */
+  --mkt-r-sm: 8px;
+  --mkt-r-md: 12px;
+  --mkt-r-lg: 18px;
+  --mkt-r-xl: 24px;
+
+  /* ── Shadows ── */
+  --mkt-sh-sm: 0 1px 2px rgba(11, 16, 32, 0.05);
+  --mkt-sh-md: 0 10px 24px -14px rgba(11, 16, 32, 0.22), 0 2px 6px -3px rgba(11, 16, 32, 0.08);
+  --mkt-sh-lg: 0 30px 60px -34px rgba(11, 16, 32, 0.32), 0 8px 22px -14px rgba(11, 16, 32, 0.14);
+  --mkt-sh-panel: 0 44px 90px -44px rgba(6, 11, 24, 0.62), 0 14px 34px -20px rgba(6, 11, 24, 0.4);
+
+  /* ── Widths / rhythm ── */
+  --mkt-w: 1180px;
+  --mkt-w-narrow: 820px;
+  --mkt-gutter: 24px;
+  --mkt-section-y: 96px;
+
+  /* ── Fixed header geometry ──
+     The header is fixed (matching the app's existing, proven chrome), so the
+     shell renders a spacer of exactly this height instead of every page
+     hard-coding its own top padding. `--mkt-announce-h` is 0 unless the
+     announcement strip is mounted (`.has-announce`), so dismissing it can never
+     leave a gap or overlap. */
+  --mkt-header-h: 64px;
+  --mkt-announce-size: 40px;
+  --mkt-announce-h: 0px;
+
+  --mkt-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --mkt-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+
+  font-family: var(--mkt-sans);
+  color: var(--mkt-ink);
+  background: var(--mkt-porcelain);
+  -webkit-font-smoothing: antialiased;
+  line-height: 1.5;
+  /* Never let a wide product visual push the page sideways on small screens. */
+  overflow-x: clip;
+}
+
+.mkt *,
+.mkt *::before,
+.mkt *::after {
+  box-sizing: border-box;
+}
+
+.mkt.has-announce {
+  --mkt-announce-h: var(--mkt-announce-size);
+}
+
+/* Anchored sections must clear the fixed header. */
+.mkt [id] {
+  scroll-margin-top: calc(var(--mkt-header-h) + 20px);
+}
+
+/* ── Layout ─────────────────────────────────────────────────────────────── */
+.mkt-wrap {
+  width: 100%;
+  max-width: var(--mkt-w);
+  margin: 0 auto;
+  padding: 0 var(--mkt-gutter);
+}
+.mkt-wrap-narrow {
+  max-width: var(--mkt-w-narrow);
+}
+.mkt-section {
+  padding: var(--mkt-section-y) 0;
+  position: relative;
+}
+.mkt-section-tight {
+  padding: 68px 0;
+}
+.mkt-band {
+  background: var(--mkt-section);
+  border-top: 1px solid var(--mkt-border);
+  border-bottom: 1px solid var(--mkt-border);
+}
+.mkt-deep-band {
+  background: var(--mkt-deep);
+  color: var(--mkt-deep-ink);
+}
+
+/* ── Header ─────────────────────────────────────────────────────────────── */
+.mkt-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  /* The header carries the `.mkt` token scope so it works on the authenticated
+     Settings / Connectors surfaces too, where the marketing shell is absent.
+     `.mkt` paints porcelain; the header must stay transparent until scrolled. */
+  background: transparent;
+}
+/* Spacer rendered in flow by the shell so no page hard-codes header padding. */
+.mkt-headroom {
+  height: calc(var(--mkt-header-h) + var(--mkt-announce-h));
+}
+
+.mkt-announce {
+  height: var(--mkt-announce-size);
+  display: flex;
+  align-items: center;
+  background: var(--mkt-deep);
+  color: var(--mkt-deep-body);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+.mkt-announce-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+}
+.mkt-announce-text {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--mkt-deep-body);
+  text-decoration: none;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.mkt-announce-text:hover {
+  color: #fff;
+}
+.mkt-announce-tag {
+  flex: none;
+  font-family: var(--mkt-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mkt-accent);
+  border: 1px solid rgba(34, 211, 238, 0.32);
+  border-radius: 5px;
+  padding: 2px 6px;
+}
+.mkt-announce-x {
+  flex: none;
+  margin-left: auto;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  color: var(--mkt-deep-muted);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+.mkt-announce-x:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.mkt-headbar {
+  height: var(--mkt-header-h);
+  transition: background 0.25s ease, border-color 0.25s ease, backdrop-filter 0.25s ease;
+  border-bottom: 1px solid transparent;
+}
+.mkt-headbar[data-scrolled='true'] {
+  background: rgba(255, 255, 255, 0.86);
+  backdrop-filter: blur(14px);
+  border-bottom-color: var(--mkt-border);
+}
+.mkt-headbar[data-surface='dark'][data-scrolled='true'] {
+  background: rgba(14, 22, 40, 0.86);
+  border-bottom-color: var(--mkt-deep-border);
+}
+.mkt-headrow {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.mkt-brandlink {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 8px;
+  flex: none;
+}
+
+/* Top-level trigger / link */
+.mkt-navitem {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 34px;
+  padding: 0 11px;
+  border-radius: 9px;
+  font-size: 13.5px;
+  font-weight: 550;
+  color: var(--mkt-body);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  text-decoration: none;
+  transition: color 0.16s ease, background 0.16s ease;
+}
+.mkt-navitem:hover,
+.mkt-navitem[data-state='open'] {
+  color: var(--mkt-ink);
+  background: rgba(11, 16, 32, 0.05);
+}
+.mkt-navitem[aria-current='page'] {
+  color: var(--mkt-ink);
+}
+.mkt-navitem .chev {
+  width: 13px;
+  height: 13px;
+  transition: transform 0.2s ease;
+  opacity: 0.65;
+}
+.mkt-navitem[data-state='open'] .chev {
+  transform: rotate(180deg);
+}
+[data-surface='dark'] .mkt-navitem {
+  color: var(--mkt-deep-body);
+}
+[data-surface='dark'] .mkt-navitem:hover,
+[data-surface='dark'] .mkt-navitem[data-state='open'] {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* Mega panel */
+.mkt-menupanel {
+  background: var(--mkt-surface);
+  border: 1px solid var(--mkt-border);
+  border-radius: var(--mkt-r-lg);
+  box-shadow: var(--mkt-sh-lg);
+  padding: 18px;
+  overflow: hidden;
+}
+.mkt-menugrid {
+  display: grid;
+  gap: 22px;
+}
+.mkt-menugrid[data-cols='3'] {
+  grid-template-columns: repeat(3, minmax(190px, 1fr));
+}
+.mkt-menugrid[data-cols='2'] {
+  grid-template-columns: repeat(2, minmax(210px, 1fr));
+}
+.mkt-menugrid[data-cols='1'] {
+  grid-template-columns: minmax(260px, 1fr);
+}
+.mkt-menugroup-title {
+  font-family: var(--mkt-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mkt-faint);
+  margin: 0 0 8px;
+  padding: 0 10px;
+}
+.mkt-menulink {
+  display: block;
+  padding: 9px 10px;
+  border-radius: var(--mkt-r-md);
+  text-decoration: none;
+  transition: background 0.15s ease;
+}
+.mkt-menulink:hover {
+  background: var(--mkt-section);
+}
+.mkt-menulink .t {
+  display: block;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--mkt-ink);
+  letter-spacing: -0.008em;
+}
+.mkt-menulink .d {
+  display: block;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--mkt-muted);
+  margin-top: 3px;
+  max-width: 30ch;
+}
+.mkt-menufeatured {
+  margin-top: 18px;
+  border-top: 1px solid var(--mkt-border);
+  padding-top: 16px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.mkt-menufeatured .fx {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+.mkt-menufeatured .ft {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--mkt-ink);
+}
+.mkt-menufeatured .fb {
+  font-size: 12px;
+  color: var(--mkt-muted);
+  margin-top: 3px;
+  line-height: 1.45;
+}
+.mkt-menumarks {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.mkt-menumarks span {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  border: 1px solid var(--mkt-border);
+  background: var(--mkt-porcelain);
+  color: var(--mkt-ink);
+}
+
+/* Mobile nav (inside the existing Sheet) */
+/* Spacing for these lives in the JSX (Tailwind), so it can't fight the
+   Accordion primitive's own padding utilities through tailwind-merge. */
+.mkt-mnav-item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-radius: var(--mkt-r-md);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--mkt-ink);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  text-decoration: none;
+  text-align: left;
+}
+.mkt-mnav-item:hover {
+  background: var(--mkt-section);
+}
+.mkt-mnav-sub {
+  display: block;
+  border-radius: var(--mkt-r-md);
+  font-size: 13.5px;
+  color: var(--mkt-body);
+  text-decoration: none;
+}
+.mkt-mnav-sub:hover {
+  background: var(--mkt-section);
+  color: var(--mkt-ink);
+}
+.mkt-mnav-group {
+  font-family: var(--mkt-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mkt-faint);
+}
+
+/* ── Typography ─────────────────────────────────────────────────────────── */
+.mkt-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mkt-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mkt-brand);
+}
+.mkt-eyebrow::before {
+  content: '';
+  width: 18px;
+  height: 1px;
+  background: currentColor;
+  opacity: 0.55;
+}
+.mkt-deep-band .mkt-eyebrow,
+.mkt-on-deep .mkt-eyebrow {
+  color: var(--mkt-accent);
+}
+
+.mkt-h1 {
+  font-size: clamp(34px, 5.2vw, 60px);
+  line-height: 1.03;
+  letter-spacing: -0.035em;
+  font-weight: 680;
+  margin: 0;
+  text-wrap: balance;
+}
+.mkt-h2 {
+  font-size: clamp(26px, 3.4vw, 40px);
+  line-height: 1.1;
+  letter-spacing: -0.028em;
+  font-weight: 670;
+  margin: 14px 0 0;
+  text-wrap: balance;
+}
+.mkt-h3 {
+  font-size: 19px;
+  line-height: 1.3;
+  letter-spacing: -0.018em;
+  font-weight: 640;
+  margin: 0;
+}
+.mkt-lead {
+  font-size: clamp(16px, 1.4vw, 18px);
+  line-height: 1.6;
+  color: var(--mkt-body);
+  margin: 18px 0 0;
+  max-width: 62ch;
+  letter-spacing: -0.006em;
+}
+.mkt-sub {
+  font-size: 15.5px;
+  line-height: 1.62;
+  color: var(--mkt-muted);
+  margin: 14px 0 0;
+  max-width: 60ch;
+}
+.mkt-deep-band .mkt-h1,
+.mkt-deep-band .mkt-h2,
+.mkt-deep-band .mkt-h3,
+.mkt-on-deep .mkt-h2,
+.mkt-on-deep .mkt-h3 {
+  color: var(--mkt-deep-ink);
+}
+.mkt-deep-band .mkt-lead,
+.mkt-deep-band .mkt-sub,
+.mkt-on-deep .mkt-lead,
+.mkt-on-deep .mkt-sub {
+  color: var(--mkt-deep-body);
+}
+
+/* ── Buttons ────────────────────────────────────────────────────────────── */
+.mkt-btn {
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.006em;
+  border-radius: var(--mkt-r-md);
+  padding: 0 18px;
+  height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease, transform 0.18s ease,
+    box-shadow 0.18s ease;
+}
+.mkt-btn:focus-visible {
+  outline: 2px solid var(--mkt-brand);
+  outline-offset: 2px;
+}
+.mkt-btn-primary {
+  color: #fff;
+  background: linear-gradient(180deg, var(--mkt-brand-soft), var(--mkt-brand-deep));
+  border-color: rgba(255, 255, 255, 0.14);
+  box-shadow: 0 10px 22px -12px rgba(67, 56, 202, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+.mkt-btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 16px 30px -14px rgba(67, 56, 202, 0.72), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+/* Ink primary — the restrained CTA used where indigo would dominate the
+   composition (the hero). Brand colour appears only on the focus/hover ring. */
+.mkt-btn-ink {
+  color: #fff;
+  background: var(--mkt-ink);
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow: 0 10px 22px -14px rgba(11, 16, 32, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+.mkt-btn-ink:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 26px -14px rgba(11, 16, 32, 0.7), 0 0 0 3px rgba(79, 70, 229, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+.mkt-btn-outline {
+  color: var(--mkt-ink);
+  background: var(--mkt-surface);
+  border-color: var(--mkt-border);
+  box-shadow: var(--mkt-sh-sm);
+}
+.mkt-btn-outline:hover {
+  border-color: var(--mkt-border-strong);
+}
+.mkt-btn-ghost {
+  color: var(--mkt-body);
+  background: transparent;
+}
+.mkt-btn-ghost:hover {
+  color: var(--mkt-ink);
+  background: rgba(11, 16, 32, 0.05);
+}
+.mkt-btn-light {
+  color: var(--mkt-ink);
+  background: #fff;
+}
+.mkt-btn-light:hover {
+  transform: translateY(-1px);
+}
+.mkt-btn-deep-outline {
+  color: var(--mkt-deep-body);
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.18);
+}
+.mkt-btn-deep-outline:hover {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.36);
+}
+.mkt-btn-lg {
+  height: 48px;
+  font-size: 15px;
+  padding: 0 22px;
+}
+.mkt-btn-sm {
+  height: 34px;
+  font-size: 13px;
+  padding: 0 13px;
+  border-radius: var(--mkt-r-sm);
+}
+
+/* Quiet text link with an arrow that nudges on hover. */
+.mkt-textlink {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--mkt-brand);
+  text-decoration: none;
+  border-radius: 6px;
+}
+.mkt-textlink:hover {
+  color: var(--mkt-brand-deep);
+}
+.mkt-textlink:focus-visible {
+  outline: 2px solid var(--mkt-brand);
+  outline-offset: 3px;
+}
+.mkt-textlink svg {
+  width: 15px;
+  height: 15px;
+  transition: transform 0.18s ease;
+}
+.mkt-textlink:hover svg {
+  transform: translateX(2px);
+}
+/* On the deep bands the indigo brand link would sit at ~2.9:1 against
+   #0E1628 — nowhere near readable. Links there switch to the light cyan end of
+   the palette instead (>9:1), which is also why cyan stays a *dark-surface*
+   accent and never becomes body text on porcelain. */
+.mkt-on-deep .mkt-textlink,
+.mkt-deep-band .mkt-textlink {
+  color: #93e8f8;
+}
+.mkt-on-deep .mkt-textlink:hover,
+.mkt-deep-band .mkt-textlink:hover {
+  color: #c8f4fd;
+}
+
+/* ── Surfaces / cards ───────────────────────────────────────────────────── */
+.mkt-card {
+  background: var(--mkt-surface);
+  border: 1px solid var(--mkt-border);
+  border-radius: var(--mkt-r-lg);
+  box-shadow: var(--mkt-sh-sm);
+}
+.mkt-card-lift {
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.mkt-card-lift:hover {
+  transform: translateY(-2px);
+  border-color: var(--mkt-border-strong);
+  box-shadow: var(--mkt-sh-md);
+}
+.mkt-panel {
+  background: var(--mkt-deep);
+  border: 1px solid var(--mkt-deep-border);
+  border-radius: var(--mkt-r-lg);
+  box-shadow: var(--mkt-sh-panel);
+  color: var(--mkt-deep-ink);
+  overflow: hidden;
+}
+.mkt-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 28px;
+  padding: 0 11px;
+  border-radius: 999px;
+  border: 1px solid var(--mkt-border);
+  background: var(--mkt-surface);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--mkt-muted);
+}
+.mkt-rule {
+  height: 1px;
+  background: var(--mkt-border);
+  border: 0;
+  margin: 0;
+}
+
+/* Monospace label used for small product-UI captions inside panels. */
+.mkt-mono {
+  font-family: var(--mkt-mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+
+/* ── Prose (legal + long-form resource pages) ───────────────────────────── */
+.mkt-prose {
+  color: var(--mkt-body);
+  font-size: 15.5px;
+  line-height: 1.72;
+  max-width: 70ch;
+}
+.mkt-prose h2 {
+  font-size: 21px;
+  line-height: 1.3;
+  font-weight: 650;
+  letter-spacing: -0.018em;
+  color: var(--mkt-ink);
+  margin: 40px 0 10px;
+}
+.mkt-prose h3 {
+  font-size: 16.5px;
+  font-weight: 640;
+  color: var(--mkt-ink);
+  margin: 26px 0 8px;
+}
+.mkt-prose p {
+  margin: 0 0 14px;
+}
+.mkt-prose ul {
+  margin: 0 0 16px;
+  padding-left: 20px;
+  list-style: disc;
+}
+.mkt-prose ol {
+  margin: 0 0 16px;
+  padding-left: 20px;
+  list-style: decimal;
+}
+.mkt-prose li {
+  margin: 0 0 8px;
+}
+.mkt-prose a {
+  color: var(--mkt-brand);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.mkt-prose code {
+  font-family: var(--mkt-mono);
+  font-size: 0.9em;
+  background: var(--mkt-section);
+  border: 1px solid var(--mkt-border);
+  border-radius: 5px;
+  padding: 1px 5px;
+}
+
+/* ═══ Composed product visuals ══════════════════════════════════════════════
+   Two animated compositions carry the page: the hero (project context coming
+   together) and the connector signal flow. Both are built from the SAME dark
+   product-panel language so the Korvix product UI reads as one thing sitting
+   inside the brighter marketing shell. Each plays ONCE when scrolled into view
+   (a class toggled by `useReveal`) — nothing loops, nothing floats forever.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* Shared panel chrome */
+.mkt-pchrome {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--mkt-deep-line);
+  background: linear-gradient(180deg, #16203a, #101a2f);
+}
+.mkt-pchrome i {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #2a3654;
+}
+.mkt-pchrome .title {
+  font-family: var(--mkt-mono);
+  font-size: 11px;
+  color: var(--mkt-deep-muted);
+  margin-left: 6px;
+}
+
+/* Small product-UI atoms used inside panels */
+.mkt-pline {
+  display: block;
+  height: 7px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.09);
+}
+.mkt-ptile {
+  border: 1px solid var(--mkt-deep-border);
+  background: var(--mkt-deep-2);
+  border-radius: var(--mkt-r-md);
+  padding: 12px;
+}
+.mkt-pdot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--mkt-accent);
+  flex: none;
+}
+
+/* ── Hero ───────────────────────────────────────────────────────────────
+   One product scene, not a composition of marketing objects.
+
+   A short type block (kicker · two-line headline · standfirst · actions)
+   introduces ONE large Korvix workspace window that spans the content column
+   and runs past the fold. The window is a faithful rebuild of the real app
+   shell — left rail (New Chat / Projects / Chats), a conversation with cited
+   sources and an inline build result, and the project-intelligence panel
+   (summary · goals · recent connector activity) — so the first thing a visitor
+   sees is what using Korvix looks like.
+
+   No shelf, no fragments, no floating cards, no glass, no blob: the only
+   ambient light is a barely-there indigo/cyan wash sitting *behind* the
+   window so it has something to lift off.
+   ────────────────────────────────────────────────────────────────────────── */
+.mkt-hero {
+  --hv-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  position: relative;
+  overflow: hidden;
+  padding: clamp(40px, 5vw, 76px) 0 clamp(28px, 3vw, 40px);
+}
+/* Ambient light behind the window — deliberately near-imperceptible. */
+.mkt-hero::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 22%;
+  width: min(1180px, 92vw);
+  height: 620px;
+  transform: translateX(-50%);
+  pointer-events: none;
+  background:
+    radial-gradient(58% 52% at 42% 46%, rgba(79, 70, 229, 0.055), transparent 72%),
+    radial-gradient(46% 44% at 82% 34%, rgba(34, 211, 238, 0.045), transparent 70%);
+}
+.mkt-hero > * {
+  position: relative;
+}
+
+.mkt-hero-copy {
+  max-width: 62ch;
+}
+.mkt-hero-kicker {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  font-family: var(--mkt-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--mkt-muted);
+}
+.mkt-hero-kicker::before {
+  content: '';
+  width: 22px;
+  height: 1px;
+  background: var(--mkt-brand);
+  flex: none;
+}
+.mkt-hero-title {
+  /* Sized to land on ~2 lines at 1440 — strong, not oversized for impact. */
+  font-size: clamp(31px, 3.9vw, 52px);
+  line-height: 1.04;
+  letter-spacing: -0.035em;
+  font-weight: 660;
+  margin: 16px 0 0;
+  max-width: 19ch;
+  text-wrap: balance;
+  color: var(--mkt-ink);
+}
+.mkt-hero-standfirst {
+  margin: 16px 0 0;
+  max-width: 60ch;
+  font-size: clamp(15px, 1.15vw, 17px);
+  line-height: 1.6;
+  color: var(--mkt-body);
+}
+.mkt-hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 26px;
+}
+.mkt-hero-note {
+  margin: 14px 0 0;
+  font-size: 12.5px;
+  color: var(--mkt-faint);
+}
+
+/* ── The workspace window ─────────────────────────────────────────────── */
+.mkt-hero-win {
+  margin-top: clamp(34px, 4vw, 56px);
+  border: 1px solid var(--mkt-deep-border);
+  border-radius: 16px;
+  background: var(--mkt-deep);
+  color: var(--mkt-deep-ink);
+  overflow: hidden;
+  box-shadow: 0 50px 90px -48px rgba(6, 11, 24, 0.55), 0 18px 36px -26px rgba(6, 11, 24, 0.4);
+  opacity: 0;
+  transform: translateY(14px);
+}
+.mkt-hero-win.is-in {
+  opacity: 1;
+  transform: none;
+  transition: opacity 0.7s var(--hv-ease), transform 0.7s var(--hv-ease);
+}
+
+/* App bar */
+.mkt-hw-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 42px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--mkt-deep-line);
+  background: linear-gradient(180deg, #16203a, #111b30);
+}
+.mkt-hw-crumb {
+  font-size: 12px;
+  color: var(--mkt-deep-body);
+}
+.mkt-hw-crumb b {
+  font-weight: 600;
+  color: var(--mkt-deep-ink);
+}
+.mkt-hw-avatar {
+  margin-left: auto;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 9.5px;
+  font-weight: 600;
+  color: var(--mkt-deep-body);
+}
+
+/* Three-pane body: rail · conversation · project intelligence */
+.mkt-hw-body {
+  display: grid;
+  grid-template-columns: 208px minmax(0, 1fr) 254px;
+  /* Tall enough that the composer sits at the bottom of a real thread, short
+     enough that the pane isn't padded out with void. */
+  min-height: 430px;
+}
+.mkt-hw-rail {
+  border-right: 1px solid var(--mkt-deep-line);
+  padding: 14px 12px;
+  background: rgba(255, 255, 255, 0.014);
+}
+.mkt-hw-new {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 32px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #dbe4ff;
+  background: linear-gradient(135deg, rgba(79, 70, 229, 0.26), rgba(79, 70, 229, 0.12));
+  border: 1px solid rgba(99, 102, 241, 0.34);
+}
+.mkt-hw-sect {
+  margin: 18px 0 7px;
+  font-family: var(--mkt-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mkt-deep-muted);
+}
+.mkt-hw-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--mkt-deep-body);
+}
+.mkt-hw-item[data-active='true'] {
+  background: rgba(79, 70, 229, 0.16);
+  color: #fff;
+}
+
+.mkt-hw-thread {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 16px 18px 14px;
+  gap: 12px;
+}
+.mkt-hw-msg-user {
+  align-self: flex-end;
+  max-width: 82%;
+  border-radius: 12px 12px 4px 12px;
+  border: 1px solid rgba(99, 102, 241, 0.34);
+  background: rgba(79, 70, 229, 0.14);
+  padding: 9px 12px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--mkt-deep-ink);
+}
+.mkt-hw-msg-ai {
+  max-width: 94%;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--mkt-deep-body);
+}
+.mkt-hw-sources {
+  margin-top: 9px;
+  padding-top: 9px;
+  border-top: 1px solid var(--mkt-deep-line);
+}
+
+/* Inline build result inside the conversation */
+.mkt-hw-build {
+  display: grid;
+  /* An inline attachment, not a full-width panel. */
+  max-width: 470px;
+  grid-template-columns: 132px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  border: 1px solid var(--mkt-deep-border);
+  background: var(--mkt-deep-2);
+  border-radius: 12px;
+  padding: 10px;
+}
+.mkt-hw-thumb {
+  border-radius: 8px;
+  background: #0b1424;
+  border: 1px solid var(--mkt-deep-border);
+  padding: 8px;
+  overflow: hidden;
+}
+
+/* Composer */
+.mkt-hw-composer {
+  margin-top: auto;
+  border: 1px solid var(--mkt-deep-border);
+  background: var(--mkt-deep-2);
+  border-radius: 12px;
+  padding: 10px 11px;
+}
+.mkt-hw-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 999px;
+  border: 1px solid var(--mkt-deep-border);
+  font-size: 11px;
+  color: var(--mkt-deep-body);
+}
+.mkt-hw-chip[data-active='true'] {
+  border-color: rgba(99, 102, 241, 0.45);
+  background: rgba(79, 70, 229, 0.16);
+  color: #c7d2fe;
+}
+.mkt-hw-send {
+  margin-left: auto;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: var(--mkt-brand-deep);
+  color: #fff;
+}
+
+/* Project intelligence pane */
+.mkt-hw-intel {
+  border-left: 1px solid var(--mkt-deep-line);
+  padding: 14px 13px;
+  background: rgba(255, 255, 255, 0.014);
+}
+.mkt-hw-intel h3 {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--mkt-deep-ink);
+}
+.mkt-hw-intel p {
+  margin: 9px 0 0;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--mkt-deep-muted);
+}
+.mkt-hw-sig {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--mkt-deep-body);
+}
+/* The one moment of motion: the newest signal lands after the window settles. */
+.mkt-hero-win .mkt-hw-sig[data-new='true'] {
+  opacity: 0;
+}
+.mkt-hero-win.is-in .mkt-hw-sig[data-new='true'] {
+  animation: hv-rise 0.5s var(--hv-ease) 0.85s both;
+}
+.mkt-hw-newdot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--mkt-accent);
+  opacity: 0;
+}
+.mkt-hero-win.is-in .mkt-hw-newdot {
+  animation: hw-ping 1.5s ease-out 1.15s 1 both;
+}
+@keyframes hw-ping {
+  0% { opacity: 0; box-shadow: 0 0 0 0 rgba(34, 211, 238, 0.5); }
+  20% { opacity: 1; }
+  70% { opacity: 1; box-shadow: 0 0 0 6px rgba(34, 211, 238, 0); }
+  100% { opacity: 0.9; box-shadow: 0 0 0 0 rgba(34, 211, 238, 0); }
+}
+
+.mkt-hero-wincap {
+  margin: 14px 0 0;
+  font-size: 11.5px;
+  color: var(--mkt-faint);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mkt-hero-win,
+  .mkt-hero-win .mkt-hw-sig[data-new='true'] {
+    opacity: 1 !important;
+    transform: none !important;
+    animation: none !important;
+  }
+  .mkt-hw-newdot {
+    opacity: 0.9 !important;
+    animation: none !important;
+  }
+}
+
+@keyframes hv-rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ── Connector signal flow ─────────────────────────────────────────────── */
+.mkt-flow {
+  --flow-ease: cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+}
+.mkt-flow .fl-row {
+  position: relative;
+}
+/* The travelling dot: one per connector row, staggered, played once. */
+.mkt-flow .fl-dot {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 6px;
+  height: 6px;
+  margin-top: -3px;
+  border-radius: 50%;
+  background: var(--mkt-accent);
+  box-shadow: 0 0 10px rgba(34, 211, 238, 0.7);
+  opacity: 0;
+}
+.mkt-flow.is-in .fl-dot {
+  animation: fl-travel 1.15s var(--flow-ease) both;
+}
+.mkt-flow.is-in .fl-row:nth-child(1) .fl-dot { animation-delay: 0.15s; }
+.mkt-flow.is-in .fl-row:nth-child(2) .fl-dot { animation-delay: 0.35s; }
+.mkt-flow.is-in .fl-row:nth-child(3) .fl-dot { animation-delay: 0.55s; }
+.mkt-flow.is-in .fl-row:nth-child(4) .fl-dot { animation-delay: 0.75s; }
+.mkt-flow.is-in .fl-row:nth-child(5) .fl-dot { animation-delay: 0.95s; }
+@keyframes fl-travel {
+  0% { opacity: 0; transform: translateX(0); }
+  12% { opacity: 1; }
+  88% { opacity: 1; }
+  100% { opacity: 0; transform: translateX(var(--fl-distance, 120px)); }
+}
+/* Receiving panel lines settle in after the dots arrive. */
+.mkt-flow .fl-in {
+  opacity: 0;
+}
+.mkt-flow.is-in .fl-in {
+  animation: hv-rise 0.5s var(--flow-ease) both;
+}
+.mkt-flow.is-in .fl-in[data-d='1'] { animation-delay: 0.75s; }
+.mkt-flow.is-in .fl-in[data-d='2'] { animation-delay: 0.95s; }
+.mkt-flow.is-in .fl-in[data-d='3'] { animation-delay: 1.15s; }
+.mkt-flow.is-in .fl-in[data-d='4'] { animation-delay: 1.35s; }
+
+@media (prefers-reduced-motion: reduce) {
+  .mkt-flow .fl-in {
+    opacity: 1 !important;
+    animation: none !important;
+  }
+  .mkt-flow .fl-dot {
+    display: none;
+  }
+}
+
+/* ── Focus visibility (global for the marketing surface) ────────────────── */
+.mkt a:focus-visible,
+.mkt button:focus-visible,
+.mkt summary:focus-visible,
+.mkt [tabindex]:focus-visible {
+  outline: 2px solid var(--mkt-brand);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+.mkt-on-deep a:focus-visible,
+.mkt-deep-band a:focus-visible,
+.mkt-deep-band button:focus-visible {
+  outline-color: var(--mkt-accent);
+}
+
+/* Skip link — visible only when focused. */
+.mkt-skip {
+  position: absolute;
+  left: 12px;
+  top: -60px;
+  z-index: 100;
+  background: var(--mkt-surface);
+  color: var(--mkt-ink);
+  border: 1px solid var(--mkt-border);
+  border-radius: var(--mkt-r-sm);
+  padding: 9px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  transition: top 0.16s ease;
+}
+.mkt-skip:focus {
+  top: 12px;
+}
+
+/* ── Entrance motion ────────────────────────────────────────────────────── */
+/* One shared reveal primitive: opacity + a small rise, triggered by adding
+   `is-in` (an IntersectionObserver in useReveal). No library, no per-frame JS. */
+.mkt-reveal {
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity 0.6s cubic-bezier(0.22, 1, 0.36, 1), transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.mkt-reveal.is-in {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mkt-reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+  .mkt *,
+  .mkt *::before,
+  .mkt *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ── Responsive rhythm ──────────────────────────────────────────────────── */
+@media (max-width: 1024px) {
+  .mkt {
+    --mkt-section-y: 76px;
+  }
+  /* The window keeps all three panes but tightens; the rail loses its labels
+     before anything is dropped. */
+  .mkt-hw-body {
+    grid-template-columns: 168px minmax(0, 1fr) 216px;
+    min-height: 400px;
+  }
+}
+@media (max-width: 900px) {
+  /* A real responsive app sheds the rail first, then moves the context pane
+     under the conversation — the window stays ONE workspace either way. */
+  .mkt-hw-body {
+    grid-template-columns: minmax(0, 1fr) 220px;
+  }
+  .mkt-hw-rail {
+    display: none;
+  }
+}
+@media (max-width: 760px) {
+  .mkt-hw-body {
+    grid-template-columns: minmax(0, 1fr);
+    min-height: 0;
+  }
+  .mkt-hw-intel {
+    border-left: 0;
+    border-top: 1px solid var(--mkt-deep-line);
+  }
+  .mkt-hw-build {
+    grid-template-columns: 104px minmax(0, 1fr);
+  }
+  .mkt-hero-actions .mkt-btn {
+    width: 100%;
+    justify-content: center;
+  }
+}
+@media (max-width: 640px) {
+  .mkt {
+    --mkt-section-y: 60px;
+    --mkt-gutter: 18px;
+    --mkt-header-h: 58px;
+  }
+  .mkt-btn {
+    height: 44px;
+  }
+  .mkt-section-tight {
+    padding: 48px 0;
+  }
+  .mkt-hero-title {
+    letter-spacing: -0.035em;
+    max-width: none;
+  }
+}

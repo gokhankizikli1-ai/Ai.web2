@@ -1,89 +1,91 @@
 import { Link } from 'react-router';
-import { ArrowLeft, Shield, Eye, Users, Zap } from 'lucide-react';
-import Navbar from '@/sections/Navbar';
-import Footer from '@/sections/Footer';
+import { ArrowRight } from 'lucide-react';
+import MarketingPage from '@/components/marketing/MarketingPage';
+import { ResourceBody, ResourceHeader } from '@/components/marketing/ResourceLayout';
+import { useLanguageStore } from '@/stores/languageStore';
+import { Reveal } from '@/components/marketing/primitives';
 
-const values = [
-  {
-    icon: Eye,
-    title: 'Transparency',
-    description: 'We believe in being open about how our AI works, what it can do, and where its limitations lie.',
-  },
-  {
-    icon: Shield,
-    title: 'Privacy First',
-    description: 'Your data belongs to you. We never sell your information and always encrypt conversations.',
-  },
-  {
-    icon: Users,
-    title: 'Human Centered',
-    description: 'Technology should serve people. Every feature we build starts with understanding real user needs.',
-  },
-  {
-    icon: Zap,
-    title: 'Relentless Improvement',
-    description: 'We ship fast, learn from feedback, and continuously improve the quality of every interaction.',
-  },
+/**
+ * About.
+ *
+ * The previous version of this page claimed KorvixAI was "founded in 2025",
+ * "serves thousands of users across development, design, content creation and
+ * data analysis" and was "a fully remote team distributed across North America
+ * and Europe" — none of which is supported by anything in this repository. All
+ * of it is removed rather than restated more carefully.
+ *
+ * What remains is what can be said truthfully: what the product is, what it is
+ * built around, and how it is being developed. There is no invented team size,
+ * no customer count, no funding story, and no contact address.
+ */
+
+const PRINCIPLE_KEYS = [
+  ['aboutP1Title', 'aboutP1Body'],
+  ['aboutP2Title', 'aboutP2Body'],
+  ['aboutP3Title', 'aboutP3Body'],
+  ['aboutP4Title', 'aboutP4Body'],
 ];
 
 export default function AboutPage() {
+  const { t } = useLanguageStore();
+
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-foreground">
-      <Navbar surface="dark" />
-      <main className="pt-28 pb-20">
-        <div className="max-w-3xl mx-auto px-4 sm:px-6">
-          {/* Breadcrumb */}
-          <Link
-            to="/"
-            className="inline-flex items-center gap-2 text-sm text-slate-400 hover:text-white transition-colors mb-8"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Back to Home
-          </Link>
+    <MarketingPage title={t('aboutTitle')} description={t('aboutMeta')}>
+      <ResourceHeader
+        eyebrow={t('navCompany')}
+        title={t('aboutTitle')}
+        lead={t('aboutLead')}
+        breadcrumb={[{ label: t('navHome'), to: '/' }, { label: t('footerAbout') }]}
+      />
 
-          <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold text-white mb-6">
-            About KorvixAI
-          </h1>
-
-          <div className="space-y-6 text-slate-300 leading-relaxed mb-16">
-            <p>
-              KorvixAI is an intelligent assistant platform built for modern professionals.
-              We combine state-of-the-art language models with a clean, privacy-focused
-              interface designed for real work.
-            </p>
-            <p>
-              Our mission is to make AI genuinely useful in everyday workflows — whether
-              you are writing code, analyzing data, drafting documents, or brainstorming
-              your next big idea. We focus on speed, accuracy, and a user experience that
-              respects your time.
-            </p>
-            <p>
-              Founded in 2025, KorvixAI serves thousands of users across development,
-              design, content creation, and data analysis. We are a fully remote team
-              distributed across North America and Europe, united by a shared obsession
-              with quality and user experience.
-            </p>
-          </div>
-
-          <h2 className="text-2xl font-bold text-white mb-8">Our Values</h2>
-
-          <div className="grid sm:grid-cols-2 gap-6">
-            {values.map((value) => (
-              <div
-                key={value.title}
-                className="rounded-2xl border border-white/10 bg-white/[0.02] p-6 hover:bg-white/[0.04] transition-all duration-300"
-              >
-                <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-[#52677A]/20 to-[#7890A3]/20 text-[#52677A]">
-                  <value.icon className="h-5 w-5" />
-                </div>
-                <h3 className="text-lg font-semibold text-white mb-2">{value.title}</h3>
-                <p className="text-sm text-slate-400 leading-relaxed">{value.description}</p>
-              </div>
-            ))}
-          </div>
+      <ResourceBody>
+        <div className="mkt-prose max-w-[70ch]">
+          <p>{t('aboutBody1')}</p>
+          <p>{t('aboutBody2')}</p>
+          <p>{t('aboutBody3')}</p>
         </div>
-      </main>
-      <Footer />
-    </div>
+
+        <section className="mt-14" aria-labelledby="about-principles">
+          <h2 id="about-principles" className="mkt-h3 text-[21px]">{t('aboutPrinciplesTitle')}</h2>
+          <ul className="m-0 mt-6 grid list-none gap-4 p-0 sm:grid-cols-2">
+            {PRINCIPLE_KEYS.map(([titleKey, bodyKey], i) => (
+              <li key={titleKey}>
+                <Reveal delay={i * 60}>
+                  <div className="mkt-card h-full p-5">
+                    <h3 className="m-0 text-[15px] font-semibold text-[color:var(--mkt-ink)]">
+                      {t(titleKey)}
+                    </h3>
+                    <p className="m-0 mt-2 text-[13.5px] leading-relaxed text-[color:var(--mkt-muted)]">
+                      {t(bodyKey)}
+                    </p>
+                  </div>
+                </Reveal>
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        <section className="mt-14 border-t border-[color:var(--mkt-border)] pt-8" aria-labelledby="about-contact">
+          <h2 id="about-contact" className="mkt-h3 text-[17px]">{t('aboutContactTitle')}</h2>
+          <p className="mt-2 max-w-[70ch] text-[14.5px] leading-relaxed text-[color:var(--mkt-muted)]">
+            {t('aboutContactBody')}
+          </p>
+          <div className="mt-5 flex flex-wrap gap-4">
+            <Link to="/help" className="mkt-textlink">
+              {t('navHelp')}
+              <ArrowRight aria-hidden="true" />
+            </Link>
+            <Link to="/security" className="mkt-textlink">
+              {t('navSecurity')}
+              <ArrowRight aria-hidden="true" />
+            </Link>
+            <Link to="/changelog" className="mkt-textlink">
+              {t('navChangelog')}
+              <ArrowRight aria-hidden="true" />
+            </Link>
+          </div>
+        </section>
+      </ResourceBody>
+    </MarketingPage>
   );
 }

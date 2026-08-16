@@ -35,11 +35,21 @@ import { useLanguageStore } from '@/stores/languageStore';
  */
 
 const PS_CSS = `
-.ps{ --d-bg:#0B0E12; --d-surf:#11161C; --d-border:#28323D; --d-line:rgba(255,255,255,0.06);
-  --d-text:#F5F7FA; --d-body:#D7DEE8; --d-muted:#93A3B5; --d-accent:#8FA6BA; --blue:#3B82F6; --sage:#6F8F7A;
-  position:relative; }
+.ps{ --d-bg:var(--mkt-deep,#0B0E12); --d-surf:var(--mkt-deep-2,#11161C); --d-border:var(--mkt-deep-border,#28323D);
+  --d-line:rgba(255,255,255,0.06);
+  --d-text:#F5F7FA; --d-body:#D7DEE8; --d-muted:#93A3B5; --d-accent:#8FA6BA;
+  --blue:var(--mkt-brand,#3B82F6); --sage:#6F8F7A;
+  /* Local aliases so this component is self-contained: it used to inherit
+     --border/--accent/--ink/--muted/--section/--mono from the old landing's
+     scoped stylesheet. It now maps them onto the shared marketing tokens (with
+     the original values as fallbacks), so it renders correctly wherever it is
+     embedded. */
+  --border:var(--mkt-border,#DDE3EA); --accent:var(--mkt-brand,#52677A); --ink:var(--mkt-ink,#0F1729);
+  --muted:var(--mkt-muted,#64748B); --section:var(--mkt-section,#EEF1F4);
+  --mono:var(--mkt-mono,ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace);
+  position:relative; padding:72px 0 0; }
 .ps::before{ content:""; position:absolute; inset:0; pointer-events:none; z-index:0;
-  background:radial-gradient(58% 44% at 74% 42%, rgba(82,103,122,0.08), transparent 66%); }
+  background:radial-gradient(58% 44% at 74% 42%, rgba(79,70,229,0.07), transparent 66%); }
 .ps > *{ position:relative; z-index:1; }
 .ps .ps-grid{ display:grid; grid-template-columns:1fr 1.14fr; gap:44px; align-items:start; margin-top:38px; }
 .ps .ps-steps{ display:flex; flex-direction:column; gap:4px; }
@@ -528,12 +538,12 @@ export default function ProductStory() {
   return (
     <section id="how" className="ps" aria-label={t('landingStoryStageLabel')}>
       <style>{PS_CSS}</style>
-      <div className="wrap center">
-        <span className="sec-label">{t('landingStoryLabel')}</span>
-        <h2 className="h2">{t('landingStoryTitle')}</h2>
-        <p className="sec-sub">{t('landingStorySub')}</p>
+      <div className="mkt-wrap">
+        <span className="mkt-eyebrow">{t('landingStoryLabel')}</span>
+        <h2 className="mkt-h2">{t('landingStoryTitle')}</h2>
+        <p className="mkt-sub">{t('landingStorySub')}</p>
       </div>
-      <div className="wrap">
+      <div className="mkt-wrap">
         <div className="ps-grid">
           <div className="ps-steps">
             {STEPS.map((s, i) => {

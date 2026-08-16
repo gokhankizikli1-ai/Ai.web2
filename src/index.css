@@ -1,3 +1,11 @@
+/* The public marketing design system (scoped to `.mkt`).
+   Imported HERE, before the Tailwind directives, so every Tailwind utility
+   still wins over a marketing base rule — e.g. `lg:hidden` on an element that
+   also carries `.mkt-btn`, or a `text-[…]` override on `.mkt-h2`. Importing it
+   from a component instead put it after the utility layer and silently
+   inverted that precedence. */
+@import './styles/marketing.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
