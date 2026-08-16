@@ -7,6 +7,8 @@ and disconnect deletes credential material.
 """
 from __future__ import annotations
 
+import json
+
 from datetime import datetime, timedelta
 
 import pytest
@@ -38,13 +40,20 @@ def test_refresh_token_encrypted_at_rest(gmail_store_db):
         access_token_expires="2999-01-01T00:00:00Z",
     )
     assert conn is not None
-    # Read the RAW row: the plaintext refresh token must never appear.
+    # Read the RAW authorization row in the SHARED connector authority (Gmail no
+    # longer owns a per-project credential table): the plaintext refresh token
+    # must never appear anywhere in it.
     from backend.services.orchestrator import _sqlite
     with _sqlite.connection(gmail_store_db) as c:
-        row = dict(c.execute("SELECT * FROM gmail_connections WHERE project_id=?", ("p1",)).fetchone())
-    assert "SECRET-REFRESH-1//abc" not in row["refresh_token_enc"]
-    assert row["refresh_token_enc"].startswith("f1:")
-    assert "ACCESS-1" not in row["access_token_enc"]
+        row = dict(c.execute(
+            "SELECT * FROM connector_authorizations WHERE id=?",
+            (conn.authorization_id,)).fetchone())
+    blob = json.dumps(row)
+    assert "SECRET-REFRESH-1//abc" not in blob
+    assert "ACCESS-1" not in blob
+    creds = json.loads(row["credentials_json"])
+    assert creds["refresh_token"].startswith("f1:")
+    assert creds["access_token"].startswith("f1:")
     # But it decrypts back correctly.
     assert gm_store.decrypt_refresh_token(conn) == "SECRET-REFRESH-1//abc"
 

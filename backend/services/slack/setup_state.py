@@ -143,11 +143,19 @@ def init_slack_setup_tables() -> None:
 
 def create_state(*, owner_user_id: str, project_id: str) -> str:
     """Mint and persist a one-time state bound to (user, project, provider).
-    Returns the opaque token. Raises ValueError on missing scope."""
+
+    `project_id` may be EMPTY for an ACCOUNT-LEVEL authorization: the user is
+    authorizing the provider for their Korvix account, not for one project, so
+    there is no project to bind yet (the project binding is a separate, explicit
+    step). The state is still ownership-bound to the authenticated user, still
+    one-time, and still short-lived — the properties that make the callback safe
+    do not depend on a project. Only the OWNER is required.
+
+    Returns the opaque state token. Raises ValueError on a missing owner."""
     owner_user_id = str(owner_user_id or "").strip()
     project_id = str(project_id or "").strip()
-    if not owner_user_id or not project_id:
-        raise ValueError("owner_user_id and project_id are required")
+    if not owner_user_id:
+        raise ValueError("owner_user_id is required")
     init_slack_setup_tables()
     token = secrets.token_urlsafe(32)  # 256 bits
     now = _now()

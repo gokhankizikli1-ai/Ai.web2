@@ -179,23 +179,28 @@ def oauth_callback(
         return _result_redirect(gmail="error", reason="invalid_state")
 
     project_id = consumed.project_id
+    # An ACCOUNT-LEVEL authorization carries no project: the user is connecting
+    # Gmail to their Korvix account, and binding it to a project is a separate,
+    # explicit act. `project_id` is then empty for the whole callback.
+    account_level = not project_id
 
     # 2. Denied consent / provider error (state was valid, so we can report the
     #    project context back).
     if error:
         return _result_redirect(gmail="error", reason="access_denied",
-                                project_id=project_id)
+                                project_id=project_id or None)
     if not code:
         return _result_redirect(gmail="error", reason="missing_code",
-                                project_id=project_id)
+                                project_id=project_id or None)
 
     # 3. Re-validate that the owning project still exists + belongs to the
     #    state's user (defence-in-depth against a project deleted/reassigned
-    #    mid-flow).
-    proj = projects_store.get_project(project_id)
-    if proj is None or proj.owner_user_id != consumed.owner_user_id:
-        return _result_redirect(gmail="error", reason="ownership_mismatch",
-                                project_id=project_id)
+    #    mid-flow). Skipped for an account-level flow — there is no project.
+    if not account_level:
+        proj = projects_store.get_project(project_id)
+        if proj is None or proj.owner_user_id != consumed.owner_user_id:
+            return _result_redirect(gmail="error", reason="ownership_mismatch",
+                                    project_id=project_id)
 
     # 4. Exchange the code server-side (client secret backend-only).
     try:
@@ -213,15 +218,18 @@ def oauth_callback(
     #    unless we already hold one for this project (reconnect keeps it).
     refresh_token = tokens.refresh_token
     if not refresh_token:
-        existing = gm_store.get_connection(project_id)
-        if existing and not existing.is_revoked and existing.refresh_token_enc:
+        # Reuse the credential we already hold for THIS OWNER'S Gmail
+        # authorization (account-level), which covers both the reconnect of an
+        # existing project and a re-consent with no project in flight.
+        existing_auth = gm_store.get_authorization_for_owner(consumed.owner_user_id)
+        if existing_auth is not None and not existing_auth.is_revoked:
             try:
-                refresh_token = gm_store.decrypt_refresh_token(existing)
+                refresh_token = existing_auth.decrypt("refresh_token")
             except CredentialEncryptionError:
                 refresh_token = ""
         if not refresh_token:
             return _result_redirect(gmail="error", reason="no_refresh_token",
-                                    project_id=project_id)
+                                    project_id=project_id or None)
 
     # 6. Read the connected account's own address (within gmail.readonly).
     google_email = gm_oauth.fetch_account_email(tokens.access_token)
@@ -231,6 +239,20 @@ def oauth_callback(
     from datetime import datetime, timedelta
     access_expires = (datetime.utcnow() + timedelta(seconds=max(0, tokens.expires_in))).isoformat() + "Z"
     try:
+        if account_level:
+            # Account-level: store the authorization ONLY. No project is exposed
+            # to Gmail by connecting it — a binding is a separate, explicit act.
+            auth = gm_store.authorize_account(
+                owner_user_id=consumed.owner_user_id,   # authoritative — from state
+                google_email=google_email,
+                scopes=tokens.scope or gm_config.scope_param(),
+                refresh_token=refresh_token,
+                access_token=tokens.access_token,
+                access_token_expires=access_expires,
+            )
+            if auth is None:
+                return _result_redirect(gmail="error", reason="store_failed")
+            return _result_redirect(gmail="connected")
         conn = gm_store.upsert_connection(
             project_id=project_id,
             owner_user_id=consumed.owner_user_id,   # authoritative — from state
@@ -242,7 +264,7 @@ def oauth_callback(
         )
     except CredentialEncryptionError:
         return _result_redirect(gmail="error", reason="encryption_unavailable",
-                                project_id=project_id)
+                                project_id=project_id or None)
     if conn is None:
         return _result_redirect(gmail="error", reason="store_failed",
                                 project_id=project_id)

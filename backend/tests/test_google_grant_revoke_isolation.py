@@ -134,6 +134,17 @@ def test_unknown_provider_with_separate_clients_fails_closed(grants, monkeypatch
         provider="not-a-google-connector", google_email="me@x.com") is False
 
 
+def test_unknown_provider_with_a_SHARED_client_also_fails_closed(grants):
+    """The default deployment shares one Google client. An unregistered provider
+    has no counter here, so the sibling scan would skip its own connections and
+    could answer "safe" for a grant this guard cannot reason about. Both client
+    configurations must refuse."""
+    assert google_grant.remote_revoke_is_safe(
+        provider="not-a-google-connector", google_email="me@x.com") is False
+    assert google_grant.remote_revoke_is_safe(
+        provider="", google_email="me@x.com") is False
+
+
 def test_store_failure_fails_closed(grants, monkeypatch):
     def _boom(email, *, exclude_project_id=""):
         raise RuntimeError("db is down")

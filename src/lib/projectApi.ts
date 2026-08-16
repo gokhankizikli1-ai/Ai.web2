@@ -23,6 +23,24 @@ export interface BindingResult {
   movedFrom?: string | null;
 }
 
+/**
+ * Cross-surface signal that a chat↔project binding changed on the SERVER.
+ *
+ * The chat sidebar renders project groups from the backend binding authority.
+ * When another surface (Project Overview, the chat kebab's Add/Move action, the
+ * deferred bind that fires after a new project chat's first turn) mutates that
+ * binding, the sidebar must re-read it — otherwise it shows a stale group until
+ * a full reload. This is a pure invalidation ping: it carries no state, so it
+ * can never become a second source of truth.
+ */
+export const PROJECT_BINDINGS_CHANGED_EVENT = 'korvix-project-bindings-changed';
+
+export function notifyProjectBindingsChanged(): void {
+  try {
+    window.dispatchEvent(new CustomEvent(PROJECT_BINDINGS_CHANGED_EVENT));
+  } catch { /* non-browser (tests/SSR) — nothing to notify */ }
+}
+
 /** The project a chat is currently filed under (null if none / unavailable). */
 export async function getThreadProject(threadId: string): Promise<string | null> {
   const data = await apiCall<{ project_id?: string | null }>(
@@ -54,6 +72,7 @@ export async function assignChatToProject(
     `/v2/sessions/threads/${encodeURIComponent(threadId)}/project`,
     { project_id: projectId },
   );
+  if (res.ok) notifyProjectBindingsChanged();
   return {
     ok: res.ok,
     status: res.status,
@@ -76,6 +95,7 @@ export async function bindThreadToProject(
     `/v2/sessions/threads/${encodeURIComponent(threadId)}/project`,
     { project_id: projectId },
   );
+  if (res.ok) notifyProjectBindingsChanged();
   return {
     ok: res.ok,
     status: res.status,
@@ -95,6 +115,7 @@ export async function removeThreadFromProject(threadId: string): Promise<Binding
     'DELETE',
     `/v2/sessions/threads/${encodeURIComponent(threadId)}/project`,
   );
+  if (res.ok) notifyProjectBindingsChanged();
   return { ok: res.ok, status: res.status, projectId: null, movedFrom: res.data?.removed_from ?? null };
 }
 
@@ -107,6 +128,7 @@ export async function removeChatFromProject(session: ChatSession): Promise<Bindi
     'DELETE',
     `/v2/sessions/threads/${encodeURIComponent(threadId)}/project`,
   );
+  if (res.ok) notifyProjectBindingsChanged();
   return { ok: res.ok, status: res.status, projectId: null, movedFrom: res.data?.removed_from ?? null };
 }
 

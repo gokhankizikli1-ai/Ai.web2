@@ -23,7 +23,7 @@ export const en: Record<string, string> = {
   coding: 'Coding', trading: 'Trading', business: 'Business', startup: 'Startup',
   agents: 'Agents', study: 'Study', creative: 'Creative', prompts: 'Prompts',
   export: 'Export', upgrade: 'Upgrade', commandPalette: 'Command Palette',
-  promptLibrary: 'Prompt Library', exportChat: 'Export Chat', contextPanel: 'Context Panel',
+  promptLibrary: 'Prompt Library', exportChat: 'Export Chat',
   watchlist: 'Watchlist', signals: 'Signals', sentiment: 'Sentiment', trending: 'Trending',
   all: 'All', stocks: 'Stocks', crypto: 'Crypto', deepThink: 'Deep Think',
   codeAssistant: 'Code Assistant', tradingIntel: 'Trading Intel', howCanIHelp: 'How can I help?',
@@ -320,6 +320,14 @@ export const en: Record<string, string> = {
   wbBetaOwnerLabel: "Owner testing",
   wbBetaOwnerUnlimited: "Unlimited personal builds",
   wbBetaOwnerSafety: "Global safety limits active",
+
+  // ── Chat sidebar: project groups + chat rows ──
+  projects: "Projects",
+  connectors: "Connectors",
+  projectsSidebarEmpty: "No projects yet — create one",
+  projectNoChats: "No chats in this project yet",
+  removeFromProject: "Remove from project",
+  deleteChat: "Delete chat",
 
   // ── Owner Cost Analytics (owner-only) ──
   navCostAnalytics: "Cost Analytics",

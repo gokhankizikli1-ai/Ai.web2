@@ -76,8 +76,14 @@ def test_ttl_is_clamped(monkeypatch):
 def test_missing_scope_rejected(state_db):
     with pytest.raises(ValueError):
         cal_state.create_state(owner_user_id="", project_id="p1")
-    with pytest.raises(ValueError):
-        cal_state.create_state(owner_user_id="uA", project_id="")
+    # An EMPTY project id is now legitimate: it is how an ACCOUNT-LEVEL
+    # authorization is minted (connect the provider once, bind projects later).
+    # The owner binding — the thing that actually makes the callback safe — is
+    # still required.
+    account_state = cal_state.create_state(owner_user_id="uA", project_id="")
+    consumed = cal_state.consume(account_state)
+    assert consumed is not None
+    assert consumed.owner_user_id == "uA" and consumed.project_id == ""
 
 
 # ── cross-connector state isolation ──────────────────────────────────────────

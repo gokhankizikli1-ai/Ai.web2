@@ -817,7 +817,10 @@ def test_status_redacts_a_stale_owners_workspace_metadata(client, app, env,
     _connected(client, app, monkeypatch, channels=("C_GENERAL", "C_PRODUCT"))
     from backend.services.orchestrator import _sqlite
     with _sqlite.connection(env) as c:
-        c.execute("UPDATE slack_connections SET owner_user_id='uSTALE' WHERE project_id='p1'")
+        # Owner drift, expressed in the SHARED connector authority: the project's
+        # Slack binding now records a different owner than the project's.
+        c.execute("UPDATE connector_project_bindings SET owner_user_id='uSTALE' "
+                  "WHERE project_id='p1' AND provider='slack'")
 
     _as(app, USER_A)
     r = client.get("/v2/slack/projects/p1/connection")
@@ -862,7 +865,10 @@ def test_a_stale_connection_stays_deletable_by_the_current_owner(client, app, en
     _connected(client, app, monkeypatch, channels=("C_GENERAL",))
     from backend.services.orchestrator import _sqlite
     with _sqlite.connection(env) as c:
-        c.execute("UPDATE slack_connections SET owner_user_id='uSTALE' WHERE project_id='p1'")
+        # Owner drift, expressed in the SHARED connector authority: the project's
+        # Slack binding now records a different owner than the project's.
+        c.execute("UPDATE connector_project_bindings SET owner_user_id='uSTALE' "
+                  "WHERE project_id='p1' AND provider='slack'")
 
     _as(app, USER_A)
     r = client.delete("/v2/slack/projects/p1/connection")
@@ -881,12 +887,17 @@ def test_a_stale_owner_marker_is_never_persisted(client, app, env, monkeypatch):
     _connected(client, app, monkeypatch)
     from backend.services.orchestrator import _sqlite
     with _sqlite.connection(env) as c:
-        c.execute("UPDATE slack_connections SET owner_user_id='uSTALE' WHERE project_id='p1'")
+        # Owner drift, expressed in the SHARED connector authority: the project's
+        # Slack binding now records a different owner than the project's.
+        c.execute("UPDATE connector_project_bindings SET owner_user_id='uSTALE' "
+                  "WHERE project_id='p1' AND provider='slack'")
     _as(app, USER_A)
     client.get("/v2/slack/projects/p1/connection")
     with _sqlite.connection(env) as c:
-        row = dict(c.execute("SELECT status FROM slack_connections WHERE project_id='p1'").fetchone())
-    assert row["status"] == sl_store.STATUS_CONNECTED
+        rows = [dict(r) for r in c.execute(
+            "SELECT status FROM connector_project_bindings "
+            "WHERE project_id='p1' AND provider='slack'").fetchall()]
+    assert rows and all(r["status"] == sl_store.STATUS_CONNECTED for r in rows)
     assert sl_store.STATUS_OWNER_MISMATCH == "owner_mismatch"
 
 
@@ -899,7 +910,10 @@ def test_a_connection_owned_by_another_account_fails_closed(client, app, env,
     _connected(client, app, monkeypatch)
     from backend.services.orchestrator import _sqlite
     with _sqlite.connection(env) as c:
-        c.execute("UPDATE slack_connections SET owner_user_id='uSTALE' WHERE project_id='p1'")
+        # Owner drift, expressed in the SHARED connector authority: the project's
+        # Slack binding now records a different owner than the project's.
+        c.execute("UPDATE connector_project_bindings SET owner_user_id='uSTALE' "
+                  "WHERE project_id='p1' AND provider='slack'")
     _as(app, USER_A)
     for call in (
         lambda: client.get("/v2/slack/projects/p1/pending-channels"),

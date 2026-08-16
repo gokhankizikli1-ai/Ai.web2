@@ -237,23 +237,28 @@ def oauth_callback(
         return _result_redirect(slack="error", reason="invalid_state")
 
     project_id = consumed.project_id
+    # An ACCOUNT-LEVEL install carries no project: the user is installing the
+    # Korvix app into their Slack workspace. Which Korvix project reads which
+    # channels stays a separate, explicit act.
+    account_level = not project_id
 
     # 2. Denied consent / provider error (state was valid, so we can report the
     #    project context back).
     if error:
         return _result_redirect(slack="error", reason="access_denied",
-                                project_id=project_id)
+                                project_id=project_id or None)
     if not code:
         return _result_redirect(slack="error", reason="missing_code",
-                                project_id=project_id)
+                                project_id=project_id or None)
 
     # 3. Re-validate that the owning project still exists + belongs to the
     #    state's user (defence-in-depth against a project deleted/reassigned
-    #    mid-flow).
-    proj = projects_store.get_project(project_id)
-    if proj is None or proj.owner_user_id != consumed.owner_user_id:
-        return _result_redirect(slack="error", reason="ownership_mismatch",
-                                project_id=project_id)
+    #    mid-flow). Skipped for an account-level flow — there is no project.
+    if not account_level:
+        proj = projects_store.get_project(project_id)
+        if proj is None or proj.owner_user_id != consumed.owner_user_id:
+            return _result_redirect(slack="error", reason="ownership_mismatch",
+                                    project_id=project_id)
 
     # 4. Exchange the code server-side (client secret backend-only). The code
     #    itself is never stored — it lives only as this call's argument.
@@ -261,16 +266,31 @@ def oauth_callback(
         tokens = sl_oauth.exchange_code(code)
     except SlackOAuthError:
         return _result_redirect(slack="error", reason="exchange_failed",
-                                project_id=project_id)
+                                project_id=project_id or None)
     except (SlackConfigError, SlackError):
         return _result_redirect(slack="error", reason="server_error",
-                                project_id=project_id)
+                                project_id=project_id or None)
 
     # 5. Persist the installation with the BOT token ENCRYPTED at rest. A
     #    missing encryption key fails closed (no plaintext ever written). The
     #    connection lands in `pending_selection`: nothing syncs until the user
     #    explicitly chooses WHICH channels belong to this Korvix project.
     try:
+        if account_level:
+            # Account-level: store the workspace authorization ONLY. No channel
+            # is read, and no project is exposed, until the user binds one.
+            auth = sl_store.authorize_account(
+                owner_user_id=consumed.owner_user_id,   # authoritative — from state
+                bot_token=tokens.access_token,
+                team_id=tokens.team_id,                 # authoritative — from token
+                team_name=tokens.team_name,
+                bot_user_id=tokens.bot_user_id,
+                app_id=tokens.app_id,
+                scopes=tokens.scope,
+            )
+            if auth is None:
+                return _result_redirect(slack="error", reason="store_failed")
+            return _result_redirect(slack="authorized")
         conn = sl_store.upsert_installation(
             project_id=project_id,
             owner_user_id=consumed.owner_user_id,   # authoritative — from state
@@ -283,7 +303,7 @@ def oauth_callback(
         )
     except CredentialEncryptionError:
         return _result_redirect(slack="error", reason="encryption_unavailable",
-                                project_id=project_id)
+                                project_id=project_id or None)
     if conn is None:
         return _result_redirect(slack="error", reason="store_failed",
                                 project_id=project_id)

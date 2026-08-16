@@ -75,8 +75,14 @@ def test_unknown_state_is_rejected_indistinguishably(db):
 def test_state_requires_an_owner_and_project(db):
     with pytest.raises(ValueError):
         sl_setup.create_state(owner_user_id="", project_id="p1")
-    with pytest.raises(ValueError):
-        sl_setup.create_state(owner_user_id="uA", project_id="")
+    # An EMPTY project id is now legitimate: it is how an ACCOUNT-LEVEL
+    # authorization is minted (connect the provider once, bind projects later).
+    # The owner binding — the thing that makes the callback safe — is still
+    # required.
+    account_state = sl_setup.create_state(owner_user_id="uA", project_id="")
+    consumed = sl_setup.consume(account_state)
+    assert consumed is not None
+    assert consumed.owner_user_id == "uA" and consumed.project_id == ""
 
 
 def test_purge_removes_expired_states_only(db):

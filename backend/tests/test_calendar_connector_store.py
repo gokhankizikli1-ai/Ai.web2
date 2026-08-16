@@ -52,13 +52,19 @@ def _connect(project_id="p1", owner="uA", email="me@x.com",
 def test_refresh_token_encrypted_at_rest(cal_db):
     conn = _connect()
     assert conn is not None
+    # Read the RAW authorization row in the SHARED connector authority (Calendar
+    # no longer owns a per-project credential table).
+    import json as _json
     from backend.services.orchestrator import _sqlite
     with _sqlite.connection(cal_db) as c:
         row = dict(c.execute(
-            "SELECT * FROM calendar_connections WHERE project_id=?", ("p1",)).fetchone())
-    assert "SECRET-REFRESH-1//abc" not in row["refresh_token_enc"]
-    assert "ACCESS-1" not in row["access_token_enc"]
-    assert credential_crypto.is_envelope(row["refresh_token_enc"])
+            "SELECT * FROM connector_authorizations WHERE id=?",
+            (conn.authorization_id,)).fetchone())
+    blob = _json.dumps(row)
+    assert "SECRET-REFRESH-1//abc" not in blob
+    assert "ACCESS-1" not in blob
+    creds = _json.loads(row["credentials_json"])
+    assert credential_crypto.is_envelope(creds["refresh_token"])
     # …and it round-trips through the SAME shared credential authority.
     assert cal_store.decrypt_refresh_token(conn) == "SECRET-REFRESH-1//abc"
 
@@ -159,8 +165,13 @@ def test_count_connected_for_email(cal_db):
     assert cal_store.count_connected_for_email("ME@X.COM") == 2   # case-insensitive
     assert cal_store.count_connected_for_email("me@x.com", exclude_project_id="p1") == 1
     assert cal_store.count_connected_for_email("") == 0           # unknown ⇒ no match
+    # Revocation is ACCOUNT-level truth: p1 and p2 are two project bindings on
+    # ONE Google authorization, so a rejected grant takes both down. (Before the
+    # shared authority these were two independent rows holding two copies of the
+    # same refresh token, and revoking one left the other claiming to be live —
+    # which it was not.)
     cal_store.mark_revoked("p2")
-    assert cal_store.count_connected_for_email("me@x.com") == 1   # revoked ≠ live
+    assert cal_store.count_connected_for_email("me@x.com") == 0   # revoked ≠ live
 
 
 # ── Gmail isolation at the STORE layer ───────────────────────────────────────

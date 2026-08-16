@@ -108,6 +108,12 @@ def remote_revoke_is_safe(*, provider: str, google_email: str,
     if not email:
         # Identity unknown ⇒ we cannot prove no sibling shares this account.
         return False
+    if provider not in _LIVE_CONNECTION_COUNTERS:
+        # An unregistered provider has no counter, so the scan below would skip
+        # its own connections entirely and could answer "safe" for a grant we
+        # cannot actually reason about. Fail closed, in BOTH client
+        # configurations — the separate-client branch already did.
+        return False
     if not _shares_google_client():
         # Independent Google clients ⇒ independent grants for the OTHER
         # connectors. This connector's own other projects still share a client
@@ -128,4 +134,75 @@ def remote_revoke_is_safe(*, provider: str, google_email: str,
     return True
 
 
-__all__ = ["PROVIDER_GMAIL", "PROVIDER_CALENDAR", "remote_revoke_is_safe"]
+def _gmail_live_authorizations(google_email: str, exclude_authorization_id: str) -> int:
+    from backend.services.gmail import store as gm_store
+    return gm_store.count_live_authorizations_for_email(
+        google_email, exclude_authorization_id=exclude_authorization_id)
+
+
+def _calendar_live_authorizations(google_email: str, exclude_authorization_id: str) -> int:
+    from backend.services.google_calendar import store as cal_store
+    return cal_store.count_live_authorizations_for_email(
+        google_email, exclude_authorization_id=exclude_authorization_id)
+
+
+# provider key → "how many LIVE ACCOUNT AUTHORIZATIONS does this connector hold
+# for this Google account, ignoring one of them?". Extend this map (and nothing
+# else) when a third Google connector ships.
+_LIVE_AUTHORIZATION_COUNTERS: Dict[str, Callable[[str, str], int]] = {
+    PROVIDER_GMAIL: _gmail_live_authorizations,
+    PROVIDER_CALENDAR: _calendar_live_authorizations,
+}
+
+
+def remote_revoke_is_safe_for_authorization(
+    *, provider: str, google_email: str, authorization_id: str = "",
+) -> bool:
+    """The ACCOUNT-LEVEL counterpart of `remote_revoke_is_safe`.
+
+    Since Korvix moved provider authorization from per-project rows to ONE
+    account-level authorization per (owner, provider, Google account), the right
+    question at an account disconnect is no longer "does another PROJECT still
+    use this?" but "does another Google AUTHORIZATION still depend on this
+    grant?". An authorization with zero project bindings still holds a live
+    grant, so counting bindings would under-count and wrongly permit a revoke
+    that breaks the sibling connector.
+
+    Same fail-closed contract: an unknown account identity, an unreadable store,
+    or an unknown provider all return False (skip the remote revoke). Skipping is
+    safe — the local credential is deleted either way, and the user can remove
+    the grant entirely at myaccount.google.com.
+
+    Call this BEFORE deleting the authorization, so the row being removed is the
+    only one excluded."""
+    provider = str(provider or "").strip().lower()
+    email = str(google_email or "").strip()
+    auth_id = str(authorization_id or "").strip()
+    if not email:
+        # Identity unknown ⇒ we cannot prove no sibling shares this account.
+        return False
+    if provider not in _LIVE_AUTHORIZATION_COUNTERS:
+        # See the note in `remote_revoke_is_safe`: an unregistered provider is
+        # not something this guard can reason about, so it never gets a "safe".
+        return False
+    if not _shares_google_client():
+        counter = _LIVE_AUTHORIZATION_COUNTERS.get(provider)
+        if counter is None:
+            return False
+        try:
+            return counter(email, auth_id) <= 0
+        except Exception:  # pragma: no cover — defensive
+            return False
+    for key, counter in _LIVE_AUTHORIZATION_COUNTERS.items():
+        try:
+            if counter(email, auth_id if key == provider else "") > 0:
+                return False
+        except Exception:  # pragma: no cover — defensive
+            return False
+    return True
+
+
+__all__ = [
+    "PROVIDER_GMAIL", "PROVIDER_CALENDAR", "remote_revoke_is_safe",
+    "remote_revoke_is_safe_for_authorization",
+]

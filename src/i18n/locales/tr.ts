@@ -16,7 +16,7 @@ export const tr: Record<string, string> = {
   coding: 'Kodlama', trading: 'Ticaret', business: 'İş', startup: 'Girişim',
   agents: 'Ajanlar', study: 'Çalışma', creative: 'Yaratıcı', prompts: 'Komutlar',
   export: 'Dışa Aktar', upgrade: 'Yükselt', commandPalette: 'Komut Paleti',
-  promptLibrary: 'Komut Kütüphanesi', exportChat: 'Sohbeti Dışa Aktar', contextPanel: 'Bağlam Paneli',
+  promptLibrary: 'Komut Kütüphanesi', exportChat: 'Sohbeti Dışa Aktar',
   watchlist: 'İzleme Listesi', signals: 'Sinyaller', sentiment: 'Duyarlılık', trending: 'Popüler',
   all: 'Tümü', stocks: 'Hisseler', crypto: 'Kripto', deepThink: 'Derin Düşünme',
   codeAssistant: 'Kod Asistanı', tradingIntel: 'Ticaret İstihbaratı', howCanIHelp: 'Nasıl yardımcı olabilirim?',
@@ -313,6 +313,14 @@ export const tr: Record<string, string> = {
   wbBetaOwnerLabel: "Sahip testi",
   wbBetaOwnerUnlimited: "Sınırsız kişisel yapı",
   wbBetaOwnerSafety: "Küresel güvenlik limitleri etkin",
+
+  // ── Sohbet kenar cubugu: proje gruplari + sohbet satirlari ──
+  projects: "Projeler",
+  connectors: "Baglantilar",
+  projectsSidebarEmpty: "Henuz proje yok — bir tane olustur",
+  projectNoChats: "Bu projede henuz sohbet yok",
+  removeFromProject: "Projeden kaldir",
+  deleteChat: "Sohbeti sil",
 
   // ── Sahip Maliyet Analitiği (yalnızca sahip) ──
   navCostAnalytics: "Maliyet Analitiği",

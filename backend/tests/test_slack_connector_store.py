@@ -51,11 +51,18 @@ def test_bot_token_is_never_stored_in_plaintext(db):
     assert BOT_TOKEN not in conn.bot_token_enc
     assert credential_crypto.is_envelope(conn.bot_token_enc)
     assert sl_store.decrypt_bot_token(conn) == BOT_TOKEN
-    # ...and the raw DB row carries no plaintext either.
+    # ...and the raw DB rows carry no plaintext either. The bot token lives on
+    # the ACCOUNT authorization in the shared connector authority — Slack no
+    # longer owns a per-project credential table.
     from backend.services.orchestrator import _sqlite
     with _sqlite.connection(db) as c:
-        row = dict(c.execute("SELECT * FROM slack_connections").fetchone())
+        row = dict(c.execute(
+            "SELECT * FROM connector_authorizations WHERE id=?",
+            (conn.authorization_id,)).fetchone())
+        bindings = [dict(r) for r in c.execute(
+            "SELECT * FROM connector_project_bindings WHERE provider='slack'").fetchall()]
     assert BOT_TOKEN not in json.dumps(row)
+    assert BOT_TOKEN not in json.dumps(bindings)
 
 
 def test_install_fails_closed_without_encryption(db):
