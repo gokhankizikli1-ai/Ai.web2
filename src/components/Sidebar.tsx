@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -8,8 +8,8 @@ import {
   PanelLeftClose, PanelLeftOpen,
   Crown, Search, X,
   LogIn, Sparkles, FolderOpen,
-  Bot, Plug, FileText, ChevronDown, Code2, Briefcase, MoreHorizontal,
-  BarChart3, Blocks,
+  Bot, Plug, FileText, ChevronDown, ChevronRight, Code2, Briefcase, MoreHorizontal,
+  BarChart3, Blocks, FolderMinus, Loader2, ArrowUpRight,
 } from 'lucide-react';
 import BrandLogo from '@/components/BrandLogo';
 import type { ChatSession, ChatFolder } from '@/types';
@@ -18,6 +18,10 @@ import { useLanguageStore } from '@/stores/languageStore';
 import { useOwnerMode } from '@/hooks/useOwnerMode';
 import { useBillingPlan } from '@/hooks/useBillingPlan';
 import { shouldShowUpgradeCta } from '@/lib/plan';
+import { removeThreadFromProject } from '@/lib/projectApi';
+import {
+  buildSidebarGroups, type ProjectChatRef, type SidebarChatItem,
+} from '@/lib/sidebarGroups';
 import DeleteConfirmModal from './DeleteConfirmModal';
 import UserAccountDropdown from './UserAccountDropdown';
 
@@ -34,6 +38,17 @@ interface SidebarProps {
   filteredSessions: ChatSession[];
   onOpenSettings: () => void;
   onOpenUpgrade: () => void;
+  /* ── Project grouping (backend-authoritative view; see lib/sidebarGroups) ── */
+  /** The user's projects (id + display name). */
+  projects?: { id: string; name: string }[];
+  /** projectId → chats filed under it, read from the sessions authority. */
+  projectChats?: Record<string, ProjectChatRef[]>;
+  /** sessionId → projectId for bindings that are still in flight. */
+  pendingProjectBindings?: Record<string, string>;
+  /** Open a chat known only by SERVER THREAD ID (resolves the real session). */
+  onOpenThread?: (threadId: string) => void;
+  /** Re-read the project↔chat index after a mutation. */
+  onProjectChatsChanged?: () => void;
 }
 
 /* ═══════════════════════════════════════════
@@ -42,7 +57,7 @@ interface SidebarProps {
 
 function timeAgo(date: Date): string {
   const s = Math.floor((Date.now() - date.getTime()) / 1000);
-  if (s < 60) return 'Just now';
+  if (s < 60) return 'Now';
   const m = Math.floor(s / 60);
   if (m < 60) return `${m}m`;
   const h = Math.floor(m / 60);
@@ -50,6 +65,25 @@ function timeAgo(date: Date): string {
   const d = Math.floor(h / 24);
   if (d < 7) return `${d}d`;
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+/** Which project groups are expanded. Per-identity is unnecessary (it holds no
+ *  data, only UI state), but it IS persisted so the sidebar doesn't re-collapse
+ *  on every navigation. A malformed/absent value degrades to "all collapsed". */
+const EXPANDED_KEY = 'korvix_sidebar_expanded_projects';
+
+function loadExpanded(): Record<string, boolean> {
+  try {
+    const raw = localStorage.getItem(EXPANDED_KEY);
+    if (!raw) return {};
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    const out: Record<string, boolean> = {};
+    for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof v === 'boolean') out[k] = v;
+    }
+    return out;
+  } catch { return {}; }
 }
 
 /* ═══════════════════════════════════════════
@@ -60,11 +94,15 @@ export default function Sidebar({
   isOpen, onToggle, filteredSessions, activeSessionId,
   searchQuery, onSearchChange, onSelect, onDelete, onNewChat,
   onOpenSettings, onOpenUpgrade,
+  projects = [], projectChats = {}, pendingProjectBindings = {},
+  onOpenThread, onProjectChatsChanged,
 }: SidebarProps) {
-  const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   // "More" expander for the Korvix Code / Korvix Work placeholders.
   const [moreOpen, setMoreOpen] = useState(false);
+  const [projectsOpen, setProjectsOpen] = useState(true);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>(loadExpanded);
+  const [unbinding, setUnbinding] = useState<string | null>(null);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   // While isHydrating is true, the footer renders neither the guest CTA
   // nor the user card — just a thin skeleton. This kills the
@@ -97,17 +135,6 @@ export default function Sidebar({
     catch { return false; }
   })();
   const sessionActive = isAuthenticated || isOwner || hasStoredToken;
-  // Dev-only debug log — never logs the token or email itself.
-  if (import.meta.env.DEV) {
-    // eslint-disable-next-line no-console
-    console.debug(
-      '[Sidebar] auth state',
-      {
-        isHydrating, isAuthenticated, isOwner,
-        hasStoredToken, sessionActive,
-      },
-    );
-  }
   const { t } = useLanguageStore();
   const navigate = useNavigate();
   const location = useLocation();
@@ -115,7 +142,42 @@ export default function Sidebar({
   // treatment used elsewhere). Only /owner/costs needs it today.
   const isCostsActive = location.pathname === '/owner/costs';
 
-  const displaySessions = filteredSessions;
+  useEffect(() => {
+    try { localStorage.setItem(EXPANDED_KEY, JSON.stringify(expanded)); }
+    catch { /* private mode — group state is UI-only, safe to lose */ }
+  }, [expanded]);
+
+  /* Grouping is a PURE function of (sessions, projects, backend membership,
+     pending requests) — see lib/sidebarGroups for the identity rules. */
+  const groups = useMemo(() => buildSidebarGroups({
+    sessions: filteredSessions,
+    projects,
+    projectChats,
+    pendingBindings: pendingProjectBindings,
+    search: searchQuery,
+    recentLimit: 12,
+  }), [filteredSessions, projects, projectChats, pendingProjectBindings, searchQuery]);
+
+  // The group that owns the ACTIVE chat defaults to EXPANDED, so opening a
+  // project chat from anywhere (sidebar, Project Overview deep link, refresh)
+  // always reveals it. This is a derived default, not stored state: an explicit
+  // user toggle is recorded in `expanded` and always wins (`?? ` only falls
+  // through when the user has never touched that group).
+  const activeProjectGroup = useMemo(() => {
+    for (const g of groups.projects) {
+      if (g.chats.some((c) => c.sessionId === activeSessionId)) return g.projectId;
+    }
+    return null;
+  }, [groups, activeSessionId]);
+
+  const unbindChat = useCallback(async (threadId: string) => {
+    setUnbinding(threadId);
+    // Non-destructive: the conversation and its messages stay; only the project
+    // binding is dropped (server-authoritative, ownership-enforced).
+    const res = await removeThreadFromProject(threadId);
+    setUnbinding(null);
+    if (res.ok) onProjectChatsChanged?.();
+  }, [onProjectChatsChanged]);
 
   // Shared Kimi-style nav row styles — larger, readable, comfortable spacing.
   // `min-w-0` lets the row shrink below its intrinsic content width, which is
@@ -127,77 +189,75 @@ export default function Sidebar({
   // t(...) so their length varies per language — this must hold for all of them,
   // not just the ones that happen to be short in English.
   const navLabel = 'flex-1 min-w-0 text-left truncate';
+  const sectionLabel = 'text-[9.5px] font-semibold uppercase tracking-[0.08em] text-white/25';
 
-  /* ─── Session row ─── */
-  const SessionRow = ({ session }: { session: ChatSession }) => {
-    const active = activeSessionId === session.id;
-    const hovered = hoveredId === session.id;
-
-    return (
-      <div
-        // min-w-0 + overflow-hidden so a long unbreakable chat title
-        // never pushes the row wider than the sidebar. Combined with
-        // the `truncate` on the <p> below, this is what makes the
-        // ellipsis actually appear on iPad landscape.
-        className="group/row relative min-w-0 overflow-hidden"
-        onMouseEnter={() => setHoveredId(session.id)}
-        onMouseLeave={() => setHoveredId(null)}
+  /* ─── Chat row ───
+     One compact line: icon · title · timestamp. The timestamp shares the row
+     with the title (it no longer takes a second line), so twelve chats fit in
+     the space seven used to. Selection is a soft tinted surface + a hairline
+     rail rather than a hard border/glow. */
+  const ChatRow = ({
+    title, updatedAt, active, onOpen, onRemove, removeLabel, removeIcon, busy,
+  }: {
+    title: string;
+    updatedAt: Date;
+    active: boolean;
+    onOpen: () => void;
+    onRemove: () => void;
+    removeLabel: string;
+    removeIcon: 'trash' | 'unbind';
+    busy?: boolean;
+  }) => (
+    <div className="group/row relative min-w-0 overflow-hidden">
+      <button
+        onClick={onOpen}
+        aria-current={active ? 'true' : undefined}
+        title={title}
+        className={`w-full min-w-0 flex items-center gap-2 rounded-lg pl-2 pr-7 h-[30px] text-left transition-colors duration-150 ${
+          active
+            ? 'bg-[#3B82F6]/[0.10] text-[#F1F5F9]'
+            : 'text-white/55 hover:bg-white/[0.045] hover:text-white/85'
+        }`}
       >
-        <button
-          onClick={() => onSelect(session.id)}
-          className={`w-full min-w-0 flex items-center gap-2 rounded-lg px-2.5 py-[6px] text-left transition-all duration-200 border ${
-            active
-              ? 'border-[#3B82F6]/25 shadow-[0_0_14px_-4px_rgba(59, 130, 246,0.20)]'
-              : 'border-transparent hover:border-[#3B82F6]/12'
+        {/* Selection rail — softer than the previous border + glow. */}
+        <span
+          aria-hidden
+          className={`absolute left-0 top-1/2 -translate-y-1/2 w-[2px] rounded-full transition-all duration-200 ${
+            active ? 'h-4 bg-[#60A5FA]' : 'h-0 bg-transparent'
           }`}
-          style={active
-            ? { background: 'rgba(59, 130, 246, 0.10)', color: '#F8FAFC' }
-            : { color: 'rgba(203, 213, 225,0.55)' }
-          }
-        >
-          {/* Active indicator dot */}
-          <div className={`w-[3px] h-[3px] rounded-full shrink-0 transition-all duration-300 ${
-            active ? 'bg-[#60A5FA] scale-100' : 'bg-transparent scale-0'
-          }`} />
+        />
+        <MessageSquare className={`h-3 w-3 shrink-0 ${active ? 'text-[#60A5FA]' : 'text-white/25'}`} />
+        <span className="flex-1 min-w-0 truncate whitespace-nowrap overflow-hidden text-ellipsis text-[11.5px] leading-none">
+          {title}
+        </span>
+        <span className="shrink-0 text-[9.5px] tabular-nums text-white/20 group-hover/row:opacity-0 transition-opacity">
+          {timeAgo(updatedAt)}
+        </span>
+      </button>
 
-          <MessageSquare className={`h-2.5 w-2.5 shrink-0 transition-colors ${active ? 'text-[#60A5FA]' : 'text-white/25'}`} />
+      {/* Row action — keyboard reachable (focus-visible), revealed on hover. */}
+      <button
+        onClick={(e) => { e.stopPropagation(); onRemove(); }}
+        disabled={busy}
+        aria-label={removeLabel}
+        title={removeLabel}
+        className="absolute right-0.5 top-1/2 -translate-y-1/2 p-1 rounded text-white/25 opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100 hover:text-[#F87171] hover:bg-[#F87171]/[0.08] focus:outline-none focus-visible:ring-1 focus-visible:ring-[#60A5FA]/50 transition-all disabled:opacity-40"
+      >
+        {busy
+          ? <Loader2 className="h-3 w-3 animate-spin" />
+          : removeIcon === 'trash'
+            ? <Trash2 className="h-3 w-3" />
+            : <FolderMinus className="h-3 w-3" />}
+      </button>
+    </div>
+  );
 
-          {/* Chat title wrapper — min-w-0 lets the flex child shrink
-              below intrinsic content width; overflow-hidden clips any
-              child that breaks the constraint anyway. */}
-          <div className="flex-1 min-w-0 overflow-hidden">
-            {/* Title text — `truncate` is Tailwind shorthand for
-                (overflow-hidden + text-overflow-ellipsis + whitespace-nowrap)
-                but we spell each one out explicitly so future Tailwind
-                config changes / purge tweaks can't silently drop one of
-                the three. block + w-full ensures the <p> actually
-                stretches across the wrapper so the ellipsis kicks in. */}
-            <p className={`block w-full text-[11px] truncate whitespace-nowrap overflow-hidden text-ellipsis leading-tight ${active ? 'text-white/80 font-medium' : 'text-white/50'}`}>
-              {session.title}
-            </p>
-            <span className="block w-full text-[9px] text-white/20 truncate">{timeAgo(session.updatedAt)}</span>
-          </div>
-        </button>
-
-        {/* Hover actions */}
-        {(active || hovered) && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.15 }}
-            className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 rounded-md p-0.5 z-10"
-            style={{ background: 'rgba(17, 23, 34,0.95)', backdropFilter: 'blur(8px)' }}
-          >
-            <button
-              onClick={(e) => { e.stopPropagation(); setDeleteTarget(session.id); }}
-              className="p-1 rounded text-white/30 hover:text-[#F87171] hover:bg-[#F87171]/[0.06] transition-all"
-            >
-              <Trash2 className="h-2.5 w-2.5" />
-            </button>
-          </motion.div>
-        )}
-      </div>
-    );
+  const openProjectChat = (c: SidebarChatItem) => {
+    // A chat present locally opens by its LOCAL id (what the active session is
+    // keyed on). One that exists only on the server is opened by THREAD id via
+    // the same resolver the Project Overview uses — never by minting a new chat.
+    if (c.sessionId) onSelect(c.sessionId);
+    else if (c.threadId && onOpenThread) onOpenThread(c.threadId);
   };
 
   return (
@@ -208,6 +268,7 @@ export default function Sidebar({
           <button
             onClick={onToggle}
             className="h-8 w-8 flex items-center justify-center rounded-lg border border-white/[0.06] text-white/40 hover:text-white/70 hover:bg-white/[0.04] backdrop-blur-md transition-all"
+            aria-label="Open sidebar"
           >
             <PanelLeftOpen className="h-3.5 w-3.5" />
           </button>
@@ -228,11 +289,9 @@ export default function Sidebar({
        *     content; main content uses full width regardless of state.
        *
        *   lg+ (>= 1024px : iPad landscape, desktops):
-       *     `relative flex-none w-[320px]` flex SIBLING of main content.
-       *     The width is locked top-to-bottom (`w-[320px]` +
-       *     `min-w-[320px]` + `max-w-[320px]`) so no child can push it
-       *     wider. When closed, collapses to width 0 via the same
-       *     classes (lg:w-0 etc.) so main expands naturally.
+       *     `relative flex-none` flex SIBLING of main content. The width is
+       *     locked top-to-bottom so no child can push it wider. When closed,
+       *     it collapses to width 0 so main expands naturally.
        *
        * Width is set ENTIRELY via Tailwind utility classes (no inline
        * `style` width), so the lg: overrides take effect — an inline
@@ -249,7 +308,7 @@ export default function Sidebar({
           // Sub-lg: fixed overlay with slide-in/out
           'fixed inset-y-0 left-0 w-[min(260px,85vw)] max-w-[85vw]',
           isOpen ? 'translate-x-0' : '-translate-x-full',
-          // lg+: flex sibling with hard-locked 320px width
+          // lg+: flex sibling with hard-locked width
           'lg:relative lg:inset-y-auto lg:left-auto lg:translate-x-0 lg:flex-none',
           isOpen
             ? 'lg:w-[288px] lg:min-w-[288px] lg:max-w-[288px]'
@@ -278,7 +337,7 @@ export default function Sidebar({
         <ScrollArea className="flex-1 min-h-0 min-w-0">
           <div className="px-3 py-3 space-y-3 min-w-0">
 
-            {/* ═══ 1. NEW CHAT — prominent, top (Kimi-style) ═══ */}
+            {/* ═══ 1. NEW CHAT — prominent, top ═══ */}
             <motion.button
               whileTap={{ scale: 0.98 }}
               onClick={onNewChat}
@@ -292,21 +351,162 @@ export default function Sidebar({
               <Plus className="h-4 w-4" /> {t('newChat')}
             </motion.button>
 
-            {/* ═══ 2. PRIMARY NAV — Projects (all users) · owner-only launch surfaces ═══
-                 Phase 14A — Plugins, Skills and the entire More group (its only children
-                 are the unfinished Korvix Code / Korvix Work placeholders) are gated to the
-                 owner via the existing useOwnerMode authority. Normal users never see these
-                 dead placeholders in their DOM at all (no CSS-only hide). Projects stays
-                 visible to everyone; Agents was already owner-gated. */}
-            <div className="space-y-0.5">
-              <button type="button" onClick={() => navigate('/projects')} className={navRow}>
-                <FolderOpen className="h-4 w-4 shrink-0 text-white/50 group-hover:text-white/85 transition-colors" />
-                <span className={navLabel}>{t('projects') || 'Projects'}</span>
-              </button>
-              {/* Connectors — project-scoped integrations (Gmail, Google Calendar,
-                  GitHub, Vercel). Visible to
-                  every authenticated user, like Projects; the page itself gates on a
-                  selected project and reflects real backend connection status. */}
+            {/* ═══ 2. SEARCH ═══ */}
+            <div className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 transition-all" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)' }}>
+              <Search className="h-3 w-3 text-white/20 shrink-0" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => onSearchChange(e.target.value)}
+                placeholder={t('searchChats')}
+                className="flex-1 bg-transparent text-[11px] outline-none min-w-0 placeholder:text-white/20"
+                style={{ color: '#CBD5E1' }}
+              />
+              {searchQuery && (
+                <button onClick={() => onSearchChange('')} aria-label="Clear search" className="shrink-0 text-white/20 hover:text-white/40">
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </div>
+
+            {/* ═══ 3. PROJECTS — with their chats inline ═══
+                 Project navigation itself stays available (the header row opens
+                 /projects; each group's arrow opens that project's Overview), so
+                 nothing that used to be reachable became unreachable. */}
+            <div>
+              <div className="flex items-center justify-between py-1 px-1">
+                <button
+                  type="button"
+                  onClick={() => setProjectsOpen((v) => !v)}
+                  aria-expanded={projectsOpen}
+                  className="flex items-center gap-1.5 rounded px-0.5 py-0.5 hover:text-white/50 focus:outline-none focus-visible:ring-1 focus-visible:ring-[#60A5FA]/50"
+                >
+                  <ChevronRight className={`h-3 w-3 text-white/25 transition-transform ${projectsOpen ? 'rotate-90' : ''}`} />
+                  <span className={sectionLabel}>{t('projects') || 'Projects'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigate('/projects')}
+                  title={t('projects') || 'Projects'}
+                  aria-label="Open projects"
+                  className="h-5 w-5 flex items-center justify-center rounded text-white/25 hover:text-white/70 hover:bg-white/[0.05] transition-all"
+                >
+                  <ArrowUpRight className="h-3 w-3" />
+                </button>
+              </div>
+
+              {projectsOpen && (
+                projects.length === 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => navigate('/projects')}
+                    className="ml-3 w-[calc(100%-0.75rem)] text-left px-2 py-2 text-[10.5px] text-white/30 hover:text-white/60 transition-colors"
+                    style={{ borderLeft: '1px solid rgba(255,255,255,0.04)' }}
+                  >
+                    {t('projectsSidebarEmpty')}
+                  </button>
+                ) : (
+                  <div className="ml-3 min-w-0" style={{ borderLeft: '1px solid rgba(255,255,255,0.04)' }}>
+                    {groups.projects.map((g) => {
+                      const open = expanded[g.projectId] ?? (g.projectId === activeProjectGroup);
+                      return (
+                        <div key={g.projectId} className="min-w-0">
+                          <div className="group/proj relative flex items-center min-w-0">
+                            <button
+                              type="button"
+                              onClick={() => setExpanded((p) => ({ ...p, [g.projectId]: !open }))}
+                              aria-expanded={open}
+                              title={g.name}
+                              className="flex-1 min-w-0 flex items-center gap-1.5 pl-1.5 pr-6 h-[30px] rounded-lg text-left text-white/65 hover:text-white/95 hover:bg-white/[0.04] transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-[#60A5FA]/50"
+                            >
+                              <ChevronRight className={`h-3 w-3 shrink-0 text-white/25 transition-transform ${open ? 'rotate-90' : ''}`} />
+                              <FolderOpen className="h-3 w-3 shrink-0 text-white/35" />
+                              <span className="flex-1 min-w-0 truncate text-[11.5px] font-medium leading-none">{g.name}</span>
+                              {g.chats.length > 0 && (
+                                <span className="shrink-0 text-[9.5px] tabular-nums text-white/20">{g.chats.length}</span>
+                              )}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => navigate(`/projects/${g.projectId}`)}
+                              aria-label={`Open ${g.name}`}
+                              title={`Open ${g.name}`}
+                              className="absolute right-0.5 top-1/2 -translate-y-1/2 p-1 rounded text-white/25 opacity-0 group-hover/proj:opacity-100 focus-visible:opacity-100 hover:text-white/80 hover:bg-white/[0.06] focus:outline-none focus-visible:ring-1 focus-visible:ring-[#60A5FA]/50 transition-all"
+                            >
+                              <ArrowUpRight className="h-3 w-3" />
+                            </button>
+                          </div>
+
+                          {open && (
+                            <div className="pl-3 min-w-0">
+                              {g.chats.length === 0 ? (
+                                <p className="px-2 py-1.5 text-[10px] text-white/22">{t('projectNoChats')}</p>
+                              ) : g.chats.map((c) => (
+                                <ChatRow
+                                  key={c.key}
+                                  title={c.title}
+                                  updatedAt={c.updatedAt}
+                                  active={!!c.sessionId && c.sessionId === activeSessionId}
+                                  onOpen={() => openProjectChat(c)}
+                                  onRemove={() => { if (c.threadId) void unbindChat(c.threadId); }}
+                                  removeLabel={t('removeFromProject')}
+                                  removeIcon="unbind"
+                                  busy={!!c.threadId && unbinding === c.threadId}
+                                />
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )
+              )}
+            </div>
+
+            {/* ═══ 4. RECENT — standalone chats only ═══ */}
+            <div>
+              <div className="flex items-center justify-between py-1 px-1">
+                <span className={sectionLabel}>{t('recent')}</span>
+                <span className="text-[9.5px] text-white/15">{groups.recents.length}</span>
+              </div>
+
+              {groups.recents.length > 0 ? (
+                <div className="ml-3 min-w-0 overflow-hidden" style={{ borderLeft: '1px solid rgba(255,255,255,0.04)' }}>
+                  <div className="pl-2 min-w-0">
+                    {groups.recents.map((s) => (
+                      <ChatRow
+                        key={s.id}
+                        title={s.title}
+                        updatedAt={s.updatedAt}
+                        active={activeSessionId === s.id}
+                        onOpen={() => onSelect(s.id)}
+                        onRemove={() => setDeleteTarget(s.id)}
+                        removeLabel={t('deleteChat')}
+                        removeIcon="trash"
+                      />
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="py-4 text-center ml-3" style={{ borderLeft: '1px solid rgba(255,255,255,0.04)' }}>
+                  <MessageSquare className="h-4 w-4 text-white/10 mx-auto mb-1.5" />
+                  <p className="text-[11px] text-white/30 mb-0.5">{t('noChats')}</p>
+                  <p className="text-[9px] text-white/15">{t('startConversation')}</p>
+                </div>
+              )}
+            </div>
+
+            {/* ═══ 5. TOOLS — Connectors + owner-only launch surfaces ═══
+                 Phase 14A — Plugins, Skills and the entire More group (its only
+                 children are the unfinished Korvix Code / Korvix Work
+                 placeholders) are gated to the owner via the existing
+                 useOwnerMode authority. */}
+            <div className="space-y-0.5 pt-1">
+              {/* Connectors — the account's connected tools (Gmail, Google
+                  Calendar, GitHub, Vercel, Slack). Visible to every
+                  authenticated user; the page itself reflects real backend
+                  authorization status. */}
               <button
                 type="button"
                 onClick={() => navigate('/settings/integrations')}
@@ -314,7 +514,7 @@ export default function Sidebar({
                 className={`${navRow}${location.pathname === '/settings/integrations' ? ' bg-white/[0.06] text-white' : ''}`}
               >
                 <Blocks className="h-4 w-4 shrink-0 text-white/50 group-hover:text-white/85 transition-colors" />
-                <span className={navLabel}>Connectors</span>
+                <span className={navLabel}>{t('connectors')}</span>
               </button>
               {isOwner && (
                 <>
@@ -360,51 +560,6 @@ export default function Sidebar({
                     </div>
                   )}
                 </>
-              )}
-            </div>
-
-            {/* ═══ 3. SEARCH ═══ */}
-            <div className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 transition-all" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)' }}>
-              <Search className="h-3 w-3 text-white/20 shrink-0" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => onSearchChange(e.target.value)}
-                placeholder={t('searchChats')}
-                className="flex-1 bg-transparent text-[11px] outline-none min-w-0 placeholder:text-white/20"
-                style={{ color: '#CBD5E1' }}
-              />
-              {searchQuery && (
-                <button onClick={() => onSearchChange('')} className="shrink-0 text-white/20 hover:text-white/40">
-                  <X className="h-3 w-3" />
-                </button>
-              )}
-            </div>
-
-            {/* ═══ 4. RECENT CHATS ═══ */}
-            <div>
-              <div className="flex items-center justify-between py-1.5 px-1">
-                <div className="flex items-center gap-1.5">
-                  <div className="w-3 h-px bg-white/10" />
-                  <span className="text-[9px] font-semibold uppercase tracking-wider text-white/25">{t('recent')}</span>
-                </div>
-                <span className="text-[9px] text-white/15">{displaySessions.length}</span>
-              </div>
-
-              {displaySessions.length > 0 ? (
-                <div className="space-y-[1px] ml-3 min-w-0 overflow-hidden" style={{ borderLeft: '1px solid rgba(255,255,255,0.04)' }}>
-                  {displaySessions.map((s) => (
-                    <div key={s.id} className="pl-2 min-w-0">
-                      <SessionRow session={s} />
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="py-4 text-center ml-3" style={{ borderLeft: '1px solid rgba(255,255,255,0.04)' }}>
-                  <MessageSquare className="h-4 w-4 text-white/10 mx-auto mb-1.5" />
-                  <p className="text-[11px] text-white/30 mb-0.5">{t('noChats')}</p>
-                  <p className="text-[9px] text-white/15">{t('startConversation')}</p>
-                </div>
               )}
             </div>
 

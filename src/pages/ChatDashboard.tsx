@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useSearchParams, useNavigate, useLocation } from 'react-router';
 import { useChat, TAB_KEYS } from '@/hooks/useChat';
 import { useCommandPalette } from '@/hooks/useCommandPalette';
+import { useProjectChatIndex } from '@/hooks/useProjectChatIndex';
 import { useJobActivities } from '@/hooks/useJobs';
 import { useOrchestrationFeed } from '@/hooks/useOrchestrationFeed';
 import { useToast } from '@/hooks/useToast';
@@ -9,7 +10,6 @@ import { useApp } from '@/contexts/AppContext';
 import type { WorkspaceTab, ChatSession } from '@/types';
 
 import Sidebar from '@/components/Sidebar';
-import RightSidebar from '@/components/RightSidebar';
 import ChatView from '@/components/ChatView';
 import ChatWebBuild from '@/components/ChatWebBuild';
 import { getWebBuildSession } from '@/lib/webBuildSession';
@@ -40,8 +40,8 @@ import OwnerSessionIndicator from '@/components/OwnerSessionIndicator';
 import { useOwnerMode } from '@/hooks/useOwnerMode';
 
 import {
-  Settings, PanelLeftOpen, Command as CmdIcon,
-  Bookmark, Download, Sparkles, Zap, Bot, MoreHorizontal,
+  Settings, PanelLeftOpen, Bookmark,
+  Download, Sparkles, Zap, Bot, MoreHorizontal,
   FolderOpen,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -53,7 +53,19 @@ const DEMO_ACTIVITIES = [
   { id: 'act4', status: 'queued' as const, message: 'Weekly Trend Forecast', detail: 'Scheduled for 2:00 PM', timestamp: new Date() },
 ];
 
-// Secondary actions in toolbar dropdown.
+// Chat actions menu (the header kebab).
+//
+// PHASE 1 — the Chat screen is a CONVERSATION workspace, not a tool dashboard.
+// The old right-hand "Context Panel" aside and the palette-style action list
+// that opened it (Command Palette / Prompt Library / Context Panel / Upgrade
+// Plan) are gone: the panel rendered mock telemetry and permanently ate ~220px
+// of the conversation, and the other entries duplicate controls that already
+// exist (the plan badge and account menu handle upgrade; Cmd/Ctrl+K still opens
+// the palette as a dormant, shortcut-only surface).
+//
+// What remains here are the two actions that genuinely belong to the ACTIVE
+// conversation and have nowhere else to live: filing it under a project, and
+// exporting it.
 //
 // NOTE: there is intentionally NO "Owner Mode" entry here. Owner mode
 // activates automatically when an authenticated user's verified email
@@ -66,13 +78,9 @@ const DEMO_ACTIVITIES = [
 // the chip itself is gated on isOwner OR a stored token, so casual
 // users never see it).
 function ToolbarDropdown({
-  onCmd, onPrompts, onExport, onToggleRight, onUpgrade, activeSession,
+  onExport, activeSession,
 }: {
-  onCmd: () => void;
-  onPrompts: () => void;
   onExport: () => void;
-  onToggleRight: () => void;
-  onUpgrade: () => void;
   activeSession?: ChatSession | null;
 }) {
   const [open, setOpen] = useState(false);
@@ -90,11 +98,7 @@ function ToolbarDropdown({
   }, []);
 
   const items = [
-    { label: 'Command Palette', shortcut: 'Cmd+K', icon: CmdIcon, action: () => { onCmd(); setOpen(false); } },
-    { label: 'Prompt Library', shortcut: '', icon: Bookmark, action: () => { onPrompts(); setOpen(false); } },
     { label: 'Export Chat', shortcut: '', icon: Download, action: () => { onExport(); setOpen(false); } },
-    { label: 'Context Panel', shortcut: '', icon: Sparkles, action: () => { onToggleRight(); setOpen(false); } },
-    { label: 'Upgrade Plan', shortcut: '', icon: Zap, action: () => { onUpgrade(); setOpen(false); } },
   ];
 
   return (
@@ -116,7 +120,7 @@ function ToolbarDropdown({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 4, scale: 0.98 }}
             transition={{ duration: 0.15 }}
-            className={`absolute top-full right-0 mt-1.5 ${showProject ? 'w-60' : 'w-48'} rounded-xl border shadow-2xl overflow-hidden z-50 py-1`}
+            className={`absolute top-full right-0 mt-1.5 ${showProject ? 'w-60' : 'w-44'} rounded-xl border shadow-2xl overflow-hidden z-50 py-1`}
             style={{ borderColor: 'rgba(255,255,255,0.06)', background: 'rgba(17, 23, 34,0.96)', backdropFilter: 'blur(24px)' }}
           >
             {showProject && activeSession && (
@@ -150,15 +154,28 @@ export default function ChatDashboard() {
     activeSession, activeSessionId, error, isLoading,
     aiMode, searchQuery, filteredSessions, pinnedMessages, inputText, currentTab,
     createNewChat, selectSession, deleteSession, markSessionWebBuild,
-    startProjectChat, requestOpenSession, activeProjectId,
+    startProjectChat, requestOpenSession, activeProjectId, pendingProjectBindings,
     toolActivity,
     sendMessage, retry, togglePin,
     setAiMode, setSearchQuery, setInputText, switchTab,
     setPendingSessionTitle,
   } = useChat();
 
+  // Cmd/Ctrl+K remains as a DORMANT, shortcut-only surface (no permanent panel,
+  // no menu entry) — the infrastructure already existed, so it stays available
+  // to power users without occupying screen space.
   const { open: cmdOpen, setOpen: setCmdOpen } = useCommandPalette();
   const { toasts, addToast, removeToast } = useToast();
+
+  /* Sidebar project grouping — a READ-ONLY view of the backend chat↔project
+     binding (see hooks/useProjectChatIndex). The signature of known server
+     thread ids is the refresh trigger: a newly-synced thread is exactly when a
+     deferred binding lands. */
+  const threadSignature = useMemo(
+    () => filteredSessions.map((s) => s.serverThreadId || '').filter(Boolean).sort().join(','),
+    [filteredSessions],
+  );
+  const projectIndex = useProjectChatIndex(threadSignature);
 
   // Owner mode — used for gating (trading tab, command palette, mode
   // selector). The one-time owner GREETING is intentionally NOT injected
@@ -169,7 +186,8 @@ export default function ChatDashboard() {
   const ownerModeForGreeting = useOwnerMode();
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [rightSidebarOpen, setRightSidebarOpen] = useState(false);
+  // Prompt Library is now reachable ONLY from the dormant Cmd/Ctrl+K palette —
+  // it keeps the capability without a permanent surface of its own.
   const [promptLibOpen, setPromptLibOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -353,7 +371,6 @@ export default function ChatDashboard() {
       const w = window.innerWidth;
       if (w < 1024) setSidebarOpen(false);
       else setSidebarOpen(true);
-      if (w < 1280) setRightSidebarOpen(false);
     };
     check();
     window.addEventListener('resize', check);
@@ -540,10 +557,6 @@ export default function ChatDashboard() {
     { id: 'settings', label: t('settings'), shortcut: '', icon: <Settings className="h-3.5 w-3.5" />, category: 'Actions', action: () => setSettingsOpen(true) },
   ], [handleNewChat, handleTabChange, t, navigate, ownerModeForGreeting.isOwner]);
 
-  const insertInput = (text: string) => {
-    setInputText(text);
-  };
-
   // ─── Render workspace with per-mode isolation ───
   const renderWorkspace = () => {
     const isChatTab = ['chat', 'research', 'coding', 'startup', 'study', 'creative'].includes(activeTab);
@@ -634,7 +647,11 @@ export default function ChatDashboard() {
         onSelect={handleSelectSession}
         onDelete={deleteSession}
         onNewChat={handleNewChat}
-
+        projects={projectIndex.projects}
+        projectChats={projectIndex.projectChats}
+        pendingProjectBindings={pendingProjectBindings}
+        onOpenThread={requestOpenSession}
+        onProjectChatsChanged={projectIndex.refresh}
         onOpenSettings={() => setSettingsOpen(true)}
         onOpenUpgrade={() => setUpgradeOpen(true)}
       />
@@ -731,11 +748,7 @@ export default function ChatDashboard() {
                 (alongside Export Chat) — the natural, always-visible chat
                 actions surface — so it's discoverable instead of a lone icon. */}
             <ToolbarDropdown
-              onCmd={() => setCmdOpen(true)}
-              onPrompts={() => setPromptLibOpen(true)}
               onExport={() => setExportOpen(true)}
-              onToggleRight={() => setRightSidebarOpen(!rightSidebarOpen)}
-              onUpgrade={() => setUpgradeOpen(true)}
               activeSession={activeSession}
             />
           </div>
@@ -757,23 +770,11 @@ export default function ChatDashboard() {
               />
             ) : renderWorkspace()}
           </div>
-
-          <RightSidebar
-            isOpen={rightSidebarOpen}
-            onToggle={() => setRightSidebarOpen(!rightSidebarOpen)}
-            activeSession={activeSession}
-            activeTools={[]}
-            aiMode={aiMode}
-            pinnedMessages={pinnedMessages}
-            memoryRefs={[]}
-            isLoading={isLoading}
-            activeTab={activeTab}
-          />
         </div>
       </div>
 
-      {/* Overlays */}
-      <PromptLibrary open={promptLibOpen} onClose={() => setPromptLibOpen(false)} onSelect={insertInput} />
+      {/* Overlays — none of these occupy layout space until invoked. */}
+      <PromptLibrary open={promptLibOpen} onClose={() => setPromptLibOpen(false)} onSelect={setInputText} />
       <ExportChat open={exportOpen} onClose={() => setExportOpen(false)} session={activeSession} />
       <CommandPalette open={cmdOpen} onClose={() => setCmdOpen(false)} commands={commandItems} />
       <SettingsModal open={settingsOpen} onOpenChange={setSettingsOpen} onSettingsChange={handleSettingsChange} />

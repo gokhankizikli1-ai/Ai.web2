@@ -314,6 +314,14 @@ export const tr: Record<string, string> = {
   wbBetaOwnerUnlimited: "Sınırsız kişisel yapı",
   wbBetaOwnerSafety: "Küresel güvenlik limitleri etkin",
 
+  // ── Sohbet kenar cubugu: proje gruplari + sohbet satirlari ──
+  projects: "Projeler",
+  connectors: "Baglantilar",
+  projectsSidebarEmpty: "Henuz proje yok — bir tane olustur",
+  projectNoChats: "Bu projede henuz sohbet yok",
+  removeFromProject: "Projeden kaldir",
+  deleteChat: "Sohbeti sil",
+
   // ── Sahip Maliyet Analitiği (yalnızca sahip) ──
   navCostAnalytics: "Maliyet Analitiği",
   costTitle: "Web Build Maliyet Analitiği",

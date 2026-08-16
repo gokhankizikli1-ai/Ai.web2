@@ -570,6 +570,26 @@ export function useChat() {
   // no server thread until its first turn is mirrored, so binding is deferred to
   // exactly that lifecycle point — never faked with frontend-only metadata.
   const pendingProjectBindingsRef = useRef<Map<string, string>>(new Map());
+  // Render-visible mirror of the SAME pending map, so the sidebar can show a
+  // brand-new project chat under its project immediately instead of parking it
+  // in Recent until the first turn syncs. It is an in-flight REQUEST, never a
+  // stored relationship: the backend binding remains the only authority and
+  // replaces this the moment it exists (see lib/sidebarGroups).
+  const [pendingProjectBindings, setPendingProjectBindings] =
+    useState<Record<string, string>>({});
+  const setPendingBinding = useCallback((sessionId: string, projectId: string) => {
+    pendingProjectBindingsRef.current.set(sessionId, projectId);
+    setPendingProjectBindings((prev) => ({ ...prev, [sessionId]: projectId }));
+  }, []);
+  const clearPendingBinding = useCallback((sessionId: string) => {
+    pendingProjectBindingsRef.current.delete(sessionId);
+    setPendingProjectBindings((prev) => {
+      if (!(sessionId in prev)) return prev;
+      const next = { ...prev };
+      delete next[sessionId];
+      return next;
+    });
+  }, []);
 
   const prevLoadingRef = useRef<boolean>(false);
   useEffect(() => {
@@ -598,13 +618,14 @@ export function useChat() {
       if (pendingPid) {
         bindThreadToProject(threadId, pendingPid).then((res) => {
           if (res.ok || res.status === 404) {
-            pendingProjectBindingsRef.current.delete(activeId);
+            clearPendingBinding(activeId);
           }
+          // (bindThreadToProject itself notifies the sidebar on success.)
           // else: transient failure → keep pending, retried after the next turn.
         }).catch(() => { /* keep pending → retried next turn */ });
       }
     }).catch(() => { /* best-effort mirror — never disrupt the chat */ });
-  }, [isLoading]);
+  }, [isLoading, clearPendingBinding]);
 
   // Open a specific conversation requested by the Project Overview, which
   // identifies it by SERVER THREAD ID. This is NOT the same as the local
@@ -740,9 +761,14 @@ export function useChat() {
   /* ─── Sidebar: filter out empty auto-created sessions ───
      Only show sessions that have real messages (user-created chats).
      Keep the active session even if empty so the user isn't confused.
-     Limit to 7 most recent real conversations.
      Mode-shortcut empty sessions ("New Chat", "New Research" etc.)
-     are filtered out — they exist for tab isolation, not as history. */
+     are filtered out — they exist for tab isolation, not as history.
+
+     NOT truncated here. The sidebar now groups these into per-project buckets
+     plus a standalone Recent list, and the cap belongs to the RECENT list only
+     (see lib/sidebarGroups). Truncating at the source silently hid project
+     chats past the cut — a chat filed under a project could vanish from its
+     group purely because seven newer conversations existed. */
   const filteredSessions = sessions
     .filter((s) => {
       // Always include the active session
@@ -759,9 +785,8 @@ export function useChat() {
       if (!searchQuery) return true;
       return s.title.toLowerCase().includes(searchQuery.toLowerCase());
     })
-    // Sort by most recently updated, limit to 7 visible in sidebar
-    .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
-    .slice(0, 7);
+    // Sort by most recently updated (newest first).
+    .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
 
   /* ─── Pending session title (handoff auto-naming) ───
      Startup Radar → Advisor/Builder handoffs (and any future flow) can
@@ -830,9 +855,9 @@ export function useChat() {
      turn is mirrored). No Web/App Build is involved. */
   const startProjectChat = useCallback((projectId: string) => {
     const id = createNewChat();
-    if (projectId) pendingProjectBindingsRef.current.set(id, projectId);
+    if (projectId) setPendingBinding(id, projectId);
     return id;
-  }, [createNewChat]);
+  }, [createNewChat, setPendingBinding]);
 
   const selectSession = useCallback((id: string) => {
     setActiveSessionId(id);
@@ -904,6 +929,9 @@ export function useChat() {
   }, [activeSessionId]);
 
   const deleteSession = useCallback((id: string) => {
+    // A deleted chat can no longer be filed anywhere — drop any in-flight
+    // binding request so it cannot resurface under a project group.
+    clearPendingBinding(id);
     setSessions((prev) => {
       const filtered = prev.filter((s) => s.id !== id);
       if (filtered.length === 0) {
@@ -919,7 +947,7 @@ export function useChat() {
       return filtered;
     });
     setError(null);
-  }, [activeSessionId, currentTab]);
+  }, [activeSessionId, currentTab, clearPendingBinding]);
 
   const doSend = useCallback(async (
     content: string,
@@ -1561,6 +1589,9 @@ export function useChat() {
     startProjectChat,
     requestOpenSession,
     activeProjectId,
+    // In-flight (not-yet-synced) project binding requests, for optimistic
+    // sidebar grouping only. The backend binding is still the authority.
+    pendingProjectBindings,
     selectSession,
     markSessionWebBuild,
     deleteSession,

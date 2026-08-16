@@ -321,6 +321,14 @@ export const en: Record<string, string> = {
   wbBetaOwnerUnlimited: "Unlimited personal builds",
   wbBetaOwnerSafety: "Global safety limits active",
 
+  // ── Chat sidebar: project groups + chat rows ──
+  projects: "Projects",
+  connectors: "Connectors",
+  projectsSidebarEmpty: "No projects yet — create one",
+  projectNoChats: "No chats in this project yet",
+  removeFromProject: "Remove from project",
+  deleteChat: "Delete chat",
+
   // ── Owner Cost Analytics (owner-only) ──
   navCostAnalytics: "Cost Analytics",
   costTitle: "Web Build Cost Analytics",
