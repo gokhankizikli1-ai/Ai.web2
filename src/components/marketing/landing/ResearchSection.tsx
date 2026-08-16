@@ -1,4 +1,4 @@
-import { Globe, CornerDownRight } from 'lucide-react';
+import { Globe, CornerDownRight, ChevronDown, MessageSquare } from 'lucide-react';
 import { useLanguageStore } from '@/stores/languageStore';
 import { Reveal, IllustrativeTag, ArrowLink } from '@/components/marketing/primitives';
 
@@ -13,9 +13,13 @@ import { Reveal, IllustrativeTag, ArrowLink } from '@/components/marketing/primi
  *
  * What this section deliberately does NOT claim: that Korvix "knows
  * everything", remembers across accounts, or continuously monitors anything.
- * The panel is an illustrative composition — the source rows are unlabelled on
- * purpose, because inventing plausible-looking domains would be a fabricated
- * citation.
+ *
+ * The panel is an illustrative composition of REAL surfaces: the app's chat
+ * header, its user/assistant bubbles, and the exact source control an answer
+ * carries (`src/components/MessageSources.tsx` — a collapsed "Show sources · N"
+ * button that expands into favicon + title + domain rows tagged "Used"). Only
+ * the row TEXT is withheld: inventing plausible-looking domains would be a
+ * fabricated citation.
  */
 export default function ResearchSection() {
   const { t } = useLanguageStore();
@@ -53,36 +57,48 @@ export default function ResearchSection() {
 
           <Reveal delay={90}>
             <div className="mkt-panel">
-              <div className="mkt-pchrome">
-                <i aria-hidden="true" /><i aria-hidden="true" /><i aria-hidden="true" />
-                <span className="title">{t('resPanelTitle')}</span>
+              {/* The app's chat header, not a browser window: research happens
+                  inside a normal Korvix conversation. */}
+              <div className="mkt-hw-bar">
+                <MessageSquare aria-hidden="true" className="h-3.5 w-3.5 text-[color:var(--mkt-deep-muted)]" />
+                <span className="mkt-hw-crumb">{t('resPanelTitle')}</span>
                 <span className="ml-auto"><IllustrativeTag /></span>
               </div>
 
               <div className="space-y-3.5 p-4">
-                <p
-                  className="m-0 ml-auto max-w-[88%] rounded-xl rounded-br-sm px-3 py-2.5 text-[12.5px] leading-relaxed text-white"
-                  style={{ background: 'linear-gradient(180deg,#4f46e5,#4338ca)' }}
-                >
-                  {t('resPanelQuestion')}
-                </p>
+                <p className="mkt-hw-msg-user m-0">{t('resPanelQuestion')}</p>
 
                 <div className="rounded-xl border border-[color:var(--mkt-deep-border)] bg-[color:var(--mkt-deep-2)] p-3">
                   <p className="m-0 text-[12.5px] leading-relaxed text-[color:var(--mkt-deep-body)]">
                     {t('resPanelAnswer')}
                   </p>
-                  <div className="mt-3 border-t border-[color:var(--mkt-deep-line)] pt-2.5">
-                    <p className="mkt-mono m-0 mb-2 uppercase tracking-[0.08em] text-[color:var(--mkt-deep-muted)]">
-                      {t('resPanelSources')}
-                    </p>
-                    <ul className="m-0 list-none space-y-1.5 p-0" aria-hidden="true">
+                  {/* Sources exactly as the answer carries them in the product:
+                      a "Show sources · N" control, expanded. The rows stay
+                      unlabelled — inventing a domain would fabricate a
+                      citation. */}
+                  <div className="mt-3 border-t border-[color:var(--mkt-deep-line)] pt-2.5" aria-hidden="true">
+                    <span className="mkt-src-btn">
+                      <Globe className="h-3 w-3" />
+                      {t('sourceShowSources')} · 3
+                      <ChevronDown className="h-3 w-3 rotate-180" />
+                    </span>
+                    <div className="mkt-src-list">
                       {[74, 58, 66].map((w, i) => (
-                        <li key={i} className="flex items-center gap-2">
-                          <Globe className="h-3 w-3 shrink-0 text-[color:var(--mkt-deep-muted)]" />
-                          <span className="mkt-pline" style={{ width: `${w}%` }} />
-                        </li>
+                        <span key={i} className="mkt-src-row">
+                          <span className="mkt-src-fav">
+                            <Globe className="h-2.5 w-2.5" />
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="mkt-pline block" style={{ width: `${w}%` }} />
+                            <span
+                              className="mkt-pline mt-1 block"
+                              style={{ width: `${Math.round(w * 0.5)}%`, height: 4 }}
+                            />
+                          </span>
+                          <span className="mkt-src-used">{t('sourceUsed')}</span>
+                        </span>
                       ))}
-                    </ul>
+                    </div>
                   </div>
                 </div>
 

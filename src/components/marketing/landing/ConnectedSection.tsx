@@ -1,4 +1,4 @@
-import { ArrowRight, ArrowDown } from 'lucide-react';
+import { ArrowRight, ArrowDown, Sparkles } from 'lucide-react';
 import { useLanguageStore } from '@/stores/languageStore';
 import { useReveal } from '@/components/marketing/useReveal';
 import { CONNECTORS } from '@/lib/marketingNav';
@@ -85,14 +85,19 @@ export default function ConnectedSection() {
             <ArrowDown className="h-5 w-5 text-[color:var(--mkt-accent)] lg:hidden" />
           </div>
 
-          {/* Receiving panel */}
+          {/* Receiving panel — the project page's own Project intelligence
+              card, whose "Recent connector activity" list is where these
+              signals actually surface. */}
           <div className="mkt-panel">
-            <div className="mkt-pchrome">
-              <i aria-hidden="true" /><i aria-hidden="true" /><i aria-hidden="true" />
-              <span className="title">{t('connPanelTitle')}</span>
+            <div className="mkt-hw-bar">
+              <Sparkles aria-hidden="true" className="h-3.5 w-3.5 text-[#a5b4fc]" />
+              <span className="mkt-hw-crumb"><b>{t('heroWinIntel')}</b></span>
               <span className="ml-auto"><IllustrativeTag /></span>
             </div>
-            <ul className="m-0 list-none space-y-2.5 p-4">
+            <p className="mkt-mono m-0 px-4 pt-3.5 text-[9.5px] uppercase tracking-[0.1em] text-[color:var(--mkt-deep-muted)]">
+              {t('heroWinActivity')}
+            </p>
+            <ul className="m-0 list-none space-y-2.5 p-4 pt-2.5">
               {(
                 [
                   { id: 'github', key: 'connSignal1', d: 1 },

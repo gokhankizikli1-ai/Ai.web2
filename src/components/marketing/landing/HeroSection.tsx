@@ -1,7 +1,7 @@
 import { Link } from 'react-router';
 import {
   ArrowRight, ArrowUp, Plus, FolderKanban, MessageSquare, Globe, Smartphone,
-  Sparkles, Target, Globe as GlobeIcon,
+  Sparkles, Target, Blocks, ChevronDown, Globe as GlobeIcon,
 } from 'lucide-react';
 import { useLanguageStore } from '@/stores/languageStore';
 import { useAuthStore } from '@/stores/authStore';
@@ -16,12 +16,16 @@ import { ConnectorMark } from '@/components/marketing/primitives';
  * shell rather than a marketing composition:
  *
  *   • left rail      — New Chat, Projects, the chat list (src/components/Sidebar.tsx)
- *   • conversation   — a question, an answer, the cited sources (MessageSources),
- *                      an inline build result, and the composer with its
- *                      Chat / Website / App mode chips (KorvixModeChips)
- *   • right pane     — Project intelligence exactly as the project page renders
- *                      it: summary, Goals, Recent connector activity
- *                      (src/pages/ProjectOverview.tsx)
+ *   • conversation   — a question, an answer carrying the app's own collapsed
+ *                      "Show sources · N" control (src/components/MessageSources.tsx),
+ *                      an inline build result with its real actions (Open
+ *                      preview / Save to Project), and the composer with the
+ *                      Chat / Website / App picker — including the
+ *                      "Recommended" badge Website carries in the product
+ *                      (src/components/KorvixModeChips.tsx)
+ *   • right pane     — the project surface in its real order: Products &
+ *                      Builds, then Project intelligence (summary, Goals,
+ *                      Recent connector activity) — src/pages/ProjectOverview.tsx
  *
  * Everything shown maps to something the product does. The content is an
  * example project — stated in one quiet line under the window — and no metric,
@@ -120,18 +124,30 @@ export default function HeroSection() {
 
               <div className="mkt-hw-msg-ai">
                 <p className="m-0">{t('heroPanelReply')}</p>
-                <div className="mkt-hw-sources">
-                  <p className="mkt-mono m-0 mb-1.5 text-[9.5px] uppercase tracking-[0.09em] text-[color:var(--mkt-deep-muted)]">
-                    {t('resPanelSources')}
-                  </p>
-                  <ul className="m-0 max-w-[300px] list-none space-y-1.5 p-0" aria-hidden="true">
-                    {['82%', '58%'].map((w) => (
-                      <li key={w} className="flex items-center gap-2">
-                        <GlobeIcon className="h-3 w-3 shrink-0 text-[color:var(--mkt-deep-muted)]" />
-                        <Bar w={w} />
-                      </li>
+                {/* Sources exactly as the app attaches them: a collapsed
+                    "Show sources · N" control, expanded here so the behaviour
+                    is visible. Rows stay unlabelled — a plausible-looking
+                    domain would be a fabricated citation. */}
+                <div className="mkt-hw-sources" aria-hidden="true">
+                  <span className="mkt-src-btn">
+                    <GlobeIcon className="h-3 w-3" />
+                    {t('sourceShowSources')} · 2
+                    <ChevronDown className="h-3 w-3 rotate-180" />
+                  </span>
+                  <div className="mkt-src-list max-w-[320px]">
+                    {['76%', '54%'].map((w) => (
+                      <span key={w} className="mkt-src-row">
+                        <span className="mkt-src-fav">
+                          <GlobeIcon className="h-2.5 w-2.5" />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <Bar w={w} h={6} />
+                          <span className="mt-1 block"><Bar w="38%" h={4} /></span>
+                        </span>
+                        <span className="mkt-src-used">{t('sourceUsed')}</span>
+                      </span>
                     ))}
-                  </ul>
+                  </div>
                 </div>
               </div>
 
@@ -160,9 +176,16 @@ export default function HeroSection() {
                   <p className="m-0 mt-0.5 text-[11.5px] text-[color:var(--mkt-deep-muted)]">
                     {t('heroPanelBuildSub')}
                   </p>
-                  <span className="mkt-mono mt-2 inline-flex items-center gap-1.5 rounded-md border border-[color:var(--mkt-deep-border)] px-2 py-1 text-[10px] text-[color:var(--mkt-deep-body)]">
-                    {t('heroWinOpenPreview')}
-                    <ArrowRight aria-hidden="true" className="h-3 w-3" />
+                  {/* The two actions a finished build actually offers in chat. */}
+                  <span className="mt-2 flex flex-wrap items-center gap-1.5">
+                    <span className="mkt-mono inline-flex items-center gap-1.5 rounded-md border border-[color:var(--mkt-deep-border)] bg-white/[0.04] px-2 py-1 text-[10px] text-[color:var(--mkt-deep-ink)]">
+                      {t('heroWinOpenPreview')}
+                      <ArrowRight aria-hidden="true" className="h-3 w-3" />
+                    </span>
+                    <span className="mkt-mono inline-flex items-center gap-1.5 rounded-md border border-[color:var(--mkt-deep-border)] px-2 py-1 text-[10px] text-[color:var(--mkt-deep-muted)]">
+                      <FolderKanban aria-hidden="true" className="h-3 w-3" />
+                      {t('wbSaveToProject')}
+                    </span>
                   </span>
                 </div>
               </div>
@@ -177,14 +200,17 @@ export default function HeroSection() {
                 <p className="m-0 text-[12px] text-[color:var(--mkt-deep-muted)]">
                   {t('heroWinComposer')}
                 </p>
+                {/* The real composer picker: Chat is the neutral default and
+                    Website carries the product's own "Recommended" badge. */}
                 <div className="mt-2.5 flex items-center gap-1.5">
-                  <span className="mkt-hw-chip" data-active="true">
+                  <span className="mkt-mode" data-active="true">
                     <MessageSquare className="h-3 w-3" /> {t('heroWinModeChat')}
                   </span>
-                  <span className="mkt-hw-chip">
+                  <span className="mkt-mode">
                     <Globe className="h-3 w-3" /> {t('heroWinModeWebsite')}
+                    <span className="rec">{t('homeRecommended')}</span>
                   </span>
-                  <span className="mkt-hw-chip">
+                  <span className="mkt-mode">
                     <Smartphone className="h-3 w-3" /> {t('heroWinModeApp')}
                   </span>
                   <span className="mkt-hw-send">
@@ -194,63 +220,65 @@ export default function HeroSection() {
               </div>
             </div>
 
-            {/* Project intelligence */}
+            {/* The project surface, in the order the project page shows it:
+                Products & Builds, then Project intelligence (summary, goals,
+                recent connector activity). */}
             <div className="mkt-hw-intel">
-              <h3>
-                <Sparkles aria-hidden="true" className="h-3.5 w-3.5 text-[#a5b4fc]" />
-                {t('heroWinIntel')}
-              </h3>
-              <p>{t('heroCtxSummaryLine')}</p>
-
-              <p className="mkt-mono mb-1.5 mt-4 flex items-center gap-1.5 text-[9.5px] uppercase tracking-[0.09em] text-[color:var(--mkt-deep-muted)]">
-                <Target aria-hidden="true" className="h-3 w-3" />
-                {t('heroWinGoals')}
-              </p>
-              <ul className="m-0 list-none space-y-1.5 p-0">
-                {['heroGoal1', 'heroGoal2'].map((k) => (
-                  <li key={k} className="text-[11.5px] leading-snug text-[color:var(--mkt-deep-body)]">
-                    • {t(k)}
-                  </li>
-                ))}
-              </ul>
-
-              {/* Products — the project page lists what was generated for it. */}
-              <p className="mkt-mono mb-2 mt-4 text-[9.5px] uppercase tracking-[0.09em] text-[color:var(--mkt-deep-muted)]">
-                {t('heroWinProducts')}
-              </p>
-              <div className="flex items-center gap-2 rounded-lg border border-[color:var(--mkt-deep-border)] bg-[color:var(--mkt-deep-2)] px-2 py-1.5">
-                <span className="mkt-mono rounded border border-[color:var(--mkt-deep-border)] px-1.5 py-0.5 text-[9px] text-[color:var(--mkt-deep-muted)]">
-                  {t('heroWinProductTag')}
-                </span>
-                <span className="min-w-0 flex-1 truncate text-[11.5px] text-[color:var(--mkt-deep-body)]">
-                  {t('heroPanelBuild')}
-                </span>
+              <div className="mkt-pcard">
+                <div className="mkt-pcard-h">
+                  <Blocks aria-hidden="true" className="h-3.5 w-3.5 text-[#7dd3fc]" />
+                  {t('heroWinProducts')}
+                </div>
+                <div className="mkt-prow mt-1.5">
+                  <span className="mkt-ptag">{t('heroWinProductTag')}</span>
+                  <span className="min-w-0 flex-1 truncate">{t('heroPanelBuild')}</span>
+                </div>
               </div>
 
-              <p className="mkt-mono mb-2 mt-4 text-[9.5px] uppercase tracking-[0.09em] text-[color:var(--mkt-deep-muted)]">
-                {t('heroWinActivity')}
-              </p>
-              <ul className="m-0 list-none space-y-2 p-0">
-                <li className="mkt-hw-sig" data-new="true">
-                  <span className="mt-0.5 shrink-0 text-white/75">
-                    <ConnectorMark id="vercel" size={12} />
-                  </span>
-                  <span className="min-w-0 flex-1">{t('heroSignalVercel')}</span>
-                  <span className="mkt-hw-newdot mt-1.5 shrink-0" aria-hidden="true" />
-                </li>
-                <li className="mkt-hw-sig">
-                  <span className="mt-0.5 shrink-0 text-white/75">
-                    <ConnectorMark id="github" size={12} />
-                  </span>
-                  <span className="min-w-0 flex-1">{t('heroSignalGithub')}</span>
-                </li>
-                <li className="mkt-hw-sig">
-                  <span className="mt-0.5 shrink-0 text-white/75">
-                    <ConnectorMark id="slack" size={12} />
-                  </span>
-                  <span className="min-w-0 flex-1">{t('heroSignalSlack')}</span>
-                </li>
-              </ul>
+              <div className="mkt-pcard mt-3">
+                <h3 className="mkt-pcard-h">
+                  <Sparkles aria-hidden="true" className="h-3.5 w-3.5 text-[#a5b4fc]" />
+                  {t('heroWinIntel')}
+                </h3>
+                <p>{t('heroCtxSummaryLine')}</p>
+
+                <p className="mkt-mono mb-1.5 mt-3.5 flex items-center gap-1.5 text-[9.5px] uppercase tracking-[0.09em] text-[color:var(--mkt-deep-muted)]">
+                  <Target aria-hidden="true" className="h-3 w-3" />
+                  {t('heroWinGoals')}
+                </p>
+                <ul className="m-0 list-none space-y-1.5 p-0">
+                  {['heroGoal1', 'heroGoal2'].map((k) => (
+                    <li key={k} className="text-[11.5px] leading-snug text-[color:var(--mkt-deep-body)]">
+                      • {t(k)}
+                    </li>
+                  ))}
+                </ul>
+
+                <p className="mkt-mono mb-2 mt-3.5 text-[9.5px] uppercase tracking-[0.09em] text-[color:var(--mkt-deep-muted)]">
+                  {t('heroWinActivity')}
+                </p>
+                <ul className="m-0 list-none space-y-2 p-0">
+                  <li className="mkt-hw-sig" data-new="true">
+                    <span className="mt-0.5 shrink-0 text-white/75">
+                      <ConnectorMark id="vercel" size={12} />
+                    </span>
+                    <span className="min-w-0 flex-1">{t('heroSignalVercel')}</span>
+                    <span className="mkt-hw-newdot mt-1.5 shrink-0" aria-hidden="true" />
+                  </li>
+                  <li className="mkt-hw-sig">
+                    <span className="mt-0.5 shrink-0 text-white/75">
+                      <ConnectorMark id="github" size={12} />
+                    </span>
+                    <span className="min-w-0 flex-1">{t('heroSignalGithub')}</span>
+                  </li>
+                  <li className="mkt-hw-sig">
+                    <span className="mt-0.5 shrink-0 text-white/75">
+                      <ConnectorMark id="slack" size={12} />
+                    </span>
+                    <span className="min-w-0 flex-1">{t('heroSignalSlack')}</span>
+                  </li>
+                </ul>
+              </div>
             </div>
           </div>
         </div>

@@ -743,29 +743,11 @@
    (a class toggled by `useReveal`) — nothing loops, nothing floats forever.
    ══════════════════════════════════════════════════════════════════════════ */
 
-/* Shared panel chrome */
-.mkt-pchrome {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 11px 14px;
-  border-bottom: 1px solid var(--mkt-deep-line);
-  background: linear-gradient(180deg, #16203a, #101a2f);
-}
-.mkt-pchrome i {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: #2a3654;
-}
-.mkt-pchrome .title {
-  font-family: var(--mkt-mono);
-  font-size: 11px;
-  color: var(--mkt-deep-muted);
-  margin-left: 6px;
-}
-
-/* Small product-UI atoms used inside panels */
+/* Small product-UI atoms used inside panels.
+   (The generic three-dot "browser window" chrome that used to live here was
+   removed: every panel now carries the chrome of the Korvix surface it
+   represents — an app bar, a project card header, or the build preview's own
+   lock + address bar.) */
 .mkt-pline {
   display: block;
   height: 7px;
@@ -784,6 +766,176 @@
   border-radius: 50%;
   background: var(--mkt-accent);
   flex: none;
+}
+
+/* ── Real-UI atoms ────────────────────────────────────────────────────────
+   Every composed visual on this site is drawn from a surface that exists in
+   the product, so these atoms mirror the app's own components rather than a
+   generic SaaS mock-up:
+
+     .mkt-src-*   → MessageSources: the collapsed "Show sources · N" control
+                    under an assistant answer, and the expanded row (favicon
+                    initial, title, domain, "Used").
+     .mkt-mode    → KorvixModeChips: the composer's Chat / Website / App
+                    picker, including the "Recommended" badge Website carries.
+     .mkt-urlbar  → WebBuildPreview: the build preview's minimal chrome —
+                    a back control and a centred lock + address pill.
+     .mkt-pcard   → ProjectOverview: the project surface's Chats / Products &
+                    Builds / Project intelligence cards and their rows.
+
+   Source text and connector activity are always neutral placeholder lines or
+   clearly-example content: representing the UI honestly must never mean
+   inventing a citation, a metric or an account. */
+
+.mkt-src-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 9px;
+  border-radius: 8px;
+  border: 1px solid var(--mkt-deep-border);
+  background: rgba(255, 255, 255, 0.012);
+  font-size: 11px;
+  color: var(--mkt-deep-muted);
+}
+.mkt-src-list {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  border-radius: 12px;
+  border: 1px solid var(--mkt-deep-border);
+  background: #0b1424;
+}
+.mkt-src-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 7px;
+  border-radius: 8px;
+}
+.mkt-src-fav {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  flex: none;
+  border-radius: 50%;
+  border: 1px solid var(--mkt-deep-border);
+  background: var(--mkt-deep-2);
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--mkt-deep-muted);
+}
+.mkt-src-used {
+  font-family: var(--mkt-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mkt-deep-muted);
+  flex: none;
+}
+
+.mkt-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--mkt-deep-border);
+  background: rgba(255, 255, 255, 0.02);
+  font-size: 11.5px;
+  color: var(--mkt-deep-body);
+  white-space: nowrap;
+}
+.mkt-mode[data-active='true'] {
+  border-color: rgba(99, 102, 241, 0.45);
+  background: rgba(79, 70, 229, 0.14);
+  color: #c7d2fe;
+}
+.mkt-mode .rec {
+  font-family: var(--mkt-mono);
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border-radius: 999px;
+  padding: 1px 5px;
+  background: rgba(79, 70, 229, 0.2);
+  color: #c7d2fe;
+}
+
+.mkt-urlbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 40px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--mkt-deep-line);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--mkt-deep-muted);
+}
+.mkt-urlpill {
+  margin: 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--mkt-deep-border);
+  background: rgba(0, 0, 0, 0.28);
+  font-size: 11px;
+  color: var(--mkt-deep-muted);
+}
+
+.mkt-pcard {
+  border: 1px solid var(--mkt-deep-border);
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 14px;
+  padding: 12px 13px;
+}
+.mkt-pcard-h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--mkt-deep-ink);
+}
+.mkt-pcard-act {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 10.5px;
+  color: var(--mkt-deep-muted);
+  white-space: nowrap;
+}
+.mkt-prow {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 5px 6px;
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--mkt-deep-body);
+}
+.mkt-ptag {
+  font-family: var(--mkt-mono);
+  flex: none;
+  border-radius: 6px;
+  border: 1px solid var(--mkt-deep-border);
+  padding: 1px 6px;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mkt-deep-muted);
 }
 
 /* ── Hero ───────────────────────────────────────────────────────────────
@@ -1064,7 +1216,9 @@
 /* Project intelligence pane */
 .mkt-hw-intel {
   border-left: 1px solid var(--mkt-deep-line);
-  padding: 14px 13px;
+  /* The pane is a container for the project surface's own cards, which carry
+     their own padding — so it only holds them apart from the edges. */
+  padding: 12px 10px;
   background: rgba(255, 255, 255, 0.014);
 }
 .mkt-hw-intel h3 {

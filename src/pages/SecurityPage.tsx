@@ -1,5 +1,5 @@
 import { Link } from 'react-router';
-import { ShieldCheck, XCircle, FileCode2 } from 'lucide-react';
+import { ShieldCheck, XCircle } from 'lucide-react';
 import MarketingPage from '@/components/marketing/MarketingPage';
 import {
   EnglishOnlyNotice, OnThisPage, ResourceBody, ResourceHeader,
@@ -13,8 +13,9 @@ import {
  * Security page.
  *
  * Two rules shaped this page:
- *   1. Every claim names the code that backs it, so a reader (or an auditor,
- *      or a future maintainer) can check it instead of trusting a badge.
+ *   1. It speaks to the reader, not to an auditor reading the codebase. Claims
+ *      are stated in product terms; implementation detail (paths, modules,
+ *      internal document sections) stays out of the public surface.
  *   2. Everything we do NOT have is stated explicitly — no SOC 2, no ISO 27001,
  *      no HIPAA, no published penetration test, no 24/7 team, no SLA — because
  *      a trust page that only lists strengths is not a trust page.
@@ -67,13 +68,6 @@ export default function SecurityPage() {
                     </h3>
                     <p className="m-0 mt-2 max-w-[74ch] text-[14px] leading-relaxed text-[color:var(--mkt-body)]">
                       {claim.body}
-                    </p>
-                    <p className="m-0 mt-3 flex items-start gap-2 border-t border-[color:var(--mkt-border)] pt-3 text-[12px] leading-relaxed text-[color:var(--mkt-faint)]">
-                      <FileCode2 aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                      <span>
-                        <span className="font-semibold">{t('secEvidence')}</span>{' '}
-                        <span className="mkt-mono break-words">{claim.evidence}</span>
-                      </span>
                     </p>
                   </li>
                 ))}

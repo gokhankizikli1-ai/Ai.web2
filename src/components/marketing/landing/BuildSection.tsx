@@ -1,5 +1,5 @@
 import { Link } from 'react-router';
-import { Check } from 'lucide-react';
+import { Check, ArrowLeft, Lock } from 'lucide-react';
 import { useLanguageStore } from '@/stores/languageStore';
 import { Reveal, IllustrativeTag } from '@/components/marketing/primitives';
 import ProductStory from '@/components/landing/ProductStory';
@@ -21,29 +21,55 @@ import ProductStory from '@/components/landing/ProductStory';
  * delivery flow are still upcoming.
  */
 
-function WebFrame() {
+/** The build preview's own chrome: a back control and the centred lock +
+ *  address pill the standalone preview renders (src/pages/WebBuildPreview.tsx,
+ *  where `preview.korvix.build` is the address shown until a build has a slug). */
+function PreviewChrome() {
   const { t } = useLanguageStore();
   return (
+    <div className="mkt-urlbar">
+      <ArrowLeft aria-hidden="true" className="h-3.5 w-3.5" />
+      <span className="mkt-urlpill">
+        <Lock aria-hidden="true" className="h-2.5 w-2.5" />
+        <span className="mkt-mono">{t('buildWebFrameUrl')}</span>
+      </span>
+      <IllustrativeTag />
+    </div>
+  );
+}
+
+/** Web Build output: the generated page as the preview renders it — eyebrow
+ *  rule, headline, supporting line, one accent action, then the section cards
+ *  the document builder lays out (src/components/builder/WebBuildPreviewDocument.tsx).
+ *  Copy is withheld (lines, not words): the real page's words come from the
+ *  visitor's own brief. */
+function WebFrame() {
+  return (
     <div className="mkt-panel mt-6">
-      <div className="mkt-pchrome">
-        <i aria-hidden="true" /><i aria-hidden="true" /><i aria-hidden="true" />
-        <span className="title">{t('buildWebFrameUrl')}</span>
-        <span className="ml-auto"><IllustrativeTag /></span>
-      </div>
+      <PreviewChrome />
       <div className="space-y-3 p-4" aria-hidden="true">
-        <div className="rounded-lg bg-[color:var(--mkt-deep-2)] p-4">
-          <span className="mkt-pline mb-2 block" style={{ width: '46%', height: 11 }} />
-          <span className="mkt-pline mb-1.5 block" style={{ width: '72%' }} />
-          <span className="mkt-pline block" style={{ width: '58%' }} />
+        <div className="rounded-lg border border-[color:var(--mkt-deep-line)] bg-[color:var(--mkt-deep-2)] p-4">
+          <span className="mb-3 flex items-center gap-2">
+            <span className="block h-px w-5" style={{ background: 'var(--mkt-brand)' }} />
+            <span className="mkt-pline block" style={{ width: 54, height: 5 }} />
+          </span>
+          <span className="mkt-pline mb-2 block" style={{ width: '64%', height: 12 }} />
+          <span className="mkt-pline mb-1.5 block" style={{ width: '80%' }} />
+          <span className="mkt-pline block" style={{ width: '52%' }} />
           <span
-            className="mt-3 inline-block h-6 w-24 rounded-md"
-            style={{ background: 'linear-gradient(180deg,#4f46e5,#4338ca)' }}
+            className="mt-3.5 inline-block h-6 w-24 rounded-md"
+            style={{ background: 'var(--mkt-brand-deep)' }}
           />
         </div>
         <div className="grid grid-cols-3 gap-2">
           {[0, 1, 2].map((i) => (
             <div key={i} className="rounded-lg border border-[color:var(--mkt-deep-border)] bg-[color:var(--mkt-deep-2)] p-2.5">
-              <span className="mb-2 block h-6 w-6 rounded-md bg-white/[0.08]" />
+              <span
+                className="mb-2 grid h-6 w-6 place-items-center rounded-md text-[11px] font-semibold"
+                style={{ background: 'rgba(79,70,229,0.16)', color: '#c7d2fe' }}
+              >
+                ✓
+              </span>
               <span className="mkt-pline mb-1 block" style={{ width: '80%' }} />
               <span className="mkt-pline block" style={{ width: '55%' }} />
             </div>
@@ -54,35 +80,46 @@ function WebFrame() {
   );
 }
 
+/** App Build output: a multi-screen React application running in the SAME
+ *  browser preview — a planned screen list with client-side navigation, one
+ *  screen open. It is deliberately not drawn as a phone: App Build produces a
+ *  web-hostable SPA, not a native mobile app (src/lib/buildType.ts). Screen
+ *  names are an example app's, matching the honesty note under the section. */
 function AppFrame() {
   const { t } = useLanguageStore();
+  const screens = ['buildAppScreen1', 'buildAppScreen2', 'buildAppScreen3', 'buildAppScreen4'];
   return (
     <div className="mkt-panel mt-6">
-      <div className="mkt-pchrome">
-        <i aria-hidden="true" /><i aria-hidden="true" /><i aria-hidden="true" />
-        <span className="title">{t('buildAppFrameLabel')}</span>
-        <span className="ml-auto"><IllustrativeTag /></span>
-      </div>
-      <div className="grid grid-cols-[86px_minmax(0,1fr)]" aria-hidden="true">
-        <div className="space-y-2 border-r border-[color:var(--mkt-deep-line)] p-3">
-          {[0, 1, 2, 3].map((i) => (
-            <span
-              key={i}
-              className="flex items-center gap-1.5 rounded-md px-1.5 py-1.5"
-              style={i === 1 ? { background: 'rgba(79,70,229,0.18)' } : undefined}
+      <PreviewChrome />
+      <div className="grid grid-cols-[112px_minmax(0,1fr)] sm:grid-cols-[132px_minmax(0,1fr)]">
+        <div className="border-r border-[color:var(--mkt-deep-line)] p-3">
+          <p className="mkt-mono m-0 mb-2 text-[9px] uppercase tracking-[0.1em] text-[color:var(--mkt-deep-muted)]">
+            {t('buildAppFrameLabel')}
+          </p>
+          {screens.map((k, i) => (
+            <div key={k} className="mkt-prow px-2 py-1.5 text-[11.5px]" data-active={i === 0 ? 'true' : undefined}
+              style={i === 0 ? { background: 'rgba(79,70,229,0.16)', color: '#fff' } : undefined}
             >
-              <span className="h-1.5 w-1.5 rounded-full" style={{ background: i === 1 ? 'var(--mkt-accent)' : '#3d4a68' }} />
-              <span className="mkt-pline block" style={{ width: 34, height: 5 }} />
-            </span>
+              <span
+                className="h-1.5 w-1.5 shrink-0 rounded-full"
+                style={{ background: i === 0 ? 'var(--mkt-brand)' : '#3d4a68' }}
+                aria-hidden="true"
+              />
+              <span className="min-w-0 truncate">{t(k)}</span>
+            </div>
           ))}
         </div>
-        <div className="space-y-2.5 p-4">
-          <span className="mkt-pline block" style={{ width: '40%', height: 10 }} />
-          <div className="grid grid-cols-2 gap-2">
-            {[0, 1, 2, 3].map((i) => (
-              <div key={i} className="rounded-lg border border-[color:var(--mkt-deep-border)] bg-[color:var(--mkt-deep-2)] p-2.5">
-                <span className="mkt-pline mb-1.5 block" style={{ width: '70%' }} />
-                <span className="mkt-pline block" style={{ width: '45%' }} />
+        <div className="space-y-2.5 p-4" aria-hidden="true">
+          <div className="flex items-center justify-between">
+            <span className="mkt-pline block" style={{ width: 92, height: 10 }} />
+            <span className="mkt-pline block" style={{ width: 46, height: 16 }} />
+          </div>
+          <div className="divide-y divide-[color:var(--mkt-deep-line)] rounded-lg border border-[color:var(--mkt-deep-border)] bg-[color:var(--mkt-deep-2)]">
+            {['72%', '58%', '65%'].map((w) => (
+              <div key={w} className="flex items-center gap-2.5 px-3 py-2.5">
+                <span className="h-5 w-5 shrink-0 rounded-md bg-white/[0.06]" />
+                <span className="mkt-pline block" style={{ width: w, height: 5 }} />
+                <span className="mkt-pline ml-auto block" style={{ width: 26, height: 5 }} />
               </div>
             ))}
           </div>
