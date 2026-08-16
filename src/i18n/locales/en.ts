@@ -848,9 +848,6 @@ export const en: Record<string, string> = {
   landingStatusNext: 'Coming next',
 
   // hero
-  landingTypeWebsite: 'Website',
-  landingTypeWebApp: 'Web App',
-  landingTypeEcommerce: 'Ecommerce',
 
   // hero product demo (illustrative)
 
@@ -1085,7 +1082,7 @@ export const en: Record<string, string> = {
   heroWinNote: 'The Korvix workspace with an example project. Example content — not real account data.',
   heroWinAsk2: 'Then let’s fix the deployment first.',
   heroWinReply2: 'That failure is already in this project’s signals from Vercel — I’ll work from it.',
-  heroWinProducts: 'Products',
+  heroWinProducts: 'Products & Builds',
   heroWinProductTag: 'Web',
   heroPanelAsk: 'What should we fix before launch?',
   heroPanelReply: 'Two things stand out this week: the services page build is ready to review, and the last deployment failed.',
@@ -1110,18 +1107,12 @@ export const en: Record<string, string> = {
   ctxProjectTitle: 'The project holds it together',
   ctxProjectBody: 'A project is the unit Korvix reasons about. Open it and you see this piece of work — not a global pile of conversations.',
   ctxKeepsLabel: 'What a project keeps',
-  ctxKeep1: 'Its chats',
-  ctxKeep2: 'The products it generated',
-  ctxKeep3: 'A short working summary',
-  ctxKeep4: 'Current goals',
-  ctxKeep5: 'Recent signals from connected tools',
 
   /* ── Landing · connected intelligence ── */
   connEyebrow: 'Connected intelligence',
   connTitle: 'Korvix can see what’s happening around the project.',
   connLead: 'Connect the tools where the work already happens. Korvix reads them — and only reads them — and turns what it finds into signals attached to that project.',
   connCta: 'How connectors work',
-  connPanelTitle: 'Project signals',
   connPanelFoot: 'Signals stay attached to this project and are visible on its page.',
   connSignal1: 'Pull request opened on the booking flow',
   connSignal2: 'Production deployment failed',
@@ -1138,13 +1129,17 @@ export const en: Record<string, string> = {
   buildWebP1: 'Layouts built to hold up from phone to desktop.',
   buildWebP2: 'A real component and file structure you can read.',
   buildWebP3: 'Images chosen for the build, replaceable with your own.',
-  buildWebFrameUrl: 'Preview · generated site',
+  buildWebFrameUrl: 'preview.korvix.build',
   buildAppTitle: 'App Build',
   buildAppBody: 'Describe an application and Korvix plans its screens, routes and navigation, then generates a multi-screen React app that runs in the browser.',
   buildAppP1: 'Screens derived from what the app is for, not a fixed template.',
   buildAppP2: 'A navigation shell that fits the app type.',
   buildAppP3: 'Stateful flows you can click through in the preview.',
-  buildAppFrameLabel: 'Preview · generated app',
+  buildAppFrameLabel: 'Screens',
+  buildAppScreen1: 'Overview',
+  buildAppScreen2: 'Clients',
+  buildAppScreen3: 'Schedule',
+  buildAppScreen4: 'Settings',
   buildHonestyNote: 'App Build produces a web application that runs in a browser — not a native iOS/Android build. Publishing from Korvix and pushing a build into a repository are not available yet.',
   buildHonestyLink: 'What Build can do today',
 
@@ -1159,7 +1154,6 @@ export const en: Record<string, string> = {
   resPanelTitle: 'Chat · with sources',
   resPanelQuestion: 'What are people complaining about in booking tools right now?',
   resPanelAnswer: 'Three themes come up repeatedly: confusing rescheduling, hidden fees at checkout, and no-show handling.',
-  resPanelSources: 'Sources',
   resPanelCarry: 'Kept with the project — the next conversation starts from here.',
 
   /* ── Landing · who it’s for ── */
@@ -1343,9 +1337,8 @@ export const en: Record<string, string> = {
   helpMoreLinks: 'Also useful:',
   secTitle: 'Security',
   secEyebrow: 'Trust',
-  secLead: 'Korvix connects to accounts you care about, so this page states what it does, what it cannot do, and names the code behind each claim.',
-  secMeta: 'How KorvixAI handles project isolation, read-only connectors, credentials and connection flows — with the repository evidence for each claim.',
-  secEvidence: 'Evidence:',
+  secLead: 'Korvix connects to accounts you care about, so this page states plainly what it does, what it cannot do, and what it does not claim.',
+  secMeta: 'How KorvixAI handles project isolation, read-only connectors, credentials and connection flows — and what it does not claim.',
   secNonClaimsTitle: 'What we do not claim',
   secNonClaimsNav: 'What we do not claim',
   secNonClaimsLead: 'A trust page that only lists strengths is not a trust page. These are the things Korvix does not have today.',

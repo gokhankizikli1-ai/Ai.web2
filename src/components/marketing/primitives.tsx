@@ -86,11 +86,21 @@ export function ArrowLink({ to, children }: { to: string; children: ReactNode })
  * capabilities — this label keeps that explicit instead of implying a
  * screenshot of live data.
  */
-export function IllustrativeTag({ className = '' }: { className?: string }) {
+export function IllustrativeTag({
+  className = '',
+  tone = 'deep',
+}: {
+  className?: string;
+  /** `deep` sits on a dark product panel; `light` on a porcelain surface. */
+  tone?: 'deep' | 'light';
+}) {
   const { t } = useLanguageStore();
+  const toneCls = tone === 'light'
+    ? 'border-[color:var(--mkt-border-strong)] text-[color:var(--mkt-faint)]'
+    : 'border-white/15 text-[color:var(--mkt-deep-muted)]';
   return (
     <span
-      className={`mkt-mono rounded-md border border-white/15 px-2 py-1 text-[10px] uppercase tracking-[0.08em] text-[color:var(--mkt-deep-muted)] ${className}`}
+      className={`mkt-mono rounded-md border px-2 py-1 text-[10px] uppercase tracking-[0.08em] ${toneCls} ${className}`}
     >
       {t('mktIllustrative')}
     </span>

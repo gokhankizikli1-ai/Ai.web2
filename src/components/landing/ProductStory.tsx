@@ -58,12 +58,12 @@ const PS_CSS = `
    <h3> a real heading (button doesn't wrap the heading). */
 .ps .ps-step{ position:relative; border-left:2px solid var(--border); padding:18px 0 18px 20px; border-radius:0 12px 12px 0;
   transition:border-color .3s, background .3s, opacity .3s; opacity:.62; }
-.ps .ps-step[data-active="true"]{ opacity:1; border-left-color:var(--blue); background:linear-gradient(90deg, rgba(59,130,246,0.06), transparent 70%); }
+.ps .ps-step[data-active="true"]{ opacity:1; border-left-color:var(--blue); background:linear-gradient(90deg, rgba(79,70,229,0.07), transparent 70%); }
 .ps .ps-hit{ position:absolute; inset:0; z-index:2; background:transparent; border:0; padding:0; margin:0; cursor:pointer; border-radius:0 12px 12px 0; }
 .ps .ps-hit:focus-visible{ outline:2px solid var(--blue); outline-offset:-2px; }
 .ps .ps-step .sn{ display:inline-flex; align-items:center; justify-content:center; width:27px; height:27px; border-radius:8px;
   background:var(--section); color:var(--accent); font-family:var(--mono,ui-monospace); font-size:12px; font-weight:600; transition:background .3s, color .3s; }
-.ps .ps-step[data-active="true"] .sn{ background:linear-gradient(180deg,#2563EB,#1D4ED8); color:#fff; }
+.ps .ps-step[data-active="true"] .sn{ background:linear-gradient(180deg,#4F46E5,#4338CA); color:#fff; }
 .ps .ps-step h3{ font-size:19px; font-weight:660; letter-spacing:-0.018em; margin:10px 0 0; color:var(--ink); }
 .ps .ps-step p{ font-size:14px; color:var(--muted); line-height:1.55; margin:8px 0 0; max-width:44ch; }
 .ps .ps-badges{ display:flex; flex-wrap:wrap; gap:7px; margin-top:12px; position:relative; z-index:3; }
@@ -119,13 +119,13 @@ const PS_CSS = `
 .ps .ps-stage[data-scene="describe"] .ps-composer > *:nth-child(3){ transition-delay:.34s; }
 .ps .ps-modes{ display:flex; gap:6px; flex-wrap:wrap; }
 .ps .ps-mode{ font-size:11px; color:var(--d-body); border:1px solid var(--d-border); background:var(--d-surf); border-radius:999px; padding:5px 11px; }
-.ps .ps-mode.on{ color:#BFDBFE; border-color:rgba(59,130,246,0.5); background:rgba(59,130,246,0.12); }
+.ps .ps-mode.on{ color:#C7D2FE; border-color:rgba(99,102,241,0.5); background:rgba(79,70,229,0.14); }
 .ps .ps-input{ flex:1; border:1px solid var(--d-border); background:var(--d-surf); border-radius:12px; padding:14px; font-size:14px; color:var(--d-text); line-height:1.5; }
 .ps .ps-caret{ display:inline-block; width:2px; height:16px; vertical-align:-3px; margin-left:1px; background:var(--blue); animation:pscaret 1.05s steps(1) infinite; }
 @keyframes pscaret{ 50%{opacity:0;} }
 .ps .ps-startbtn{ align-self:flex-start; display:inline-flex; align-items:center; gap:7px; font-size:12.5px; font-weight:600; color:#fff;
-  background:linear-gradient(180deg,#2563EB,#1D4ED8); border:1px solid rgba(255,255,255,0.12); border-radius:10px; padding:9px 14px; transition:box-shadow .3s, transform .12s; }
-.ps .ps-startbtn.ready{ box-shadow:0 0 0 4px rgba(59,130,246,0.16); }
+  background:linear-gradient(180deg,#4F46E5,#4338CA); border:1px solid rgba(255,255,255,0.12); border-radius:10px; padding:9px 14px; transition:box-shadow .3s, transform .12s; }
+.ps .ps-startbtn.ready{ box-shadow:0 0 0 4px rgba(79,70,229,0.18); }
 .ps .ps-stage[data-phase="submit"] .ps-startbtn{ transform:scale(0.94); }
 .ps .ps-startbtn svg{ width:14px; height:14px; stroke:currentColor; stroke-width:1.8; fill:none; }
 
@@ -142,7 +142,7 @@ const PS_CSS = `
 @keyframes psspin{ to{ transform:rotate(360deg); } }
 .ps .ps-hero{ position:relative; border:1px solid var(--d-line); border-radius:12px; padding:24px 18px; text-align:center; margin-top:6px;
   background:linear-gradient(160deg,#1B2A22,#14201A); transition:background .65s ease, box-shadow .65s ease, border-color .4s ease; }
-.ps .ps-stage[data-hover="true"] .ps-hero{ border-color:rgba(59,130,246,0.35); box-shadow:0 0 0 1px rgba(59,130,246,0.18); }
+.ps .ps-stage[data-hover="true"] .ps-hero{ border-color:rgba(99,102,241,0.4); box-shadow:0 0 0 1px rgba(79,70,229,0.2); }
 .ps .ps-stage[data-apply="true"] .ps-hero{ background:linear-gradient(160deg,#0A130F,#050907); box-shadow:inset 0 0 0 1px rgba(111,143,122,0.28), 0 10px 30px -14px #000; }
 .ps .ps-hero h4{ margin:0; font-size:18px; font-weight:680; letter-spacing:-0.02em; color:var(--d-text); transition:letter-spacing .5s ease, text-shadow .5s ease; }
 .ps .ps-stage[data-apply="true"] .ps-hero h4{ letter-spacing:-0.005em; text-shadow:0 1px 22px rgba(143,166,186,0.4); }
@@ -162,10 +162,10 @@ const PS_CSS = `
 @keyframes psrise{ from{opacity:0; transform:translateY(10px);} to{opacity:1; transform:translateY(0);} }
 
 /* Scene 3 — refine overlays, revealed step by step */
-.ps .ps-sel{ position:absolute; inset:-6px; border:1.5px solid rgba(59,130,246,0.85); border-radius:14px; opacity:0; transform:scale(1.02); transition:opacity .4s ease, transform .4s cubic-bezier(0.22,1,0.36,1); pointer-events:none; }
-.ps .ps-sel .hd{ position:absolute; width:7px; height:7px; border-radius:2px; background:#60A5FA; border:1.5px solid #0B0E12; }
+.ps .ps-sel{ position:absolute; inset:-6px; border:1.5px solid rgba(99,102,241,0.85); border-radius:14px; opacity:0; transform:scale(1.02); transition:opacity .4s ease, transform .4s cubic-bezier(0.22,1,0.36,1); pointer-events:none; }
+.ps .ps-sel .hd{ position:absolute; width:7px; height:7px; border-radius:2px; background:#818CF8; border:1.5px solid #0B0E12; }
 .ps .ps-sel .hd.tl{ top:-4px; left:-4px; } .ps .ps-sel .hd.tr{ top:-4px; right:-4px; } .ps .ps-sel .hd.bl{ bottom:-4px; left:-4px; } .ps .ps-sel .hd.br{ bottom:-4px; right:-4px; }
-.ps .ps-sel .tg{ position:absolute; top:-11px; left:12px; font-size:10px; color:#BFDBFE; background:#12202F; border:1px solid rgba(59,130,246,0.5); border-radius:6px; padding:2px 8px; white-space:nowrap; }
+.ps .ps-sel .tg{ position:absolute; top:-11px; left:12px; font-size:10px; color:#C7D2FE; background:#161a3a; border:1px solid rgba(99,102,241,0.5); border-radius:6px; padding:2px 8px; white-space:nowrap; }
 .ps .ps-stage[data-sel="true"] .ps-sel{ opacity:1; transform:scale(1); }
 .ps .ps-cursor{ position:absolute; top:0; left:0; z-index:5; width:16px; height:16px; opacity:0; pointer-events:none; transform:translate(80%,155%); }
 .ps .ps-cursor svg{ width:16px; height:16px; filter:drop-shadow(0 1px 2px rgba(0,0,0,0.6)); }
@@ -321,16 +321,18 @@ function Stage({ phase, entered, reduced, t }: { phase: Phase; entered: boolean;
 
       <div className="ps-chrome">
         <i /><i /><i />
-        <span className="u">preview</span>
+        <span className="u">{t('buildWebFrameUrl')}</span>
         <span className="bdg">{t('landingStoryIllustrative')}</span>
       </div>
       <div className="ps-body">
         {/* Scene 1 — Describe */}
         <div className="ps-composer">
+          {/* The composer's real mode picker (KorvixModeChips): Chat, Website,
+              App — Website leading, as it does in the product. */}
           <div className="ps-modes">
-            <span className="ps-mode on">{t('landingTypeWebsite')}</span>
-            <span className="ps-mode">{t('landingTypeWebApp')}</span>
-            <span className="ps-mode">{t('landingTypeEcommerce')}</span>
+            <span className="ps-mode">{t('heroWinModeChat')}</span>
+            <span className="ps-mode on">{t('heroWinModeWebsite')}</span>
+            <span className="ps-mode">{t('heroWinModeApp')}</span>
           </div>
           <div className="ps-input">
             {promptText}

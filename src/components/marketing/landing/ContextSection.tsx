@@ -1,17 +1,24 @@
-import { MessageSquare, Search, Blocks, Plug, ArrowDown } from 'lucide-react';
+import {
+  MessageSquare, Search, Blocks, Plug, ArrowDown, Plus, Sparkles, Target,
+} from 'lucide-react';
 import { useLanguageStore } from '@/stores/languageStore';
-import { Reveal, SectionHeading } from '@/components/marketing/primitives';
+import {
+  ConnectorMark, IllustrativeTag, Reveal, SectionHeading,
+} from '@/components/marketing/primitives';
 
 /**
  * "One project, shared context" — why Korvix is more than a folder of separate
  * AI tools.
  *
- * The composition is deliberately NOT a card grid: three inputs feed one
- * project, and the project keeps a short, bounded set of things. Those things
- * are the real contents of a Korvix project (chats, generated products, a
- * working summary, current goals, and recent connector signals — see the
- * project brain snapshot the app reads at /v2/projects/{id}/brain), not an
- * architecture diagram and not invented "memory" claims.
+ * The composition is deliberately NOT a card grid: four inputs feed one
+ * project, and the project keeps a short, bounded set of things.
+ *
+ * What it keeps is not described in a bullet list — it is SHOWN as the project
+ * page shows it (src/pages/ProjectOverview.tsx): the Chats card with its "New
+ * chat" action, the Products & Builds card with its Web/App tag, and the
+ * Project intelligence card with its summary, Goals and Recent connector
+ * activity. Same example project as the hero, so the page tells one continuous
+ * story, and no "memory" claim is made that the product does not support.
  */
 
 const INPUTS = [
@@ -20,8 +27,6 @@ const INPUTS = [
   { icon: Blocks, titleKey: 'ctxInput3Title', bodyKey: 'ctxInput3Body' },
   { icon: Plug, titleKey: 'ctxInput4Title', bodyKey: 'ctxInput4Body' },
 ];
-
-const KEEPS = ['ctxKeep1', 'ctxKeep2', 'ctxKeep3', 'ctxKeep4', 'ctxKeep5'];
 
 export default function ContextSection() {
   const { t } = useLanguageStore();
@@ -81,22 +86,78 @@ export default function ContextSection() {
                   {t('ctxProjectBody')}
                 </p>
               </div>
+              {/* What a project keeps, shown as the project page itself shows
+                  it: the Chats, Products & Builds and Project intelligence
+                  cards of src/pages/ProjectOverview.tsx — same example project
+                  as the hero, so the site tells one continuous story. */}
               <div className="bg-[color:var(--mkt-section)] p-6">
-                <p className="mkt-mono mb-3 uppercase tracking-[0.09em] text-[color:var(--mkt-faint)]">
-                  {t('ctxKeepsLabel')}
+                <div className="flex items-center justify-between gap-3">
+                  <p className="mkt-mono m-0 uppercase tracking-[0.09em] text-[color:var(--mkt-faint)]">
+                    {t('ctxKeepsLabel')}
+                  </p>
+                </div>
+
+                <div className="mkt-panel mt-3.5 space-y-2.5 p-3">
+                  <div className="mkt-pcard">
+                    <div className="mkt-pcard-h">
+                      <MessageSquare aria-hidden="true" className="h-3.5 w-3.5 text-[#7dd3fc]" />
+                      {t('heroWinChats')}
+                      <span className="mkt-pcard-act ml-auto">
+                        <Plus aria-hidden="true" className="h-3 w-3" />
+                        {t('newChat')}
+                      </span>
+                    </div>
+                    <div className="mkt-prow mt-1.5">
+                      <MessageSquare aria-hidden="true" className="h-3.5 w-3.5 shrink-0 opacity-45" />
+                      <span className="min-w-0 flex-1 truncate">{t('heroWinThread')}</span>
+                    </div>
+                    <div className="mkt-prow">
+                      <MessageSquare aria-hidden="true" className="h-3.5 w-3.5 shrink-0 opacity-30" />
+                      <span className="mkt-pline" style={{ width: '54%' }} aria-hidden="true" />
+                    </div>
+                  </div>
+
+                  <div className="mkt-pcard">
+                    <div className="mkt-pcard-h">
+                      <Blocks aria-hidden="true" className="h-3.5 w-3.5 text-[#7dd3fc]" />
+                      {t('heroWinProducts')}
+                    </div>
+                    <div className="mkt-prow mt-1.5">
+                      <span className="mkt-ptag">{t('heroWinProductTag')}</span>
+                      <span className="min-w-0 flex-1 truncate">{t('heroPanelBuild')}</span>
+                    </div>
+                  </div>
+
+                  <div className="mkt-pcard">
+                    <div className="mkt-pcard-h">
+                      <Sparkles aria-hidden="true" className="h-3.5 w-3.5 text-[#a5b4fc]" />
+                      {t('heroWinIntel')}
+                    </div>
+                    <p className="m-0 mt-2 text-[11.5px] leading-relaxed text-[color:var(--mkt-deep-muted)]">
+                      {t('heroCtxSummaryLine')}
+                    </p>
+                    <p className="mkt-mono mb-1.5 mt-3 flex items-center gap-1.5 text-[9.5px] uppercase tracking-[0.09em] text-[color:var(--mkt-deep-muted)]">
+                      <Target aria-hidden="true" className="h-3 w-3" />
+                      {t('heroWinGoals')}
+                    </p>
+                    <p className="m-0 text-[11.5px] leading-snug text-[color:var(--mkt-deep-body)]">
+                      • {t('heroGoal1')}
+                    </p>
+                    <p className="mkt-mono mb-1.5 mt-3 text-[9.5px] uppercase tracking-[0.09em] text-[color:var(--mkt-deep-muted)]">
+                      {t('heroWinActivity')}
+                    </p>
+                    <p className="m-0 flex items-center gap-2 text-[11.5px] text-[color:var(--mkt-deep-body)]">
+                      <span className="shrink-0 text-white/70">
+                        <ConnectorMark id="vercel" size={12} />
+                      </span>
+                      {t('heroSignalVercel')}
+                    </p>
+                  </div>
+                </div>
+
+                <p className="m-0 mt-3">
+                  <IllustrativeTag tone="light" />
                 </p>
-                <ul className="m-0 grid list-none gap-2.5 p-0 sm:grid-cols-2">
-                  {KEEPS.map((k) => (
-                    <li key={k} className="flex items-start gap-2.5 text-[13.5px] text-[color:var(--mkt-body)]">
-                      <span
-                        className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full"
-                        style={{ background: 'var(--mkt-brand)' }}
-                        aria-hidden="true"
-                      />
-                      {t(k)}
-                    </li>
-                  ))}
-                </ul>
               </div>
             </div>
           </div>
