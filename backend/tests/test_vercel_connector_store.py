@@ -52,10 +52,17 @@ def test_token_is_never_stored_in_plaintext(db):
     conn = _authorize()
     assert conn is not None
     assert conn.access_token_enc and TOKEN not in conn.access_token_enc
-    # ...and the raw SQLite bytes contain no plaintext token either.
+    # ...and the raw SQLite bytes contain no plaintext token either. The token
+    # lives on the ACCOUNT authorization in the shared connector authority —
+    # Vercel no longer owns a per-project credential table.
     with _sqlite.connection(db) as c:
-        row = dict(c.execute("SELECT * FROM vercel_connections WHERE project_id='p1'").fetchone())
+        row = dict(c.execute(
+            "SELECT * FROM connector_authorizations WHERE id=?",
+            (conn.authorization_id,)).fetchone())
+        binding = dict(c.execute(
+            "SELECT * FROM connector_project_bindings WHERE project_id='p1'").fetchone())
     assert TOKEN not in "".join(str(v) for v in row.values())
+    assert TOKEN not in "".join(str(v) for v in binding.values())
     assert vc_store.decrypt_access_token(conn) == TOKEN
 
 

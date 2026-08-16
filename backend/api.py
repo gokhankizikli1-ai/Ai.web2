@@ -232,6 +232,29 @@ def _build_full_app():
                 "workflows.runner startup sweep (non-fatal): %s", _wf_err,
             )
 
+        # Connector authorization model — adopt any legacy per-project connector
+        # rows into the shared account-level authority. Idempotent, additive and
+        # non-destructive: legacy tables are left in place, credentials are moved
+        # as ciphertext (the encryption key is never needed), and a row whose
+        # provider account identity cannot be determined is SKIPPED and reported
+        # rather than guessed at. A second boot finds nothing to do.
+        try:
+            from backend.services.connectors.migrate import migrate_legacy_connections
+            _conn_report = migrate_legacy_connections()
+            if _conn_report.authorizations_created or _conn_report.bindings_created:
+                logger.info(
+                    "Connectors | migrated %d authorization(s), %d binding(s) "
+                    "from legacy per-project tables",
+                    _conn_report.authorizations_created,
+                    _conn_report.bindings_created,
+                )
+            for _skipped in _conn_report.skipped_unsafe:
+                logger.warning("Connectors | migration skipped — %s", _skipped)
+        except Exception as _conn_err:
+            logger.warning(
+                "connectors legacy migration (non-fatal): %s", _conn_err,
+            )
+
     @_app.on_event("shutdown")
     async def _shutdown():
         # Drain the background queue (within a 5s budget) before the
@@ -319,6 +342,7 @@ def _build_full_app():
         "backend.routes.v2_vercel",            # Vercel connector — /v2/vercel/* connect/callback/pending-projects/select/status/sync/disconnect (read-only source of observations; gated by ENABLE_VERCEL_CONNECTOR; 503 when off)
         "backend.routes.v2_calendar",          # Google Calendar connector — /v2/calendar/* connect/callback/status/sync/disconnect (read-only source of observations; gated by ENABLE_CALENDAR_CONNECTOR; 503 when off)
         "backend.routes.v2_slack",             # Slack connector — /v2/slack/* connect/callback/pending-channels/select/status/sync/disconnect (read-only source of observations; gated by ENABLE_SLACK_CONNECTOR; 503 when off)
+        "backend.routes.v2_connectors",        # Account-level connector authority — /v2/connectors/* (authorize a provider ONCE per account, then bind it to projects; per-provider routers keep OAuth + resource validation)
     ]:
         try:
             _app.include_router(importlib.import_module(_mod).router)

@@ -1,31 +1,29 @@
 # coding: utf-8
-"""GitHub connector — durable connection + delivery-dedup store.
+"""GitHub connector — connection projection over the SHARED connector authority,
+plus the webhook delivery-dedup table.
 
-WHY A SMALL TABLE (NOT project.metadata_json)
-----------------------------------------------
-A project's `metadata_json` (projects.store) is the right home for a value you
-only ever read *given the project id*. GitHub is the opposite: a webhook
-arrives keyed by REPOSITORY / INSTALLATION and must be routed to the owning
-project. That is a REVERSE lookup, which a JSON blob on each project row cannot
-serve without scanning every project (unsafe + O(projects)). So the connector
-gets the SMALLEST durable mapping that genuinely makes multi-user installations
-possible and reverse-routable — two tiny tables in the EXISTING `projects.db`
-(same file as `projects` and `observations`, so scoping joins stay local):
+WHAT CHANGED (and why this file is now an adapter)
+--------------------------------------------------
+GitHub used to own a `github_connections` table keyed by `project_id`. The GitHub
+App INSTALLATION is really an ACCOUNT-level authorization — it is granted once per
+Korvix owner and can serve many projects — while the REPOSITORY is what a project
+actually binds. That is exactly the shared model, so this connector now stores:
 
-  github_connections   (project_id ⇄ installation_id ⇄ repo)   — the mapping
-  github_deliveries    (delivery_id)                            — webhook dedup
+    connector_authorizations      the GitHub App installation (no credential:
+                                  installation tokens are minted on demand)
+    connector_project_bindings    project → chosen repository
 
-Nothing here decides what matters, calls a model, or creates a task.
+`github_deliveries` stays a GitHub-local table: it is webhook plumbing (an
+at-most-once ledger of delivery ids), not connection state.
 
 ISOLATION
 ---------
-* `owner_user_id` is stored denormalized from the project at connect time and
-  is the ONLY user id ever used to scope recorded observations — a caller can
-  never smuggle a different user_id in.
-* UNIQUE(installation_id, repo_full_name): a given repo under a given
-  installation maps to exactly one project, so repo A can never inject activity
-  into an unrelated project B.
-* A webhook for an unknown installation/repo resolves to no connection → the
+* `owner_user_id` is still the project's real owner, resolved server-side, and is
+  still the ONLY user id used to scope recorded observations.
+* A repository under an installation still maps to exactly ONE project — the
+  conflict is detected explicitly and reported as None (the route maps it to a
+  409) rather than silently letting repo A inject activity into project B.
+* A webhook for an unknown installation/repo resolves to no binding → the
   delivery is safely ignored (no observation written).
 """
 from __future__ import annotations
@@ -33,34 +31,19 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import datetime
-from typing import List, Optional
+from typing import Dict, List, Optional
 
-from backend.core.paths import resolve_db_path
+from backend.services.connectors import registry, store as shared
 from backend.services.orchestrator import _sqlite
 
 logger = logging.getLogger(__name__)
 
-# Co-located with projects + observations so (user, project) scoping is one DB.
-DB_PATH = resolve_db_path("projects.db", "PROJECTS_DB_PATH")
+#: Convenience alias — the shared store resolves its file lazily.
+DB_PATH = shared.DB_PATH
 
-_SCHEMA = """
-CREATE TABLE IF NOT EXISTS github_connections (
-    project_id       TEXT PRIMARY KEY,           -- one GitHub repo per project (v1)
-    owner_user_id    TEXT NOT NULL,              -- authoritative scope (from project)
-    installation_id  TEXT NOT NULL,              -- GitHub App installation
-    repo_full_name   TEXT NOT NULL,              -- "owner/repo"
-    repo_id          TEXT NOT NULL DEFAULT '',   -- stable numeric id (survives rename)
-    created_at       TEXT NOT NULL,
-    updated_at       TEXT NOT NULL,
-    last_sync_at     TEXT NOT NULL DEFAULT ''     -- last successful backfill (UX + first-sync detection)
-);
--- A repo under an installation belongs to exactly one project → no cross-project leak.
-CREATE UNIQUE INDEX IF NOT EXISTS ux_ghconn_inst_repo
-    ON github_connections(installation_id, repo_full_name);
-CREATE INDEX IF NOT EXISTS ix_ghconn_repo  ON github_connections(repo_full_name);
-CREATE INDEX IF NOT EXISTS ix_ghconn_inst  ON github_connections(installation_id);
-CREATE INDEX IF NOT EXISTS ix_ghconn_owner ON github_connections(owner_user_id);
+PROVIDER = registry.PROVIDER_GITHUB
 
+_DELIVERY_SCHEMA = """
 CREATE TABLE IF NOT EXISTS github_deliveries (
     delivery_id   TEXT PRIMARY KEY,              -- X-GitHub-Delivery (webhook dedup)
     received_at   TEXT NOT NULL
@@ -78,59 +61,48 @@ class GitHubConnection:
     created_at: str
     updated_at: str
     last_sync_at: str = ""
+    #: Shared-authority id of the installation authorization backing this row.
+    authorization_id: str = ""
 
 
 def _now() -> str:
     return datetime.utcnow().isoformat() + "Z"
 
 
-def _migrate_add_last_sync_at(c) -> None:
-    """Additive, idempotent: pre-existing github_connections rows (created before
-    the last_sync_at column existed) get it via ALTER. ALTER TABLE ADD COLUMN
-    raises when the column already exists — swallow that one case so init stays
-    idempotent. Legacy rows default to '' (⇒ treated as never-synced, so the
-    next sync runs the fuller initial import)."""
-    try:
-        cols = {r["name"] for r in c.execute("PRAGMA table_info(github_connections)").fetchall()}
-        if "last_sync_at" not in cols:
-            c.execute("ALTER TABLE github_connections ADD COLUMN last_sync_at TEXT NOT NULL DEFAULT ''")
-    except Exception as exc:  # pragma: no cover — defensive
-        logger.debug("github.store last_sync_at migration soft-failed: %s", exc)
-
-
 def init_github_tables() -> None:
     """Idempotent, additive bring-up. Failures are swallowed (never block)."""
+    shared.init_tables()
     try:
-        with _sqlite.connection(DB_PATH) as c:
-            c.executescript(_SCHEMA)
-            _migrate_add_last_sync_at(c)
+        with _sqlite.connection(shared._db()) as c:
+            c.executescript(_DELIVERY_SCHEMA)
     except Exception as exc:  # pragma: no cover — defensive
         logger.warning("github.store.init failed: %s", exc)
 
 
-def _row_to_conn(row) -> GitHubConnection:
-    d = dict(row)
+def _project(auth: shared.Authorization, binding: shared.Binding) -> GitHubConnection:
     return GitHubConnection(
-        project_id=str(d["project_id"]),
-        owner_user_id=str(d["owner_user_id"]),
-        installation_id=str(d["installation_id"]),
-        repo_full_name=str(d["repo_full_name"]),
-        repo_id=str(d.get("repo_id") or ""),
-        created_at=str(d["created_at"]),
-        updated_at=str(d["updated_at"]),
-        last_sync_at=str(d.get("last_sync_at") or ""),
+        project_id=binding.project_id,
+        owner_user_id=binding.owner_user_id,
+        installation_id=auth.account_key,
+        repo_full_name=binding.resource_id,
+        repo_id=str(binding.resource.get("repo_id") or ""),
+        created_at=binding.created_at or auth.created_at,
+        updated_at=max(binding.updated_at or "", auth.updated_at or ""),
+        last_sync_at=binding.last_sync_at,
+        authorization_id=auth.id,
     )
 
 
 def upsert_connection(*, project_id: str, owner_user_id: str, installation_id: str,
                       repo_full_name: str, repo_id: str = "") -> Optional[GitHubConnection]:
-    """Create/replace the GitHub connection for a project.
+    """Authorize the installation for `owner_user_id` (once) and bind a repository
+    to `project_id`.
 
     Returns None on invalid input or when the (installation, repo) pair is
-    already claimed by a DIFFERENT project (the UNIQUE index) — the caller maps
-    that to a 409 conflict. The `owner_user_id` MUST be the project's real
-    owner; the route resolves it from `projects.get_project(...).owner_user_id`,
-    never from client input."""
+    already claimed by a DIFFERENT project — the caller maps that to a 409
+    conflict. `owner_user_id` MUST be the project's real owner; the route
+    resolves it from `projects.get_project(...).owner_user_id`, never from client
+    input."""
     project_id = str(project_id or "").strip()
     owner_user_id = str(owner_user_id or "").strip()
     installation_id = str(installation_id or "").strip()
@@ -141,57 +113,92 @@ def upsert_connection(*, project_id: str, owner_user_id: str, installation_id: s
         return None
 
     init_github_tables()
-    now = _now()
-    try:
-        with _sqlite.writer_tx(DB_PATH) as c:
-            # Guard the reverse-uniqueness explicitly so a conflict with another
-            # project is a clean None, not an opaque IntegrityError.
-            clash = c.execute(
-                """SELECT project_id FROM github_connections
-                   WHERE installation_id=? AND repo_full_name=? AND project_id<>?""",
-                (installation_id, repo_full_name, project_id),
-            ).fetchone()
-            if clash is not None:
-                logger.info("github.store.upsert conflict: repo already connected elsewhere")
-                return None
-            existing = c.execute(
-                "SELECT created_at FROM github_connections WHERE project_id=?",
-                (project_id,),
-            ).fetchone()
-            created_at = str(existing["created_at"]) if existing else now
-            c.execute(
-                """INSERT INTO github_connections
-                   (project_id, owner_user_id, installation_id, repo_full_name,
-                    repo_id, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)
-                   ON CONFLICT(project_id) DO UPDATE SET
-                     owner_user_id=excluded.owner_user_id,
-                     installation_id=excluded.installation_id,
-                     repo_full_name=excluded.repo_full_name,
-                     repo_id=excluded.repo_id,
-                     updated_at=excluded.updated_at""",
-                (project_id, owner_user_id, installation_id, repo_full_name,
-                 str(repo_id or ""), created_at, now),
-            )
-        return get_connection(project_id)
-    except Exception as exc:
-        logger.warning("github.store.upsert_connection failed: %s", type(exc).__name__)
+    # Reverse-uniqueness: a repo under an installation belongs to one project.
+    for existing in shared.find_bindings_by_resource(
+            provider=PROVIDER, resource_ids=[repo_full_name]):
+        if existing.project_id == project_id:
+            continue
+        other = shared.get_authorization(existing.authorization_id)
+        if other is not None and other.account_key == installation_id:
+            logger.info("github.store.upsert conflict: repo already connected elsewhere")
+            return None
+
+    auth = shared.upsert_authorization(
+        owner_user_id=owner_user_id, provider=PROVIDER,
+        account_key=installation_id,
+        account_label=f"Installation {installation_id}",
+        metadata={"installation_id": installation_id},
+    )
+    if auth is None:
         return None
+    bindings = shared.set_binding(
+        project_id=project_id, authorization_id=auth.id, owner_user_id=owner_user_id,
+        resources=[{
+            "resource_id": repo_full_name, "resource_label": repo_full_name,
+            "resource": {"repo_id": str(repo_id or "")},
+        }],
+        status=shared.BIND_CONNECTED,
+    )
+    if not bindings:
+        return None
+    return get_connection(project_id)
+
+
+def authorize_account(
+    *, owner_user_id: str, installations: List[Dict[str, str]],
+) -> Optional[shared.Authorization]:
+    """ACCOUNT-LEVEL authorization: record the GitHub App installation(s) this
+    owner has, and bind them to NOTHING.
+
+    This is the "authorize once" entry point. It stores NO credential — the App
+    mints short-lived installation tokens on demand — only the provider-verified
+    installation ids the caller already checked. The full verified list is kept
+    in the authorization metadata so a later project binding can offer every
+    account the user actually has, not just the first one.
+
+    Authorizing must never, by itself, expose a repository to a project — a
+    project binding (and then a repository selection) is a separate act."""
+    owner_user_id = str(owner_user_id or "").strip()
+    verified = [i for i in (installations or [])
+                if str((i or {}).get("installation_id") or "").strip()]
+    if not owner_user_id or not verified:
+        return None
+    primary = verified[0]
+    installation_id = str(primary.get("installation_id")).strip()
+    login = str(primary.get("account_login") or "")
+    return shared.upsert_authorization(
+        owner_user_id=owner_user_id, provider=PROVIDER,
+        account_key=installation_id,
+        account_label=login or f"Installation {installation_id}",
+        metadata={
+            "installation_id": installation_id,
+            "account_login": login,
+            "account_type": str(primary.get("account_type") or ""),
+            "installations": [
+                {
+                    "installation_id": str(i.get("installation_id") or ""),
+                    "account_login": str(i.get("account_login") or ""),
+                    "account_type": str(i.get("account_type") or ""),
+                }
+                for i in verified
+            ],
+        },
+    )
 
 
 def get_connection(project_id: str) -> Optional[GitHubConnection]:
-    if not project_id:
+    binding = shared.get_binding(str(project_id or ""), PROVIDER)
+    if binding is None or not binding.resource_id:
         return None
-    init_github_tables()
-    try:
-        with _sqlite.connection(DB_PATH) as c:
-            row = c.execute(
-                "SELECT * FROM github_connections WHERE project_id=?",
-                (str(project_id),),
-            ).fetchone()
-        return _row_to_conn(row) if row else None
-    except Exception:
+    auth = shared.get_authorization(binding.authorization_id)
+    if auth is None:
         return None
+    return _project(auth, binding)
+
+
+def get_authorization_for_owner(owner_user_id: str) -> Optional[shared.Authorization]:
+    """The owner's GitHub installation authorization, independent of projects."""
+    return shared.find_authorization(owner_user_id=owner_user_id, provider=PROVIDER)
 
 
 def find_connections_for_repo(*, installation_id: str, repo_full_name: str,
@@ -206,29 +213,59 @@ def find_connections_for_repo(*, installation_id: str, repo_full_name: str,
     if not installation_id or not (repo_full_name or repo_id):
         return []
     init_github_tables()
-    try:
-        with _sqlite.connection(DB_PATH) as c:
-            rows = c.execute(
-                """SELECT * FROM github_connections
-                   WHERE installation_id=? AND (repo_full_name=? OR (repo_id<>'' AND repo_id=?))""",
-                (installation_id, repo_full_name, repo_id or "\x00"),
-            ).fetchall()
-        return [_row_to_conn(r) for r in rows]
-    except Exception:
-        return []
+    out: List[GitHubConnection] = []
+    seen = set()
+    candidates = shared.find_bindings_by_resource(
+        provider=PROVIDER, resource_ids=[repo_full_name] if repo_full_name else [])
+    if repo_id:
+        # A renamed repo keeps its numeric id — scan the installation's bindings
+        # for one whose stored repo_id matches.
+        for binding in _installation_bindings(installation_id):
+            if str(binding.resource.get("repo_id") or "") == repo_id:
+                candidates.append(binding)
+    for binding in candidates:
+        key = (binding.project_id, binding.resource_id)
+        if key in seen:
+            continue
+        auth = shared.get_authorization(binding.authorization_id)
+        if auth is None or auth.account_key != installation_id:
+            continue
+        seen.add(key)
+        out.append(_project(auth, binding))
+    return out
+
+
+def _installation_bindings(installation_id: str) -> List[shared.Binding]:
+    auth_rows = shared.list_live_bindings_for_account(
+        provider=PROVIDER, account_key=installation_id)
+    return list(auth_rows)
 
 
 def delete_connection(project_id: str) -> bool:
-    if not project_id:
+    """PROJECT-level disconnect: drop this project's repository binding.
+
+    The GitHub App installation itself is NOT uninstalled and other projects
+    using it are untouched. When this was the last binding, the (credential-free)
+    installation authorization is dropped too."""
+    project_id = str(project_id or "").strip()
+    conn = get_connection(project_id)
+    if conn is None:
         return False
-    init_github_tables()
-    try:
-        with _sqlite.connection(DB_PATH) as c:
-            cur = c.execute(
-                "DELETE FROM github_connections WHERE project_id=?", (str(project_id),))
-            return cur.rowcount > 0
-    except Exception:
+    authorization_id = conn.authorization_id
+    removed = shared.delete_project_binding(project_id, PROVIDER)
+    if removed and authorization_id and shared.count_project_bindings(authorization_id) == 0:
+        shared.delete_authorization(authorization_id)
+    return removed
+
+
+def delete_authorization(authorization_id: str) -> bool:
+    """ACCOUNT-level disconnect: forget the installation and EVERY project
+    binding on it. Korvix cannot uninstall a GitHub App on the user's behalf —
+    that is done from GitHub — so this only removes Korvix's own mapping."""
+    auth = shared.get_authorization(authorization_id)
+    if auth is None or auth.provider != PROVIDER:
         return False
+    return shared.delete_authorization(authorization_id)
 
 
 def mark_synced(project_id: str) -> None:
@@ -238,15 +275,10 @@ def mark_synced(project_id: str) -> None:
     project_id = str(project_id or "").strip()
     if not project_id:
         return
-    init_github_tables()
-    try:
-        with _sqlite.connection(DB_PATH) as c:
-            c.execute(
-                "UPDATE github_connections SET last_sync_at=?, updated_at=? WHERE project_id=?",
-                (_now(), _now(), project_id),
-            )
-    except Exception:
-        pass
+    shared.mark_binding_synced(project_id, PROVIDER)
+    conn = get_connection(project_id)
+    if conn and conn.authorization_id:
+        shared.mark_authorization_synced(conn.authorization_id)
 
 
 # ── webhook delivery dedup ───────────────────────────────────────────────────
@@ -260,7 +292,7 @@ def mark_delivery(delivery_id: str) -> bool:
         return True
     init_github_tables()
     try:
-        with _sqlite.connection(DB_PATH) as c:
+        with _sqlite.connection(shared._db()) as c:
             cur = c.execute(
                 "INSERT OR IGNORE INTO github_deliveries (delivery_id, received_at) VALUES (?, ?)",
                 (delivery_id, _now()),
@@ -273,8 +305,9 @@ def mark_delivery(delivery_id: str) -> bool:
 
 
 def _reset_for_tests() -> None:
+    shared._reset_for_tests()
     try:
-        with _sqlite.connection(DB_PATH) as c:
+        with _sqlite.connection(shared._db()) as c:
             c.execute("DROP TABLE IF EXISTS github_connections")
             c.execute("DROP TABLE IF EXISTS github_deliveries")
     except Exception:
@@ -282,7 +315,8 @@ def _reset_for_tests() -> None:
 
 
 __all__ = [
-    "GitHubConnection", "init_github_tables", "upsert_connection",
-    "get_connection", "find_connections_for_repo", "delete_connection",
-    "mark_synced", "mark_delivery",
+    "GitHubConnection", "PROVIDER", "init_github_tables", "upsert_connection",
+    "authorize_account",
+    "get_connection", "get_authorization_for_owner", "find_connections_for_repo",
+    "delete_connection", "delete_authorization", "mark_synced", "mark_delivery",
 ]

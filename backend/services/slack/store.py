@@ -1,31 +1,21 @@
 # coding: utf-8
-"""Slack connector — durable connection + credential store.
+"""Slack connector — connection projection over the SHARED connector authority.
 
-WHY SMALL TABLES (NOT project.metadata_json)
----------------------------------------------
-A Slack connection carries an ENCRYPTED bot token plus workspace identity,
-lifecycle state, and the set of channels bound to this Korvix project. That is
-credential material with its own lifecycle (install, revoke, rebind), not a
-plain project setting, so it gets the SMALLEST durable tables that model the
-connection — in the EXISTING `projects.db` (same file as `projects`,
-`observations`, `gmail_connections`, `vercel_connections` and
-`calendar_connections`, so (user, project) scoping joins stay local). No second
-database.
+WHAT CHANGED (and why this file is now an adapter)
+--------------------------------------------------
+Slack used to own `slack_connections` (keyed by `project_id`) plus a child
+`slack_selected_channels` table. The WORKSPACE INSTALLATION (bot token + team) is
+really an ACCOUNT-level authorization — Slack installs the app once per workspace
+— while the CHANNELS are what each Korvix project binds. That is exactly the
+shared model, and Slack is the provider that motivates its MULTI resource shape:
 
-  slack_connections        (project_id ⇄ owner_user_id ⇄ Slack workspace)
-  slack_selected_channels  (project_id ⇄ the channels bound to it)
+    connector_authorizations      the workspace installation
+                                  (holds the encrypted bot token)
+    connector_project_bindings    Korvix project → selected channels (one row per
+                                  channel, individually addressable + owner-scoped)
 
-WHY THE CHANNELS ARE A TABLE AND NOT A JSON COLUMN
----------------------------------------------------
-Slack is the first connector that binds MANY provider resources to one Korvix
-project. A child table keeps each binding individually addressable and
-owner-scoped, gives the cap a real constraint to enforce, and lets a channel be
-dropped without rewriting a blob. It follows the same shape as
-`slack_pending_channels`, so the pending → selected transition is a straight
-copy of validated rows.
-
-THREE-STEP LIFECYCLE
---------------------
+THREE-STEP LIFECYCLE (unchanged)
+--------------------------------
 `STATUS_PENDING_SELECTION` — the OAuth exchange succeeded and the bot token is
 stored, but the user has not yet chosen WHICH channels belong to this Korvix
 project. Nothing is synced in this state.
@@ -36,99 +26,55 @@ credential material is wiped and a reconnect is required.
 
 ISOLATION
 ---------
-* `project_id` is the PRIMARY KEY of `slack_connections` → one Slack connection
-  per Korvix project.
-* `owner_user_id` is stored denormalized from the PROJECT at install time and is
-  the ONLY user id ever used to scope recorded observations — a caller can never
-  smuggle a different user_id in.
-* Selected-channel rows carry the same `owner_user_id`, so a read can be
-  owner-scoped without a join.
+* `owner_user_id` is still the project's real owner, resolved server-side, and is
+  still the ONLY user id used to scope recorded observations.
+* Each selected-channel binding row carries that same `owner_user_id`, so a read
+  is owner-scoped without a join.
 
 ONE SLACK INSTALLATION CAN BACK MANY KORVIX PROJECTS
 -----------------------------------------------------
-Slack installs an app ONCE PER WORKSPACE. If two Korvix projects (even two
-different owners in the same workspace) both connect Slack, Slack hands each
-flow a token for the SAME installation. Consequences, both deliberate:
+That was already true and is now modelled directly rather than duplicated:
 
-  * Disconnect is LOCAL-ONLY — it deletes this project's rows and never calls
-    Slack, so it can never break the other project's connection. There is no
-    `auth.revoke` anywhere in this package.
-  * `count_connected_for_team()` exists so a caller can tell the user TRUTHFULLY
-    that the workspace installation survives their disconnect (fail-closed: an
-    unknown/unreadable state counts as "shared").
+  * Project disconnect is LOCAL-ONLY and drops only this project's channel
+    bindings; it never calls Slack, so it can never break another project's
+    connection. There is no `auth.revoke` anywhere in this package.
+  * `count_connected_for_team()` still exists so a caller can tell the user
+    TRUTHFULLY that the workspace installation survives their disconnect
+    (fail-closed: an unknown/unreadable state counts as "shared").
 
 SECRETS
 -------
-* The bot token is stored ONLY as an encrypted envelope, produced by the
-  EXISTING credential authority (`gmail.crypto`, keyed by
-  `KORVIX_CREDENTIAL_ENCRYPTION_KEY`). This connector adds no second cipher and
-  no second key, and there is no plaintext fallback: `upsert_installation`
-  raises `CredentialEncryptionError` rather than writing a bare token.
-* No user token is ever stored — the OAuth module never returns one.
-* `public_view()` carries NO token material.
+Unchanged: the bot token is stored ONLY as an encrypted envelope produced by the
+EXISTING credential authority (`gmail.crypto`, keyed by
+`KORVIX_CREDENTIAL_ENCRYPTION_KEY`). No second cipher, no second key, no
+plaintext fallback. No user token is ever stored. `public_view()` carries NO
+token material.
 """
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
-from backend.core.paths import resolve_db_path
-# The single credential-at-rest authority (see module docstring) — imported,
-# never reimplemented.
-from backend.services.gmail import crypto as credential_crypto
-from backend.services.orchestrator import _sqlite
+from backend.services.connectors import registry, store as shared
 from backend.services.slack import config as sl_config
 
 logger = logging.getLogger(__name__)
 
-DB_PATH = resolve_db_path("projects.db", "PROJECTS_DB_PATH")
+#: Convenience alias — the shared store resolves its file lazily.
+DB_PATH = shared.DB_PATH
 
-PROVIDER = "slack"
+PROVIDER = registry.PROVIDER_SLACK
 
 STATUS_PENDING_SELECTION = "pending_selection"
 STATUS_CONNECTED = "connected"
 STATUS_REVOKED = "revoked"
 
-# A PROJECTION-ONLY lifecycle value. It is NEVER written to `slack_connections`
-# and never returned by `get_connection()` — it exists solely so the status route
-# can describe a row whose `owner_user_id` no longer matches the project's
-# current owner, WITHOUT echoing that row's workspace identity. See
-# `SlackConnection.owner_mismatch_view()`.
+# A PROJECTION-ONLY lifecycle value. It is NEVER stored and never returned by
+# `get_connection()` — it exists solely so the status route can describe a
+# binding whose `owner_user_id` no longer matches the project's current owner,
+# WITHOUT echoing that row's workspace identity. See `owner_mismatch_view()`.
 STATUS_OWNER_MISMATCH = "owner_mismatch"
-
-_SCHEMA = """
-CREATE TABLE IF NOT EXISTS slack_connections (
-    project_id      TEXT PRIMARY KEY,          -- one Slack connection per Korvix project
-    owner_user_id   TEXT NOT NULL,             -- authoritative scope (from project)
-    provider        TEXT NOT NULL DEFAULT 'slack',
-    team_id         TEXT NOT NULL DEFAULT '',  -- authoritative workspace id (from the token exchange)
-    team_name       TEXT NOT NULL DEFAULT '',  -- workspace display name
-    bot_user_id     TEXT NOT NULL DEFAULT '',  -- installed bot identity (NOT a token)
-    app_id          TEXT NOT NULL DEFAULT '',
-    scopes          TEXT NOT NULL DEFAULT '',  -- comma-delimited granted bot scopes
-    bot_token_enc   TEXT NOT NULL DEFAULT '',  -- ENCRYPTED envelope (never plaintext)
-    status          TEXT NOT NULL DEFAULT 'pending_selection',
-    created_at      TEXT NOT NULL,
-    updated_at      TEXT NOT NULL,
-    last_sync_at    TEXT NOT NULL DEFAULT ''
-);
-CREATE INDEX IF NOT EXISTS ix_slackconn_owner  ON slack_connections(owner_user_id);
-CREATE INDEX IF NOT EXISTS ix_slackconn_status ON slack_connections(status);
-CREATE INDEX IF NOT EXISTS ix_slackconn_team   ON slack_connections(team_id);
-
-CREATE TABLE IF NOT EXISTS slack_selected_channels (
-    project_id    TEXT NOT NULL,
-    channel_id    TEXT NOT NULL,
-    owner_user_id TEXT NOT NULL,             -- denormalized owner scope
-    name          TEXT NOT NULL DEFAULT '',  -- display only
-    is_private    INTEGER NOT NULL DEFAULT 0,
-    created_at    TEXT NOT NULL,
-    PRIMARY KEY (project_id, channel_id)
-);
-CREATE INDEX IF NOT EXISTS ix_slackchan_owner ON slack_selected_channels(owner_user_id);
-"""
 
 
 @dataclass(frozen=True)
@@ -165,6 +111,8 @@ class SlackConnection:
     # Populated by `get_connection` so the connection is self-describing (the
     # route never has to re-query to render or authorize a sync).
     channels: Tuple[SelectedChannel, ...] = field(default=())
+    #: Shared-authority id of the workspace authorization backing this row.
+    authorization_id: str = ""
 
     @property
     def is_revoked(self) -> bool:
@@ -200,8 +148,8 @@ class SlackConnection:
         }
 
     def owner_mismatch_view(self) -> Dict[str, Any]:
-        """REDACTED projection for a row whose `owner_user_id` no longer matches
-        the project's current owner.
+        """REDACTED projection for a binding whose `owner_user_id` no longer
+        matches the project's current owner.
 
         `public_view()` carries the workspace identity (`team_id`, `team_name`,
         `bot_user_id`, granted `scopes`) and every bound channel NAME. That is
@@ -233,36 +181,55 @@ class SlackConnection:
         }
 
 
-def _now() -> str:
-    return datetime.utcnow().isoformat() + "Z"
-
-
 def init_slack_tables() -> None:
-    """Idempotent, additive bring-up. Failures are swallowed (never block)."""
-    try:
-        with _sqlite.connection(DB_PATH) as c:
-            c.executescript(_SCHEMA)
-    except Exception as exc:  # pragma: no cover — defensive
-        logger.warning("slack.store.init failed: %s", exc)
+    """Idempotent, additive bring-up of the shared tables."""
+    shared.init_tables()
 
 
-def _row_to_conn(row, channels: Tuple[SelectedChannel, ...]) -> SlackConnection:
-    d = dict(row)
+def _channels_from(bindings: List[shared.Binding]) -> Tuple[SelectedChannel, ...]:
+    """Name-sorted for a stable display order, skipping the placeholder row that
+    represents "installed but no channel chosen yet"."""
+    chans = [
+        SelectedChannel(
+            channel_id=b.resource_id,
+            name=b.resource_label,
+            is_private=bool(b.resource.get("is_private")),
+        )
+        for b in bindings if b.resource_id
+    ]
+    chans.sort(key=lambda c: ((c.name or "").lower(), c.channel_id))
+    return tuple(chans)
+
+
+def _project(auth: shared.Authorization,
+             bindings: List[shared.Binding]) -> Optional[SlackConnection]:
+    if not bindings:
+        return None
+    head = bindings[0]
+    channels = _channels_from(bindings)
+    revoked = auth.is_revoked or all(b.status == shared.BIND_REVOKED for b in bindings)
+    if revoked:
+        status = STATUS_REVOKED
+    elif channels and any(b.status == shared.BIND_CONNECTED for b in bindings):
+        status = STATUS_CONNECTED
+    else:
+        status = STATUS_PENDING_SELECTION
     return SlackConnection(
-        project_id=str(d["project_id"]),
-        owner_user_id=str(d["owner_user_id"]),
-        provider=str(d.get("provider") or PROVIDER),
-        team_id=str(d.get("team_id") or ""),
-        team_name=str(d.get("team_name") or ""),
-        bot_user_id=str(d.get("bot_user_id") or ""),
-        app_id=str(d.get("app_id") or ""),
-        scopes=str(d.get("scopes") or ""),
-        bot_token_enc=str(d.get("bot_token_enc") or ""),
-        status=str(d.get("status") or STATUS_PENDING_SELECTION),
-        created_at=str(d["created_at"]),
-        updated_at=str(d["updated_at"]),
-        last_sync_at=str(d.get("last_sync_at") or ""),
+        project_id=head.project_id,
+        owner_user_id=head.owner_user_id,
+        provider=PROVIDER,
+        team_id=str(auth.metadata.get("team_id") or auth.account_key or ""),
+        team_name=str(auth.metadata.get("team_name") or ""),
+        bot_user_id=str(auth.metadata.get("bot_user_id") or ""),
+        app_id=str(auth.metadata.get("app_id") or ""),
+        scopes=auth.scopes,
+        bot_token_enc=("" if revoked else auth.credential("bot_token")),
+        status=status,
+        created_at=min((b.created_at for b in bindings if b.created_at), default=auth.created_at),
+        updated_at=max([b.updated_at for b in bindings] + [auth.updated_at or ""]),
+        last_sync_at=max((b.last_sync_at for b in bindings), default=""),
         channels=channels,
+        authorization_id=auth.id,
     )
 
 
@@ -270,70 +237,97 @@ def upsert_installation(
     *, project_id: str, owner_user_id: str, bot_token: str, team_id: str,
     team_name: str = "", bot_user_id: str = "", app_id: str = "", scopes: str = "",
 ) -> Optional[SlackConnection]:
-    """Store (or replace) the Slack installation for a project, AWAITING channel
-    selection.
+    """Authorize the Slack workspace for `owner_user_id` (once) and start a
+    project binding AWAITING channel selection.
 
-    The bot token is ENCRYPTED here before storage — this raises
-    `CredentialEncryptionError` (via the credential authority) if encryption is
-    unavailable, so a plaintext token can never reach disk. `owner_user_id` MUST
-    be the project's real owner (the route resolves it from the OAuth state /
-    project, never from client input), and `team_id` MUST come from the token
-    exchange response, never from a query param.
+    The bot token is ENCRYPTED by the shared store — it raises
+    `CredentialEncryptionError` if encryption is unavailable, so a plaintext
+    token can never reach disk. `owner_user_id` MUST be the project's real owner
+    (the route resolves it from the OAuth state / project, never from client
+    input), and `team_id` MUST come from the token exchange response, never from
+    a query param.
 
-    A re-installation RESETS the binding to `pending_selection` and CLEARS the
-    previously selected channels: the new authorization may target a different
-    workspace, so the old channel ids are not assumed to still be valid."""
+    A re-installation RESETS this project's binding to `pending_selection` and
+    CLEARS its previously selected channels: the new authorization may target a
+    different workspace, so the old channel ids are not assumed to still be
+    valid."""
     project_id = str(project_id or "").strip()
     owner_user_id = str(owner_user_id or "").strip()
     team_id = str(team_id or "").strip()
     if not project_id or not owner_user_id or not team_id:
         return None
     if not bot_token:
-        # Never store a connection without a usable credential.
+        # Never store an authorization without a usable credential.
         return None
 
-    token_enc = credential_crypto.encrypt(bot_token)
-
-    init_slack_tables()
-    now = _now()
-    try:
-        with _sqlite.writer_tx(DB_PATH) as c:
-            existing = c.execute(
-                "SELECT created_at FROM slack_connections WHERE project_id=?",
-                (project_id,),
-            ).fetchone()
-            created_at = str(existing["created_at"]) if existing else now
-            c.execute(
-                """INSERT INTO slack_connections
-                   (project_id, owner_user_id, provider, team_id, team_name,
-                    bot_user_id, app_id, scopes, bot_token_enc, status,
-                    created_at, updated_at, last_sync_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '')
-                   ON CONFLICT(project_id) DO UPDATE SET
-                     owner_user_id=excluded.owner_user_id,
-                     team_id=excluded.team_id,
-                     team_name=excluded.team_name,
-                     bot_user_id=excluded.bot_user_id,
-                     app_id=excluded.app_id,
-                     scopes=excluded.scopes,
-                     bot_token_enc=excluded.bot_token_enc,
-                     status=excluded.status,
-                     last_sync_at='',
-                     updated_at=excluded.updated_at""",
-                (project_id, owner_user_id, PROVIDER, team_id,
-                 str(team_name or "")[:200], str(bot_user_id or "")[:60],
-                 str(app_id or "")[:60], str(scopes or "")[:500], token_enc,
-                 STATUS_PENDING_SELECTION, created_at, now),
-            )
-            # A re-install invalidates any previous channel binding.
-            c.execute("DELETE FROM slack_selected_channels WHERE project_id=?",
-                      (project_id,))
-        return get_connection(project_id)
-    except Exception as exc:
-        # A CredentialEncryptionError from encrypt() would already have raised
-        # above (before the tx); anything here is a storage fault.
-        logger.warning("slack.store.upsert_installation failed: %s", type(exc).__name__)
+    auth = shared.upsert_authorization(
+        owner_user_id=owner_user_id, provider=PROVIDER, account_key=team_id,
+        account_label=str(team_name or team_id)[:200],
+        scopes=str(scopes or "")[:500],
+        credentials={"bot_token": bot_token},
+        metadata={
+            "team_id": team_id,
+            "team_name": str(team_name or "")[:200],
+            "bot_user_id": str(bot_user_id or "")[:60],
+            "app_id": str(app_id or "")[:60],
+        },
+    )
+    if auth is None:
         return None
+    bindings = shared.set_binding(
+        project_id=project_id, authorization_id=auth.id, owner_user_id=owner_user_id,
+        resources=[], status=shared.BIND_PENDING,
+    )
+    if not bindings:
+        return None
+    return get_connection(project_id)
+
+
+def authorize_account(
+    *, owner_user_id: str, bot_token: str, team_id: str, team_name: str = "",
+    bot_user_id: str = "", app_id: str = "", scopes: str = "",
+) -> Optional[shared.Authorization]:
+    """ACCOUNT-LEVEL authorization: store the workspace installation for this
+    owner and bind it to NOTHING.
+
+    This is the "authorize once" entry point. Installing the Slack app must
+    never, by itself, expose any channel to any project — a project binding (and
+    then a channel selection) is a separate, explicit act."""
+    owner_user_id = str(owner_user_id or "").strip()
+    team_id = str(team_id or "").strip()
+    if not owner_user_id or not team_id or not bot_token:
+        return None
+    return shared.upsert_authorization(
+        owner_user_id=owner_user_id, provider=PROVIDER, account_key=team_id,
+        account_label=str(team_name or team_id)[:200],
+        scopes=str(scopes or "")[:500],
+        credentials={"bot_token": bot_token},
+        metadata={
+            "team_id": team_id,
+            "team_name": str(team_name or "")[:200],
+            "bot_user_id": str(bot_user_id or "")[:60],
+            "app_id": str(app_id or "")[:60],
+        },
+    )
+
+
+def start_project_binding(
+    *, project_id: str, owner_user_id: str, authorization_id: str,
+) -> Optional[SlackConnection]:
+    """Attach an EXISTING workspace authorization to another project, awaiting
+    that project's own channel selection — the "authorize once, use in many
+    projects" path. No OAuth involved."""
+    auth = shared.get_authorization(authorization_id)
+    if auth is None or auth.provider != PROVIDER:
+        return None
+    bindings = shared.set_binding(
+        project_id=str(project_id or "").strip(), authorization_id=auth.id,
+        owner_user_id=str(owner_user_id or "").strip(),
+        resources=[], status=shared.BIND_PENDING,
+    )
+    if not bindings:
+        return None
+    return get_connection(project_id)
 
 
 def set_selected_channels(
@@ -355,46 +349,36 @@ def set_selected_channels(
     owner_user_id = str(owner_user_id or "").strip()
     if not project_id or not owner_user_id:
         return None
-    rows = []
+    rows: List[Dict[str, Any]] = []
     seen = set()
     for item in (channels or []):
         cid = str((item or {}).get("channel_id") or "").strip()
         if not cid or cid in seen:
             continue
         seen.add(cid)
-        rows.append((
-            cid,
-            str((item or {}).get("name") or "").strip()[:200],
-            1 if (item or {}).get("is_private") else 0,
-        ))
+        rows.append({
+            "resource_id": cid,
+            "resource_label": str((item or {}).get("name") or "").strip()[:200],
+            "resource": {"is_private": bool((item or {}).get("is_private"))},
+        })
     if not rows or len(rows) > sl_config.max_selected_channels():
         return None
 
-    init_slack_tables()
-    now = _now()
-    try:
-        with _sqlite.writer_tx(DB_PATH) as c:
-            cur = c.execute(
-                """UPDATE slack_connections SET status=?, updated_at=?
-                   WHERE project_id=? AND bot_token_enc != '' AND status != ?""",
-                (STATUS_CONNECTED, now, project_id, STATUS_REVOKED),
-            )
-            if (cur.rowcount or 0) <= 0:
-                # No live installation to bind to — do not create orphan rows.
-                return None
-            c.execute("DELETE FROM slack_selected_channels WHERE project_id=?",
-                      (project_id,))
-            for cid, name, is_private in rows:
-                c.execute(
-                    """INSERT INTO slack_selected_channels
-                       (project_id, channel_id, owner_user_id, name, is_private, created_at)
-                       VALUES (?, ?, ?, ?, ?, ?)""",
-                    (project_id, cid, owner_user_id, name, is_private, now),
-                )
-        return get_connection(project_id)
-    except Exception as exc:
-        logger.warning("slack.store.set_selected_channels failed: %s", type(exc).__name__)
+    current = get_connection(project_id)
+    if current is None or current.is_revoked or not current.bot_token_enc:
+        # No live installation to bind to — do not create orphan rows.
         return None
+    if current.owner_user_id != owner_user_id:
+        # The binding belongs to a different owner — refuse rather than rewrite.
+        return None
+
+    written = shared.set_binding(
+        project_id=project_id, authorization_id=current.authorization_id,
+        owner_user_id=owner_user_id, resources=rows, status=shared.BIND_CONNECTED,
+    )
+    if not written:
+        return None
+    return get_connection(project_id)
 
 
 def list_selected_channels(project_id: str) -> Tuple[SelectedChannel, ...]:
@@ -402,99 +386,76 @@ def list_selected_channels(project_id: str) -> Tuple[SelectedChannel, ...]:
     project_id = str(project_id or "").strip()
     if not project_id:
         return ()
-    init_slack_tables()
-    try:
-        with _sqlite.connection(DB_PATH) as c:
-            rows = c.execute(
-                """SELECT channel_id, name, is_private FROM slack_selected_channels
-                   WHERE project_id=? ORDER BY name COLLATE NOCASE, channel_id""",
-                (project_id,),
-            ).fetchall()
-        return tuple(
-            SelectedChannel(channel_id=str(r["channel_id"]), name=str(r["name"] or ""),
-                            is_private=bool(r["is_private"]))
-            for r in rows
-        )
-    except Exception:
-        return ()
+    return _channels_from(shared.list_project_bindings(project_id, provider=PROVIDER))
 
 
 def get_connection(project_id: str) -> Optional[SlackConnection]:
-    if not project_id:
+    bindings = shared.list_project_bindings(str(project_id or ""), provider=PROVIDER)
+    if not bindings:
         return None
-    init_slack_tables()
-    try:
-        with _sqlite.connection(DB_PATH) as c:
-            row = c.execute(
-                "SELECT * FROM slack_connections WHERE project_id=?",
-                (str(project_id),),
-            ).fetchone()
-        if row is None:
-            return None
-        return _row_to_conn(row, list_selected_channels(str(project_id)))
-    except Exception:
+    auth = shared.get_authorization(bindings[0].authorization_id)
+    if auth is None:
         return None
+    return _project(auth, bindings)
+
+
+def get_authorization_for_owner(owner_user_id: str) -> Optional[shared.Authorization]:
+    """The owner's Slack workspace authorization, independent of projects."""
+    return shared.find_authorization(owner_user_id=owner_user_id, provider=PROVIDER)
 
 
 def mark_synced(project_id: str) -> None:
     project_id = str(project_id or "").strip()
     if not project_id:
         return
-    init_slack_tables()
-    try:
-        with _sqlite.connection(DB_PATH) as c:
-            c.execute(
-                "UPDATE slack_connections SET last_sync_at=?, updated_at=? WHERE project_id=?",
-                (_now(), _now(), project_id),
-            )
-    except Exception:
-        pass
+    shared.mark_binding_synced(project_id, PROVIDER)
+    conn = get_connection(project_id)
+    if conn and conn.authorization_id:
+        shared.mark_authorization_synced(conn.authorization_id)
 
 
 def mark_revoked(project_id: str) -> bool:
-    """Flag a connection as revoked AND clear its credential material, so a
-    rejected token can never be used again. The row (and the channel selection)
-    is retained so the UI can offer a one-click reconnect; only the token is
-    wiped."""
-    project_id = str(project_id or "").strip()
-    if not project_id:
+    """The stored bot token was REJECTED by Slack (uninstalled / revoked) —
+    account-level truth, so the authorization is flagged revoked and its
+    credential wiped. Every project bound to it is marked revoked with it; the
+    rows (and their channel selections) are retained so the UI can offer a
+    one-click reconnect."""
+    conn = get_connection(project_id)
+    if conn is None or not conn.authorization_id:
         return False
-    init_slack_tables()
-    try:
-        with _sqlite.connection(DB_PATH) as c:
-            cur = c.execute(
-                """UPDATE slack_connections
-                   SET status=?, bot_token_enc='', updated_at=?
-                   WHERE project_id=?""",
-                (STATUS_REVOKED, _now(), project_id),
-            )
-            return (cur.rowcount or 0) > 0
-    except Exception:
-        return False
+    return shared.mark_authorization_revoked(conn.authorization_id)
 
 
 def delete_connection(project_id: str) -> bool:
-    """Hard-delete this project's Slack connection + channel bindings (used by
-    disconnect). Removes all stored Slack credential material for THIS project
-    and NOTHING else: it never calls Slack, so the workspace installation and
-    every other Korvix project bound to it are untouched."""
+    """PROJECT-level disconnect: drop this project's channel bindings.
+
+    Local only — it never calls Slack, so the workspace installation and every
+    other Korvix project bound to it are untouched. When this was the last
+    binding of the owner's authorization, the authorization (and its token) is
+    deleted too, matching the previous single-project behaviour."""
     project_id = str(project_id or "").strip()
-    if not project_id:
+    conn = get_connection(project_id)
+    if conn is None:
         return False
-    init_slack_tables()
-    try:
-        with _sqlite.writer_tx(DB_PATH) as c:
-            c.execute("DELETE FROM slack_selected_channels WHERE project_id=?",
-                      (project_id,))
-            cur = c.execute(
-                "DELETE FROM slack_connections WHERE project_id=?", (project_id,))
-            return (cur.rowcount or 0) > 0
-    except Exception:
+    authorization_id = conn.authorization_id
+    removed = shared.delete_project_binding(project_id, PROVIDER)
+    if removed and authorization_id and shared.count_project_bindings(authorization_id) == 0:
+        shared.delete_authorization(authorization_id)
+    return removed
+
+
+def delete_authorization(authorization_id: str) -> bool:
+    """ACCOUNT-level disconnect: remove the workspace authorization (and its bot
+    token) plus EVERY project binding on it. Local only — Korvix never uninstalls
+    the Slack app on the user's behalf."""
+    auth = shared.get_authorization(authorization_id)
+    if auth is None or auth.provider != PROVIDER:
         return False
+    return shared.delete_authorization(authorization_id)
 
 
 def count_connected_for_team(team_id: str, *, exclude_project_id: str = "") -> int:
-    """How many OTHER live Korvix connections exist for a Slack workspace.
+    """How many OTHER live Korvix project connections exist for a Slack workspace.
 
     Read-only. Used by disconnect to tell the user TRUTHFULLY whether the
     workspace installation is shared with another Korvix project (it is never
@@ -503,19 +464,12 @@ def count_connected_for_team(team_id: str, *, exclude_project_id: str = "") -> i
     team_id = str(team_id or "").strip()
     if not team_id:
         return 0
-    init_slack_tables()
-    try:
-        sql = ("SELECT COUNT(*) AS n FROM slack_connections "
-               "WHERE team_id=? AND status<>?")
-        params = [team_id, STATUS_REVOKED]
-        if str(exclude_project_id or "").strip():
-            sql += " AND project_id<>?"
-            params.append(str(exclude_project_id).strip())
-        with _sqlite.connection(DB_PATH) as c:
-            row = c.execute(sql, params).fetchone()
-        return int(row["n"]) if row else 0
-    except Exception:
-        return 0
+    exclude = str(exclude_project_id or "").strip()
+    bindings = shared.list_live_bindings_for_account(
+        provider=PROVIDER, account_key=team_id)
+    projects = {b.project_id for b in bindings}
+    projects.discard(exclude)
+    return len(projects)
 
 
 def decrypt_bot_token(conn: SlackConnection) -> str:
@@ -524,12 +478,15 @@ def decrypt_bot_token(conn: SlackConnection) -> str:
     bad. Returns "" when the connection carries no stored token."""
     if not conn.bot_token_enc:
         return ""
+    from backend.services.gmail import crypto as credential_crypto
     return credential_crypto.decrypt(conn.bot_token_enc)
 
 
 def _reset_for_tests() -> None:
+    shared._reset_for_tests()
     try:
-        with _sqlite.connection(DB_PATH) as c:
+        from backend.services.orchestrator import _sqlite
+        with _sqlite.connection(shared._db()) as c:
             c.execute("DROP TABLE IF EXISTS slack_connections")
             c.execute("DROP TABLE IF EXISTS slack_selected_channels")
     except Exception:
@@ -540,8 +497,10 @@ __all__ = [
     "SlackConnection", "SelectedChannel", "PROVIDER",
     "STATUS_PENDING_SELECTION", "STATUS_CONNECTED", "STATUS_REVOKED",
     "STATUS_OWNER_MISMATCH",
-    "init_slack_tables", "upsert_installation", "set_selected_channels",
-    "list_selected_channels", "get_connection",
-    "mark_synced", "mark_revoked", "delete_connection",
+    "init_slack_tables", "upsert_installation", "authorize_account",
+    "start_project_binding",
+    "set_selected_channels", "list_selected_channels", "get_connection",
+    "get_authorization_for_owner", "mark_synced", "mark_revoked",
+    "delete_connection", "delete_authorization",
     "count_connected_for_team", "decrypt_bot_token",
 ]

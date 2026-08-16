@@ -113,8 +113,14 @@ def test_state_rejects_unknown_and_expired(env, monkeypatch):
 def test_state_requires_owner_and_project(env):
     with pytest.raises(ValueError):
         vc_setup.create_state(owner_user_id="", project_id="p1")
-    with pytest.raises(ValueError):
-        vc_setup.create_state(owner_user_id="uA", project_id="")
+    # An EMPTY project id is now legitimate: it is how an ACCOUNT-LEVEL
+    # authorization is minted (connect the provider once, bind projects later).
+    # The owner binding — the thing that makes the callback safe — is still
+    # required.
+    account_state = vc_setup.create_state(owner_user_id="uA", project_id="")
+    consumed = vc_setup.consume(account_state)
+    assert consumed is not None
+    assert consumed.owner_user_id == "uA" and consumed.project_id == ""
 
 
 def test_states_are_unique_per_call(env):

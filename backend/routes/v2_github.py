@@ -195,6 +195,10 @@ def setup_callback(
     if consumed is None:
         return _result_redirect(github="error", reason="invalid_state")
     project_id = consumed.project_id
+    # An ACCOUNT-LEVEL authorization carries no project: the user is authorizing
+    # GitHub for their Korvix account. Which Korvix project reads which
+    # repository stays a separate, explicit act.
+    account_level = not project_id
 
     # 2. Verify the AUTHENTICATED GITHUB USER's identity via the App's
     #    user-to-server OAuth. Without a code we cannot prove who authorized →
@@ -203,22 +207,24 @@ def setup_callback(
     if not (code or "").strip():
         # No code, but GitHub may still bounce here on cancel/other setup_action.
         return _result_redirect(github="error", reason="user_auth_required",
-                                project_id=project_id)
+                                project_id=project_id or None)
     try:
         user_token = gh_user.exchange_code_for_user_token(code)
     except GitHubError:
         return _result_redirect(github="error", reason="user_auth_failed",
-                                project_id=project_id)
+                                project_id=project_id or None)
     except Exception:  # pragma: no cover — defensive
         return _result_redirect(github="error", reason="server_error",
-                                project_id=project_id)
+                                project_id=project_id or None)
 
     # 3. Re-validate project ownership (defence in depth against a project
-    #    deleted/reassigned mid-flow).
-    proj = projects_store.get_project(project_id)
-    if proj is None or proj.owner_user_id != consumed.owner_user_id:
-        return _result_redirect(github="error", reason="ownership_mismatch",
-                                project_id=project_id)
+    #    deleted/reassigned mid-flow). Skipped for an account-level flow — there
+    #    is no project.
+    if not account_level:
+        proj = projects_store.get_project(project_id)
+        if proj is None or proj.owner_user_id != consumed.owner_user_id:
+            return _result_redirect(github="error", reason="ownership_mismatch",
+                                    project_id=project_id)
 
     # 4. Discover the installations of OUR App that THIS authenticated user may
     #    access (provider-verified). Only these can become pending — a spoofed or
@@ -228,15 +234,15 @@ def setup_callback(
         accessible = gh_user.list_user_installations(user_token)
     except GitHubError:
         return _result_redirect(github="error", reason="authorization_check_failed",
-                                project_id=project_id)
+                                project_id=project_id or None)
     except Exception:  # pragma: no cover — defensive
         return _result_redirect(github="error", reason="server_error",
-                                project_id=project_id)
+                                project_id=project_id or None)
 
     # No installation of our App for this user → they authorized but haven't
     # installed. Steer the frontend to the install path (which loops back here).
     if not accessible:
-        return _result_redirect(github="needs_install", project_id=project_id)
+        return _result_redirect(github="needs_install", project_id=project_id or None)
 
     # If GitHub handed us a fresh-install installation_id, surface it first so the
     # just-installed account is the natural default in the picker — but only if it
@@ -277,7 +283,18 @@ def setup_callback(
         # Accessible per the user token but none re-verified as ours (e.g. a
         # transient App-JWT failure). Treat as unverified rather than trusting.
         return _result_redirect(github="error", reason="installation_unverified",
-                                project_id=project_id)
+                                project_id=project_id or None)
+
+    if account_level:
+        # 6a. Account-level: record the provider-verified installation(s) as the
+        #     ACCOUNT authorization. No repository is read, and no project is
+        #     exposed, until the user binds one. The full verified list is kept
+        #     on the authorization so a later binding can offer every account.
+        auth = gh_store.authorize_account(
+            owner_user_id=consumed.owner_user_id, installations=verified)
+        if auth is None:
+            return _result_redirect(github="error", reason="store_failed")
+        return _result_redirect(github="authorized")
 
     # 6. Store the VERIFIED pending installation set (ids only — never a token),
     #    replacing any prior pending set for this project.
