@@ -537,6 +537,19 @@
   transform: translateY(-1px);
   box-shadow: 0 16px 30px -14px rgba(67, 56, 202, 0.72), inset 0 1px 0 rgba(255, 255, 255, 0.2);
 }
+/* Ink primary — the restrained CTA used where indigo would dominate the
+   composition (the hero). Brand colour appears only on the focus/hover ring. */
+.mkt-btn-ink {
+  color: #fff;
+  background: var(--mkt-ink);
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow: 0 10px 22px -14px rgba(11, 16, 32, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+.mkt-btn-ink:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 26px -14px rgba(11, 16, 32, 0.7), 0 0 0 3px rgba(79, 70, 229, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
 .mkt-btn-outline {
   color: var(--mkt-ink);
   background: var(--mkt-surface);
@@ -773,38 +786,218 @@
   flex: none;
 }
 
-/* ── Hero composition ──────────────────────────────────────────────────── */
-.mkt-hero-stage {
+/* ── Hero ───────────────────────────────────────────────────────────────
+   Two stacked zones instead of the usual "headline left / floating card
+   right" split:
+
+     TYPE ZONE   oversized headline on an 8/3 asymmetric grid, with a quiet
+                 contents index hanging in the right margin. No pill, no icon
+                 row, no centred stack, no background glow.
+     WORKBENCH   a light shelf band whose dark product fragments are laid on a
+                 staggered baseline and deliberately RUN OFF the right edge of
+                 the page (the section clips them). Each fragment is a window
+                 onto one real Korvix surface — a chat with sources, the context
+                 a project keeps, a generated preview — so the scene reads as
+                 pieces of the product rather than one invented dashboard.
+   ────────────────────────────────────────────────────────────────────────── */
+.mkt-hero {
   --hv-ease: cubic-bezier(0.22, 1, 0.36, 1);
   position: relative;
+  /* Clips the fragments that overrun the right edge. */
+  overflow: hidden;
 }
-.mkt-hero-stage .hv-el {
+
+.mkt-hero-type {
+  padding: clamp(48px, 6vw, 92px) 0 clamp(40px, 4.5vw, 64px);
+}
+.mkt-hero-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 8fr) minmax(0, 3fr);
+  gap: clamp(28px, 4vw, 64px);
+  /* The index hangs from the BOTTOM of the type zone, so the composition runs
+     on a diagonal (headline top-left → index bottom-right) instead of two
+     columns starting on the same line. */
+  align-items: end;
+}
+.mkt-hero-kicker {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-family: var(--mkt-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--mkt-muted);
+}
+.mkt-hero-kicker::before {
+  content: '';
+  width: 26px;
+  height: 1px;
+  background: var(--mkt-brand);
+  flex: none;
+}
+.mkt-hero-title {
+  font-size: clamp(36px, 6.1vw, 78px);
+  line-height: 0.99;
+  letter-spacing: -0.042em;
+  font-weight: 660;
+  margin: clamp(18px, 2vw, 28px) 0 0;
+  max-width: 17ch;
+  text-wrap: balance;
+  color: var(--mkt-ink);
+}
+/* The one brand-coloured mark in the type zone: a marker underline under the
+   phrase the whole page argues against. Restrained on purpose — indigo is an
+   accent here, not the hero's identity. */
+.mkt-hero-mark {
+  background-image: linear-gradient(
+    to top,
+    rgba(79, 70, 229, 0.26) 0,
+    rgba(79, 70, 229, 0.26) 0.14em,
+    transparent 0.14em
+  );
+  padding-bottom: 0.02em;
+}
+.mkt-hero-standfirst {
+  margin: clamp(20px, 2.2vw, 30px) 0 0;
+  max-width: 52ch;
+  font-size: clamp(15.5px, 1.25vw, 18px);
+  line-height: 1.62;
+  color: var(--mkt-body);
+}
+.mkt-hero-actions {
+  display: flex;
+  align-items: center;
+  gap: clamp(16px, 2vw, 26px);
+  flex-wrap: wrap;
+  margin-top: clamp(26px, 3vw, 38px);
+}
+.mkt-hero-note {
+  margin: 16px 0 0;
+  font-size: 12.5px;
+  color: var(--mkt-faint);
+}
+
+/* Contents index in the right margin — an editorial list, not an icon row. */
+.mkt-hero-index {
+  margin: clamp(10px, 1.4vw, 20px) 0 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--mkt-border);
+}
+.mkt-hero-index li {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--mkt-border);
+  font-size: 13.5px;
+  color: var(--mkt-body);
+}
+.mkt-hero-index .n {
+  font-family: var(--mkt-mono);
+  font-size: 10.5px;
+  color: var(--mkt-faint);
+  letter-spacing: 0.06em;
+}
+.mkt-hero-indexlabel {
+  font-family: var(--mkt-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mkt-faint);
+}
+
+/* ── Workbench shelf ──────────────────────────────────────────────────── */
+.mkt-hero-shelf {
+  border-top: 1px solid var(--mkt-border);
+  background: linear-gradient(180deg, var(--mkt-section) 0%, var(--mkt-porcelain) 78%);
+  padding: clamp(34px, 4vw, 54px) 0 clamp(30px, 3.4vw, 46px);
+}
+.mkt-hero-scene {
+  display: grid;
+  grid-template-columns: minmax(0, 1.12fr) minmax(0, 1fr) minmax(0, 1.04fr);
+  gap: 18px;
+  align-items: start;
+  /* Overrun the content column so the last fragment is cut by the viewport. */
+  width: calc(100% + clamp(120px, 20vw, 340px));
+}
+.mkt-hero-frag {
+  background: var(--mkt-deep);
+  border: 1px solid var(--mkt-deep-border);
+  border-radius: 14px;
+  box-shadow: 0 30px 60px -38px rgba(6, 11, 24, 0.55), 0 10px 22px -18px rgba(6, 11, 24, 0.35);
+  color: var(--mkt-deep-ink);
+  overflow: hidden;
+}
+/* Staggered baseline — the fragments sit on a rhythm, not in a row of equals. */
+.mkt-hero-frag[data-offset='1'] { margin-top: 26px; }
+.mkt-hero-frag[data-offset='2'] { margin-top: 8px; }
+.mkt-hero-fraghead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 13px;
+  border-bottom: 1px solid var(--mkt-deep-line);
+  background: rgba(255, 255, 255, 0.025);
+  font-family: var(--mkt-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mkt-deep-muted);
+}
+.mkt-hero-fragbody {
+  padding: 13px;
+}
+.mkt-hero-scenenote {
+  margin: clamp(18px, 2vw, 26px) 0 0;
+  max-width: 66ch;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--mkt-faint);
+}
+
+/* Entrance: fragments and their inner blocks rise once, then rest. */
+.mkt-hero-scene .hs-el { opacity: 0; }
+.mkt-hero-scene.is-in .hs-el { animation: hv-rise 0.6s var(--hv-ease) both; }
+.mkt-hero-scene.is-in .hs-el[data-d='1'] { animation-delay: 0.06s; }
+.mkt-hero-scene.is-in .hs-el[data-d='2'] { animation-delay: 0.18s; }
+.mkt-hero-scene.is-in .hs-el[data-d='3'] { animation-delay: 0.30s; }
+.mkt-hero-scene.is-in .hs-el[data-d='4'] { animation-delay: 0.58s; }
+.mkt-hero-scene.is-in .hs-el[data-d='5'] { animation-delay: 0.74s; }
+.mkt-hero-scene.is-in .hs-el[data-d='6'] { animation-delay: 0.90s; }
+
+/* One signal travels the short line from the preview into project context. */
+.mkt-hero-wire {
+  position: relative;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(34, 211, 238, 0.45), rgba(34, 211, 238, 0.06));
+}
+.mkt-hero-wire i {
+  position: absolute;
+  top: -2.5px;
+  left: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--mkt-accent);
+  box-shadow: 0 0 10px rgba(34, 211, 238, 0.7);
   opacity: 0;
 }
-.mkt-hero-stage.is-in .hv-el {
-  animation: hv-rise 0.62s var(--hv-ease) both;
+.mkt-hero-scene.is-in .mkt-hero-wire i {
+  animation: hs-travel 1.1s cubic-bezier(0.4, 0, 0.2, 1) 0.36s both;
 }
-.mkt-hero-stage.is-in .hv-el[data-d='1'] { animation-delay: 0.10s; }
-.mkt-hero-stage.is-in .hv-el[data-d='2'] { animation-delay: 0.22s; }
-.mkt-hero-stage.is-in .hv-el[data-d='3'] { animation-delay: 0.36s; }
-.mkt-hero-stage.is-in .hv-el[data-d='4'] { animation-delay: 0.52s; }
-.mkt-hero-stage.is-in .hv-el[data-d='5'] { animation-delay: 0.70s; }
-.mkt-hero-stage.is-in .hv-el[data-d='6'] { animation-delay: 0.86s; }
-.mkt-hero-stage.is-in .hv-el[data-d='7'] { animation-delay: 1.02s; }
-.mkt-hero-stage.is-in .hv-el[data-d='8'] { animation-delay: 1.18s; }
+@keyframes hs-travel {
+  0% { opacity: 0; transform: translateX(0); }
+  15% { opacity: 1; }
+  85% { opacity: 1; }
+  100% { opacity: 0; transform: translateX(var(--wire-len, 92px)); }
+}
 
 @keyframes hv-rise {
   from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: none; }
-}
-
-/* Signal chips travel a short distance into the context strip. */
-.mkt-hero-stage.is-in .hv-signal {
-  animation: hv-signal 0.7s var(--hv-ease) both;
-}
-@keyframes hv-signal {
-  from { opacity: 0; transform: translateY(14px) scale(0.94); }
-  60% { opacity: 1; }
   to { opacity: 1; transform: none; }
 }
 
@@ -856,12 +1049,13 @@
 .mkt-flow.is-in .fl-in[data-d='4'] { animation-delay: 1.35s; }
 
 @media (prefers-reduced-motion: reduce) {
-  .mkt-hero-stage .hv-el,
+  .mkt-hero-scene .hs-el,
   .mkt-flow .fl-in {
     opacity: 1 !important;
     animation: none !important;
   }
-  .mkt-flow .fl-dot {
+  .mkt-flow .fl-dot,
+  .mkt-hero-wire i {
     display: none;
   }
 }
@@ -934,6 +1128,35 @@
   .mkt {
     --mkt-section-y: 76px;
   }
+  /* The margin index moves under the headline; the type zone stops being a
+     two-column grid before the columns get too narrow to read. */
+  .mkt-hero-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .mkt-hero-index {
+    max-width: 420px;
+  }
+  /* All three fragments stay — the overrun just gets shorter so the third is
+     cropped rather than dropped (the caption under the scene names all three). */
+  .mkt-hero-scene {
+    width: calc(100% + 150px);
+    gap: 14px;
+  }
+}
+@media (max-width: 900px) {
+  .mkt-hero-scene {
+    grid-template-columns: minmax(0, 1fr);
+    width: 100%;
+    gap: 14px;
+  }
+  .mkt-hero-frag[data-offset='1'],
+  .mkt-hero-frag[data-offset='2'] {
+    margin-top: 0;
+  }
+  .mkt-hero-actions .mkt-btn {
+    width: 100%;
+    justify-content: center;
+  }
 }
 @media (max-width: 640px) {
   .mkt {
@@ -946,5 +1169,9 @@
   }
   .mkt-section-tight {
     padding: 48px 0;
+  }
+  .mkt-hero-title {
+    letter-spacing: -0.035em;
+    max-width: none;
   }
 }
