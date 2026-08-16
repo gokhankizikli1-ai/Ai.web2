@@ -321,6 +321,10 @@ export const tr: Record<string, string> = {
   projectNoChats: "Bu projede henuz sohbet yok",
   removeFromProject: "Projeden kaldir",
   deleteChat: "Sohbeti sil",
+  newProject: "Yeni proje",
+  moveToProject: "Projeye tasi",
+  moveFailed: "Sohbet tasinamadi — tekrar deneyin.",
+  moveNoAccess: "Bu projeye erisiminiz yok.",
 
   // ── Sahip Maliyet Analitiği (yalnızca sahip) ──
   navCostAnalytics: "Maliyet Analitiği",
