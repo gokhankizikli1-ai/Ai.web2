@@ -84,14 +84,19 @@ import type { FrontendSpecIdentity, FrontendSpecSection } from '@/lib/webBuildAg
 const MAX_TEXT = 150;
 const MAX_LIST = 8;
 const MAX_EVIDENCE = 6;
-/* Documented hard ceiling for the rendered builder block. Sized to fit the COMPLETE
- * block (measured ~5.4k) so the tail — anti-repetition, the designed mobile behaviour,
- * image intent and the fingerprint ban — is never the part that gets clipped. The block
- * is emitted in the task's priority order (business truth → architecture → brand/design
- * + responsive → imagery → generic polish), so if a future edit ever does overflow this
- * ceiling, the LEAST important guidance is what is lost. */
-const RENDER_CHAR_CEILING = 8200;
-const PLANNING_CHAR_CEILING = 1400; // documented hard ceiling for the planning-prompt block
+/* Documented hard ceilings, ONE PER PRIORITY TIER. The direction is rendered as four
+ * separate blocks so the request builder can give each its honest priority; sizing them
+ * individually means a tier can never be clipped by an unrelated tier's growth, and the
+ * combined ceiling is the sum. Each is set above the measured worst case for its tier. */
+const P1_CHAR_CEILING = 3600;   // identity + required structure + facts policy + truth policy
+const P2_CHAR_CEILING = 5000;   // strategy + brand character + visual direction + anti-repeat + responsive
+const P3_CHAR_CEILING = 1300;    // image intent
+const P4_CHAR_CEILING = 700;    // generic fingerprint ban
+/** The combined ceiling of all four tiers — what an un-budgeted request carries. Exported
+ *  so the regression tests bound the rendered direction against the real constant. */
+export const DESIGN_INTELLIGENCE_CHAR_CEILING =
+  P1_CHAR_CEILING + P2_CHAR_CEILING + P3_CHAR_CEILING + P4_CHAR_CEILING;
+const PLANNING_CHAR_CEILING = 2000; // documented hard ceiling for the planning-prompt block
 
 /* ────────────────────────────────────────────────────────────────────────────
  * PUBLIC VOCABULARY
@@ -219,12 +224,31 @@ export interface AntiRepetitionPolicy {
 }
 
 export interface ContentArchitecturePolicy {
-  /** Content this KIND of site must genuinely carry to be a real site of its type. */
+  /**
+   * STRUCTURAL obligations: the sections and information architecture a site of this
+   * kind needs to be a real site of its type. Deliberately phrased as structure, never
+   * as facts — "a menu structure", not "the menu with dishes and prices" — so a required
+   * section can never read as an instruction to invent the business's real data.
+   */
   requiredContent: string[];
+  /**
+   * The specific FACTS the structures above have slots for (dish names, prices, dates,
+   * addresses, bylines…). These come from the request or they are neutrally labelled;
+   * `factualPolicy` states exactly what to do when the request did not supply them.
+   */
+  factualSlots: string[];
+  /** The binding rule for an unsupplied fact. Rendered next to `factualSlots`. */
+  factualPolicy: string;
   /** Content shapes that are wrong for this archetype. */
   forbiddenContent: string[];
-  /** Claims that may never be invented. */
+  /** The COMPLETE set of claims that may never be invented (contract + diagnostics surface). */
   neverFabricate: string[];
+  /**
+   * The subset of `neverFabricate` that the specification's existing honesty rules and output
+   * contract do NOT already forbid. Only this subset is rendered, so Design Intelligence adds
+   * coverage rather than becoming a second, competing statement of the same policy.
+   */
+  additionalNeverFabricate: string[];
   /** Generic marketing verbs to avoid unless the concept genuinely warrants them. */
   bannedPhrasing: string[];
   copyDirection: string;
@@ -239,13 +263,18 @@ export interface ImageIntentPolicy {
   forbidden: string[];
 }
 
+/**
+ * The mobile DESIGN decisions. Deliberately does NOT carry the mechanical responsive floor
+ * (column collapse, reading/tab order, minimum type size, touch-target size, overflow) — the
+ * integrated-experience authority owns and enforces those, and stating them twice would make
+ * two blocks responsible for the same rule.
+ */
 export interface ResponsiveIntent {
   navigationTransformation: string;
   hierarchyChange: string;
   stackingOrder: string;
   imageCropChange: string;
   densityChange: string;
-  touchTargets: string;
   ctaPlacement: string;
   simplification: string;
   /** Sections whose GEOMETRY must structurally change, not just stack. */
@@ -380,9 +409,12 @@ const PROMPT_LEXICON_TR: Record<Exclude<SiteArchetype, 'general'>, RegExp> = {
   'ecommerce-brand': /(e-?ticaret|online (?:mağaza|satış)|internet mağazası|ürün katalo|sepete ekle|mağazamız|el yapımı ürün)/i,
   marketplace: /(pazaryeri|ilan sitesi|alıcı ve satıcı|çift taraflı)/i,
   'restaurant-hospitality': /(lokanta|restoran|meyhane|kahvaltı|kafe|kahve dükkan|pastane|fırın|otel|pansiyon|butik otel|tatil köyü|şarap|mutfağı|menü)/i,
-  portfolio: /(portföy|fotoğrafçı|mimar|sanatçı|illüstratör|serbest çalışan|işlerim)/i,
-  'agency-studio': /(ajans|stüdyo|reklam ajansı|tasarım ajansı|prodüksiyon)/i,
-  'local-service': /(tesisatçı|elektrikçi|kuaför|berber|diş (?:klinik|hekim)|klinik|veteriner|spor salonu|nakliyat|oto servis|çilingir|temizlik (?:şirketi|hizmeti)|randevu)/i,
+  portfolio: /(portföy|fotoğrafçı|fotoğraf stüdyo|mimar|sanatçı|illüstratör|serbest çalışan|işlerim)/i,
+  // Symmetric with the English lexicon: bare "stüdyo" is NOT an agency signal — a yoga,
+  // pilates, photography, dance or recording studio is something else entirely. Only a
+  // QUALIFIED studio, or "ajans", names an agency.
+  'agency-studio': /(ajans|(?:reklam|tasarım|kreatif|dijital|marka|prodüksiyon|film|animasyon)\s+(?:ajansı|stüdyosu|stüdyo)|prodüksiyon şirketi)/i,
+  'local-service': /(tesisatçı|elektrikçi|kuaför|berber|diş (?:klinik|hekim)|klinik|veteriner|spor salonu|yoga stüdyo|pilates stüdyo|nakliyat|oto servis|çilingir|temizlik (?:şirketi|hizmeti)|randevu)/i,
   'professional-services': /(hukuk bürosu|avukat|muhasebe|mali müşavir|danışmanlık firması|noter|sigorta acente)/i,
   event: /(konferans|zirve|festival|etkinlik|bilet|konuşmacı|program akışı|fuar|çalıştay)/i,
   education: /(kurs|eğitim programı|akademi|okul|üniversite|müfredat|öğrenci|kayıt olma|ders programı|bootcamp)/i,
@@ -589,7 +621,10 @@ interface ArchetypeProfile {
   strategies: PageCompositionStrategy[];
   imagery: ImageryRole;
   preferredMedia: string[];
+  /** STRUCTURE only — never a fact. See ContentArchitecturePolicy.requiredContent. */
   requiredContent: string[];
+  /** The facts those structures have slots for. Governed by FACTUAL_POLICY. */
+  factualSlots: string[];
   forbiddenContent: string[];
   /** Baseline character leanings before the prompt modifies them. */
   baseline: Partial<Record<keyof Omit<BrandCharacter, 'summary'>, BrandCharacter[keyof Omit<BrandCharacter, 'summary'>]>>;
@@ -613,7 +648,8 @@ const PROFILES: Record<SiteArchetype, ArchetypeProfile> = {
     strategies: ['product-led-demonstration', 'split-narrative', 'dense-information-system'],
     imagery: 'supporting',
     preferredMedia: ['real product UI', 'diagram where it explains something true'],
-    requiredContent: ['what the product does in concrete terms', 'the actual workflow it replaces', 'a real interface view', 'pricing or how to get access', 'integration/technical fit'],
+    requiredContent: ['a concrete capability section — what the product does, not adjectives', 'the workflow it replaces, shown as a sequence', 'a real interface view', 'an access/pricing section', 'an integration or technical-fit section'],
+    factualSlots: ['plan names and prices', 'named integrations', 'customer names'],
     forbiddenContent: ['invented customer logos', 'invented usage metrics', 'a floating glass dashboard that shows nothing real'],
     baseline: { emphasis: 'product-driven', temperature: 'technical' },
     heroFamily: 'editorial-split',
@@ -634,7 +670,8 @@ const PROFILES: Record<SiteArchetype, ArchetypeProfile> = {
     strategies: ['dense-information-system', 'product-led-demonstration', 'typographic-minimal'],
     imagery: 'incidental',
     preferredMedia: ['syntax-highlighted code', 'terminal output', 'architecture diagram', 'real console UI'],
-    requiredContent: ['a copyable code or install example above the fold or immediately below it', 'what it does and what it explicitly does not do', 'performance/limits stated concretely', 'docs and reference entry points', 'pricing including a free tier if there is one'],
+    requiredContent: ['a copyable code or install example above the fold or immediately below it', 'a scope section: what it does and what it explicitly does not do', 'a limits/performance section', 'docs and reference entry points', 'an access/pricing section'],
+    factualSlots: ['the install command and code sample', 'concrete limits and performance numbers', 'plan names, prices and free-tier terms'],
     forbiddenContent: ['abstract 3D blobs standing in for architecture', 'benchmark numbers that were not supplied', 'enterprise logo walls that were not supplied'],
     baseline: { emphasis: 'product-driven', temperature: 'technical', spacing: 'dense', expression: 'restrained' },
     heroFamily: 'editorial-split',
@@ -655,7 +692,8 @@ const PROFILES: Record<SiteArchetype, ArchetypeProfile> = {
     strategies: ['product-led-demonstration', 'split-narrative', 'storytelling-sequence'],
     imagery: 'supporting',
     preferredMedia: ['real product UI', 'input→output comparison', 'restrained diagram'],
-    requiredContent: ['the task the AI performs, named concretely', 'an input→output demonstration', 'what it cannot do', 'how data is handled', 'how to start'],
+    requiredContent: ['the task the AI performs, named concretely', 'an input→output demonstration built from illustrative sample data', 'a limits section: what it cannot do', 'a data-handling section', 'a clear way to start'],
+    factualSlots: ['accuracy or quality figures', 'named customers', 'specific data-retention or compliance claims'],
     forbiddenContent: ['neon brain/neural-network clip art', 'glowing orb mysticism', 'invented accuracy percentages'],
     baseline: { emphasis: 'product-driven' },
     heroFamily: 'editorial-split',
@@ -676,7 +714,8 @@ const PROFILES: Record<SiteArchetype, ArchetypeProfile> = {
     strategies: ['catalogue-grid-commerce', 'immersive-visual', 'editorial-masthead'],
     imagery: 'central',
     preferredMedia: ['product photography on a consistent surface', 'in-use lifestyle photography', 'material close-ups'],
-    requiredContent: ['products with names and prices', 'a browsable collection or category structure', 'materials/making/care', 'delivery and returns', 'a product detail view'],
+    requiredContent: ['a browsable collection or category structure', 'a product grid whose tiles have real name / image / price slots', 'a product detail view', 'a materials, making and care section', 'a delivery and returns section'],
+    factualSlots: ['product names', 'prices and currency', 'materials and dimensions', 'delivery times and returns terms'],
     forbiddenContent: ['a feature-card grid instead of products', 'a SaaS pricing table', 'invented review counts or star ratings'],
     baseline: { emphasis: 'editorial', temperature: 'warm' },
     heroFamily: 'immersive-hero',
@@ -697,7 +736,8 @@ const PROFILES: Record<SiteArchetype, ArchetypeProfile> = {
     strategies: ['catalogue-grid-commerce', 'dense-information-system', 'split-narrative'],
     imagery: 'central',
     preferredMedia: ['listing imagery', 'category imagery'],
-    requiredContent: ['a real search or browse entry point', 'representative listings', 'the value for each side, addressed separately', 'how a transaction works', 'trust and safety'],
+    requiredContent: ['a working search or browse entry point', 'a listing grid whose cards have real title / image / price / location slots', 'the value for each side, addressed separately', 'a how-a-transaction-works sequence', 'a trust and safety section'],
+    factualSlots: ['listing titles, prices and locations', 'listing or member counts', 'fees and payout terms'],
     forbiddenContent: ['invented listing counts or GMV', 'a single-product hero that hides the marketplace'],
     baseline: {},
     heroFamily: 'editorial-split',
@@ -718,7 +758,8 @@ const PROFILES: Record<SiteArchetype, ArchetypeProfile> = {
     strategies: ['immersive-visual', 'editorial-masthead', 'storytelling-sequence'],
     imagery: 'central',
     preferredMedia: ['food and room photography', 'available light interiors', 'detail shots'],
-    requiredContent: ['the menu or offering, as real content', 'address, hours and how to get there', 'a reservation or contact path', 'the character of the place'],
+    requiredContent: ['a menu or offering structured by real courses/categories, with a name/description/price slot per item', 'a location and hours section', 'a reservation or contact path', 'a section that conveys the character of the place'],
+    factualSlots: ['dish and drink names', 'prices', 'the address and directions', 'opening hours', "the chef's or owner's name"],
     forbiddenContent: ['feature cards with icons', 'a dashboard or product-UI mock', 'invented awards or Michelin claims'],
     baseline: { emphasis: 'editorial', temperature: 'warm', spacing: 'spacious', positioning: 'premium' },
     heroFamily: 'immersive-hero',
@@ -739,7 +780,8 @@ const PROFILES: Record<SiteArchetype, ArchetypeProfile> = {
     strategies: ['portfolio-case-study', 'asymmetric-art-direction', 'typographic-minimal'],
     imagery: 'central',
     preferredMedia: ['the work itself at full quality', 'process imagery where it adds meaning'],
-    requiredContent: ['selected work with real project names', 'a project/case detail view', 'a short statement of practice', 'a direct contact route'],
+    requiredContent: ['a selected-work index with a title / year / discipline slot per piece', 'a project or case detail view', 'a short statement of practice', 'a direct contact route'],
+    factualSlots: ['project and client names', 'years and locations', 'the practitioner’s own name and biography'],
     forbiddenContent: ['a feature grid describing skills as product features', 'invented client testimonials', 'stock photography standing in for the work'],
     baseline: { emphasis: 'editorial', expression: 'restrained', spacing: 'spacious' },
     heroFamily: 'gallery-strip',
@@ -760,7 +802,8 @@ const PROFILES: Record<SiteArchetype, ArchetypeProfile> = {
     strategies: ['asymmetric-art-direction', 'portfolio-case-study', 'storytelling-sequence'],
     imagery: 'central',
     preferredMedia: ['case-study imagery', 'expressive typography as image'],
-    requiredContent: ['selected client work or case studies', 'what the studio actually does', 'how it works with clients', 'a real enquiry route'],
+    requiredContent: ['a selected-work or case-study index with a client / discipline / outcome slot per entry', 'a capability section: what the studio actually does', 'a how-we-work-with-clients sequence', 'a real enquiry route'],
+    factualSlots: ['client names and logos', 'campaign results and outcome figures', 'team names', 'fees'],
     forbiddenContent: ['three identical service cards with icons', 'invented client logos', 'invented awards'],
     baseline: { expression: 'expressive', emphasis: 'editorial', convention: 'experimental' },
     heroFamily: 'immersive-hero',
@@ -781,7 +824,8 @@ const PROFILES: Record<SiteArchetype, ArchetypeProfile> = {
     strategies: ['local-service-credibility', 'split-narrative', 'dense-information-system'],
     imagery: 'supporting',
     preferredMedia: ['real premises and team photography', 'before/after of actual work'],
-    requiredContent: ['services with what each involves', 'coverage area or address', 'opening hours', 'a prominent phone/booking route', 'credentials, registration or insurance where relevant'],
+    requiredContent: ['a services section describing what each service involves', 'a coverage-area or address section', 'an opening-hours block', 'a prominent phone/booking route', 'a credentials block where the trade requires one'],
+    factualSlots: ['the address, phone number and coverage area', 'opening hours', 'registration, licence or insurance numbers', 'staff names', 'prices and call-out fees'],
     forbiddenContent: ['an abstract SaaS hero', 'invented review scores or patient counts', 'invented certifications'],
     baseline: { convention: 'classic', positioning: 'accessible', expression: 'restrained' },
     heroFamily: 'editorial-split',
@@ -802,7 +846,8 @@ const PROFILES: Record<SiteArchetype, ArchetypeProfile> = {
     strategies: ['dense-information-system', 'editorial-masthead', 'split-narrative'],
     imagery: 'supporting',
     preferredMedia: ['portraits of named people', 'restrained environmental photography'],
-    requiredContent: ['practice areas in specific terms', 'named people with credentials', 'how an engagement works', 'fee approach if it can be stated', 'a formal contact route'],
+    requiredContent: ['a practice-areas section in specific terms', 'a people section with a name / role / credential slot per person', 'a how-an-engagement-works sequence', 'a fees section', 'a formal contact route'],
+    factualSlots: ['practitioner names, titles and qualifications', 'regulatory registration numbers', 'fees and rates', 'office address and hours', 'case outcomes'],
     forbiddenContent: ['playful illustration', 'invented case outcomes or win rates', 'invented accreditations'],
     baseline: { convention: 'classic', expression: 'restrained', demeanour: 'serious', temperature: 'balanced' },
     heroFamily: 'editorial-split',
@@ -823,7 +868,8 @@ const PROFILES: Record<SiteArchetype, ArchetypeProfile> = {
     strategies: ['dense-information-system', 'editorial-masthead', 'storytelling-sequence'],
     imagery: 'supporting',
     preferredMedia: ['speaker portraits', 'venue and past-edition photography'],
-    requiredContent: ['the date and location in the first viewport', 'the programme or schedule', 'speakers or the line-up', 'ticket tiers and price', 'venue and travel information'],
+    requiredContent: ['a prominent date-and-location block in the first viewport', 'a programme or schedule structured by day and slot', 'a speaker or line-up grid with a name / role / session slot per entry', 'a ticket section with a tier / inclusions / price slot per tier', 'a venue and travel section'],
+    factualSlots: ['the dates and times', 'the venue name and address', 'speaker names and affiliations', 'session titles', 'ticket prices and deadlines'],
     forbiddenContent: ['a product demo surface', 'a "Book a demo" CTA', 'invented attendee numbers or sponsor logos'],
     baseline: { spacing: 'dense', emphasis: 'editorial' },
     heroFamily: 'editorial-split',
@@ -844,7 +890,8 @@ const PROFILES: Record<SiteArchetype, ArchetypeProfile> = {
     strategies: ['dense-information-system', 'split-narrative', 'editorial-masthead'],
     imagery: 'supporting',
     preferredMedia: ['instructor portraits', 'real learning-environment photography'],
-    requiredContent: ['what is taught, module by module', 'who teaches it', 'duration, format and start dates', 'cost and funding', 'entry requirements and how to apply'],
+    requiredContent: ['a curriculum section structured module by module', 'an instructor section with a name / background slot per person', 'a duration, format and start-date block', 'a cost and funding section', 'an entry-requirements and how-to-apply section'],
+    factualSlots: ['module titles and contents', 'instructor names and backgrounds', 'dates, duration and cohort size', 'tuition, fees and funding terms', 'outcome or placement figures'],
     forbiddenContent: ['invented graduate salaries or placement rates', 'invented accreditation', 'a SaaS feature grid instead of a curriculum'],
     baseline: { spacing: 'dense', convention: 'classic', positioning: 'accessible' },
     heroFamily: 'editorial-split',
@@ -865,7 +912,8 @@ const PROFILES: Record<SiteArchetype, ArchetypeProfile> = {
     strategies: ['editorial-masthead', 'dense-information-system', 'typographic-minimal'],
     imagery: 'supporting',
     preferredMedia: ['commissioned editorial art', 'reportage photography', 'no image where the text is the point'],
-    requiredContent: ['a lead story treated as the lead', 'a real article index with bylines and dates', 'sections/desks or topic structure', 'an article reading view', 'subscribe or follow'],
+    requiredContent: ['a lead story treated as the lead', 'an article index with a headline / byline / date / standfirst slot per entry', 'a sections/desks or topic structure', 'an article reading view', 'a subscribe or follow route'],
+    factualSlots: ['headlines and standfirsts', 'author bylines', 'publication dates', 'subscription prices'],
     forbiddenContent: ['a hero with two CTA buttons', 'feature cards instead of headlines', 'invented readership numbers'],
     baseline: { emphasis: 'editorial', spacing: 'dense', expression: 'restrained' },
     heroFamily: 'editorial-split',
@@ -886,7 +934,8 @@ const PROFILES: Record<SiteArchetype, ArchetypeProfile> = {
     strategies: ['typographic-minimal', 'storytelling-sequence', 'split-narrative'],
     imagery: 'incidental',
     preferredMedia: ['one supporting image at most, if it earns its place'],
-    requiredContent: ['one proposition stated plainly', 'the single action, repeated at most twice', 'what happens after the action', 'the minimum proof needed to believe it'],
+    requiredContent: ['one proposition stated plainly', 'the single action, repeated at most twice', 'a what-happens-next explanation', 'the minimum proof this claim needs — and no proof section at all if none can be truthful'],
+    factualSlots: ['the offer terms and any price', 'launch or availability dates', 'any proof or endorsement'],
     forbiddenContent: ['a full marketing site pretending to be a landing page', 'six competing CTAs', 'invented social proof'],
     baseline: { spacing: 'spacious', expression: 'restrained' },
     heroFamily: 'editorial-split',
@@ -907,7 +956,8 @@ const PROFILES: Record<SiteArchetype, ArchetypeProfile> = {
     strategies: ['storytelling-sequence', 'split-narrative', 'editorial-masthead'],
     imagery: 'central',
     preferredMedia: ['photographs of actual members and activity'],
-    requiredContent: ['what the group is for, in its own words', 'what actually happens and when', 'how to take part', 'who runs it', 'where the money goes, if money is asked for'],
+    requiredContent: ['a purpose section in the group’s own words', 'an activities section with a what / when / where slot per activity', 'a how-to-take-part route', 'an organisers section', 'a where-the-money-goes section whenever money is asked for'],
+    factualSlots: ['meeting times and places', 'organiser names', 'member counts', 'donation figures and how funds are used'],
     forbiddenContent: ['corporate SaaS styling', 'invented member counts or donation totals', 'stock photography of unrelated people'],
     baseline: { temperature: 'warm', positioning: 'accessible', expression: 'balanced' },
     heroFamily: 'editorial-split',
@@ -928,7 +978,8 @@ const PROFILES: Record<SiteArchetype, ArchetypeProfile> = {
     strategies: ['split-narrative', 'editorial-masthead', 'storytelling-sequence'],
     imagery: 'supporting',
     preferredMedia: ['choose the medium the concept actually needs'],
-    requiredContent: ['the substance of what this site is for', 'the concrete offering', 'the single most valuable action', 'the proof this concept specifically needs'],
+    requiredContent: ['the substance of what this site is for', 'the concrete offering', 'the single most valuable action', 'the proof this concept specifically needs — omitted entirely if none can be truthful'],
+    factualSlots: ['whatever real-world facts this concept’s sections have slots for'],
     forbiddenContent: ['defaulting to a software-product structure', 'a feature grid chosen because nothing else came to mind'],
     baseline: {},
     heroFamily: 'editorial-split',
@@ -981,6 +1032,46 @@ const AXIS_CUES: Record<Axis, { low: RegExp; high: RegExp; lowWord: string; high
   },
 };
 
+/**
+ * Turkish character cues — the same seven axes. Without these a Turkish request expressed
+ * every bit as clearly as an English one ("minimal ve ferah", "lüks", "eğlenceli", "deneysel")
+ * silently fell through to the archetype baseline, so Turkish users could not steer the design
+ * at all. Deliberately BOUNDED — a handful of unambiguous, high-signal terms per pole, not a
+ * keyword dump — and matched without `\b`, which is ASCII-only in JS and would never fire
+ * before "ş"/"ö"/"ğ". Terms that collide across axes (e.g. "samimi" reads as both warm and
+ * playful) are assigned to ONE axis only, so a single word never moves two axes at once.
+ */
+const AXIS_CUES_TR: Record<Axis, { low: RegExp; high: RegExp }> = {
+  expression: {
+    low: /(minimal|sade|yalın|ölçülü|gösterişsiz)/i,
+    high: /(cesur|çarpıcı|iddialı|gösterişli|dikkat çekici)/i,
+  },
+  emphasis: {
+    low: /(editoryal|hikaye|anlatı|dergi tarzı|kürasyon)/i,
+    high: /(ürün odaklı|özellik odaklı|demo|yönetim paneli|yazılım ürünü)/i,
+  },
+  demeanour: {
+    low: /(ciddi|kurumsal|resmi|profesyonel)/i,
+    high: /(eğlenceli|samimi|neşeli|esprili|cana yakın)/i,
+  },
+  spacing: {
+    low: /(yoğun|kompakt|bilgi dolu|detaylı içerik)/i,
+    high: /(ferah|havadar|geniş boşluk|nefes alan)/i,
+  },
+  temperature: {
+    low: /(sıcak|el yapımı|zanaat|doğal|organik|ahşap)/i,
+    high: /(teknik|mühendislik|hassas|sistematik|altyapı)/i,
+  },
+  convention: {
+    low: /(klasik|geleneksel|zamansız|köklü)/i,
+    high: /(deneysel|sıra ?dışı|alışılmadık|avangart)/i,
+  },
+  positioning: {
+    low: /(lüks|premium|üst segment|seçkin|butik lüks)/i,
+    high: /(uygun fiyatlı|ekonomik|herkes için|erişilebilir|bütçe dostu)/i,
+  },
+};
+
 function deriveBrandCharacter(archetype: SiteArchetype, text: string): BrandCharacter {
   const base = PROFILES[archetype].baseline;
   const out: Record<Axis, string> = {
@@ -989,8 +1080,11 @@ function deriveBrandCharacter(archetype: SiteArchetype, text: string): BrandChar
   };
   for (const axis of Object.keys(AXIS_CUES) as Axis[]) {
     const cue = AXIS_CUES[axis];
-    const lo = hits(text, cue.low);
-    const hi = hits(text, cue.high);
+    const tr = AXIS_CUES_TR[axis];
+    // English and Turkish cues score into the SAME poles, so a mixed-language prompt
+    // ("minimal ve ferah bir lokanta sitesi") is read once, not twice.
+    const lo = hits(text, cue.low) + hits(text, tr.low);
+    const hi = hits(text, cue.high) + hits(text, tr.high);
     if (lo > hi) out[axis] = cue.lowWord;
     else if (hi > lo) out[axis] = cue.highWord;
     else out[axis] = (base[axis] as string) || 'balanced';
@@ -1220,16 +1314,56 @@ function deriveAntiRepetition(sectionCount: number, archetype: SiteArchetype): A
 /* ────────────────────────────────────────────────────────────────────────────
  * 7. CONTENT ARCHITECTURE + TRUTH POLICY
  * ──────────────────────────────────────────────────────────────────────────── */
+/**
+ * Claims that may never be invented, under any archetype.
+ *
+ * This list and every profile's `requiredContent` are deliberately kept CONSISTENT: a
+ * required item names a STRUCTURE (a menu, a schedule, a people section), never a fact,
+ * and the facts those structures hold are listed separately in `factualSlots` and governed
+ * by FACTUAL_POLICY below. Without that split the contract contradicted itself — an event
+ * site was told both "put the date, venue and ticket price in the first viewport" and
+ * "never invent dates or prices", and the model had to break one of the two.
+ */
 const NEVER_FABRICATE = [
-  'testimonials or attributed quotes',
-  'customer / user / member / attendee counts',
-  'revenue, funding or performance figures',
-  'certifications, accreditations or licences',
-  'awards, ratings or press mentions',
+  'testimonials, reviews, ratings or attributed quotes',
+  'customer / user / member / attendee / subscriber counts',
+  'revenue, funding, growth, accuracy or performance figures',
+  'certifications, accreditations, licences or registration numbers',
+  'awards or press mentions',
   'company history or founding dates',
-  'addresses, phone numbers, hours or service areas',
-  'named team members, partner or client logos',
+  'addresses, phone numbers, email addresses, opening hours or service areas',
+  'names of people — team, staff, practitioners, instructors, speakers, authors, clients',
+  'partner, client or "trusted by" logos',
+  'prices, fees, rates or discounts',
+  'dates, times, schedules or deadlines',
+  'product, dish, course, session or listing names presented as the real catalogue',
 ];
+
+/**
+ * The classes above that the specification's existing `honestyRules` and
+ * `outputContract.forbiddenPatterns` do NOT already cover. Those already forbid invented
+ * metrics, reviews, testimonials, logos, certifications, prices, inventory and listings, so
+ * only these are rendered — Design Intelligence extends the protection instead of restating it.
+ */
+const ADDITIONAL_NEVER_FABRICATE = [
+  'names of people — team, staff, practitioners, instructors, speakers, authors, clients',
+  'addresses, phone numbers, email addresses, opening hours or service areas',
+  'dates, times, schedules or deadlines',
+  'product, dish, course, session or listing names presented as the real catalogue',
+  'company history or founding dates',
+];
+
+/**
+ * What to do when a structure has a slot and the request did not supply the fact for it.
+ * The site must still be STRUCTURALLY complete and honest — a real menu with clearly
+ * provisional dish names is a usable site; a menu with invented prices is a liability.
+ */
+const FACTUAL_POLICY =
+  'Use ONLY facts the request supplied. Where one was not supplied, still build the structure and fill '
+  + 'the slot with an obviously provisional label the owner will replace ("Address to be confirmed", '
+  + '"Price on request", "Speaker to be announced", "Sample item"), or omit that single field where a '
+  + 'placeholder would read as dishonest. Never invent a plausible-looking value, never use lorem ipsum, '
+  + 'and never delete a required section because its facts are missing.';
 const BANNED_PHRASING = [
   'elevate', 'unlock', 'revolutionise', 'transform your workflow', 'seamless',
   'powerful', 'next-generation', 'cutting-edge', 'game-changing', 'supercharge', 'effortless',
@@ -1244,9 +1378,12 @@ function deriveContentPolicy(archetype: SiteArchetype, b: BrandCharacter): Conte
     360,
   );
   return {
-    requiredContent: list(p.requiredContent),
+    requiredContent: list(p.requiredContent, 6),
+    factualSlots: list(p.factualSlots, 6),
+    factualPolicy: FACTUAL_POLICY,
     forbiddenContent: list(p.forbiddenContent),
-    neverFabricate: NEVER_FABRICATE.slice(0, 8),
+    neverFabricate: NEVER_FABRICATE.slice(0, 12),
+    additionalNeverFabricate: ADDITIONAL_NEVER_FABRICATE.slice(0, 6),
     bannedPhrasing: BANNED_PHRASING.slice(0, 12),
     copyDirection,
   };
@@ -1356,7 +1493,6 @@ function deriveResponsiveIntent(
     densityChange: dense
       ? 'keep the information — regroup it into progressive sections rather than deleting it'
       : 'reduce ornament, not substance; remove decorative sections before content',
-    touchTargets: 'targets at least 44×44px with real spacing; no hover-only affordances',
     ctaPlacement: 'the primary action appears once early and once at the decision point, not trailing the visitor down the page',
     simplification: 'simplify by removing decoration and collapsing depth — never the content the visitor came for',
     structuralChanges: structural,
@@ -1465,17 +1601,18 @@ function boundLines(lines: string[], ceiling: number): string[] {
 }
 
 /**
- * The BINDING design-direction block for the first-generation request. Ordered so
- * the highest-priority obligations (what kind of site this is, what it must
- * contain, what may not be invented) come FIRST and therefore survive any
- * downstream clipping; decorative guidance sits last and is the first to be lost.
+ * P1 — WHAT THIS SITE IS, what it must genuinely contain, and what may never be
+ * invented. This is business intent + content hierarchy + truthfulness: the tier
+ * that must survive every budget cut, and the only Design Intelligence material
+ * that may sit above the canonical composition / content / visual-system
+ * authorities. Everything else this module produces is rendered at its own,
+ * lower, honest priority by the three functions below — so a budget cut can never
+ * drop a canonical authority while keeping Design Intelligence decoration.
  */
-export function renderDesignIntelligenceBlock(contract: DesignIntelligenceContract | undefined): string[] {
+export function renderDesignIntelligenceP1Block(contract: DesignIntelligenceContract | undefined): string[] {
   if (!contract) return [];
   const c = contract;
-  const v = c.visual;
   const lines: string[] = [
-    // ── P0/P1 — what this site IS and must carry.
     `BINDING SITE DESIGN DIRECTION (design-intelligence-v3 · archetype: ${c.archetype} · ${c.confidence} confidence via ${c.basis}):`,
     `This is ${article(c.archetypeLabel)} ${c.archetypeLabel.toLowerCase()} — ${c.product.category}. Business model: ${c.product.businessModel}.`,
     `Primary visitor: ${c.product.primaryVisitor}. They came to: ${c.product.visitorIntent}.`,
@@ -1484,15 +1621,38 @@ export function renderDesignIntelligenceBlock(contract: DesignIntelligenceContra
     ...(c.archetype === 'general'
       ? ['NO archetype was decisive: derive the structure from THIS request. Do NOT fall back to a software-product/marketing-page shape.']
       : []),
-    'MUST genuinely contain (a site of this kind is not complete without these):',
+    'MUST genuinely contain — these are STRUCTURAL obligations (build the section and its real',
+    'information architecture). They are NEVER an instruction to invent the facts inside them:',
     ...c.content.requiredContent.map((r) => `- ${r}`),
+    ...(c.content.factualSlots.length ? [
+      `Facts these sections need: ${c.content.factualSlots.join('; ')}.`,
+      c.content.factualPolicy,
+    ] : []),
     'WRONG for this kind of site (do not produce these even if they are common on the web):',
     ...c.content.forbiddenContent.map((r) => `- ${r}`),
-    `NEVER invent: ${c.content.neverFabricate.slice(0, 6).join('; ')}. If a fact was not supplied, write around it or use an obviously neutral label — never fabricate it.`,
+    // The spec's own honestyRules / outputContract.forbiddenPatterns already forbid invented
+    // metrics, reviews, testimonials, logos, certifications, prices, inventory and listings —
+    // restating them here would be a second authority saying the same thing. Only the classes
+    // NOT covered there are named, so this line adds coverage instead of noise.
+    `NEVER invent, in addition to the honesty rules below: ${c.content.additionalNeverFabricate.join('; ')}.`,
     `Copy: ${c.content.copyDirection}`,
     `Avoid this vocabulary unless the concept genuinely warrants it: ${c.content.bannedPhrasing.slice(0, 10).join(', ')}.`,
+    '',
+  ];
+  return boundLines(lines, P1_CHAR_CEILING);
+}
 
-    // ── P2 — composition strategy + brand character.
+/**
+ * P2 — brand/design direction and responsive behaviour. Peer of the canonical
+ * composition / visualSystem / contentNarrative / experienceQuality authorities:
+ * it sets page-level STRATEGY and character, never per-section families (composition
+ * owns those) and never colour/type tokens (visualSystem owns those).
+ */
+export function renderDesignIntelligenceP2Block(contract: DesignIntelligenceContract | undefined): string[] {
+  if (!contract) return [];
+  const c = contract;
+  const v = c.visual;
+  const lines: string[] = [
     `PAGE COMPOSITION STRATEGY: ${c.composition.strategy} — ${c.composition.rationale}`,
     `First viewport obligation: ${c.composition.entryObligation}.`,
     ...c.composition.sectionShapeRules.map((r) => `- ${r}`),
@@ -1501,8 +1661,9 @@ export function renderDesignIntelligenceBlock(contract: DesignIntelligenceContra
       : []),
     `BRAND CHARACTER (drives real decisions, never printed on the page): ${v0(c)}`,
 
-    // ── P2 — visual direction decisions.
-    'VISUAL DIRECTION — make each of these decisions deliberately:',
+    'VISUAL DIRECTION — the CHARACTER each decision must express. Where the visual-system block',
+    'states a concrete token (radius scale, type scale, colour role, shadow, spacing), that token is',
+    'authoritative — express this character by choosing WITHIN it, never by contradicting it:',
     `- Typography: ${v.typographyCharacter}`,
     `- Scale hierarchy: ${v.scaleHierarchy}`,
     `- Content width / measure: ${v.contentWidth}`,
@@ -1518,33 +1679,68 @@ export function renderDesignIntelligenceBlock(contract: DesignIntelligenceContra
     `- Density: ${v.density}`,
     `- Motion: ${v.motionRestraint}`,
 
-    // ── P2 — within-build anti-repetition.
-    'WITHIN THIS BUILD, DO NOT REPEAT YOURSELF:',
+    'WITHIN THIS BUILD, DO NOT REPEAT YOURSELF — these govern repeated TREATMENT (card pattern, grid',
+    'geometry, elevation, icon and CTA reuse). Per-section composition families and their adjacency',
+    'rule belong to the page-composition block; do not re-decide them here:',
     ...c.antiRepetition.rules.map((r) => `- ${r}`),
 
-    // ── P2/P3 — mobile is designed, not derived.
     'RESPONSIVE — design the mobile experience, do not shrink the desktop one:',
     `- Navigation: ${c.responsive.navigationTransformation}`,
     `- Hierarchy: ${c.responsive.hierarchyChange}`,
     `- Stacking: ${c.responsive.stackingOrder}`,
     `- Images: ${c.responsive.imageCropChange}`,
     `- Density: ${c.responsive.densityChange}`,
-    `- CTA / touch: ${c.responsive.ctaPlacement}; ${c.responsive.touchTargets}`,
+    `- CTA: ${c.responsive.ctaPlacement}`,
     `- Simplify by: ${c.responsive.simplification}`,
     ...c.responsive.structuralChanges.map((r) => `- Structural change: ${r}`),
+    'These are the mobile DESIGN decisions. The integrated-experience block owns the mechanical floor',
+    '(column collapse, reading/tab order, minimum type size, touch-target size, overflow) — satisfy both.',
+    '',
+  ];
+  return boundLines(lines, P2_CHAR_CEILING);
+}
 
-    // ── P3 — imagery intent.
-    `IMAGE INTENT — imagery is ${c.image.role} to this site. ${v.imageryRole}. ${c.image.subjectGuidance.join('; ')}.`,
+/** P3 — imagery guidance. Peer of visualConcept / motionExecution / research. */
+export function renderDesignIntelligenceP3Block(contract: DesignIntelligenceContract | undefined): string[] {
+  if (!contract) return [];
+  const c = contract;
+  const lines = [
+    `IMAGE INTENT — imagery is ${c.image.role} to this site. ${c.visual.imageryRole}. ${c.image.subjectGuidance.join('; ')}.`,
     ...(c.image.preferredMedia.length ? [`- Preferred media: ${c.image.preferredMedia.join('; ')}.`] : []),
     ...(c.image.cropRoles.length ? [`- Crop roles: ${c.image.cropRoles.join(' | ')}.`] : []),
     `- Never: ${c.image.forbidden.join('; ')}.`,
+    'This is imagery INTENT. Any required-image-coverage block below states the mandatory floor and the',
+    'approved slots — it always wins; never drop a required image because intent here says imagery is light.',
+    '',
+  ];
+  return boundLines(lines, P3_CHAR_CEILING);
+}
 
-    // ── P4 — the universal fingerprint ban (last: it is the least specific).
-    `DO NOT REPRODUCE THE GENERIC AI-WEBSITE FINGERPRINT: ${c.forbiddenFingerprints.join('; ')}.`,
+/** P4 — the generic fingerprint ban. The least specific guidance here, and
+ *  therefore the first thing a budget cut should lose. */
+export function renderDesignIntelligenceP4Block(contract: DesignIntelligenceContract | undefined): string[] {
+  if (!contract) return [];
+  const lines = [
+    `DO NOT REPRODUCE THE GENERIC AI-WEBSITE FINGERPRINT: ${contract.forbiddenFingerprints.join('; ')}.`,
     'None of this licenses random styling — every decision above must be justified by this business, its visitor and its content.',
     '',
   ];
-  return boundLines(lines, RENDER_CHAR_CEILING);
+  return boundLines(lines, P4_CHAR_CEILING);
+}
+
+/**
+ * The COMPLETE rendered direction, P1→P4 in order. This is what an un-budgeted
+ * request carries. The request builder emits the four tiers SEPARATELY, each at
+ * its own priority, so this is the concatenation — never a fifth representation.
+ */
+export function renderDesignIntelligenceBlock(contract: DesignIntelligenceContract | undefined): string[] {
+  if (!contract) return [];
+  return [
+    ...renderDesignIntelligenceP1Block(contract),
+    ...renderDesignIntelligenceP2Block(contract),
+    ...renderDesignIntelligenceP3Block(contract),
+    ...renderDesignIntelligenceP4Block(contract),
+  ];
 }
 
 /** The brand character rendered as words (never numbers). */
@@ -1580,6 +1776,9 @@ export function renderDesignIntelligencePlanningBlock(contract: DesignIntelligen
     `Register: ${c.product.register}; brand character: ${c.brand.summary}; content density: ${c.product.contentDensity}.`,
     `Composition strategy to plan for: ${c.composition.strategy} — ${c.composition.entryObligation}.`,
     `The section architecture must genuinely cover: ${c.content.requiredContent.slice(0, 5).join('; ')}.`,
+    'Those are STRUCTURAL requirements. Plan the sections and their real information architecture,',
+    'but never invent the business facts inside them (prices, dates, addresses, hours, names,',
+    'menu/product items, credentials, statistics) — plan a provisional label the owner replaces.',
     `Wrong for this kind of site: ${c.content.forbiddenContent.slice(0, 3).join('; ')}.`,
     'Do NOT plan a centred-hero + three-feature-cards + testimonials + CTA page unless this specific idea genuinely calls for it.',
     '',

@@ -32,7 +32,9 @@ import { stripLeadingFieldLabel } from '@/lib/webBuildFieldLabel';
 import { renderBindingRequirementsBlock } from '@/lib/webBuildBindingRequirements';
 import { renderResearchDirectionBlock } from '@/lib/webBuildResearchDirection';
 import {
-  deriveDesignIntelligence, renderDesignIntelligenceBlock, renderDesignIntelligencePlanningBlock,
+  deriveDesignIntelligence, renderDesignIntelligencePlanningBlock,
+  renderDesignIntelligenceP1Block, renderDesignIntelligenceP2Block,
+  renderDesignIntelligenceP3Block, renderDesignIntelligenceP4Block,
 } from '@/lib/webBuildDesignIntelligence';
 import { renderCompositionBlock } from '@/lib/webBuildComposition';
 import { renderVisualSystemBlock } from '@/lib/webBuildVisualSystem';
@@ -2496,10 +2498,15 @@ export function buildFrontendBuilderRequest(spec: FrontendBuildSpecification): s
   const appShellLines = isApp ? withGap(renderAppShellBlock(spec.appVisual)) : [];
 
   // Design Intelligence V3 — the BINDING site-archetype / brand-character / design-direction
-  // block. WEB only (never derived for an app spec, so an app request is unchanged). Rendered
-  // EARLY, immediately after the obligation manifest, because it establishes what KIND of site
-  // this is — every block below it is a refinement of that decision, not a substitute for it.
-  const designIntelligenceBlock = renderDesignIntelligenceBlock(spec.designIntelligence);
+  // direction, rendered as FOUR SEPARATE TIERS so each can carry its honest priority below.
+  // Rendering it as one block would have meant its P2–P4 material (visual direction, imagery,
+  // the generic fingerprint ban) inherited P1 protection, and a budget cut could then have
+  // dropped the canonical composition / visualSystem / visualConcept authorities while keeping
+  // Design Intelligence decoration. WEB only — every tier is [] for an app spec.
+  const diP1Block = renderDesignIntelligenceP1Block(spec.designIntelligence);
+  const diP2Block = renderDesignIntelligenceP2Block(spec.designIntelligence);
+  const diP3Block = renderDesignIntelligenceP3Block(spec.designIntelligence);
+  const diP4Block = renderDesignIntelligenceP4Block(spec.designIntelligence);
 
   const introLines = isApp ? [
     'Implement the FrontendBuildSpecification projection below EXACTLY as an authoritative',
@@ -2572,9 +2579,12 @@ export function buildFrontendBuilderRequest(spec: FrontendBuildSpecification): s
     { priority: 0, lines: appNavLines },
     { priority: 0, lines: appDepthLines },
     { priority: 0, lines: appShellLines },
-    // WEB only, empty for an app spec.
-    { priority: 1, lines: designIntelligenceBlock },
+    // Design Intelligence V3 — WEB only, every tier [] for an app spec. Each tier sits at
+    // its OWN honest priority: only P1 (what this site is, what it must structurally contain,
+    // what may never be invented) outranks the canonical authorities below.
+    { priority: 1, lines: diP1Block },
     { priority: 2, lines: experienceIdentityBlock },
+    { priority: 2, lines: diP2Block },       // peer of composition/visualSystem, never above them
     { priority: 3, lines: visualConceptBlock },
     { priority: 3, lines: motionExecutionBlock },
     { priority: 3, lines: researchDirectionBlock },
@@ -2583,8 +2593,10 @@ export function buildFrontendBuilderRequest(spec: FrontendBuildSpecification): s
     { priority: 2, lines: contentNarrativeBlock },
     { priority: 2, lines: siteDepthBlock },
     { priority: 2, lines: experienceBlock2 },
+    { priority: 3, lines: diP3Block },       // peer of visualConcept/motion/research
     { priority: 1, lines: imageBlock },
     { priority: 1, lines: coverageBlock },
+    { priority: 4, lines: diP4Block },       // the generic fingerprint ban — first to go
     { priority: 0, lines: bindingLines },
     { priority: 0, lines: disciplineLines },
     { priority: 0, lines: ['BEGIN_FRONTEND_BUILD_SPEC_JSON', json, 'END_FRONTEND_BUILD_SPEC_JSON'] },
@@ -2594,14 +2606,19 @@ export function buildFrontendBuilderRequest(spec: FrontendBuildSpecification): s
     parts.filter((p) => p.priority < dropAtOrAbove).flatMap((p) => p.lines).join('\n');
 
   // Cheapest path first: the full request, byte-identical to a flat assembly.
-  let message = serialize(5);
-  if (message.length > SAFE_FRONTEND_BUILDER_REQUEST_CHARS) {
-    for (const cutoff of [4, 3, 2] as BlockPriority[]) {
-      message = serialize(cutoff);
-      if (message.length <= SAFE_FRONTEND_BUILDER_REQUEST_CHARS) break;
-    }
+  const message = serialize(5);
+  // WEB ONLY. Priority shedding is a Web Build behaviour: an APP request must be
+  // byte-for-byte what it was before Design Intelligence V3 existed AT EVERY SIZE, not
+  // just for normal-sized fixtures — so an oversized app request keeps every block and
+  // still fails honestly at the existing MAX_FRONTEND_SPEC_CHARS guard, exactly as before.
+  if (isApp || message.length <= SAFE_FRONTEND_BUILDER_REQUEST_CHARS) return message;
+  for (const cutoff of [4, 3, 2] as BlockPriority[]) {
+    const shed = serialize(cutoff);
+    if (shed.length <= SAFE_FRONTEND_BUILDER_REQUEST_CHARS) return shed;
   }
-  return message;
+  // Irreducible even at the deepest cut — send the smallest request rather than one
+  // still padded with decoration, and let the existing size guard reject it truthfully.
+  return serialize(2);
 }
 
 /* ── Phase 13C.1 — truthful AI-transport execution metadata ─────────────────────
