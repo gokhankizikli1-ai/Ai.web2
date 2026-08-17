@@ -212,6 +212,17 @@ describe('J. App Build Quality V2 adds no provider call and no dependency', () =
     expect(mod).not.toMatch(/Date\.now|Math\.random/);
   });
 
+  it('never promotes a candidate whose rendered evidence was LOST', () => {
+    // Guard for the "broken app promoted" vector: if the initial app was measured and the
+    // repaired one was not, promotion is refused outright — we would be shipping the candidate we
+    // know LESS about. Both flags are undefined for a website build, so Web Build is unaffected.
+    const quality = src('src/lib/webBuildFrontendQuality.ts');
+    expect(quality).toContain('const lostRenderedEvidence =');
+    expect(quality).toContain('bestCandidatePromoted = promotesUnapprovedRepair(v2.selection) && !lostRenderedEvidence;');
+    // …and the comparison itself is width-set based, not a boolean "was it measured at all".
+    expect(quality).toContain('sameRenderedEvidenceBasis(initialAppQuality, repairAppQuality)');
+  });
+
   it('the pipeline still makes at most one review, one repair and one post-repair review', () => {
     const quality = src('src/lib/webBuildFrontendQuality.ts');
     expect((quality.match(/await generateFrontendBuilderReviewRaw\(/g) || []).length).toBe(2);   // initial + post-repair

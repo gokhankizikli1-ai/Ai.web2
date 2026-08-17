@@ -155,6 +155,10 @@ export interface AppQualityInput {
   navigation?: NavigationContract;
   /** Shared visual-system colour mode — enables the dark-surface mismatch detector. */
   colorMode?: 'light' | 'dark' | 'mixed';
+  /** The build's UI language. PRODUCT-FIT is judged from ENGLISH vocabulary, so it is skipped
+   *  entirely for any other language rather than accusing a correct Turkish/German app of
+   *  building the wrong product. Absent ⇒ treated as English (the pre-existing default). */
+  language?: string;
   /** Rendered measurements for THIS candidate (all measured viewports). */
   screenshots?: ReadonlyArray<RenderedScreenshotMeta>;
 }
@@ -163,8 +167,6 @@ export interface AppQualityInput {
 
 const MAX_ISSUES = 12;
 const MAX_FILES_PER_ISSUE = 5;
-/** Below this many unwired controls the finding is reported but never blocks. */
-const DEAD_CONTROL_BLOCK_THRESHOLD = 4;
 /** Widths at or below this are treated as the phone regime for touch/nav reachability. */
 const NARROW_WIDTH_MAX = 480;
 /** Small-target count that proves the phone layout is genuinely hard to operate. */
@@ -439,26 +441,56 @@ export function analyzeAppBuildQuality(input: AppQualityInput): AppQualityAccept
       }));
     }
 
-    /* ── P2 — routing not wired at all for a multi-screen app. ── */
-    const routingHaystack = `${appFile?.content || ''}\n${routesFile?.content || ''}`;
-    if (arch.screens.length >= 2 && !ROUTER_RE.test(routingHaystack)) {
-      found.push(issue({
-        code: 'app-router-missing', dimension: 'navigation', severity: 'blocker', priority: 2,
-        label: 'Multi-screen app has no router',
-        evidence: `The app declares ${arch.screens.length} screens but no client router is wired in src/App.tsx or src/app/routes.tsx.`,
-        repairInstruction: `Wire react-router (already available) in src/App.tsx so every planned screen has a real route and the navigation actually changes screens.`,
-        files: ['src/App.tsx'], blocking: true,
-      }));
-    }
-
     /* ── P2 — RENDERED navigation truth. The runtime operated the primary navigation
      *        controls; if controls exist but none of them changed the rendered screen, the
      *        navigation is decorative. This is the single strongest app-quality fact and it
-     *        cannot be inferred from source. ── */
+     *        cannot be inferred from source. Hoisted above the router check because a PROVEN
+     *        working navigation is what makes the source-only router inference safe. ── */
     const navProbes = shots.filter((s) => typeof s.navProbedCount === 'number' && (s.navProbedCount ?? 0) > 0);
+    const probedCount = navProbes.length ? Math.max(...navProbes.map((s) => s.navProbedCount ?? 0)) : 0;
+    const workingCount = navProbes.length ? Math.max(...navProbes.map((s) => s.navWorkingCount ?? 0)) : 0;
+    /** The runtime PROVED the user can change screen in this app. */
+    const navigationProvenToWork = probedCount > 0 && workingCount > 0;
+
+    /* ── P2 — routing not wired at all for a multi-screen app. ── */
+    const routingHaystack = `${appFile?.content || ''}\n${routesFile?.content || ''}`;
+    // A local screen-switch — SOME file that both holds state and renders two or more screen
+    // components — is a real, working navigation mechanism even with no router. Requiring both
+    // signals in the SAME file is what makes it precise: a shell (App.tsx or AppShell.tsx)
+    // satisfies it, while an ordinary screen that merely happens to call useState does not.
+    // Recognising it keeps the source-only check from rejecting an app that changes screens.
+    const screenNameRes = arch.screens.map((s) => new RegExp(`\\b${screenComponentName(s.id)}\\b`));
+    let referencedScreenComponents = 0;
+    const localScreenSwitch = ui.some((f) => {
+      if (!/\buse(?:State|Reducer)\s*[(<]/.test(f.content)) return false;
+      const n = screenNameRes.filter((re) => re.test(f.content)).length;
+      if (n > referencedScreenComponents) referencedScreenComponents = n;
+      return n >= 2;
+    });
+    if (arch.screens.length >= 2 && !ROUTER_RE.test(routingHaystack)) {
+      // A react-router import is the CONVENTION, not the only correct implementation: a
+      // multi-screen app that switches screens from local state is a working app, and
+      // `src/app/routes.tsx` is only a RECOMMENDED file in the output contract, so such an app
+      // passes validation. Blocking on the source pattern alone would therefore reject a
+      // perfectly usable app. It only blocks when there is NO evidence of any screen-switching
+      // mechanism at all — neither a rendered proof nor a local screen switch in the source.
+      const hasSomeNavigation = navigationProvenToWork || localScreenSwitch;
+      found.push(issue({
+        code: 'app-router-missing', dimension: 'navigation', severity: hasSomeNavigation ? 'major' : 'blocker', priority: 2,
+        label: 'Multi-screen app has no router',
+        evidence: navigationProvenToWork
+          ? `The app declares ${arch.screens.length} screens with no client router wired, though the rendered navigation did change screens (${workingCount}/${probedCount} controls).`
+          : localScreenSwitch
+            ? `The app declares ${arch.screens.length} screens and switches between ${referencedScreenComponents} of them from local state, but no client router is wired, so no screen is deep-linkable.`
+            : `The app declares ${arch.screens.length} screens but no client router is wired in src/App.tsx or src/app/routes.tsx, and no local screen-switching mechanism was found.`,
+        repairInstruction: `Wire react-router (already available) in src/App.tsx so every planned screen has a real, deep-linkable route.`,
+        files: ['src/App.tsx'], blocking: !hasSomeNavigation,
+      }));
+    }
+
     if (navProbes.length) {
-      const probed = Math.max(...navProbes.map((s) => s.navProbedCount ?? 0));
-      const working = Math.max(...navProbes.map((s) => s.navWorkingCount ?? 0));
+      const probed = probedCount;
+      const working = workingCount;
       if (working === 0) {
         const conclusive = probed >= NAV_PROBE_BLOCK_MIN;
         found.push(issue({
@@ -503,10 +535,15 @@ export function analyzeAppBuildQuality(input: AppQualityInput): AppQualityAccept
     if (clipped.length) {
       const worst = clipped.reduce((a, b) => ((b.clippedElementCount ?? 0) > (a.clippedElementCount ?? 0) ? b : a));
       const n = worst.clippedElementCount ?? 0;
-      // Clipped content at a phone width is a severe responsive failure regardless of count;
-      // at desktop it takes more than one occurrence to be conclusive.
-      const clippedNarrow = clipped.some((s) => widthOf(s) > 0 && widthOf(s) <= NARROW_WIDTH_MAX);
-      const severe = clippedNarrow || n >= CLIPPED_WIDE_BLOCK_THRESHOLD;
+      // Blocking needs CORROBORATION, because a single hard-clipped box is also how a legitimate
+      // design renders (a carousel track inside `overflow-hidden`, a decorative overhang). The
+      // catastrophic case measured in a real browser clips AND overflows the document at the same
+      // phone width, so that pairing is what blocks; a lone clipped box at one width is reported
+      // and repaired but never rejects the app.
+      const clippedNarrowWithOverflow = clipped.some(
+        (s) => widthOf(s) > 0 && widthOf(s) <= NARROW_WIDTH_MAX && s.horizontalOverflow === true,
+      );
+      const severe = clippedNarrowWithOverflow || n >= CLIPPED_WIDE_BLOCK_THRESHOLD;
       found.push(issue({
         code: 'app-content-clipped', dimension: 'responsive', severity: severe ? 'blocker' : 'major', priority: 3,
         label: 'Content is clipped',
@@ -557,13 +594,18 @@ export function analyzeAppBuildQuality(input: AppQualityInput): AppQualityAccept
       if (dead.length) { deadCount += dead.length; deadPaths.push(path); }
     }
     if (deadCount > 0) {
-      const blocking = deadCount >= DEAD_CONTROL_BLOCK_THRESHOLD;
+      // Reported and repaired at P2, but NEVER blocking. The underlying detector is a source-text
+      // scan for a missing `on*=` attribute, and it has real false-positive modes that a
+      // *working* app hits: a `<button>` inside a `<Link>`, a control receiving handlers through
+      // `{...props}`, or one wired by a parent form/library. Withholding approval on that
+      // evidence would reject apps that operate correctly, so the obligation reaches the repair
+      // (and counts in candidate comparison) without ever rejecting the build.
       found.push(issue({
-        code: 'app-dead-control', dimension: 'interaction', severity: blocking ? 'blocker' : 'major', priority: 2,
+        code: 'app-dead-control', dimension: 'interaction', severity: 'major', priority: 2,
         label: 'Interactive controls do nothing',
         evidence: `${deadCount} interactive control(s) across ${deadPaths.length} screen(s) carry no event handler, so operating them has no effect: ${deadPaths.slice(0, 3).join(', ')}.`,
         repairInstruction: `Wire each listed control to a handler that updates local state and produces a visible consequence, or remove the control so the app shows no dead affordance.`,
-        files: deadPaths, blocking,
+        files: deadPaths,
       }));
     }
 
@@ -654,8 +696,12 @@ export function analyzeAppBuildQuality(input: AppQualityInput): AppQualityAccept
 
     /* ── P5 — PRODUCT FIT. Uses ONLY the app type the planner already derived, and only the
      *        VISIBLE copy of the screens/components (never App.tsx or the route table, whose text
-     *        is generated from the plan and therefore always "fits"). ── */
-    if (screens.length > 0) {
+     *        is generated from the plan and therefore always "fits").
+     *        ENGLISH ONLY: both the product vocabulary and the wrong-shape vocabulary are English,
+     *        so a correct Turkish/German app would score zero product hits and could be rejected
+     *        by a single loanword ("KPI") in its copy. Non-English builds skip the check. ── */
+    const englishBuild = !input.language || /^en/i.test(input.language);
+    if (screens.length > 0 && englishBuild) {
       const fitFiles = ui.filter((f) => f.path !== 'src/App.tsx' && f.path !== 'src/app/routes.tsx');
       const fit = productFitEvidence(arch.appType, fitFiles);
       if (fit.applicable && fit.productHits === 0 && fit.dashboardHits > 0) {
@@ -702,7 +748,12 @@ const DIMENSION_TO_CATEGORY: Record<AppQualityDimension, FrontendBuilderReviewCa
   interaction: 'motion-and-interaction',
   responsive: 'responsive-intent',
   accessibility: 'accessibility-intent',
-  composition: 'component-composition',
+  // NOT `component-composition`: the SHARED `selectBoundedRepairIssues` gives a
+  // `component-composition` major an inherently higher tier than any other gate-critical major,
+  // which would have put a P5 "every screen is the same shape" finding AHEAD of a P2 "navigation
+  // has no active state" finding in the bounded repair set — inverting the P0–P5 contract. The
+  // `generic-template` category carries no such tier, so app issues stay in priority order.
+  composition: 'generic-template',
   'product-fit': 'concept-fidelity',
 };
 
@@ -748,6 +799,27 @@ export function appQualityIssueCodes(result: AppQualityAcceptanceResult | undefi
 export function appQualityIssueCount(result: AppQualityAcceptanceResult | undefined): number {
   if (!result || result.version !== 'app-quality-v1') return 0;
   return result.issues.length;
+}
+
+/**
+ * True when two candidates were judged on the SAME rendered evidence.
+ *
+ * Candidate comparison is only meaningful like-for-like. It is not enough that both sides were
+ * "measured": if the post-repair run lost three of its five viewports to a timeout, the repaired
+ * candidate simply had fewer chances to show a narrow-width defect, and comparing the raw counts
+ * would promote it for having been measured LESS. This compares the actual set of measured
+ * widths, so any partial measurement on either side is treated as a different basis.
+ */
+export function sameRenderedEvidenceBasis(
+  a: AppQualityAcceptanceResult | undefined,
+  b: AppQualityAcceptanceResult | undefined,
+): boolean {
+  const wa = a?.version === 'app-quality-v1' ? a.measuredWidths : [];
+  const wb = b?.version === 'app-quality-v1' ? b.measuredWidths : [];
+  if (wa.length !== wb.length) return false;
+  const sa = [...wa].sort((x, y) => x - y);
+  const sb = [...wb].sort((x, y) => x - y);
+  return sa.every((w, i) => w === sb[i]);
 }
 
 /** Bounded, secret-free diagnostics for the acceptance artifact. */

@@ -13,7 +13,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   analyzeAppBuildQuality, appQualityToReviewIssues, hasBlockingAppQualityFindings,
-  appQualityIssueCodes, appQualityIssueCount, buildAppQualityDiagnostics,
+  appQualityIssueCodes, appQualityIssueCount, buildAppQualityDiagnostics, sameRenderedEvidenceBasis,
 } from '@/lib/appBuildQuality';
 import {
   deriveAppArchitectureContract, classifyAppType, directionFor, screenFilePath,
@@ -317,11 +317,12 @@ export default function App() { return <div>${arch.screens.map((s) => `<${compNa
     expect(appQualityIssueCodes(res)).toContain('app-fixed-width');
   });
 
-  it('detects CLIPPED content from rendered truth, with phone clipping treated as severe', () => {
-    // Real-browser measurement of a catastrophically desktop-only app returned clippedElementCount
-    // = 1 (the container hides the rows; the rows themselves are not individually clipped), so the
-    // severity axis is WHERE it happens, not how many. Clipping at a phone width is severe on its
-    // own; a single occurrence at desktop is reported but does not block.
+  it('detects CLIPPED content, and blocks only on CORROBORATED clipping', () => {
+    // Real-browser measurement of a catastrophically desktop-only app returned
+    // clippedElementCount = 1 (the container hides the rows; the rows are not individually
+    // clipped) AND horizontalOverflow at the same phone width. A lone clipped box with no
+    // overflow is also how a legitimate carousel/decorative overhang renders, so that pairing is
+    // what blocks — a single uncorroborated clip is reported and repaired, never rejected.
     const arch = archFor('Build a CRM for a small sales team');
     const files = healthyApp(arch, VOCAB.crm);
     const desktopOnce = analyze(arch, files, [shot('desktop', 1440, { clippedElementCount: 1 })]);
@@ -329,8 +330,13 @@ export default function App() { return <div>${arch.screens.map((s) => `<${compNa
     expect(hasBlockingAppQualityFindings(desktopOnce)).toBe(false);
     const desktopSeveral = analyze(arch, files, [shot('desktop', 1440, { clippedElementCount: 3 })]);
     expect(hasBlockingAppQualityFindings(desktopSeveral)).toBe(true);
-    const onPhone = analyze(arch, files, [shot('mobile', 390, { clippedElementCount: 1 })]);
-    expect(hasBlockingAppQualityFindings(onPhone)).toBe(true);
+    // A carousel-style single clip on a phone with NO document overflow must not reject the app.
+    const phoneCarousel = analyze(arch, files, [shot('mobile', 390, { clippedElementCount: 1 })]);
+    expect(appQualityIssueCodes(phoneCarousel)).toContain('app-content-clipped');
+    expect(hasBlockingAppQualityFindings(phoneCarousel)).toBe(false);
+    // The real catastrophic shape — clipped AND overflowing at a phone width — does block.
+    const phoneBroken = analyze(arch, files, [shot('mobile', 390, { clippedElementCount: 1, horizontalOverflow: true })]);
+    expect(hasBlockingAppQualityFindings(phoneBroken)).toBe(true);
   });
 
   it('detects DEAD PRIMARY INTERACTION (controls with no handler)', () => {
@@ -342,7 +348,92 @@ export default function App() { return <div>${arch.screens.map((s) => `<${compNa
       : f));
     const res = analyze(arch, dead);
     expect(appQualityIssueCodes(res)).toContain('app-dead-control');
-    expect(hasBlockingAppQualityFindings(res)).toBe(true);
+    // Reported and repaired at P2, but NEVER blocking: the detector is a source scan for a
+    // missing `on*=` attribute and a WORKING app hits its false-positive modes (a <button>
+    // inside a <Link>, handlers arriving through {...props}). It must not reject a usable app.
+    expect(hasBlockingAppQualityFindings(res)).toBe(false);
+    const issue = res.issues.find((i) => i.code === 'app-dead-control')!;
+    expect(issue.severity).toBe('major');
+    expect(issue.priority).toBe(2);
+  });
+
+  it('does NOT reject a working multi-screen app that navigates from state instead of a router', () => {
+    // `src/app/routes.tsx` is only a RECOMMENDED output file, so a state-machine app passes
+    // validation. Blocking on the react-router source pattern alone would reject a usable app;
+    // rendered proof that navigation works downgrades it to a repairable convention finding.
+    const arch = archFor('Build a CRM for a small sales team');
+    const stateNav = healthyApp(arch, VOCAB.crm).map((f) => (f.path === 'src/App.tsx'
+      ? file(f.path, `import { useState } from 'react';
+${arch.screens.map((s) => `import ${compName(s.id)} from './screens/${compName(s.id)}';`).join('\n')}
+export default function App() {
+  const [screen, setScreen] = useState('${arch.screens[0].id}');
+  return (<div><nav aria-label="Main">${arch.globalScreenIds.map((id) => `<button onClick={() => setScreen('${id}')}>${id}</button>`).join('')}</nav>
+    <main>${arch.screens.map((s) => `{screen === '${s.id}' && <${compName(s.id)} />}`).join('')}</main></div>);
+}`)
+      : f));
+    const proven = analyze(arch, stateNav, [shot('desktop', 1440, { navProbedCount: 3, navWorkingCount: 3 })]);
+    expect(appQualityIssueCodes(proven)).toContain('app-router-missing');
+    expect(hasBlockingAppQualityFindings(proven)).toBe(false);
+    // Even with NO measurement, the local screen switch visible in the source is evidence enough
+    // that the app can change screens — it stays a repairable convention finding.
+    const unmeasured = analyze(arch, stateNav);
+    expect(appQualityIssueCodes(unmeasured)).toContain('app-router-missing');
+    expect(hasBlockingAppQualityFindings(unmeasured)).toBe(false);
+    // The screen switch may live in a shell component rather than App.tsx — still not broken.
+    const shellNav = healthyApp(arch, VOCAB.crm).map((f) => (f.path === 'src/App.tsx'
+      ? file(f.path, "import AppShell from './components/AppShell';\nexport default function App() { return <AppShell />; }")
+      : f)).concat(file('src/components/AppShell.tsx', `import { useState } from 'react';
+${arch.screens.map((s) => `import ${compName(s.id)} from './screens/${compName(s.id)}';`).join('\n')}
+export default function AppShell() {
+  const [screen, setScreen] = useState('${arch.screens[0].id}');
+  return (<div><nav aria-label="Main">${arch.globalScreenIds.map((id) => `<button onClick={() => setScreen('${id}')}>${id}</button>`).join('')}</nav>
+    ${arch.screens.map((s) => `{screen === '${s.id}' && <${compName(s.id)} />}`).join('')}</div>);
+}`));
+    expect(hasBlockingAppQualityFindings(analyze(arch, shellNav))).toBe(false);
+
+    // An app with NO router and NO screen-switching mechanism at all is genuinely broken.
+    const noNav = healthyApp(arch, VOCAB.crm).map((f) => (f.path === 'src/App.tsx'
+      ? file(f.path, `${arch.screens.map((s) => `import ${compName(s.id)} from './screens/${compName(s.id)}';`).join('\n')}
+export default function App() { return <div>${arch.screens.map((s) => `<${compName(s.id)} />`).join('')}</div>; }`)
+      : f));
+    expect(hasBlockingAppQualityFindings(analyze(arch, noNav))).toBe(true);
+  });
+
+  it('skips PRODUCT FIT entirely for a non-English build', () => {
+    // Both vocabularies are English, so a correct Turkish app scores zero product hits and a
+    // single loanword ("KPI") in its copy would otherwise reject it.
+    const arch = archFor('Build a booking management app for appointments and clients');
+    const turkish = healthyApp(arch, VOCAB.booking).map((f) => (f.path.startsWith('src/screens/')
+      ? file(f.path, `export default function S() { const act = () => {}; return (<div><h1>Genel Bakış</h1><p>Toplam gelir</p><p>KPI</p><button onClick={act}>Yenile</button></div>); }`)
+      : f));
+    const asEnglish = analyzeAppBuildQuality({ files: turkish, architecture: arch, language: 'en' });
+    expect(appQualityIssueCodes(asEnglish)).toContain('app-product-fit');
+    const asTurkish = analyzeAppBuildQuality({ files: turkish, architecture: arch, language: 'tr' });
+    expect(appQualityIssueCodes(asTurkish)).not.toContain('app-product-fit');
+    expect(hasBlockingAppQualityFindings(asTurkish)).toBe(false);
+  });
+
+  it('keeps app obligations in P0→P5 order inside the SHARED bounded repair selection', () => {
+    // Regression guard: mapping the composition dimension onto `component-composition` gave a P5
+    // finding an inherently higher tier in selectBoundedRepairIssues than any other gate-critical
+    // major, putting "every screen is the same shape" AHEAD of "navigation has no active state".
+    const arch = archFor('Build a CRM for a small sales team');
+    const files = healthyApp(arch, VOCAB.crm).map((f) => (f.path.startsWith('src/screens/')
+      ? file(f.path, `export default function S() { const act = () => {}; return (<div className="grid grid-cols-3 rounded-xl">{items.map((i) => <span key={i}>contact</span>)}<button onClick={act}>Go</button></div>); }`)
+      : f.path === 'src/App.tsx'
+        ? file(f.path, `import { BrowserRouter, Routes, Route, Link } from 'react-router';
+${arch.screens.map((s) => `import ${compName(s.id)} from './screens/${compName(s.id)}';`).join('\n')}
+export default function App() { return (<BrowserRouter><nav aria-label="Main">${arch.globalScreenIds.map((id) => `<Link to="/${id}">${id}</Link>`).join('')}</nav><Routes>${arch.screens.map((s) => `<Route path="/${s.id}" element={<${compName(s.id)} />} />`).join('')}</Routes></BrowserRouter>); }`)
+        : f));
+    const res = analyze(arch, files);
+    const codes = res.issues.map((i) => i.code);
+    expect(codes).toContain('app-nav-active-state');       // P2
+    expect(codes).toContain('app-screen-uniformity');      // P5
+    const selected = selectBoundedRepairIssues(appQualityToReviewIssues(res));
+    const navIdx = selected.findIndex((i) => i.id === 'app:app-nav-active-state');
+    const uniIdx = selected.findIndex((i) => i.id === 'app:app-screen-uniformity');
+    expect(navIdx).toBeGreaterThanOrEqual(0);
+    expect(navIdx).toBeLessThan(uniIdx === -1 ? Number.MAX_SAFE_INTEGER : uniIdx);
   });
 
   it('detects the REPEATED-TEMPLATE pathology (every screen the same shape)', () => {
@@ -665,6 +756,17 @@ describe('E. acceptance gate + repair priority', () => {
     expect(measured.renderedEvidence).toBe(true);
     expect(unmeasured.renderedEvidence).toBe(false);
     expect(appQualityIssueCount(measured)).toBeGreaterThan(appQualityIssueCount(unmeasured));
+    expect(sameRenderedEvidenceBasis(measured, unmeasured)).toBe(false);
+    // A PARTIAL measurement is also a different basis — otherwise a repaired candidate that lost
+    // three of its five viewports to a timeout would be compared as if it had been measured fully.
+    const fiveWidths = analyze(arch, files, [
+      shot('desktop', 1440), shot('laptop', 1024), shot('tablet', 768),
+      shot('mobile-large', 430), shot('mobile', 390),
+    ]);
+    const twoWidths = analyze(arch, files, [shot('desktop', 1440), shot('mobile', 390)]);
+    expect(sameRenderedEvidenceBasis(fiveWidths, twoWidths)).toBe(false);
+    expect(sameRenderedEvidenceBasis(fiveWidths, fiveWidths)).toBe(true);
+    expect(sameRenderedEvidenceBasis(unmeasured, unmeasured)).toBe(true);
     // Compared like-for-like (both source-only) the two identical projects are a tie, and a tie
     // keeps the earlier candidate.
     const sel = selectBestCandidate({

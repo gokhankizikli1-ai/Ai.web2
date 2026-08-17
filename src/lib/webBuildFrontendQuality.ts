@@ -218,7 +218,7 @@ import type { CandidateBlockingFlags } from '@/lib/webBuildQualityCandidates';
 // withhold approval, reject a repair, and be compared between candidates.
 import {
   analyzeAppBuildQuality, appQualityToReviewIssues, hasBlockingAppQualityFindings,
-  appQualityIssueCodes, appQualityIssueCount, buildAppQualityDiagnostics,
+  appQualityIssueCodes, appQualityIssueCount, buildAppQualityDiagnostics, sameRenderedEvidenceBasis,
   type AppQualityAcceptanceResult,
 } from '@/lib/appBuildQuality';
 import type {
@@ -1196,6 +1196,7 @@ export async function runFrontendBuilderQualityPipeline(
         architecture: spec?.appArchitecture,
         navigation: spec?.navigation,
         colorMode: spec?.visualSystem?.colorMode,
+        language: spec?.language,
         screenshots: renderedInputForVision?.screenshots,
       });
       const appIssues = appQualityToReviewIssues(initialAppQuality).map((i) => ({ ...i, gateCritical: true }));
@@ -1562,6 +1563,7 @@ export async function runFrontendBuilderQualityPipeline(
         architecture: spec?.appArchitecture,
         navigation: spec?.navigation,
         colorMode: spec?.visualSystem?.colorMode,
+        language: spec?.language,
         screenshots: postRenderedScreenshots,
       });
       const detIssuesFB = [
@@ -1688,21 +1690,21 @@ export async function runFrontendBuilderQualityPipeline(
     // into a skeleton can never be promoted.
     const promotionPreservation = evaluatePreservationGate(validation?.files ?? [], repairValidation.files);
 
-    // App Build Quality V2 — candidate comparison must be LIKE-FOR-LIKE. If only one of the two
-    // candidates was actually measured in the preview (the post-repair measurement timed out, say),
-    // the unmeasured side simply has no rendered findings — that is absence of evidence, not
-    // evidence of absence, and comparing the two counts directly would promote a repair for having
-    // been measured less. When the evidence bases differ, BOTH sides are re-analyzed source-only
-    // for the comparison. The ACCEPTANCE gate above deliberately keeps the best available evidence:
-    // a rendered-PROVEN defect must still block, however the other candidate was measured.
-    const sameEvidenceBasis =
-      (initialAppQuality?.renderedEvidence === true) === (repairAppQuality?.renderedEvidence === true);
+    // App Build Quality V2 — candidate comparison must be LIKE-FOR-LIKE. If the two candidates
+    // were not measured at the SAME viewports (the post-repair run timed out entirely, or lost
+    // three of its five widths), the less-measured side simply had fewer chances to show a
+    // defect — that is absence of evidence, not evidence of absence, and comparing the counts
+    // directly would promote a repair for having been measured LESS. When the evidence bases
+    // differ, BOTH sides are re-analyzed source-only for the comparison. The ACCEPTANCE gate above
+    // deliberately keeps the best available evidence: a rendered-PROVEN defect must still block,
+    // however the other candidate was measured.
+    const sameEvidenceBasis = sameRenderedEvidenceBasis(initialAppQuality, repairAppQuality);
     const cmpInitialApp = sameEvidenceBasis
       ? initialAppQuality
-      : analyzeAppBuildQuality({ files: validation?.files, architecture: spec?.appArchitecture, navigation: spec?.navigation, colorMode: spec?.visualSystem?.colorMode });
+      : analyzeAppBuildQuality({ files: validation?.files, architecture: spec?.appArchitecture, navigation: spec?.navigation, colorMode: spec?.visualSystem?.colorMode, language: spec?.language });
     const cmpRepairApp = sameEvidenceBasis
       ? repairAppQuality
-      : analyzeAppBuildQuality({ files: repairValidation.files, architecture: spec?.appArchitecture, navigation: spec?.navigation, colorMode: spec?.visualSystem?.colorMode });
+      : analyzeAppBuildQuality({ files: repairValidation.files, architecture: spec?.appArchitecture, navigation: spec?.navigation, colorMode: spec?.visualSystem?.colorMode, language: spec?.language });
 
     let bestCandidatePromoted = false;
     try {
@@ -1736,7 +1738,15 @@ export async function runFrontendBuilderQualityPipeline(
         renderRegressed: renderedRegressionRejects,
         preservationPassed: promotionPreservation.passed,
       });
-      bestCandidatePromoted = promotesUnapprovedRepair(v2.selection);
+      // App Build Quality V2 — LOSING rendered evidence is never a reason to promote. If the
+      // initial app was measured in the preview and the repaired one was not (its measurement
+      // timed out, the preview never bound, the run was superseded), we know strictly LESS about
+      // the candidate we would be shipping than about the one we already have. Rule 7 — stability
+      // beats churn — applies with more force here, not less. Both flags are undefined for a
+      // website build, so this can never change Web Build's decision.
+      const lostRenderedEvidence =
+        initialAppQuality?.renderedEvidence === true && repairAppQuality?.renderedEvidence !== true;
+      bestCandidatePromoted = promotesUnapprovedRepair(v2.selection) && !lostRenderedEvidence;
     } catch {
       // Fail-open: without a selection the pipeline keeps the pre-Quality-V2 behaviour exactly.
       v2.selection = undefined;

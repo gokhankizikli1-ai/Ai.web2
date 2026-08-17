@@ -626,18 +626,25 @@ export const VE_RUNTIME_SOURCE = `(function () {
    *  sidebar simply vanished and nothing replaced it measures FALSE. */
   function measureNavReachable(vw, vh) {
     try {
+      var inView = function (el) {
+        var r = el.getBoundingClientRect();
+        return r.width > 2 && r.height > 2 && r.bottom > 0 && r.top < vh && r.right > 0 && r.left < vw;
+      };
       var visible = collectNavControls(3);
-      for (var i = 0; i < visible.length; i++) {
-        var r = visible[i].getBoundingClientRect();
-        if (r.bottom > 0 && r.top < vh && r.right > 0 && r.left < vw) { return true; }
-      }
-      // No visible nav item — look for a menu/drawer trigger instead.
+      for (var i = 0; i < visible.length; i++) { if (inView(visible[i])) { return true; } }
+      // No landmark nav item in view — a menu/drawer trigger also makes navigation reachable.
       var triggers = document.querySelectorAll(
         '[aria-label*="menu" i], [aria-label*="navigation" i], [aria-controls], [data-menu-trigger], button[aria-expanded]'
       );
-      for (var k = 0; k < Math.min(triggers.length, 20); k++) {
-        var tr = triggers[k].getBoundingClientRect();
-        if (tr.width > 2 && tr.height > 2 && tr.bottom > 0 && tr.top < vh && tr.right > 0 && tr.left < vw) { return true; }
+      for (var k = 0; k < Math.min(triggers.length, 20); k++) { if (inView(triggers[k])) { return true; } }
+      // FALLBACK — a generated phone shell very often renders its bottom tab bar as a plain
+      // <footer>/<div> of internal links with no nav landmark and no menu trigger. Reporting that
+      // app as "no navigation at phone width" would REJECT a perfectly usable app, so two or more
+      // visible internal-route links anywhere on the screen also count as reachable navigation.
+      var links = document.querySelectorAll('a[href^="/"], a[href^="#"], a[href^="."]');
+      var seen = 0;
+      for (var j = 0; j < Math.min(links.length, 80); j++) {
+        if (inView(links[j])) { seen += 1; if (seen >= 2) { return true; } }
       }
       return false;
     } catch (e) { return true; }        // fail-open: unknown is never reported as unreachable
