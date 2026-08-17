@@ -36,11 +36,11 @@ _ORDINARY_CHAT_MODES    = ("", "chat")  # build/tool modes are excluded from con
 _MAX_MEMORIES_AS_CTX    = 8
 _CTX_BLOCK_CHAR_BUDGET  = 4000      # cap the prompt-injected block (raised for chat evidence)
 
-# Deliverable kinds that represent a generated Web/App product. Kept in sync
-# with the build capability's deliverable kinds — the canonical build/artifact
-# authority (deliverables_store) owns the actual payload; the brain surfaces
-# only bounded references, never the source tree.
-_PRODUCT_KINDS = ("web_build", "app_build", "build")
+# Generated Web/App products are read through the ONE project-product
+# projection (`orchestrator.project_products`), which owns the deliverable-kind
+# filter and the `content` unpacking for every surface. The canonical
+# build/artifact authority still owns the payload; the brain surfaces only
+# bounded references, never the source tree.
 
 
 def is_enabled() -> bool:
@@ -75,6 +75,43 @@ class ProjectBrainClient:
     def is_enabled(self) -> bool:
         return is_enabled()
 
+    # ── Project summary (the ONE resolution rule) ──────────────────────────
+
+    def summary_for(
+        self, user_id: str, project_id: str, *, memories: Optional[list] = None,
+    ) -> str:
+        """The project's deterministic one-paragraph summary, or "".
+
+        Resolution order (unchanged from the original inline logic):
+          1. a stashed `summary`-kind memory for this (user, project),
+          2. the sessions workspace's own name/kind.
+
+        Extracted so the Project Workspace read model can reuse the SAME rule
+        instead of growing a second, subtly different "what is this project"
+        answer. `memories` is injectable so `get()` — which already lists them —
+        does not pay for a second Memory Plane read. Never raises."""
+        if not is_enabled() or not user_id or not project_id:
+            return ""
+        recents = memories
+        if recents is None:
+            try:
+                from backend.services.memory_plane import client as mp
+                recents = mp.list_user(user_id, project_id=project_id, limit=50)
+            except Exception as e:
+                logger.debug("project_brain: memory_plane unavailable: %s", e)
+                recents = []
+        for m in recents or []:
+            if getattr(m, "kind", None) == "summary" and getattr(m, "content", ""):
+                return str(m.content)[:400]
+        try:
+            from backend.services.sessions import client as sc
+            ws = sc.get_workspace(project_id)
+            if ws is not None:
+                return f"Project: {ws.name} ({ws.kind})."
+        except Exception as e:
+            logger.debug("project_brain: sessions unavailable: %s", e)
+        return ""
+
     # ── Aggregator ─────────────────────────────────────────────────────────
 
     def get(self, user_id: str, project_id: str) -> Optional[ProjectBrain]:
@@ -85,6 +122,9 @@ class ProjectBrainClient:
         brain = ProjectBrain(project_id=project_id, user_id=str(user_id))
 
         # ── Memories: prefer goal / decision / preference / project_context.
+        #    Bound OUTSIDE the try so a Memory Plane failure leaves an empty
+        #    list (not an unbound name) for the summary resolution below.
+        recents: list = []
         try:
             from backend.services.memory_plane import client as mp
             recents = mp.list_user(user_id, project_id=project_id, limit=50)
@@ -100,22 +140,15 @@ class ProjectBrainClient:
                 elif m.kind in {"project_context", "fact"} and \
                         len(brain.important_context) < _MAX_NOTES:
                     brain.important_context.append(txt)
-            # Project summary — try a stashed "summary" kind first.
-            for m in recents:
-                if m.kind == "summary" and m.content:
-                    brain.project_summary = m.content[:400]
-                    break
         except Exception as e:
             logger.debug("project_brain: memory_plane unavailable: %s", e)
 
-        # ── Sessions: lightweight workspace metadata if we have access.
-        try:
-            from backend.services.sessions import client as sc
-            ws = sc.get_workspace(project_id)
-            if ws is not None and not brain.project_summary:
-                brain.project_summary = f"Project: {ws.name} ({ws.kind})."
-        except Exception as e:
-            logger.debug("project_brain: sessions unavailable: %s", e)
+        # ── Project summary — the SINGLE resolution rule (stashed summary
+        #    memory, else the sessions workspace), shared with the Project
+        #    Workspace read model. `recents` is handed over so the Memory Plane
+        #    is read exactly once per aggregation.
+        brain.project_summary = self.summary_for(
+            user_id, project_id, memories=recents)
 
         # ── Assets: link summaries from the analyses cache.
         try:
@@ -221,26 +254,13 @@ class ProjectBrainClient:
             # deliverables authority. The build payload/source tree stays in the
             # artifact authority; the brain carries only refs + status + type.
             try:
-                from backend.services.orchestrator import deliverables_store as dls
-                for d in dls.list_for_project(project_id, limit=50):
-                    if str(d.get("kind")) not in _PRODUCT_KINDS:
-                        continue
-                    content = d.get("content") or {}
-                    brain.products.append({
-                        "build_type":   content.get("build_type") or (
-                            "app" if d.get("kind") == "app_build" else "web"),
-                        "title":        (d.get("title") or "").strip()[:160],
-                        "status":       content.get("build_status") or d.get("status"),
-                        "artifact_ref": content.get("artifact_ref") or "",
-                        "build_ref":    content.get("build_ref") or "",
-                        "run_id":       d.get("run_id"),
-                        "node_id":      d.get("node_id"),
-                        "updated_at":   d.get("updated_at"),
-                    })
-                    if len(brain.products) >= _MAX_PRODUCTS:
-                        break
+                from backend.services.orchestrator import project_products
+                for p in project_products.list_products(project_id, limit=_MAX_PRODUCTS):
+                    entry = dict(p)
+                    entry["title"] = str(entry.get("title") or "")[:160]
+                    brain.products.append(entry)
             except Exception as e:
-                logger.debug("project_brain: deliverables_store unavailable: %s", e)
+                logger.debug("project_brain: product projection unavailable: %s", e)
 
             # Project-linked chats — the durable workspace's conversations. Reads
             # the canonical project↔thread binding, then the sessions authority

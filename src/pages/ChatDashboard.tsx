@@ -304,11 +304,18 @@ export default function ChatDashboard() {
     clearParams();
   }, [searchParams, setSearchParams, selectSession]);
 
-  // Entry points FROM the Project Overview:
+  // Entry points FROM the Project Workspace:
   //   /chat?openSession=<threadId>        → open that project chat (once hydrated)
   //   /chat?newChatForProject=<projectId> → new ordinary chat, auto-filed under
   //                                          the project when its thread exists
-  // Each runs once, then clears its param so a refresh doesn't re-trigger.
+  //   &prefill=<text>                     → SEED the composer only
+  //
+  // `prefill` is what "Ask Korvix about this project" uses. It deliberately only
+  // fills the input: the user still presses send, so a page navigation can never
+  // spend credits or start a turn on its own. Session identity, the server
+  // thread, and the deferred project binding all stay with the chat authority —
+  // this is not a second chat entry path, only an extra seed on the existing one.
+  // Each runs once, then clears its params so a refresh doesn't re-trigger.
   const projectEntryRef = useRef(false);
   useEffect(() => {
     const openSession = searchParams.get('openSession');
@@ -320,11 +327,15 @@ export default function ChatDashboard() {
     if (openSession) requestOpenSession(openSession);
     else if (newChatForProject) startProjectChat(newChatForProject);
 
+    const prefill = (searchParams.get('prefill') || '').trim();
+    if (prefill) setInputText(prefill.slice(0, 400));
+
     const next = new URLSearchParams(searchParams);
     next.delete('openSession');
     next.delete('newChatForProject');
+    next.delete('prefill');
     setSearchParams(next, { replace: true });
-  }, [searchParams, setSearchParams, requestOpenSession, startProjectChat]);
+  }, [searchParams, setSearchParams, requestOpenSession, startProjectChat, setInputText]);
 
   // Phase 13D.1 — ACTIVE-SESSION hydration. A persisted Web Build must restore as an
   // embedded build (never normal Chat) after a refresh / deployment / navigation /

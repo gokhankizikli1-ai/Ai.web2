@@ -13,6 +13,7 @@ from backend.core.deps import current_user
 from backend.core.responses import ok as envelope_ok
 from backend.services.auth.identity import User
 from backend.services.project_brain import client as brain_client
+from backend.services.project_brain import workspace as project_workspace
 
 
 logger = logging.getLogger(__name__)
@@ -30,6 +31,39 @@ def _ensure_enabled() -> None:
                 "rollback": "Unset ENABLE_PROJECT_BRAIN to disable.",
             },
         )
+
+
+# ── Project workspace read model ─────────────────────────────────────────────
+
+@router.get("/{project_id}/workspace")
+def get_workspace(
+    project_id: str = Path(..., max_length=64),
+    user: User = Depends(current_user),
+) -> Dict[str, Any]:
+    """The bounded Project Workspace snapshot the Project page renders from:
+    summary, goals, needs-attention, recent activity, products, chats, connected
+    tools and freshness — assembled from the EXISTING authorities in one request.
+
+    Deliberately NOT gated on `ENABLE_PROJECT_BRAIN`. The workspace is the
+    project's own surface (its chats, builds and connected tools exist whether or
+    not the Project Brain is switched on); the brain-derived slices simply
+    degrade — the summary falls back to the project's own description and
+    memory-plane goals are omitted — instead of the whole page 503-ing.
+
+    Ownership is enforced through the canonical `projects` record: a project the
+    caller does not own is 404, existence-hidden. The read performs no provider
+    API call, no model call, and no write of any kind."""
+    snapshot = project_workspace.build(str(user.id), project_id)
+    if snapshot is None:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "PROJECT_NOT_FOUND", "message": "Project not found."},
+        )
+    return envelope_ok(
+        data=snapshot,
+        endpoint=f"/v2/projects/{project_id}/workspace",
+        user_id=user.id,
+    )
 
 
 # ── Brain snapshot ───────────────────────────────────────────────────────────

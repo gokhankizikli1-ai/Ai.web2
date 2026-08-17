@@ -23,6 +23,12 @@ const STORAGE_KEY = 'korvix-theme';
 const DARK_ROUTES = [
   '/chat',
   '/workspace',
+  // Every /projects surface (dashboard, project workspace, runs) already paints
+  // the dark workspace palette itself, but the app SHELL around them was still
+  // resolving to the stored/system theme — so on mobile the shell's bottom-nav
+  // safe-area band rendered light underneath a dark page. Declaring the route
+  // dark fixes that at the source instead of patching each page's padding.
+  '/projects',
   '/home',
   '/agents',
   '/agents/builder',

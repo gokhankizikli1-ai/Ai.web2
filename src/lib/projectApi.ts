@@ -15,6 +15,7 @@ import { apiCall, apiCallDetailed } from '@/lib/serverApi';
 import { serverChatEnabled, syncSession, listUserThreads } from '@/lib/sessionsSync';
 import { getProjects } from '@/stores/projectStore';
 import { resolveBuildType, type BuildType } from '@/lib/buildType';
+import { normalizeWorkspace, type ProjectWorkspace } from '@/lib/projectWorkspace';
 
 export interface BindingResult {
   ok: boolean;
@@ -207,21 +208,37 @@ export interface AddableChat {
 
 /**
  * The signed-in user's ordinary chats, annotated with their project membership,
- * for the "Add existing chat" picker. Server-authoritative:
- *   • the chat list comes from the sessions authority (`listUserThreads`), NEVER
- *     localStorage;
- *   • membership comes from the canonical per-project binding
- *     (`listProjectChats`), queried once per owned project (few calls, not
- *     per-thread).
- * `getProjects()` is used ONLY to know which project ids to ask about (+ names);
- * chat membership itself is backend truth. Ownership is enforced server-side on
- * every read, so this can never surface another user's chats.
+ * for the "Add existing chat" picker.
+ *
+ * The chat list comes from the sessions authority (`listUserThreads`), NEVER
+ * localStorage, and ownership is enforced server-side on every read, so this can
+ * never surface another user's chats.
+ *
+ * MEMBERSHIP IN *THIS* PROJECT — the flag that decides whether a row is
+ * actionable — comes from `currentThreadIds`, which the caller reads from the
+ * backend-authoritative project workspace. It used to be inferred from a map
+ * built by walking `getProjects()`, the LOCAL project cache; a browser whose
+ * cache is empty (fresh device, cleared storage, or a project created
+ * elsewhere) therefore built an empty map and offered "Add" for chats that were
+ * already filed here. Live validation against a real backend reproduced exactly
+ * that. The current project's membership is now server truth.
+ *
+ * The "…in <other project>" label is still resolved through `getProjects()` and
+ * remains BEST-EFFORT: it only decorates the button ("Move here" vs "Add"), the
+ * server performs the detach/rebind identically either way, and a project the
+ * local cache has not seen simply renders without the label.
  */
-export async function listAddableChats(currentProjectId: string): Promise<AddableChat[]> {
+export async function listAddableChats(
+  currentProjectId: string,
+  currentThreadIds?: readonly string[],
+): Promise<AddableChat[]> {
   const threads = await listUserThreads();
   if (threads.length === 0) return [];
 
-  // thread id → { projectId, projectName } for every project the user owns.
+  const authoritative = currentThreadIds ? new Set(currentThreadIds) : null;
+
+  // thread id → { projectId, projectName } for every project the LOCAL cache
+  // knows about — used for the cosmetic "in <project>" label only.
   const owned = getProjects();
   const membership = new Map<string, { id: string; name: string }>();
   await Promise.all(
@@ -233,14 +250,16 @@ export async function listAddableChats(currentProjectId: string): Promise<Addabl
 
   return threads.map((t) => {
     const m = membership.get(t.id) || null;
-    const inCurrent = m?.id === currentProjectId;
+    const inCurrent = authoritative
+      ? authoritative.has(t.id)
+      : m?.id === currentProjectId;
     return {
       id: t.id,
       title: t.title,
       updated_at: t.updated_at,
-      inCurrentProject: !!inCurrent,
-      otherProjectId: m && !inCurrent ? m.id : null,
-      otherProjectName: m && !inCurrent ? m.name : null,
+      inCurrentProject: inCurrent,
+      otherProjectId: m && !inCurrent && m.id !== currentProjectId ? m.id : null,
+      otherProjectName: m && !inCurrent && m.id !== currentProjectId ? m.name : null,
     };
   });
 }
@@ -263,6 +282,37 @@ export async function listProjectProducts(projectId: string): Promise<ProjectPro
     `/v2/orchestrator/projects/${encodeURIComponent(projectId)}/products`,
   );
   return data?.products || [];
+}
+
+export interface ProjectWorkspaceResult {
+  workspace: ProjectWorkspace | null;
+  /** HTTP status (0 when the server could not be reached). */
+  status: number;
+  /** The server says this project is not available to the caller. */
+  notFound: boolean;
+}
+
+/**
+ * The bounded Project WORKSPACE snapshot — the ONE request the Project page
+ * renders from. Replaces the previous three-call fan-out (chats + products +
+ * brain) with a single backend-authoritative read that also carries goals,
+ * needs-attention, unified activity, connected tools and freshness.
+ *
+ * The 404 case is reported separately from a transport failure so the page can
+ * tell "this project isn't yours / doesn't exist" (a permanent answer, and the
+ * one the server gives for BOTH, deliberately hiding existence) apart from
+ * "the server was unreachable" (worth a retry button). Never throws.
+ */
+export async function getProjectWorkspace(projectId: string): Promise<ProjectWorkspaceResult> {
+  const res = await apiCallDetailed<unknown>(
+    'GET',
+    `/v2/projects/${encodeURIComponent(projectId)}/workspace`,
+  );
+  return {
+    workspace: res.ok ? normalizeWorkspace(res.data) : null,
+    status: res.status,
+    notFound: res.status === 404,
+  };
 }
 
 export interface ProjectBrainContext {

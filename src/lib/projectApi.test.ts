@@ -32,6 +32,7 @@ import {
   listProjectChats,
   listProjectProducts,
   getProjectBrainContext,
+  getProjectWorkspace,
   listAddableChats,
 } from './projectApi';
 
@@ -123,6 +124,33 @@ function makeBackend() {
           counts: { products: 1 },
         },
         empty: false,
+      });
+    }
+    // Project Workspace read model — the ONE read the Project page makes.
+    // Ownership is server-enforced and a foreign/unknown project is 404
+    // (existence-hidden), exactly like the real route.
+    m = path.match(/^\/v2\/projects\/([^/]+)\/workspace$/);
+    if (m && method === 'GET') {
+      if (!ownsProject(m[1])) return notFound();
+      return ok({
+        project: { id: m[1], name: 'Alpha', description: 'Desc', created_at: '', updated_at: '' },
+        summary: { text: 'A project.', source: 'brain' },
+        goals: [{ id: 'g1', title: 'Reach 100 users', priority: 3, source: 'goals' }],
+        attention: [{ id: 'a1', severity: 'blocking', reason: 'ci_failed', source: 'github',
+                      kind: 'github.check.failed', title: 'CI failed on main', context: 'acme/site',
+                      observed_at: '2026-06-01T10:00:00Z', ref: '' }],
+        activity: [{ id: 'o1', source: 'github', kind: 'github.check.failed',
+                     title: 'CI failed on main', occurred_at: '2026-06-01T10:00:00Z', ref: '' }],
+        products: products.filter((p) => p.project === m![1]),
+        chats: [{ thread_id: 't1', title: 'Chat', mode: 'chat', updated_at: '2026-06-01T09:00:00Z' }],
+        connectors: [{ provider: 'github', label: 'GitHub', resource_kind: 'single',
+                       resource_noun: 'repository', resources: ['acme/site'], resource_count: 1,
+                       status: 'connected', last_sync_at: '2026-06-01T08:00:00Z' }],
+        freshness: { generated_at: '2026-06-01T12:00:00Z', last_activity_at: '2026-06-01T10:00:00Z',
+                     last_connector_sync_at: '2026-06-01T08:00:00Z',
+                     last_observation_at: '2026-06-01T10:00:00Z', last_chat_at: '2026-06-01T09:00:00Z',
+                     last_product_at: '' },
+        counts: { attention: 1 },
       });
     }
     return notFound();
@@ -281,6 +309,48 @@ describe('Project Overview reads', () => {
   });
 });
 
+describe('getProjectWorkspace (the Project page read model)', () => {
+  it('returns the bounded snapshot for the owner', async () => {
+    const res = await getProjectWorkspace('pA');
+    expect(res.notFound).toBe(false);
+    expect(res.workspace).not.toBeNull();
+    expect(res.workspace!.project.id).toBe('pA');
+    expect(res.workspace!.attention[0].reason).toBe('ci_failed');
+    expect(res.workspace!.goals[0].title).toBe('Reach 100 users');
+    expect(res.workspace!.connectors[0].resources).toEqual(['acme/site']);
+  });
+
+  it("a project the caller does not own is existence-hidden (404), not an error", async () => {
+    const res = await getProjectWorkspace('pOther');
+    expect(res.workspace).toBeNull();
+    expect(res.status).toBe(404);
+    expect(res.notFound).toBe(true);
+  });
+
+  it('an unknown project id answers identically to a foreign one', async () => {
+    const unknown = await getProjectWorkspace('does-not-exist');
+    const foreign = await getProjectWorkspace('pOther');
+    expect(unknown.status).toBe(foreign.status);
+    expect(unknown.notFound).toBe(foreign.notFound);
+  });
+
+  it('the same project id read as another user leaks nothing', async () => {
+    expect((await getProjectWorkspace('pA')).workspace).not.toBeNull();
+    scope = 'user_bob';
+    const res = await getProjectWorkspace('pA');
+    expect(res.workspace).toBeNull();
+    expect(res.notFound).toBe(true);
+  });
+
+  it('a transport failure is reported as retryable, NOT as "not found"', async () => {
+    vi.stubGlobal('fetch', () => Promise.reject(new Error('offline')));
+    const res = await getProjectWorkspace('pA');
+    expect(res.workspace).toBeNull();
+    expect(res.status).toBe(0);
+    expect(res.notFound).toBe(false);
+  });
+});
+
 describe('bindThreadToProject (deferred new-chat binding)', () => {
   it('binds an already-synced thread to a project', async () => {
     // Simulate a freshly-created server thread.
@@ -344,6 +414,49 @@ describe('listAddableChats (Add existing chat picker)', () => {
     scope = 'guest_x';
     seed();
     expect(await listAddableChats('pA')).toEqual([]);
+  });
+
+  /* Regression — found during live validation against a real backend.
+   *
+   * Membership in THIS project used to be inferred from a map built by walking
+   * the LOCAL project cache. A browser whose cache is empty (fresh device,
+   * cleared storage, or a project created elsewhere) built an EMPTY map, so
+   * every chat — including ones already filed here — rendered as "Add".
+   * The workspace read is the authority now, so the caller passes it in. */
+  it('uses server-supplied membership for the CURRENT project', async () => {
+    seed();
+    const list = await listAddableChats('pA', ['th-current']);
+    const byId = Object.fromEntries(list.map((c) => [c.id, c]));
+    expect(byId['th-current'].inCurrentProject).toBe(true);
+    expect(byId['th-none'].inCurrentProject).toBe(false);
+    expect(byId['th-other'].inCurrentProject).toBe(false);
+  });
+
+  it('an empty LOCAL project cache no longer mislabels chats already here', async () => {
+    const projectStore = await import('@/stores/projectStore');
+    const spy = vi.spyOn(projectStore, 'getProjects').mockReturnValue([]);
+    try {
+      seed();
+      // Without server truth the old inference has nothing to go on…
+      const inferred = await listAddableChats('pA');
+      expect(inferred.find((c) => c.id === 'th-current')!.inCurrentProject).toBe(false);
+      // …with it, the row is correctly non-actionable.
+      const authoritative = await listAddableChats('pA', ['th-current']);
+      expect(authoritative.find((c) => c.id === 'th-current')!.inCurrentProject).toBe(true);
+      // The "in <other project>" label stays best-effort and simply absent.
+      expect(authoritative.find((c) => c.id === 'th-other')!.otherProjectName).toBeNull();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('server truth wins even if the local cache disagrees', async () => {
+    seed();
+    // Local cache says th-other lives in pB; the server says it is in pA now.
+    const list = await listAddableChats('pA', ['th-other']);
+    const row = list.find((c) => c.id === 'th-other')!;
+    expect(row.inCurrentProject).toBe(true);
+    expect(row.otherProjectId).toBeNull();   // never offer "Move here" to itself
   });
 });
 
