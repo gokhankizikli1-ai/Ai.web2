@@ -124,6 +124,10 @@ export function usePreviewMeasurementBridge(opts: PreviewMeasurementBridgeOption
         win.postMessage(makeCommand('MEASURE', id, {
           viewport: req.viewport, runId: req.runId,
           expectHero: req.expectHero, expectCta: req.expectCta, appFirst: req.appFirst,
+          // App Build Quality V2 — app-only switches. Omitted entirely for a website build, so
+          // the runtime performs exactly the measurement it performed before.
+          ...(req.appMode === true ? { appMode: true } : {}),
+          ...(req.probeNav === true ? { probeNav: true } : {}),
         }), originRef.current);
       } catch {
         finish(null);   // iframe gone → fail-open

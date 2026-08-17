@@ -5,12 +5,13 @@ import { usePreviewMeasurementBridge } from '@/hooks/usePreviewMeasurementBridge
 import {
   buildRenderedVisualInput, deriveMeasureExpectations, toCapturedScreenshot,
   SCREENSHOT_CAPTURE, SCREENSHOT_FORMAT, SCREENSHOT_QUALITY, SCREENSHOT_MAX_BYTES,
+  APP_MEASURE_VIEWPORTS,
 } from '@/lib/webBuildPreviewMeasurement';
 import {
   registerMeasurementHost, shouldRunPreviewMeasurement,
   type MeasurementHost, type MeasurementJob,
 } from '@/lib/webBuildMeasurementService';
-import type { RenderedVisualInput } from '@/lib/webBuildAgents';
+import type { RenderedVisualInput, RenderedVisualViewport } from '@/lib/webBuildAgents';
 import type { VeMeasurement, VeScreenshotResult } from '@/lib/visualEditProtocol';
 
 /**
@@ -41,6 +42,9 @@ const STABILIZE_FRAMES = 3;
 
 const DESKTOP = { viewport: 'desktop' as const, width: 1440, height: 900 };
 const MOBILE = { viewport: 'mobile' as const, width: 390, height: 844 };
+
+/** The website measurement sequence — unchanged (desktop → mobile). */
+const WEB_SEQUENCE: ReadonlyArray<{ viewport: RenderedVisualViewport; width: number; height: number }> = [DESKTOP, MOBILE];
 
 function raf(): Promise<void> { return new Promise((r) => requestAnimationFrame(() => r())); }
 async function stabilize(frames = STABILIZE_FRAMES): Promise<void> { for (let i = 0; i < frames; i++) await raf(); }
@@ -101,30 +105,60 @@ export default function WebBuildMeasurementHost() {
     // Only start the measurement sequence once the bridge is bound for THIS job.
     if (bridgeReady && startedRef.current !== job.runId) {
       startedRef.current = job.runId;
-      const expectations = deriveMeasureExpectations(job.spec?.experienceArchitecture);
+      // App Build Quality V2 — an APP is measured at the five layout regimes an application
+      // genuinely breaks at (1440 / 1024 / 768 / 430 / 390) instead of the website pair, and its
+      // measurement asks for the app-surface facts. A website build takes the unchanged
+      // desktop → mobile sequence with the unchanged expectations.
+      const isApp = job.spec?.buildType === 'app';
+      const expectations = deriveMeasureExpectations(job.spec?.experienceArchitecture, isApp);
+      const sequence = isApp ? APP_MEASURE_VIEWPORTS : WEB_SEQUENCE;
       (async () => {
         try {
-          await stabilize();
-          const desktop = await bridgeMeasure({ ...DESKTOP, runId: job.runId, ...expectations }, signal);
-          if (cancelled) return;
-          // PR #521 — ONE desktop screenshot while STILL at desktop dims, only when the pipeline
-          // requested it (conditional vision-review trigger). Fail-open: a null/blocked capture
-          // simply leaves the measurement result without pixels.
+          const results: Array<VeMeasurement | null> = [];
           let shot: VeScreenshotResult | null = null;
-          if (job.captureScreenshot && bridgeCapture) {
-            shot = await bridgeCapture({
-              runId: job.runId, width: SCREENSHOT_CAPTURE.width, height: SCREENSHOT_CAPTURE.height,
-              format: SCREENSHOT_FORMAT, quality: SCREENSHOT_QUALITY, maxBytes: SCREENSHOT_MAX_BYTES,
-            }, signal);
+          for (let i = 0; i < sequence.length; i += 1) {
+            const v = sequence[i];
+            // The first entry is already the mounted size; every later one resizes the SAME
+            // preview (sequential — one Sandpack, less memory/CPU) and lets it reflow.
+            if (i > 0) setDims({ width: v.width, height: v.height });
+            await stabilize();
             if (cancelled) return;
+            const m = await bridgeMeasure({ ...v, runId: job.runId, ...expectations }, signal);
+            if (cancelled) return;
+            results.push(m);
+            // PR #521 — ONE desktop screenshot while STILL at desktop dims, only when the
+            // pipeline requested it (conditional vision-review trigger). Fail-open: a
+            // null/blocked capture simply leaves the measurement result without pixels.
+            if (i === 0 && job.captureScreenshot && bridgeCapture) {
+              shot = await bridgeCapture({
+                runId: job.runId, width: SCREENSHOT_CAPTURE.width, height: SCREENSHOT_CAPTURE.height,
+                format: SCREENSHOT_FORMAT, quality: SCREENSHOT_QUALITY, maxBytes: SCREENSHOT_MAX_BYTES,
+              }, signal);
+              if (cancelled) return;
+            }
           }
-          // Resize the SAME preview to mobile (sequential — one Sandpack, less memory/CPU),
-          // let it reflow, then measure again.
-          setDims({ width: MOBILE.width, height: MOBILE.height });
-          await stabilize();
-          const mobile: VeMeasurement | null = await bridgeMeasure({ ...MOBILE, runId: job.runId, ...expectations }, signal);
-          if (cancelled) return;
-          const input = buildRenderedVisualInput([desktop, mobile], job.runId);
+          // App Build Quality V2 — the NAVIGATION PROBE genuinely operates controls, so it runs
+          // strictly LAST, back at desktop dims, as its own request. Every viewport measurement
+          // above is already collected, so if a control performs a hard navigation (destroying
+          // the runtime) only the probe is lost — never the measurements. Its nav facts are
+          // merged onto the desktop measurement, which is the entry the evaluator reads.
+          if (isApp && !cancelled) {
+            setDims({ width: DESKTOP.width, height: DESKTOP.height });
+            await stabilize();
+            if (cancelled) return;
+            const probe = await bridgeMeasure(
+              { ...DESKTOP, runId: job.runId, ...expectations, probeNav: true }, signal,
+            );
+            if (cancelled) return;
+            if (probe && results[0]) {
+              results[0] = {
+                ...results[0],
+                ...(typeof probe.navProbedCount === 'number' ? { navProbedCount: probe.navProbedCount } : {}),
+                ...(typeof probe.navWorkingCount === 'number' ? { navWorkingCount: probe.navWorkingCount } : {}),
+              };
+            }
+          }
+          const input = buildRenderedVisualInput(results, job.runId);
           const captured = toCapturedScreenshot(shot, job.runId);
           if (input && captured) input.capturedScreenshot = captured;
           finish(input);

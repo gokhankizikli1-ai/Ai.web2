@@ -326,9 +326,26 @@ export function deriveExperienceArchitecturePlan(
       MAX_SECTIONS,
     );
 
+    /* ── App Build Quality V2 — ROOT FIX for the "app looks like a marketing site" defect. ──
+     * This plan is derived for EVERY build, including `buildType='app'`, and it was inferring
+     * `landingRequired: true` for a CRM / booking / fitness app simply because its prompt reads
+     * like a SaaS product. Two things then went wrong downstream, both of them pushing App Build
+     * toward a generic marketing/AI-SaaS look:
+     *   1. the generation ENFORCEMENT block instructed a landing hero for an application, and
+     *   2. the rendered measurement asked the runtime "is a hero visible / is a CTA above the
+     *      fold?", so a perfectly correct dashboard/list screen measured as
+     *      `rendered-hero-missing` (HIGH) and the single bounded repair was spent ADDING a
+     *      marketing hero to an app.
+     * An application is app-first BY DEFINITION: it opens into the product, not onto a landing
+     * page. Setting it here — at the one authority that owns the entry pattern — fixes generation,
+     * measurement and acceptance together instead of patching each consumer. An explicit user
+     * override still wins. Web builds are untouched. */
+    const isAppBuild = spec.buildType === 'app';
     const landingRequired = overrides.landingRequired !== undefined
       ? overrides.landingRequired
-      : inferLandingFromPlan(spec, base.landingRequired);
+      : isAppBuild
+        ? false
+        : inferLandingFromPlan(spec, base.landingRequired);
 
     const heroContentPriority: ExperienceHeroContentPriority = overrides.heroContentPriority
       || (landingRequired ? base.heroContentPriority : 'interaction');
@@ -343,7 +360,7 @@ export function deriveExperienceArchitecturePlan(
       version: 'experience-arch-v1',
       basis: overrides.directives.length > 0 ? 'user-override' : 'derived',
       experienceType: cap(base.experienceType, 60),
-      entryPattern: cap(overrides.entryPattern || base.entryPattern, 60),
+      entryPattern: cap(overrides.entryPattern || (isAppBuild ? 'app-first' : base.entryPattern), 60),
       landingRequired,
       heroPattern: cap(s(ds.heroComposition) || base.heroPattern),
       heroContentPriority,

@@ -204,20 +204,38 @@ export function sanitizeErrorCode(v: unknown): string {
 
 /** MEASURE command payload — which viewport to report + the run identity to stamp back, so a
  *  stale measurement can be discarded. Contains NO source, secrets or user data. */
+/** The measured layout regimes. App Build Quality V2 adds `laptop` (1024) and `mobile-large`
+ *  (430); they are only ever requested for an APP build, so website measurement is unchanged. */
+export type VeViewport = 'desktop' | 'laptop' | 'tablet' | 'mobile-large' | 'mobile';
+
+/** The runtime accepts exactly these viewport labels; anything else falls back to 'desktop'. */
+export const VE_VIEWPORTS: ReadonlySet<string> = new Set<VeViewport>([
+  'desktop', 'laptop', 'tablet', 'mobile-large', 'mobile',
+]);
+
 export interface VeMeasureRequestPayload {
-  viewport: 'desktop' | 'tablet' | 'mobile';
+  viewport: VeViewport;
   /** Echoed back on the MEASUREMENT so the parent can drop stale/mismatched runs. */
   runId: string;
   /** The parent-required layout contract flags (from the plan) the runtime should check. */
   expectHero?: boolean;
   expectCta?: boolean;
   appFirst?: boolean;
+  /* ── App Build Quality V2 — APP-ONLY measurement switches. Absent for a website build, so the
+   *  runtime performs exactly the measurement it performed before. */
+  /** Measure the app-surface facts (nav reachability, touch targets, clipping) and use the
+   *  application-shell selectors for the coverage/whitespace estimate. */
+  appMode?: boolean;
+  /** Additionally OPERATE up to a few primary navigation controls and report whether they
+   *  actually changed the route / rendered screen. Requested at most once per candidate, after
+   *  every viewport measurement, so it can never perturb an earlier measurement. */
+  probeNav?: boolean;
 }
 
 /** The bounded, whitelisted layout metrics a MEASUREMENT carries. ONLY fixed numeric/boolean
  *  layout facts — never DOM nodes, HTML, text content, source, styles, tokens or user data. */
 export interface VeMeasurement {
-  viewport: 'desktop' | 'tablet' | 'mobile';
+  viewport: VeViewport;
   runId: string;
   width: number;
   height: number;
@@ -233,6 +251,17 @@ export interface VeMeasurement {
   heroVisible?: boolean;
   ctaInFirstViewport?: boolean;
   marketingHeroOnAppFirst?: boolean;
+  /* ── App Build Quality V2 — APP-ONLY runtime facts (present only when `appMode` was asked). ── */
+  /** Primary navigation controls the runtime actually operated (`probeNav` only). */
+  navProbedCount?: number;
+  /** How many of those genuinely changed the route or the rendered screen (`probeNav` only). */
+  navWorkingCount?: number;
+  /** The navigation is reachable at this viewport (visible nav items or a menu/drawer trigger). */
+  navReachable?: boolean;
+  /** Interactive controls smaller than the minimum comfortable hit area at this viewport. */
+  smallTouchTargetCount?: number;
+  /** Elements whose own content is cut off by their box with no scroll affordance. */
+  clippedElementCount?: number;
 }
 
 function clampNum(v: unknown, min: number, max: number): number | undefined {
@@ -248,7 +277,7 @@ function clampNum(v: unknown, min: number, max: number): number | undefined {
 export function sanitizeMeasurement(raw: unknown): VeMeasurement | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as Record<string, unknown>;
-  const viewport = r.viewport === 'desktop' || r.viewport === 'tablet' || r.viewport === 'mobile' ? r.viewport : null;
+  const viewport = typeof r.viewport === 'string' && VE_VIEWPORTS.has(r.viewport) ? (r.viewport as VeViewport) : null;
   const runId = cleanStr(r.runId, 128);
   const width = clampNum(r.width, 0, 100000);
   const height = clampNum(r.height, 0, 100000);
@@ -272,6 +301,21 @@ export function sanitizeMeasurement(raw: unknown): VeMeasurement | null {
   if (typeof r.heroVisible === 'boolean') out.heroVisible = r.heroVisible;
   if (typeof r.ctaInFirstViewport === 'boolean') out.ctaInFirstViewport = r.ctaInFirstViewport;
   if (typeof r.marketingHeroOnAppFirst === 'boolean') out.marketingHeroOnAppFirst = r.marketingHeroOnAppFirst;
+  // App Build Quality V2 — bounded APP-only facts. Absent for a website measurement, so a web
+  // build produces byte-for-byte the same sanitized measurement it produced before.
+  const navProbedCount = clampNum(r.navProbedCount, 0, 64);
+  if (navProbedCount !== undefined) out.navProbedCount = Math.round(navProbedCount);
+  const navWorkingCount = clampNum(r.navWorkingCount, 0, 64);
+  if (navWorkingCount !== undefined) out.navWorkingCount = Math.round(navWorkingCount);
+  if (typeof r.navReachable === 'boolean') out.navReachable = r.navReachable;
+  const smallTouchTargetCount = clampNum(r.smallTouchTargetCount, 0, 2000);
+  if (smallTouchTargetCount !== undefined) out.smallTouchTargetCount = Math.round(smallTouchTargetCount);
+  const clippedElementCount = clampNum(r.clippedElementCount, 0, 2000);
+  if (clippedElementCount !== undefined) out.clippedElementCount = Math.round(clippedElementCount);
+  // A working count can never exceed the probed count (defensive against a malformed runtime).
+  if (out.navWorkingCount !== undefined && out.navProbedCount !== undefined) {
+    out.navWorkingCount = Math.min(out.navWorkingCount, out.navProbedCount);
+  }
   return out;
 }
 

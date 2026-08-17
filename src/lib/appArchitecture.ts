@@ -66,10 +66,41 @@ export interface AppUserFlow {
   steps: string[];
 }
 
+/**
+ * App Build Quality V2 — the lightweight PRODUCT DIRECTION the planner establishes BEFORE
+ * generation, from the user's actual app type.
+ *
+ * The repetition problem in App Build was never that the model lacked instructions — it was that
+ * every app received the SAME instructions, so every app converged on the same left-sidebar +
+ * top-bar + KPI-cards + 3-column shape. This contract fixes that at the planning authority: the
+ * six axes below genuinely differ per app type, so a booking app is told to lead with a
+ * time-based surface, a messaging app with a two-pane thread model, and a media app with a
+ * browse-led shelf — before a single line of code is generated.
+ *
+ * It is NOT a house template and NOT randomization: it is a deterministic, per-archetype
+ * direction. It adds NO model call — every field is derived from the already-classified app type.
+ */
+export interface AppProductDirection {
+  /** How the user moves between top-level destinations. */
+  navigationModel: string;
+  /** How much information a screen should carry. */
+  informationDensity: string;
+  /** The single interaction the product lives or dies by. */
+  primaryInteractionModel: string;
+  /** What dominates a screen, and what is subordinate to it. */
+  screenHierarchy: string;
+  /** How the composition changes between a wide desktop and a phone. */
+  responsiveComposition: string;
+  /** The intended character — explicitly NOT generic AI-SaaS. */
+  visualCharacter: string;
+}
+
 export interface AppArchitectureContract {
   version: 'app-architecture-v1';
   /** The classified app archetype (drives the base playbook + shell). */
   appType: AppType;
+  /** The per-archetype product/visual direction established before generation. */
+  direction?: AppProductDirection;
   /** A short, honest description of the product this architecture serves. */
   productSummary: string;
   /** Application shell / top-level navigation model. */
@@ -165,7 +196,17 @@ export function classifyAppType(prompt: string, identity?: FrontendSpecIdentity)
 
   // Identity-based tie-breakers.
   if (identity?.sector === 'marketplace') return 'ecommerce-admin';
-  if (identity?.businessModel === 'subscription-product' || identity?.sector === 'ai-saas') return 'analytics-dashboard';
+  // App Build Quality V2 — the previous rule sent EVERY subscription/AI-SaaS-flavoured app that
+  // matched no keyword above to `analytics-dashboard`, whose playbook is KPI tiles + charts +
+  // segments behind a sidebar. That single tie-breaker was the biggest structural reason
+  // unrelated prompts kept producing the same "sidebar + KPI cards + 3-column dashboard" app.
+  // A SaaS-shaped product is only an analytics dashboard when it actually asks for measurement;
+  // otherwise it is a generic app, whose playbook is a home → detail → settings shape that the
+  // prompt's own feature signals then extend. Explicit analytics prompts still classify above.
+  if ((identity?.businessModel === 'subscription-product' || identity?.sector === 'ai-saas')
+    && has(t, 'dashboard', 'analytics', 'metric', 'report', 'chart', 'insight', 'monitor', 'track performance')) {
+    return 'analytics-dashboard';
+  }
 
   return 'generic-app';
 }
@@ -324,6 +365,99 @@ function isIntentionallySimple(text: string): boolean {
   ) || /\bintentionally simple\b/.test(text) || /\bkeep it simple\b/.test(text);
 }
 
+/* ── Product direction (App Build Quality V2) ─────────────────────────────────────
+ * One entry per archetype. Each row is deliberately DIFFERENT on every axis: if two archetypes
+ * ever read the same here, the direction has stopped doing its job. The `generic-app` row is the
+ * honest fallback for an unclassified product — it is intentionally the least prescriptive, so an
+ * unclassified app is not forced into any house shape either. */
+const DIRECTIONS: Record<AppType, AppProductDirection> = {
+  crm: {
+    navigationModel: 'Persistent left rail for the few working areas; everything else is drill-in from a record.',
+    informationDensity: 'High — the user scans many records at once; rows over cards, compact controls, no oversized padding.',
+    primaryInteractionModel: 'Find a record, open it, act on it and log the outcome.',
+    screenHierarchy: 'The record list or pipeline board dominates; summary numbers are a thin supporting strip, never the point of the screen.',
+    responsiveComposition: 'Rail collapses to a drawer under 1024; tables become stacked record rows on a phone.',
+    visualCharacter: 'Quiet, dense, professional working software — not a marketing dashboard.',
+  },
+  'analytics-dashboard': {
+    navigationModel: 'Left rail of report areas plus a persistent period/segment control.',
+    informationDensity: 'High, but ranked — one headline metric, one primary chart, then supporting breakdowns.',
+    primaryInteractionModel: 'Change the period or segment and read how the numbers move; drill into a dimension.',
+    screenHierarchy: 'One dominant chart owns the screen; metric tiles are a supporting row above it, never a wall of equals.',
+    responsiveComposition: 'Multi-column charts become one column under 1024; tiles wrap to two-up then one-up on a phone.',
+    visualCharacter: 'Precise and data-led — restrained colour, meaning carried by the data, not by decoration.',
+  },
+  'ecommerce-admin': {
+    navigationModel: 'Left rail of operational areas (orders, products, customers) with a status-driven work queue.',
+    informationDensity: 'High — operators triage volume; status chips, sortable tables, bulk actions.',
+    primaryInteractionModel: 'Pick the item that needs action from a queue and change its status.',
+    screenHierarchy: 'The work queue dominates; alerts and totals are a compact banner, not a card grid.',
+    responsiveComposition: 'Tables scroll horizontally inside their own container; the rail becomes a drawer under 1024.',
+    visualCharacter: 'Utilitarian back-office — legible status colour, no consumer gloss.',
+  },
+  fitness: {
+    navigationModel: 'Bottom tab bar; the session itself is a full-screen focused flow.',
+    informationDensity: 'Low per screen — one clear thing to do now, large numbers, generous spacing.',
+    primaryInteractionModel: 'Start a session and mark progress set by set.',
+    screenHierarchy: "Today's action dominates the first viewport; history and stats sit below it.",
+    responsiveComposition: 'Phone-first single column; wider screens centre the same column and add a side summary — never a dashboard grid.',
+    visualCharacter: 'Energetic and physical — strong typography, imagery that shows the activity, high-contrast progress.',
+  },
+  booking: {
+    navigationModel: 'Bottom tabs between today / calendar / clients; booking creation is a sheet over the calendar.',
+    informationDensity: 'Medium — time is the organising axis, so the schedule needs room to be readable.',
+    primaryInteractionModel: 'Pick a time slot and confirm or reschedule a booking.',
+    screenHierarchy: 'A time-based surface (agenda or calendar) dominates every main screen; counts are secondary.',
+    responsiveComposition: 'Week grid on desktop degrades to a day agenda list under 768 — never a squeezed grid.',
+    visualCharacter: 'Calm and service-oriented — clear time typography, status colour that means confirmed/pending/cancelled.',
+  },
+  productivity: {
+    navigationModel: 'Bottom tabs (or a slim rail on desktop) between today / all work / projects.',
+    informationDensity: 'Medium — scannable lines of work with fast inline actions, not cards.',
+    primaryInteractionModel: 'Capture an item, then complete or reschedule it inline without leaving the list.',
+    screenHierarchy: 'The list of work owns the screen; a compact header carries the filter and the quick-add.',
+    responsiveComposition: 'Single column everywhere; desktop adds an optional detail pane beside the list.',
+    visualCharacter: 'Calm, typographic and low-chrome — the content is the interface.',
+  },
+  messaging: {
+    navigationModel: 'Conversation list and thread — two panes on desktop, push/pop navigation on a phone.',
+    informationDensity: 'Medium in the list, low in the thread — messages need breathing room to be readable.',
+    primaryInteractionModel: 'Open a conversation and send a message; the thread updates immediately.',
+    screenHierarchy: 'The thread and its composer dominate; the list is a subordinate column, and neither is a card grid.',
+    responsiveComposition: 'Two panes above 1024; below it the list and the thread are separate full-screen views.',
+    visualCharacter: 'Conversational and personal — avatars, message bubbles, clear unread state.',
+  },
+  'media-content': {
+    navigationModel: 'Top navigation across browse / search / library — discovery-led, not tool-led.',
+    informationDensity: 'Low text, high visual — content shelves and covers carry the screen.',
+    primaryInteractionModel: 'Browse or search, open an item, then play/read/save it.',
+    screenHierarchy: 'A featured item or shelf dominates the first viewport; supporting shelves scroll beneath it.',
+    responsiveComposition: 'Horizontally scrolling shelves at every width; item counts per shelf shrink instead of the layout collapsing.',
+    visualCharacter: 'Editorial and image-led — content imagery, not decorative stock photography.',
+  },
+  utility: {
+    navigationModel: 'Effectively none — one surface, with history reachable behind a single control.',
+    informationDensity: 'Minimal — the input and the result, nothing else.',
+    primaryInteractionModel: 'Change an input and read the result immediately.',
+    screenHierarchy: 'The result is the largest element on the screen; inputs sit directly beneath it.',
+    responsiveComposition: 'One centred column at every width.',
+    visualCharacter: 'Sharp and focused — no chrome, no cards, no dashboard.',
+  },
+  'generic-app': {
+    navigationModel: 'Top navigation across the few real destinations this product needs — no more chrome than the content justifies.',
+    informationDensity: 'Match the content: dense where the user scans many items, spacious where they do one thing.',
+    primaryInteractionModel: 'The one action named in the request, reachable from the first screen.',
+    screenHierarchy: 'Each screen has ONE dominant region that is the reason the screen exists; everything else is subordinate.',
+    responsiveComposition: 'Fluid single-column base that gains columns with width — never a fixed desktop canvas.',
+    visualCharacter: "Derive the character from the product itself; do NOT reach for the default AI-SaaS look (purple/blue gradient, sidebar, KPI tiles).",
+  },
+};
+
+/** The product direction for an archetype. Deterministic; never randomized. */
+export function directionFor(appType: AppType): AppProductDirection {
+  return DIRECTIONS[appType] || DIRECTIONS['generic-app'];
+}
+
 /* ── Derivation ──────────────────────────────────────────────────────────────── */
 
 /**
@@ -380,6 +514,7 @@ export function deriveAppArchitectureContract(input: AppArchitectureInput): AppA
     return {
       version: 'app-architecture-v1',
       appType,
+      direction: directionFor(appType),
       productSummary,
       shell,
       primaryEntryScreenId,
@@ -447,6 +582,20 @@ export function renderAppArchitectureBlock(arch: AppArchitectureContract | undef
   out.push('[APP ARCHITECTURE]');
   out.push(`App type: ${arch.appType}. Product: ${arch.productSummary}.`);
   out.push(`Application shell: ${arch.shell}. Entry screen: ${arch.primaryEntryScreenId}.`);
+  // App Build Quality V2 — the per-archetype product direction, stated BEFORE the screen list so
+  // the model composes the screens for THIS product instead of reaching for the default
+  // sidebar + KPI-cards dashboard it produces when every app is briefed identically.
+  const d = arch.direction;
+  if (d) {
+    out.push('Product direction for THIS app type (do not substitute a generic dashboard for it):');
+    out.push(`- Navigation model: ${d.navigationModel}`);
+    out.push(`- Information density: ${d.informationDensity}`);
+    out.push(`- Primary interaction: ${d.primaryInteractionModel}`);
+    out.push(`- Screen hierarchy: ${d.screenHierarchy}`);
+    out.push(`- Desktop → phone composition: ${d.responsiveComposition}`);
+    out.push(`- Visual character: ${d.visualCharacter}`);
+    out.push('Do NOT default to the generic AI-SaaS app look (left sidebar + top bar + a row of KPI cards + a 3-column grid + a purple/blue gradient) unless the direction above actually calls for it.');
+  }
   out.push('This is a client-routed, multi-SCREEN application (screens + routes + navigation + stateful flows) — NOT a scrolling marketing page. Build the screens below as routed views, not stacked page sections.');
   out.push('Screens (each is a real routed view with its own state):');
   for (const s of arch.screens) {

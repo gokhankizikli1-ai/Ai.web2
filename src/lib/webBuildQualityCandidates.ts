@@ -41,6 +41,13 @@ import type {
 export const CANDIDATE_DIMENSIONS = [
   'binding', 'research', 'composition', 'visualSystem', 'content',
   'siteDepth', 'experience', 'visual', 'experienceIdentity', 'motion',
+  // App Build Quality V2 — the APP dimension. Six of the ten dimensions above are website-only
+  // contracts that are deliberately not even derived for `buildType='app'`, so an app candidate
+  // used to reach this comparison with almost no live dimension: a repair that BROKE the app's
+  // navigation could be promoted over the original because nothing here could see it. It is
+  // always `false` for a website build (the analyzer returns `skipped`), so Web Build behaviour
+  // is unchanged.
+  'app',
 ] as const;
 export type CandidateDimension = (typeof CANDIDATE_DIMENSIONS)[number];
 
@@ -58,6 +65,10 @@ export interface SummarizeCandidateInput {
   runtimeFailure?: boolean;
   /** The model review score for this candidate (tiebreak only). */
   reviewScore?: number;
+  /** App Build Quality V2 — the TOTAL app-quality finding count for THIS candidate (0 for a
+   *  website build). A deterministic dimension: more app defects forbids promotion, fewer can
+   *  win on its own. */
+  appQualityIssueCount?: number;
 }
 
 /** Build the deterministic quality summary of one candidate. Pure; never throws. */
@@ -74,6 +85,7 @@ export function summarizeCandidate(input: SummarizeCandidateInput): WebBuildCand
     severeWarningCodes: severe,
     severeWarningCount: severe.length,
     renderedHighFindingCount: Math.max(0, input.renderedHighFindingCount ?? 0),
+    appQualityIssueCount: Math.max(0, input.appQualityIssueCount ?? 0),
     reviewScore: Math.max(0, input.reviewScore ?? 0),
     fileCount: v?.fileCount ?? 0,
     charCount: v?.totalCharCount ?? 0,
@@ -148,11 +160,16 @@ export function selectBestCandidate(input: SelectBestCandidateInput): WebBuildCa
   }
 
   // ── Rule 5 — worse on ANY deterministic dimension disqualifies promotion. ──
+  // App Build Quality V2 adds the app-quality finding count so a repair that (for example)
+  // fixes one screen while leaving two new dead controls behind can never be promoted.
+  const initialApp = initial.appQualityIssueCount ?? 0;
+  const repairedApp = repaired.appQualityIssueCount ?? 0;
   const worseSomewhere =
     regressedDimensions.length > 0 ||
     repaired.blockingCount > initial.blockingCount ||
     repaired.severeWarningCount > initial.severeWarningCount ||
-    repaired.renderedHighFindingCount > initial.renderedHighFindingCount;
+    repaired.renderedHighFindingCount > initial.renderedHighFindingCount ||
+    repairedApp > initialApp;
   if (worseSomewhere) {
     return pick('initial', 'repaired-not-better', 'The repaired candidate is worse on at least one deterministic quality dimension; the earlier project is kept.');
   }
@@ -163,7 +180,8 @@ export function selectBestCandidate(input: SelectBestCandidateInput): WebBuildCa
   const betterDimensions = improvedDimensions.length > 0;
   const betterSevere = repaired.severeWarningCount < initial.severeWarningCount;
   const betterRendered = repaired.renderedHighFindingCount < initial.renderedHighFindingCount;
-  if (!betterDimensions && !betterSevere && !betterRendered) {
+  const betterApp = repairedApp < initialApp;
+  if (!betterDimensions && !betterSevere && !betterRendered && !betterApp) {
     // ── Rule 7 — a tie keeps the earlier candidate. Stability beats churn. ──
     return pick('initial', 'repaired-not-better', 'The repaired candidate is not deterministically better than the earlier project; the earlier project is kept.');
   }
@@ -172,6 +190,7 @@ export function selectBestCandidate(input: SelectBestCandidateInput): WebBuildCa
   if (betterDimensions) wins.push(`resolved ${improvedDimensions.length} blocking dimension(s) (${improvedDimensions.slice(0, 3).join(', ')})`);
   if (betterSevere) wins.push(`removed ${initial.severeWarningCount - repaired.severeWarningCount} severe quality warning(s)`);
   if (betterRendered) wins.push(`removed ${initial.renderedHighFindingCount - repaired.renderedHighFindingCount} severe rendered defect(s)`);
+  if (betterApp) wins.push(`removed ${initialApp - repairedApp} app-quality defect(s)`);
   return pick(
     'repaired',
     'repaired-strictly-better',
