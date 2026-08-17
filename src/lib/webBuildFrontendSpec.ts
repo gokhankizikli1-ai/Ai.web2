@@ -37,6 +37,7 @@ import { deriveExperienceArchitecturePlan } from '@/lib/webBuildExperienceArchit
 import { deriveBindingRequirements } from '@/lib/webBuildBindingRequirements';
 import { deriveImageCoverageRequirement } from '@/lib/webBuildImageCoverage';
 import { deriveResearchDirection } from '@/lib/webBuildResearchDirection';
+import { deriveDesignIntelligence } from '@/lib/webBuildDesignIntelligence';
 import { deriveCompositionContract } from '@/lib/webBuildComposition';
 import { deriveVisualSystemContract } from '@/lib/webBuildVisualSystem';
 import { deriveContentNarrativeContract, deriveSiteDepthContract } from '@/lib/webBuildContentNarrative';
@@ -802,6 +803,23 @@ export function deriveFrontendBuildSpecification(input: FrontendBuildSpecInput):
     // contracts (visualSystem, experienceQuality, executionObligations, image
     // coverage) still run — they carry no scroll/hero assumptions.
     const isApp = built.buildType === 'app';
+
+    // Design Intelligence V3 — the SITE ARCHETYPE + brand character + design direction
+    // contract. Derived BEFORE composition so the composition authority can consume its
+    // archetype steer (it stays the family owner; we only supply archetype-aware defaults).
+    // WEB ONLY: never derived for an app build, so an App Build specification and request
+    // are byte-for-byte unchanged. Deterministic, no model/network call, fail-open.
+    if (!isApp) try {
+      const designIntelligence = deriveDesignIntelligence({
+        prompt: built.prompt,
+        identity: built.identity,
+        sections: built.architecture?.sections || [],
+        briefText: [brief.coreIdea, brief.type, brief.audience, brief.style, brief.goal, brief.visitorIntent]
+          .filter((x): x is string => typeof x === 'string' && !!x.trim()).join(' '),
+      });
+      if (designIntelligence) built.designIntelligence = designIntelligence;
+    } catch { /* never block the build on design-intelligence derivation */ }
+
     if (isApp) {
       try {
         const appArchitecture = deriveAppArchitectureContract({
@@ -840,6 +858,7 @@ export function deriveFrontendBuildSpecification(input: FrontendBuildSpecInput):
         imageCoverage: built.imageCoverage,
         imageSlots: built.assets?.imageSlots,
         ledger: input.thinkingLedger,
+        designIntelligence: built.designIntelligence,
       });
       if (composition) built.composition = composition;
     } catch { /* never block the build on composition derivation */ }
