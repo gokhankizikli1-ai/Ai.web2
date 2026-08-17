@@ -211,6 +211,16 @@ import { compareRenderedEvaluations, rendersWorseAfterRepair } from '@/lib/webBu
 // APPROVED?" (the unchanged strict gate) from "which candidate should the user receive?".
 import { summarizeCandidate, selectBestCandidate, promotesUnapprovedRepair } from '@/lib/webBuildQualityCandidates';
 import type { CandidateBlockingFlags } from '@/lib/webBuildQualityCandidates';
+// App Build Quality V2 — the SINGLE app-specific acceptance analyzer (a leaf; pure + fail-open +
+// ZERO model calls). It returns `skipped` for every non-app build, so Web Build is unchanged. Its
+// findings ride the EXISTING deterministic-issue merge → the EXISTING single bounded repair, and
+// it contributes ONE new blocking gate + ONE new candidate dimension so app defects can finally
+// withhold approval, reject a repair, and be compared between candidates.
+import {
+  analyzeAppBuildQuality, appQualityToReviewIssues, hasBlockingAppQualityFindings,
+  appQualityIssueCodes, appQualityIssueCount, buildAppQualityDiagnostics,
+  type AppQualityAcceptanceResult,
+} from '@/lib/appBuildQuality';
 import type {
   RenderedVisualInput, RenderedVisualEvaluationArtifact, RenderedVisionReviewArtifact,
   WebBuildOptimizationReport, WebBuildRenderRegressionResult, WebBuildCandidateSelection,
@@ -940,6 +950,10 @@ export async function runFrontendBuilderQualityPipeline(
     let initialVisual: VisualAcceptanceResult | undefined;
     let initialExperienceIdentity: ExperienceIdentityAcceptanceResult | undefined;
     let initialMotion: MotionExecutionAcceptanceResult | undefined;
+    // App Build Quality V2 — the app analyzer needs the RENDERED measurement, so unlike the
+    // static analyzers above it is computed AFTER the measurement block below.
+    let initialAppQuality: AppQualityAcceptanceResult | undefined;
+    let repairAppQuality: AppQualityAcceptanceResult | undefined;
     try {
       initialBinding = analyzeBindingAcceptance(validation?.files, bindingReqs, driftPolicy, imageCoverage);
       initialResearch = analyzeResearchGrounding(validation?.files, researchDirection);
@@ -1168,6 +1182,40 @@ export async function runFrontendBuilderQualityPipeline(
         }
       }
     }
+    // ── App Build Quality V2 — APP-QUALITY ANALYSIS of the initial candidate. ────────────────
+    //    Runs AFTER the rendered measurement so it can use RENDERED truth (did the navigation
+    //    actually work when operated? is any navigation reachable at 430/390? is content clipped?
+    //    are touch targets operable?) alongside the static app contracts. It adds ZERO model
+    //    calls — it composes the existing app detectors and the measurement the pipeline already
+    //    took. For a WEBSITE build it returns `skipped`, so nothing below changes.
+    //    Its issues are gate-critical, so they reach the SINGLE bounded repair as explicit
+    //    obligations ordered by the P0–P5 priority contract. Fully fail-open. ──
+    try {
+      initialAppQuality = analyzeAppBuildQuality({
+        files: validation?.files,
+        architecture: spec?.appArchitecture,
+        navigation: spec?.navigation,
+        colorMode: spec?.visualSystem?.colorMode,
+        screenshots: renderedInputForVision?.screenshots,
+      });
+      const appIssues = appQualityToReviewIssues(initialAppQuality).map((i) => ({ ...i, gateCritical: true }));
+      if (appIssues.length && initialReview.status === 'completed') {
+        const { issues: mergedA, added: addedA } = mergeDeterministicIssues(initialReview.issues, appIssues);
+        if (addedA > 0) {
+          initialReview = recomputeReviewWithMergedIssues(initialReview, mergedA, addedA);
+          repairTriggeredByShallowQuality = repairTriggeredByShallowQuality || !initialReview.passed;
+        }
+      } else if (appIssues.length && hasBlockingAppQualityFindings(initialAppQuality)) {
+        // The model review did not complete, but the app analyzer PROVED a blocking app defect
+        // (an unreachable screen, no router, navigation that does not work…). Without this the
+        // build would be withheld from approval with no repair even attempted — the defect is
+        // known and actionable, so it gets the SAME deterministic-fallback treatment the severe
+        // web warnings already get. Still exactly one repair; no extra model call.
+        initialReview = buildDeterministicFallbackReview('initial', appIssues, initialReview);
+        repairTriggeredByShallowQuality = true;
+      }
+    } catch { /* fail-open: app-quality analysis must never break a build */ }
+
     // ── Quality V2 — DETERMINISTIC OPTIMIZATION PASS. Pure source analysis with ZERO model calls:
     //    dead imports, unreferenced components, duplicate CSS/class literals, eagerly-loaded
     //    offscreen images, oversized remote image requests, dependency-less effects that write
@@ -1197,12 +1245,18 @@ export async function runFrontendBuilderQualityPipeline(
       regression?: WebBuildRenderRegressionResult;
       selection?: WebBuildCandidateSelection;
     } = {};
-    const qualityV2Extra = (): Partial<FrontendBuilderAcceptanceArtifact> => ({
-      ...(optimization && optimization.findings.length ? { optimization } : {}),
-      ...(v2.afterRepair ? { renderedVisualEvaluationAfterRepair: v2.afterRepair } : {}),
-      ...(v2.regression && v2.regression.compared ? { renderRegression: v2.regression } : {}),
-      ...(v2.selection ? { candidateSelection: v2.selection } : {}),
-    });
+    const qualityV2Extra = (): Partial<FrontendBuilderAcceptanceArtifact> => {
+      // App Build Quality V2 — bounded, secret-free app diagnostics. `undefined` for every
+      // website build and for an app with no architecture, so the artifact is unchanged there.
+      const appQuality = buildAppQualityDiagnostics(initialAppQuality, repairAppQuality);
+      return {
+        ...(optimization && optimization.findings.length ? { optimization } : {}),
+        ...(v2.afterRepair ? { renderedVisualEvaluationAfterRepair: v2.afterRepair } : {}),
+        ...(v2.regression && v2.regression.compared ? { renderRegression: v2.regression } : {}),
+        ...(v2.selection ? { candidateSelection: v2.selection } : {}),
+        ...(appQuality ? { appQuality } : {}),
+      };
+    };
 
     emit('quality-review', 'completed', reviewRows(initialReview));
 
@@ -1210,7 +1264,10 @@ export async function runFrontendBuilderQualityPipeline(
     // Phase 13C — a model "pass" can NEVER approve while severe deterministic warnings remain.
     //    Phase 12G — a blocking binding-requirement or cross-sector-drift finding can NEVER be
     //    fast-approved (the merge above already flips passed=false, but this is an explicit guard).
-    if (initialReview.passed && severeWarningGatePassed(validation) && !hasBlockingBindingFindings(initialBinding) && !hasBlockingResearchFindings(initialResearch) && !hasBlockingCompositionFindings(initialComposition) && !hasBlockingVisualSystemFindings(initialVisualSystem) && !hasBlockingContentFindings(initialContent) && !hasBlockingSiteDepthFindings(initialDepth) && !hasBlockingExperienceFindings(initialExperience) && !hasBlockingVisualFindings(initialVisual) && !hasBlockingExperienceIdentityFindings(initialExperienceIdentity) && !hasBlockingMotionExecutionFindings(initialMotion)) {
+    //    App Build Quality V2 — an app whose screens are unreachable, whose navigation does not
+    //    work, whose content is clipped or which does not implement the requested product can
+    //    NEVER be fast-approved either.
+    if (initialReview.passed && severeWarningGatePassed(validation) && !hasBlockingBindingFindings(initialBinding) && !hasBlockingResearchFindings(initialResearch) && !hasBlockingCompositionFindings(initialComposition) && !hasBlockingVisualSystemFindings(initialVisualSystem) && !hasBlockingContentFindings(initialContent) && !hasBlockingSiteDepthFindings(initialDepth) && !hasBlockingExperienceFindings(initialExperience) && !hasBlockingVisualFindings(initialVisual) && !hasBlockingExperienceIdentityFindings(initialExperienceIdentity) && !hasBlockingMotionExecutionFindings(initialMotion) && !hasBlockingAppQualityFindings(initialAppQuality)) {
       const acceptance = acceptanceArtifact('approved', initialProjectName, {
         initialReviewPassed: true, repairAttempted: false, repairAccepted: false, finalReviewPassed: false,
         reason: `Initial static design review passed (score ${initialReview.score ?? '?'}); no severe quality warnings. Rendered visual test pending.`,
@@ -1428,6 +1485,11 @@ export async function runFrontendBuilderQualityPipeline(
     //    conditional vision review still runs at most once per build, pre-repair only). It runs
     //    ONLY when a pre-repair measurement genuinely succeeded, so a build with no measurement
     //    producer behaves exactly as before. Bounded by the SAME hard budget and abort signal.
+    //
+    //    App Build Quality V2 — the SAME re-measurement is also what the app analyzer re-reads
+    //    below, so a repaired app is re-verified on RENDERED navigation/responsive truth, not
+    //    only on source.
+    let postRenderedScreenshots: RenderedVisualInput['screenshots'];
     if (isRenderedVisualEvaluationEnabled() && renderedVisualEvaluation && opts?.renderedVisualProducer) {
       try {
         const postInput = await withRenderedMeasurementBudget(
@@ -1435,6 +1497,7 @@ export async function runFrontendBuilderQualityPipeline(
           opts?.signal,
         );
         if (postInput) {
+          postRenderedScreenshots = postInput.screenshots;
           v2.afterRepair = evaluateRenderedVisual({
             ...postInput,
             files: postInput.files ?? repairValidation.files,
@@ -1491,6 +1554,16 @@ export async function runFrontendBuilderQualityPipeline(
       repairMotion = analyzeMotionExecution(repairValidation.files, motionExecution, motionHeroSectionId);
       repairObligations = analyzeObligationFulfillment(repairValidation.files, executionObligations);
       obligationComparison = compareObligationFulfillment(initialObligations, repairObligations);
+      // App Build Quality V2 — re-analyze the COMPLETE reconstructed repaired project with the
+      // POST-repair rendered measurement, so a repair that fixed one screen while breaking the
+      // navigation (or the phone layout) is caught before it can be accepted OR promoted.
+      repairAppQuality = analyzeAppBuildQuality({
+        files: repairValidation.files,
+        architecture: spec?.appArchitecture,
+        navigation: spec?.navigation,
+        colorMode: spec?.visualSystem?.colorMode,
+        screenshots: postRenderedScreenshots,
+      });
       const detIssuesFB = [
         ...(repairBinding ? bindingIssuesToReviewIssues(repairBinding) : []),
         ...(repairResearch ? researchGroundingToReviewIssues(repairResearch) : []),
@@ -1502,6 +1575,7 @@ export async function runFrontendBuilderQualityPipeline(
         ...(repairVisual ? visualToReviewIssues(repairVisual) : []),
         ...(repairExperienceIdentity ? experienceIdentityToReviewIssues(repairExperienceIdentity) : []),
         ...(repairMotion ? motionExecutionToReviewIssues(repairMotion) : []),
+        ...appQualityToReviewIssues(repairAppQuality),
       ].map((i) => ({ ...i, gateCritical: true }));
       if (detIssuesFB.length && finalReview.status === 'completed') {
         const { issues: mergedFB, added: addedFB } = mergeDeterministicIssues(finalReview.issues, detIssuesFB);
@@ -1527,6 +1601,8 @@ export async function runFrontendBuilderQualityPipeline(
     const blockingVisual = hasBlockingVisualFindings(repairVisual);
     const blockingExperienceIdentity = hasBlockingExperienceIdentityFindings(repairExperienceIdentity);
     const blockingMotionExecution = hasBlockingMotionExecutionFindings(repairMotion);
+    // App Build Quality V2 — always false for a website build (the analyzer returns `skipped`).
+    const blockingAppQuality = hasBlockingAppQualityFindings(repairAppQuality);
     // Phase 8 — reject a repair that regressed a previously-fulfilled REQUIRED obligation (fails open
     // when the comparison is ambiguous). Preserves already-good sections; never blocks an initial build.
     const obligationRegressionRejects = !!(obligationComparison && obligationComparison.regressionRejectsRepair);
@@ -1553,6 +1629,7 @@ export async function runFrontendBuilderQualityPipeline(
       blockingVisual,
       blockingExperienceIdentity,
       blockingMotionExecution,
+      blockingAppQuality,
       obligationRegressionRejects,
       // Quality V2 — RENDERED truth. Fail-open: false whenever a real before/after comparison
       // was impossible, so a build without measurement reaches the identical decision.
@@ -1587,7 +1664,9 @@ export async function runFrontendBuilderQualityPipeline(
       ct: ContentAcceptanceResult | undefined, sd: SiteDepthAcceptanceResult | undefined,
       ex: ExperienceAcceptanceResult | undefined, vi: VisualAcceptanceResult | undefined,
       ei: ExperienceIdentityAcceptanceResult | undefined, mo: MotionExecutionAcceptanceResult | undefined,
+      aq: AppQualityAcceptanceResult | undefined,
     ): CandidateBlockingFlags => ({
+      app: hasBlockingAppQualityFindings(aq),
       binding: hasBlockingBindingFindings(b),
       research: hasBlockingResearchFindings(r),
       composition: hasBlockingCompositionFindings(c),
@@ -1608,6 +1687,23 @@ export async function runFrontendBuilderQualityPipeline(
     // gate the structural contract repair uses, so a candidate that scores better by collapsing
     // into a skeleton can never be promoted.
     const promotionPreservation = evaluatePreservationGate(validation?.files ?? [], repairValidation.files);
+
+    // App Build Quality V2 — candidate comparison must be LIKE-FOR-LIKE. If only one of the two
+    // candidates was actually measured in the preview (the post-repair measurement timed out, say),
+    // the unmeasured side simply has no rendered findings — that is absence of evidence, not
+    // evidence of absence, and comparing the two counts directly would promote a repair for having
+    // been measured less. When the evidence bases differ, BOTH sides are re-analyzed source-only
+    // for the comparison. The ACCEPTANCE gate above deliberately keeps the best available evidence:
+    // a rendered-PROVEN defect must still block, however the other candidate was measured.
+    const sameEvidenceBasis =
+      (initialAppQuality?.renderedEvidence === true) === (repairAppQuality?.renderedEvidence === true);
+    const cmpInitialApp = sameEvidenceBasis
+      ? initialAppQuality
+      : analyzeAppBuildQuality({ files: validation?.files, architecture: spec?.appArchitecture, navigation: spec?.navigation, colorMode: spec?.visualSystem?.colorMode });
+    const cmpRepairApp = sameEvidenceBasis
+      ? repairAppQuality
+      : analyzeAppBuildQuality({ files: repairValidation.files, architecture: spec?.appArchitecture, navigation: spec?.navigation, colorMode: spec?.visualSystem?.colorMode });
+
     let bestCandidatePromoted = false;
     try {
       v2.selection = selectBestCandidate({
@@ -1615,20 +1711,24 @@ export async function runFrontendBuilderQualityPipeline(
           label: 'initial',
           validation,
           blocking: blockingFlagsFor(initialBinding, initialResearch, initialComposition, initialVisualSystem,
-            initialContent, initialDepth, initialExperience, initialVisual, initialExperienceIdentity, initialMotion),
+            initialContent, initialDepth, initialExperience, initialVisual, initialExperienceIdentity, initialMotion,
+            cmpInitialApp),
           severeWarningCodes: severeWarningsBeforeRepair,
           renderedHighFindingCount: highRenderedCount(renderedVisualEvaluation),
           runtimeFailure: runtimeFailed(renderedVisualEvaluation),
+          appQualityIssueCount: appQualityIssueCount(cmpInitialApp),
           reviewScore: initialScore,
         }),
         repaired: summarizeCandidate({
           label: 'repaired',
           validation: repairValidation,
           blocking: blockingFlagsFor(repairBinding, repairResearch, repairComposition, repairVisualSystem,
-            repairContent, repairDepth, repairExperience, repairVisual, repairExperienceIdentity, repairMotion),
+            repairContent, repairDepth, repairExperience, repairVisual, repairExperienceIdentity, repairMotion,
+            cmpRepairApp),
           severeWarningCodes: severeWarningsAfterRepair,
           renderedHighFindingCount: highRenderedCount(v2.afterRepair),
           runtimeFailure: runtimeFailed(v2.afterRepair),
+          appQualityIssueCount: appQualityIssueCount(cmpRepairApp),
           reviewScore: finalReview.status === 'completed' ? finalScore : 0,
         }),
         strictGateAccepted: accept,
@@ -1659,6 +1759,7 @@ export async function runFrontendBuilderQualityPipeline(
         [hasBlockingVisualFindings(initialVisual), blockingVisual],
         [hasBlockingExperienceIdentityFindings(initialExperienceIdentity), blockingExperienceIdentity],
         [hasBlockingMotionExecutionFindings(initialMotion), blockingMotionExecution],
+        [hasBlockingAppQualityFindings(initialAppQuality), blockingAppQuality],
       ];
       const requiredBlockers = dims.filter(([pre]) => pre).length;
       const unresolvedBlockers = dims.filter(([pre, post]) => pre && post).length;
@@ -1731,6 +1832,8 @@ export async function runFrontendBuilderQualityPipeline(
     // blocking booleans so the human text and the structured `gate.reasonCode` can never disagree.
     const rejectReason = renderedRegressionRejects
       ? `The repaired project measurably rendered WORSE than the project it would replace (${renderRegression.reason}); the pre-repair project is preserved.`
+      : blockingAppQuality
+      ? `The repaired app still fails the app-quality contract (${appQualityIssueCodes(repairAppQuality).slice(0, 4).join(', ')} — e.g. an unreachable screen, no working router/navigation, no navigation at phone width, clipped content, dead primary controls, or screens that do not implement the requested product); the repair was not accepted.`
       : blockingExperience
       ? `The repaired project still fails the binding integrated experience (${experienceIssueCodes(repairExperience).slice(0, 4).join(', ')} — e.g. a desktop-only/broken-mobile layout, clipped required copy, a shallow interaction with no feedback, an inaccessible control, or eager/oversized media); the repair was not accepted.`
       : blockingContent

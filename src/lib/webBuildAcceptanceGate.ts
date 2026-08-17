@@ -42,6 +42,10 @@ export type FrontendAcceptanceGateReasonCode =
   | 'blocking-research'
   | 'blocking-binding'
   | 'blocking-site-depth'
+  /** App Build Quality V2 — the app-quality analyzer proved a blocking APP defect (an
+   *  unreachable screen, no router, navigation that does not work, no navigation at phone width,
+   *  clipped content, a dead control surface, or a total product-fit miss). App builds only. */
+  | 'blocking-app-quality'
   | 'severe-warnings'
   | 'post-repair-review-incomplete'
   | 'review-not-passed'
@@ -79,6 +83,10 @@ export interface AcceptanceGateInput {
    *  (a planned core browse/decision surface rendered heading-only, or the core decision content never
    *  renders). Optional so old callers/tests omit it (⇒ treated as non-blocking). Fails open. */
   blockingSiteDepth?: boolean;
+  /** App Build Quality V2 — the APP-quality analyzer found a BLOCKING app defect. Optional so
+   *  every existing caller/test omits it (⇒ treated as non-blocking) and so a WEBSITE build,
+   *  where the analyzer always returns `skipped`, reaches the identical decision. Fails open. */
+  blockingAppQuality?: boolean;
   /** The obligation-regression gate rejected the repair (a previously-fulfilled required
    *  obligation regressed). Fails open (false) when the comparison is ambiguous. */
   obligationRegressionRejects: boolean;
@@ -140,6 +148,8 @@ export interface FrontendAcceptanceGateDiagnostics {
   blockingMotionExecution: boolean;
   /** Phase 2 site-depth structural-completeness gate (present only when it blocked). */
   blockingSiteDepth?: boolean;
+  /** App Build Quality V2 app gate (present only when it blocked; app builds only). */
+  blockingAppQuality?: boolean;
   /** True when ANY of the analyzer gates blocked. */
   anyBlockingAnalyzer: boolean;
 
@@ -189,7 +199,8 @@ export function evaluateAcceptanceGate(input: AcceptanceGateInput): AcceptanceGa
     input.blockingVisual ||
     input.blockingExperienceIdentity ||
     input.blockingMotionExecution ||
-    (input.blockingSiteDepth === true);
+    (input.blockingSiteDepth === true) ||
+    (input.blockingAppQuality === true);
 
   const accept =
     input.finalReviewCompleted &&
@@ -235,6 +246,7 @@ export function evaluateAcceptanceGate(input: AcceptanceGateInput): AcceptanceGa
     blockingExperienceIdentity: input.blockingExperienceIdentity,
     blockingMotionExecution: input.blockingMotionExecution,
     ...(input.blockingSiteDepth === true ? { blockingSiteDepth: true } : {}),
+    ...(input.blockingAppQuality === true ? { blockingAppQuality: true } : {}),
     anyBlockingAnalyzer,
     obligationRegressionRejects: input.obligationRegressionRejects,
     ...(typeof input.obligationRegressedCount === 'number'
@@ -259,6 +271,10 @@ function resolveReasonCode(accept: boolean, input: AcceptanceGateInput): Fronten
   // Quality V2 — RENDERED truth outranks every static inference below it: if the repaired project
   // measurably renders worse than the one it replaced, that is the most specific fact available.
   if (input.renderedRegressionRejects === true) return 'rendered-regression';
+  // App Build Quality V2 — for an APP, a broken screen/route/navigation is the most specific and
+  // most damaging fact available, so it outranks every generic quality analyzer below it. It can
+  // only ever be true for `buildType='app'` (the analyzer returns `skipped` for a website).
+  if (input.blockingAppQuality === true) return 'blocking-app-quality';
   if (input.blockingExperience) return 'blocking-experience';
   if (input.blockingContent) return 'blocking-content';
   if (input.blockingSiteDepth === true) return 'blocking-site-depth';
@@ -285,6 +301,7 @@ export function acceptanceReasonLabel(code: FrontendAcceptanceGateReasonCode): s
     case 'blocking-experience': return 'blocked: integrated experience';
     case 'blocking-content': return 'blocked: content narrative';
     case 'blocking-site-depth': return 'blocked: site depth / completeness';
+    case 'blocking-app-quality': return 'blocked: app screens / navigation';
     case 'blocking-visual-system': return 'blocked: visual system';
     case 'blocking-visual': return 'blocked: visual concept';
     case 'blocking-experience-identity': return 'blocked: experience identity';
@@ -309,6 +326,7 @@ function safeBlockingCategory(code: FrontendAcceptanceGateReasonCode): { en: str
     'blocking-experience': { en: 'integrated experience', tr: 'bütünleşik deneyim' },
     'blocking-content': { en: 'content', tr: 'içerik' },
     'blocking-site-depth': { en: 'site completeness', tr: 'site bütünlüğü' },
+    'blocking-app-quality': { en: 'app screens and navigation', tr: 'uygulama ekranları ve gezinme' },
     'blocking-visual-system': { en: 'visual system', tr: 'görsel sistem' },
     'blocking-visual': { en: 'visual concept', tr: 'görsel konsept' },
     'blocking-experience-identity': { en: 'experience identity', tr: 'deneyim kimliği' },

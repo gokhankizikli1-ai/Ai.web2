@@ -2939,6 +2939,12 @@ export interface FrontendBuilderAcceptanceArtifact {
   optimization?: WebBuildOptimizationReport;
   candidateSelection?: WebBuildCandidateSelection;
 
+  /* ── App Build Quality V2 — bounded, secret-free APP-quality diagnostics. Present ONLY for
+   *  `buildType='app'` builds that carried an app architecture, so every website build and every
+   *  older saved build simply lacks it. Counts / bounded codes / measured widths only — never
+   *  source, prompts, provider output or PII. It does NOT change `renderedVisualTestStatus`. */
+  appQuality?: import('@/lib/appBuildQuality').AppQualityDiagnostics;
+
   /* ── Phase 12G — bounded, non-sensitive binding-requirements + semantic-drift acceptance
    *  diagnostics. Present only when a binding-requirements contract existed for this build
    *  (`legacyContractUsed` records the no-contract legacy path). Numbers / bounded issue codes /
@@ -3071,7 +3077,16 @@ export interface FrontendBuilderAcceptanceArtifact {
  * viewport + the existing build artifacts + the plan). It does NOT replace validation, makes
  * no unnecessary model call, and only produces advisory quality findings — its HIGH findings
  * are fed into the EXISTING bounded repair (never a new repair system). */
-export type RenderedVisualViewport = 'desktop' | 'tablet' | 'mobile';
+/**
+ * The measured layout regimes. `desktop` / `tablet` / `mobile` are the original three (every
+ * persisted artifact from before App Build Quality V2 contains only these).
+ *
+ * App Build Quality V2 adds the two regimes an APPLICATION genuinely breaks at and a website
+ * usually does not: `laptop` (1024 — where a persistent sidebar + content stops fitting) and
+ * `mobile-large` (430 — the modern large-phone width). They are only ever emitted for
+ * `buildType='app'`, so Web Build measurement is byte-for-byte unchanged.
+ */
+export type RenderedVisualViewport = 'desktop' | 'laptop' | 'tablet' | 'mobile-large' | 'mobile';
 
 export type RenderedVisualDimension =
   | 'composition'
@@ -3111,6 +3126,21 @@ export interface RenderedScreenshotMeta {
   ctaInFirstViewport?: boolean;
   /** An app-first/no-landing plan nonetheless rendered a marketing hero. */
   marketingHeroOnAppFirst?: boolean;
+
+  /* ── App Build Quality V2 — optional APP-ONLY runtime facts. Every field is absent for a
+   *  website build (the runtime only measures them when the parent asks in app mode), so an
+   *  old persisted artifact and every Web Build artifact are unchanged. */
+  /** How many primary navigation controls the runtime actually OPERATED. */
+  navProbedCount?: number;
+  /** How many of those genuinely changed the route or the rendered screen. */
+  navWorkingCount?: number;
+  /** At this viewport the user can reach the app's navigation (visible nav items, or a
+   *  menu/drawer/hamburger trigger). False proves a phone layout with no way to change screen. */
+  navReachable?: boolean;
+  /** Interactive controls rendering below the minimum comfortable hit area at this viewport. */
+  smallTouchTargetCount?: number;
+  /** Elements whose own content is cut off by their box with no scroll affordance. */
+  clippedElementCount?: number;
 }
 
 export interface RenderedVisualInput {
@@ -3277,6 +3307,11 @@ export interface WebBuildCandidateSummary {
   severeWarningCodes: string[];
   severeWarningCount: number;
   renderedHighFindingCount: number;
+  /** App Build Quality V2 — the TOTAL app-quality finding count for this candidate (0 for a
+   *  website build and for any candidate measured before this field existed). It is a
+   *  deterministic dimension: a repair that adds app defects can never be promoted, and a
+   *  repair that removes them can win on this alone. */
+  appQualityIssueCount?: number;
   /** The model review score. TIEBREAK ONLY — never sufficient to promote a candidate. */
   reviewScore: number;
   fileCount: number;

@@ -57,6 +57,28 @@ export const DEFAULT_MEASURE_VIEWPORTS: ReadonlyArray<{ viewport: RenderedVisual
   { viewport: 'mobile', width: 390, height: 844 },
 ];
 
+/**
+ * App Build Quality V2 — the viewports an APPLICATION is measured at.
+ *
+ * A website has one layout regime per breakpoint band; an application has five genuinely
+ * different ones, and the two the website set omits are exactly where generated apps break:
+ *   • 1024 — a persistent sidebar plus content stops fitting; this is where a "desktop-only"
+ *     app first becomes unusable, and it was never measured.
+ *   • 430 — the modern large-phone width, where a layout tuned only for 390 overflows.
+ * The order is widest → narrowest because the host measures SEQUENTIALLY by resizing ONE
+ * preview iframe; going one direction avoids re-layout thrash.
+ *
+ * Cost: five resize+measure round trips on ONE already-mounted iframe. ZERO model calls, zero
+ * network, no additional iframe. Web Build keeps its own (unchanged) viewport set.
+ */
+export const APP_MEASURE_VIEWPORTS: ReadonlyArray<{ viewport: RenderedVisualViewport; width: number; height: number }> = [
+  { viewport: 'desktop', width: 1440, height: 900 },
+  { viewport: 'laptop', width: 1024, height: 768 },
+  { viewport: 'tablet', width: 768, height: 1024 },
+  { viewport: 'mobile-large', width: 430, height: 932 },
+  { viewport: 'mobile', width: 390, height: 844 },
+];
+
 const PER_VIEWPORT_TIMEOUT_MS = 6000;
 
 /** The plan-required layout-contract expectations passed to the runtime, so it measures the
@@ -65,9 +87,26 @@ export interface PreviewMeasureExpectations {
   expectHero: boolean;
   expectCta: boolean;
   appFirst: boolean;
+  /** App Build Quality V2 — measure the APP-surface facts (nav reachability, touch targets,
+   *  clipping) and use the application-shell selectors. Absent/false for a website build. */
+  appMode?: boolean;
 }
 
-export function deriveMeasureExpectations(plan: ExperienceArchitecturePlan | undefined): PreviewMeasureExpectations {
+/**
+ * Resolve what the runtime should verify at each viewport.
+ *
+ * App Build Quality V2 adds `isApp`. An APPLICATION is app-first by definition, so it never
+ * expects a landing hero or an above-the-fold marketing CTA — asking for those was actively
+ * pushing App Build toward a generic marketing look, because a correct dashboard/list screen
+ * measured as `rendered-hero-missing` and the single bounded repair was spent adding a hero.
+ * (The plan itself is now app-aware too; `isApp` makes the measurement correct even for a build
+ * whose plan is absent or was persisted before that fix.)
+ */
+export function deriveMeasureExpectations(
+  plan: ExperienceArchitecturePlan | undefined,
+  isApp?: boolean,
+): PreviewMeasureExpectations {
+  if (isApp === true) return { expectHero: false, expectCta: false, appFirst: true, appMode: true };
   if (!plan) return { expectHero: false, expectCta: false, appFirst: false };
   const appFirst = plan.landingRequired === false
     || /interactive-demo|app-first/.test(plan.entryPattern || '')
@@ -86,6 +125,11 @@ export interface PreviewMeasureRequest {
   expectHero: boolean;
   expectCta: boolean;
   appFirst: boolean;
+  /** App Build Quality V2 — measure the app-surface facts at this viewport. */
+  appMode?: boolean;
+  /** App Build Quality V2 — additionally OPERATE the primary navigation and report whether it
+   *  actually changes the rendered screen. Requested at most once per candidate, LAST. */
+  probeNav?: boolean;
 }
 
 /** PR #521 — the single desktop screenshot capture request. Desktop-only, viewport-only, bounded. */
@@ -151,6 +195,13 @@ function toScreenshotMeta(m: VeMeasurement): RenderedScreenshotMeta {
   if (typeof m.heroVisible === 'boolean') meta.heroVisible = m.heroVisible;
   if (typeof m.ctaInFirstViewport === 'boolean') meta.ctaInFirstViewport = m.ctaInFirstViewport;
   if (typeof m.marketingHeroOnAppFirst === 'boolean') meta.marketingHeroOnAppFirst = m.marketingHeroOnAppFirst;
+  // App Build Quality V2 — carry the APP-only runtime facts through. Absent for a website
+  // measurement, so a web build produces byte-for-byte the same metadata as before.
+  if (typeof m.navProbedCount === 'number') meta.navProbedCount = m.navProbedCount;
+  if (typeof m.navWorkingCount === 'number') meta.navWorkingCount = m.navWorkingCount;
+  if (typeof m.navReachable === 'boolean') meta.navReachable = m.navReachable;
+  if (typeof m.smallTouchTargetCount === 'number') meta.smallTouchTargetCount = m.smallTouchTargetCount;
+  if (typeof m.clippedElementCount === 'number') meta.clippedElementCount = m.clippedElementCount;
   return meta;
 }
 
@@ -192,17 +243,26 @@ export async function produceRenderedVisualInput(opts: {
   /** PR #521 — when true, capture ONE desktop screenshot in the SAME preview session for the
    *  conditional vision review. Decided by the pipeline's capture gate; default off. */
   captureScreenshot?: boolean;
+  /** App Build Quality V2 — this candidate is an APP: measure the app viewport set and the
+   *  app-surface facts, and probe the navigation once. */
+  isApp?: boolean;
 }): Promise<RenderedVisualInput | undefined> {
   try {
     const { transport, runId, signal } = opts;
     if (!transport || !runId) return undefined;
     if (signal?.aborted) return undefined;
-    const expectations = deriveMeasureExpectations(opts.plan);
-    const viewports = opts.viewports && opts.viewports.length ? opts.viewports : DEFAULT_MEASURE_VIEWPORTS;
+    const isApp = opts.isApp === true;
+    const expectations = deriveMeasureExpectations(opts.plan, isApp);
+    const viewports = opts.viewports && opts.viewports.length
+      ? opts.viewports
+      : (isApp ? APP_MEASURE_VIEWPORTS : DEFAULT_MEASURE_VIEWPORTS);
 
-    const results = await Promise.all(viewports.map(async (v) => {
+    const results = await Promise.all(viewports.map(async (v, idx) => {
       try {
-        return await transport.measure({ ...v, runId, ...expectations }, signal);
+        // The navigation probe OPERATES controls, so it rides only the LAST viewport request —
+        // no earlier measurement can be perturbed by it.
+        const probeNav = isApp && idx === viewports.length - 1;
+        return await transport.measure({ ...v, runId, ...expectations, ...(probeNav ? { probeNav: true } : {}) }, signal);
       } catch {
         return null;   // fail-open per viewport
       }
@@ -236,7 +296,7 @@ export async function produceRenderedVisualInput(opts: {
  * pipeline's abort signal, so it is bounded, cancellable and fail-open. Pure factory.
  */
 export function createRenderedVisualProducer(transport: PreviewMeasurementTransport, runId: string) {
-  return async (ctx: { spec?: { experienceArchitecture?: ExperienceArchitecturePlan }; signal?: AbortSignal; captureScreenshot?: boolean }): Promise<RenderedVisualInput | undefined> => {
+  return async (ctx: { spec?: { experienceArchitecture?: ExperienceArchitecturePlan; buildType?: string }; signal?: AbortSignal; captureScreenshot?: boolean }): Promise<RenderedVisualInput | undefined> => {
     if (!isRenderedVisualEvaluationEnabled() || !isPreviewMeasurementEnabled()) return undefined;
     return produceRenderedVisualInput({
       transport,
@@ -244,6 +304,7 @@ export function createRenderedVisualProducer(transport: PreviewMeasurementTransp
       plan: ctx.spec?.experienceArchitecture,
       signal: ctx.signal,
       captureScreenshot: ctx.captureScreenshot === true,
+      isApp: ctx.spec?.buildType === 'app',
     });
   };
 }

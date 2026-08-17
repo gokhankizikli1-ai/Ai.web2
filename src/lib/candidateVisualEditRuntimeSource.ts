@@ -475,9 +475,11 @@ export const VE_RUNTIME_SOURCE = `(function () {
   function handleMeasure(payload) {
     try {
       var p = (payload && typeof payload === 'object') ? payload : {};
-      var vp = (p.viewport === 'desktop' || p.viewport === 'tablet' || p.viewport === 'mobile') ? p.viewport : 'desktop';
+      var VIEWPORTS = { desktop: 1, laptop: 1, tablet: 1, 'mobile-large': 1, mobile: 1 };
+      var vp = (typeof p.viewport === 'string' && VIEWPORTS[p.viewport] === 1) ? p.viewport : 'desktop';
       var runId = (typeof p.runId === 'string') ? p.runId.slice(0, 128) : '';
       if (!runId) { return; }
+      var appMode = p.appMode === true;
       var docEl = document.documentElement;
       var body = document.body;
       var vw = Math.round(window.innerWidth || (docEl && docEl.clientWidth) || 0);
@@ -492,9 +494,17 @@ export const VE_RUNTIME_SOURCE = `(function () {
       var blank = textLen < 8 && imgCount === 0;
       // Whitespace ratio (rough, deterministic): fraction of the FIRST viewport not covered by
       // the top-level content blocks. Bounded to [0,1]; never inspects pixels.
+      // App Build Quality V2 — an APPLICATION shell is a nav/aside/main composition, not a stack
+      // of <section>s. Measuring an app with the website selector reported "≈100% empty" for every
+      // app, so app mode uses the application-shell selector instead.
       var whitespaceRatio = 0;
       try {
-        var blocks = document.querySelectorAll('section, header, main > *');
+        // 'body > *' is included as a fallback because a generated app shell is very often a plain
+        // <div> grid with no landmark elements at all; without it every such app measured as
+        // "≈100% empty" and picked up a spurious excessive-whitespace finding.
+        var blocks = appMode
+          ? document.querySelectorAll('main, [role="main"], nav, aside, header, main > *, body > *')
+          : document.querySelectorAll('section, header, main > *');
         var covered = 0, n = Math.min(blocks.length, 40);
         for (var i = 0; i < n; i++) {
           var r = blocks[i].getBoundingClientRect();
@@ -519,7 +529,24 @@ export const VE_RUNTIME_SOURCE = `(function () {
         }
         if (p.appFirst === true) {
           var h1 = document.querySelector('h1');
-          marketingHeroOnAppFirst = !!(h1 && rectTop(h1) < vh && contentH > vh * 1.5 && document.querySelectorAll('a, button').length >= 2);
+          if (appMode) {
+            // App Build Quality V2 — for an APPLICATION the website heuristic (a heading plus a
+            // tall page) matches every legitimate list/dashboard screen, so it is replaced by a
+            // real one: a marketing hero is a large headline occupying the first viewport with NO
+            // operational surface (nav, table, form, list, chart, controls) anywhere in it.
+            // The headline must be genuinely display-sized OR occupy a real slice of the first
+            // viewport. Measuring only the HEIGHT made the check width-dependent — the same
+            // marketing hero registered on a phone (headline wraps to three lines) and not on a
+            // desktop (one line), which is exactly backwards.
+            var h1Size = 0;
+            try { h1Size = parseFloat(window.getComputedStyle(h1).fontSize) || 0; } catch (e7) { h1Size = 0; }
+            var h1Tall = !!h1 && h1.getBoundingClientRect().height >= vh * 0.12;
+            marketingHeroOnAppFirst = !!(h1 && rectTop(h1) < vh * 0.5
+              && (h1Size >= 32 || h1Tall)
+              && !hasOperationalSurface(vh));
+          } else {
+            marketingHeroOnAppFirst = !!(h1 && rectTop(h1) < vh && contentH > vh * 1.5 && document.querySelectorAll('a, button').length >= 2);
+          }
         }
       } catch (e6) {}
       var out = {
@@ -531,8 +558,198 @@ export const VE_RUNTIME_SOURCE = `(function () {
       if (typeof heroVisible === 'boolean') out.heroVisible = heroVisible;
       if (typeof ctaInFirstViewport === 'boolean') out.ctaInFirstViewport = ctaInFirstViewport;
       if (typeof marketingHeroOnAppFirst === 'boolean') out.marketingHeroOnAppFirst = marketingHeroOnAppFirst;
+      // ── App Build Quality V2 — APP-ONLY facts. Only computed when the parent asked for app
+      //    mode, so a website measurement is byte-for-byte what it was before. ──
+      if (appMode) {
+        try {
+          out.navReachable = measureNavReachable(vw, vh);
+          out.smallTouchTargetCount = measureSmallTouchTargets(vw);
+          out.clippedElementCount = measureClippedElements();
+        } catch (e7) { /* fail silent — app facts are optional */ }
+      }
+      // The NAVIGATION PROBE genuinely operates controls, so it is requested at most once per
+      // candidate and only as the LAST measurement — an earlier viewport measurement can never be
+      // perturbed by it, and if a control performs a hard navigation (destroying this runtime)
+      // only the probe result is lost, never the viewport measurements already collected.
+      if (appMode && p.probeNav === true) {
+        probeNavigation(function (probed, working) {
+          out.navProbedCount = probed;
+          out.navWorkingCount = working;
+          post('MEASUREMENT', out);
+        });
+        return;
+      }
       post('MEASUREMENT', out);
     } catch (err) { /* fail silent — measurement is advisory only */ }
+  }
+
+  /* ── App Build Quality V2 — APP-surface runtime measurement ─────────────────────────────
+   *  Bounded, read-only DOM measurement of the facts a SCROLLING-WEBSITE measurement has no
+   *  vocabulary for. Every helper is individually guarded and returns a plain number/boolean;
+   *  none of them read text content, styles, source or user data. */
+
+  /** True when the FIRST viewport contains a real operational surface — navigation chrome, a
+   *  table/list, a form control, a tab strip or a chart. Its presence is what separates a working
+   *  application screen from a marketing landing hero. Bounded scan. */
+  function hasOperationalSurface(vh) {
+    try {
+      var els = document.querySelectorAll(
+        'nav, [role="navigation"], aside, table, form, input, select, textarea, [role="tablist"], [role="grid"], [role="list"], ul li, ol li, canvas, .recharts-wrapper'
+      );
+      for (var i = 0; i < Math.min(els.length, 120); i++) {
+        var r = els[i].getBoundingClientRect();
+        if (r.width > 4 && r.height > 4 && r.top < vh && r.bottom > 0) { return true; }
+      }
+      return false;
+    } catch (e) { return true; }        // fail-open: unknown is never reported as a marketing hero
+  }
+
+  /** A navigation control the user could actually operate: inside a nav/aside/tablist region,
+   *  rendered with a real box. Bounded scan. */
+  function collectNavControls(max) {
+    var out = [];
+    try {
+      var roots = document.querySelectorAll('nav, [role="navigation"], [role="tablist"], aside');
+      for (var i = 0; i < Math.min(roots.length, 4) && out.length < max; i++) {
+        var els = roots[i].querySelectorAll('a[href], button, [role="tab"], [role="menuitem"], [role="link"]');
+        for (var j = 0; j < Math.min(els.length, 40) && out.length < max; j++) {
+          var r = els[j].getBoundingClientRect();
+          if (r.width > 2 && r.height > 2) out.push(els[j]);
+        }
+      }
+    } catch (e) { /* bounded, fail-open */ }
+    return out;
+  }
+
+  /** True when the user can reach the navigation at this viewport: either navigation controls
+   *  are visible in the layout, or a menu/drawer/hamburger trigger is. A phone layout where the
+   *  sidebar simply vanished and nothing replaced it measures FALSE. */
+  function measureNavReachable(vw, vh) {
+    try {
+      var visible = collectNavControls(3);
+      for (var i = 0; i < visible.length; i++) {
+        var r = visible[i].getBoundingClientRect();
+        if (r.bottom > 0 && r.top < vh && r.right > 0 && r.left < vw) { return true; }
+      }
+      // No visible nav item — look for a menu/drawer trigger instead.
+      var triggers = document.querySelectorAll(
+        '[aria-label*="menu" i], [aria-label*="navigation" i], [aria-controls], [data-menu-trigger], button[aria-expanded]'
+      );
+      for (var k = 0; k < Math.min(triggers.length, 20); k++) {
+        var tr = triggers[k].getBoundingClientRect();
+        if (tr.width > 2 && tr.height > 2 && tr.bottom > 0 && tr.top < vh && tr.right > 0 && tr.left < vw) { return true; }
+      }
+      return false;
+    } catch (e) { return true; }        // fail-open: unknown is never reported as unreachable
+  }
+
+  /** Interactive controls rendering below a comfortable hit area. Only meaningful at phone
+   *  widths, so the parent only reads it for narrow viewports. Bounded scan. */
+  function measureSmallTouchTargets(vw) {
+    var n = 0;
+    try {
+      var els = document.querySelectorAll('a[href], button, [role="button"], [role="tab"], input[type="checkbox"], input[type="radio"], select');
+      for (var i = 0; i < Math.min(els.length, 300); i++) {
+        var r = els[i].getBoundingClientRect();
+        if (r.width <= 0 || r.height <= 0) { continue; }          // not rendered
+        if (r.right <= 0 || r.left >= vw) { continue; }           // outside the viewport
+        if (Math.min(r.width, r.height) < 32) { n += 1; }
+      }
+    } catch (e) { return 0; }
+    return n;
+  }
+
+  /** Elements whose OWN content is cut off by their box with no way to reach it — the measurable
+   *  form of "severe clipping". Deliberately narrow so the everyday, INTENTIONAL cases never
+   *  count: a scrollable container (overflow auto/scroll) is reachable, and a truncated label
+   *  (text-overflow: ellipsis) is a designed affordance, not a defect. What remains is content
+   *  hard-clipped by a box, and only when the hidden margin is genuinely large. */
+  function measureClippedElements() {
+    var n = 0;
+    try {
+      var els = document.querySelectorAll('div, section, main, aside, header, table, ul, ol, p, h1, h2, h3');
+      for (var i = 0; i < Math.min(els.length, 400); i++) {
+        var el = els[i];
+        var cw = el.clientWidth || 0;
+        if (cw < 80) { continue; }
+        var overflowPx = (el.scrollWidth || 0) - cw;
+        // Require a LARGE hidden margin: sub-pixel/rounding noise and small decorative overhangs
+        // must never register as clipped content.
+        if (overflowPx <= Math.max(24, cw * 0.12)) { continue; }
+        var st = null;
+        try { st = window.getComputedStyle(el); } catch (e2) { st = null; }
+        if (!st) { continue; }
+        var ox = st.overflowX;
+        if (ox !== 'hidden' && ox !== 'clip') { continue; }       // scrollable/visible ⇒ reachable
+        if (st.textOverflow === 'ellipsis') { continue; }         // intentional truncation
+        n += 1;
+        if (n >= 200) { break; }
+      }
+    } catch (e) { return 0; }
+    return n;
+  }
+
+  /** Deterministic signature of what is currently rendered: the route plus a bounded fingerprint
+   *  of the main region. Two different screens produce two different signatures. */
+  function screenSignature() {
+    try {
+      var main = document.querySelector('main, [role="main"]') || document.body;
+      var t = '';
+      try { t = (main && main.innerText ? main.innerText : '').replace(/\\s+/g, ' ').trim(); } catch (e2) { t = ''; }
+      var path = '';
+      try { path = (location.pathname || '') + (location.hash || ''); } catch (e3) { path = ''; }
+      return path + '|' + t.length + '|' + t.slice(0, 120);
+    } catch (e) { return ''; }
+  }
+
+  /**
+   * OPERATE up to a few primary navigation controls and report how many genuinely changed the
+   * rendered screen. This is the one app fact that cannot be inferred from source: a nav that
+   * LOOKS complete but navigates nowhere is indistinguishable statically.
+   *
+   * Safety: it only activates controls inside a navigation region of the sandboxed generated app
+   * (no network, no auth, no parent access). It skips the control that is already current, so an
+   * active item is never miscounted as dead. Fully bounded and time-limited; on any problem it
+   * reports (0, 0) which the parent treats as "not measured".
+   */
+  function probeNavigation(done) {
+    var finished = false;
+    var finish = function (probed, working) {
+      if (finished) { return; }
+      finished = true;
+      try { done(probed, working); } catch (e) { /* never throw into the caller */ }
+    };
+    try {
+      var items = collectNavControls(6).filter(function (el) {
+        try {
+          var cur = el.getAttribute('aria-current');
+          if (cur && cur !== 'false') { return false; }            // already the current screen
+          if (el.getAttribute('data-active') === 'true') { return false; }
+          return true;
+        } catch (e) { return true; }
+      });
+      var max = Math.min(items.length, 4);
+      if (max === 0) { finish(0, 0); return; }
+      var probed = 0, working = 0, idx = 0;
+      // Hard ceiling so a probe can never hang the measurement session.
+      var guard = setTimeout(function () { finish(probed, working); }, 3000);
+      var step = function () {
+        if (finished) { return; }
+        if (idx >= max) { clearTimeout(guard); finish(probed, working); return; }
+        var el = items[idx];
+        idx += 1;
+        var before = screenSignature();
+        probed += 1;
+        try { el.click(); } catch (e) { /* an unclickable control counts as probed-not-working */ }
+        requestAnimationFrame(function () {
+          requestAnimationFrame(function () {
+            try { if (screenSignature() !== before) { working += 1; } } catch (e2) { /* ignore */ }
+            step();
+          });
+        });
+      };
+      step();
+    } catch (e) { finish(0, 0); }
   }
 
   /* ── PR #521 — bounded, viewport-only SCREENSHOT capture. Rasterizes the generated preview's

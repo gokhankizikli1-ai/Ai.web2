@@ -101,7 +101,10 @@ function fromScreenshots(shots: RenderedScreenshotMeta[], seen: Set<string>): Re
     if (SEVERITY_RANK[i.severity] < SEVERITY_RANK[prev.severity]) worst.set(k, i);   // upgrade
   };
   for (const shot of shots) {
-    const isMobile = shot.viewport === 'mobile';
+    // App Build Quality V2 — 430 ('mobile-large') is as much a phone as 390, so a defect measured
+    // there must carry the SAME (higher) phone severity. Without this, adding the wider phone
+    // viewport would have LOWERED the reported severity of a phone-only overflow.
+    const isMobile = shot.viewport === 'mobile' || shot.viewport === 'mobile-large';
     // PR #517 — a runtime render/compile error is the strongest signal.
     if (shot.runtimeError) {
       add(rIssue('rendered-runtime-error', 'composition', 'high',
