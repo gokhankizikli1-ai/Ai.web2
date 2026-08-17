@@ -415,6 +415,49 @@ describe('listAddableChats (Add existing chat picker)', () => {
     seed();
     expect(await listAddableChats('pA')).toEqual([]);
   });
+
+  /* Regression — found during live validation against a real backend.
+   *
+   * Membership in THIS project used to be inferred from a map built by walking
+   * the LOCAL project cache. A browser whose cache is empty (fresh device,
+   * cleared storage, or a project created elsewhere) built an EMPTY map, so
+   * every chat — including ones already filed here — rendered as "Add".
+   * The workspace read is the authority now, so the caller passes it in. */
+  it('uses server-supplied membership for the CURRENT project', async () => {
+    seed();
+    const list = await listAddableChats('pA', ['th-current']);
+    const byId = Object.fromEntries(list.map((c) => [c.id, c]));
+    expect(byId['th-current'].inCurrentProject).toBe(true);
+    expect(byId['th-none'].inCurrentProject).toBe(false);
+    expect(byId['th-other'].inCurrentProject).toBe(false);
+  });
+
+  it('an empty LOCAL project cache no longer mislabels chats already here', async () => {
+    const projectStore = await import('@/stores/projectStore');
+    const spy = vi.spyOn(projectStore, 'getProjects').mockReturnValue([]);
+    try {
+      seed();
+      // Without server truth the old inference has nothing to go on…
+      const inferred = await listAddableChats('pA');
+      expect(inferred.find((c) => c.id === 'th-current')!.inCurrentProject).toBe(false);
+      // …with it, the row is correctly non-actionable.
+      const authoritative = await listAddableChats('pA', ['th-current']);
+      expect(authoritative.find((c) => c.id === 'th-current')!.inCurrentProject).toBe(true);
+      // The "in <other project>" label stays best-effort and simply absent.
+      expect(authoritative.find((c) => c.id === 'th-other')!.otherProjectName).toBeNull();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('server truth wins even if the local cache disagrees', async () => {
+    seed();
+    // Local cache says th-other lives in pB; the server says it is in pA now.
+    const list = await listAddableChats('pA', ['th-other']);
+    const row = list.find((c) => c.id === 'th-other')!;
+    expect(row.inCurrentProject).toBe(true);
+    expect(row.otherProjectId).toBeNull();   // never offer "Move here" to itself
+  });
 });
 
 describe('removeThreadFromProject (Project Overview remove)', () => {

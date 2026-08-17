@@ -103,9 +103,11 @@ function SourceName({ source, t }: { source: string; t: T }) {
    "Add existing chat" picker — unchanged behaviour, translated copy.
    ══════════════════════════════════════════════════════════════════════════ */
 function AddExistingChatModal({
-  projectId, onClose, onChanged, t,
+  projectId, currentThreadIds, onClose, onChanged, t,
 }: {
   projectId: string;
+  /** Server truth for "already in THIS project", from the workspace read. */
+  currentThreadIds: readonly string[];
   onClose: () => void;
   onChanged: () => void;
   t: T;
@@ -119,12 +121,12 @@ function AddExistingChatModal({
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
-      const list = await listAddableChats(projectId);
+      const list = await listAddableChats(projectId, currentThreadIds);
       if (!cancelled) { setItems(list); setLoading(false); }
     };
     void load();
     return () => { cancelled = true; };
-  }, [projectId]);
+  }, [projectId, currentThreadIds]);
 
   const act = useCallback(async (c: AddableChat) => {
     if (c.inCurrentProject) return;
@@ -444,6 +446,13 @@ export default function ProjectOverview() {
 
   const workspace = load.state === 'ready' ? load.workspace : null;
   const suggestions = useMemo(() => askSuggestions(workspace), [workspace]);
+  /** Server truth for which chats are already filed here — handed to the "Add
+   *  existing" picker so it never offers to add a chat this project already has
+   *  (the local project cache can be empty on a fresh device). */
+  const currentThreadIds = useMemo(
+    () => (workspace?.chats || []).map((c) => c.thread_id),
+    [workspace],
+  );
   /** The header's Ask Korvix seed — the highest-priority honest suggestion, or
    *  nothing at all before the workspace read lands. */
   const headlineAsk = suggestions.length > 0 ? t(suggestions[0].promptKey) : undefined;
@@ -732,6 +741,7 @@ export default function ProjectOverview() {
       {pickerOpen && (
         <AddExistingChatModal
           projectId={projectId}
+          currentThreadIds={currentThreadIds}
           onClose={() => setPickerOpen(false)}
           onChanged={() => { void refresh(); }}
           t={t}
