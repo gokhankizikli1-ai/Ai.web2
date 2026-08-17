@@ -2505,7 +2505,13 @@ export type FrontendBuilderReviewCategory =
   | 'copy-fidelity'
   | 'contract-fidelity'
   | 'honesty'
-  | 'maintainability';
+  | 'maintainability'
+  /** Quality V2 — MEASURED efficiency findings from the deterministic optimization pass
+   *  (dead imports, duplicate CSS, oversized image requests, unbounded effects, …). Always
+   *  emitted as a `minor` advisory issue, so it can never displace a functional or visual
+   *  obligation inside the fixed repair-issue budget and can never block acceptance. The model
+   *  reviewer may also use it; old artifacts simply never carry it. */
+  | 'performance';
 
 export interface FrontendBuilderReviewIssue {
   id: string;
@@ -2922,6 +2928,17 @@ export interface FrontendBuilderAcceptanceArtifact {
    *  simply lack it. Carries no image / prompt / raw response. */
   renderedVisionReview?: RenderedVisionReviewArtifact;
 
+  /* ── Quality V2 — the POST-repair rendered re-verification, the deterministic optimization
+   *  report and the best-candidate decision. All three are optional and additive; a build with
+   *  no rendered producer, or an older saved build, simply lacks them. They carry counts /
+   *  bounded codes / paths only — never source, prompts, provider output, image data or PII.
+   *  They do NOT change `renderedVisualTestStatus` (still 'pending-manual-test'): an automated
+   *  measurement is not a manual certification. */
+  renderedVisualEvaluationAfterRepair?: RenderedVisualEvaluationArtifact;
+  renderRegression?: WebBuildRenderRegressionResult;
+  optimization?: WebBuildOptimizationReport;
+  candidateSelection?: WebBuildCandidateSelection;
+
   /* ── Phase 12G — bounded, non-sensitive binding-requirements + semantic-drift acceptance
    *  diagnostics. Present only when a binding-requirements contract existed for this build
    *  (`legacyContractUsed` records the no-contract legacy path). Numbers / bounded issue codes /
@@ -3171,6 +3188,123 @@ export interface RenderedVisualEvaluationArtifact {
   runtimeReviewed: boolean;
 }
 
+/* ── Quality V2 — RENDERED REGRESSION comparison ───────────────────────────────
+ * The verdict of comparing the PRE-repair and POST-repair rendered evaluations. Produced by the
+ * pure `webBuildRenderRegression` comparator; consumed by the acceptance gate (as a rejecting
+ * input) and by best-candidate selection. Counts / bounded codes only — never source, prompts,
+ * provider output, image data, ids or PII. Additive + optional; old artifacts simply lack it.
+ *
+ * A regression rejects the REPAIR. It never demotes a build to Safe Preview. */
+export interface WebBuildRenderRegressionResult {
+  version: 'rendered-regression-v1';
+  /** True only when BOTH a pre-repair and a usable post-repair measurement existed. */
+  compared: boolean;
+  /** True only when `compared` AND a HIGH-severity rendered finding is newly present. */
+  regressed: boolean;
+  /** HIGH-severity rendered codes present after the repair but absent before. */
+  newHighCodes: string[];
+  /** HIGH-severity rendered codes the repair genuinely resolved. */
+  resolvedHighCodes: string[];
+  /** The repair made the page fail to render at all (runtime error / blank first paint). */
+  newRuntimeFailure: boolean;
+  beforeHighCount: number;
+  afterHighCount: number;
+  beforeScore?: number;
+  afterScore?: number;
+  reason: string;
+}
+
+/* ── Quality V2 — DETERMINISTIC OPTIMIZATION PASS ──────────────────────────────
+ * MEASURED efficiency findings derived from the generated source with zero model calls. Advisory
+ * only: they ride the EXISTING bounded repair as a single `minor` `performance` issue and can
+ * never block acceptance or displace a functional obligation. Every number here is measured from
+ * real files — none is estimated, and no Web Vital is ever synthesized from a headless sandbox. */
+export type WebBuildOptimizationCode =
+  | 'dead-import'
+  | 'unreferenced-component'
+  | 'duplicate-css-rule'
+  | 'duplicate-class-literal'
+  | 'eager-offscreen-image'
+  | 'oversized-remote-image'
+  | 'unbounded-effect'
+  | 'redundant-dom-wrapper';
+
+export interface WebBuildOptimizationFinding {
+  code: WebBuildOptimizationCode;
+  severity: 'high' | 'medium' | 'low';
+  /** The MEASURED magnitude (count or characters) — used for ranking and honest reporting. */
+  magnitude: number;
+  files: string[];
+  evidence: string;
+  suggestion: string;
+}
+
+export interface WebBuildOptimizationReport {
+  version: 'web-build-optimization-v1';
+  findings: WebBuildOptimizationFinding[];
+  /** Raw measurements, retained so a saved build can be audited without re-running analysis. */
+  measured: {
+    fileCount: number;
+    sourceCharCount: number;
+    cssCharCount: number;
+    deadImportCount: number;
+    unreferencedComponentCount: number;
+    duplicateCssRuleCount: number;
+    duplicateCssCharCount: number;
+    duplicateClassLiteralCount: number;
+    duplicateClassCharCount: number;
+    imageCount: number;
+    eagerOffscreenImageCount: number;
+    oversizedImageCount: number;
+    unboundedEffectCount: number;
+    redundantWrapperCount: number;
+  };
+}
+
+/* ── Quality V2 — BEST-CANDIDATE SELECTION ─────────────────────────────────────
+ * Separates "may this be called APPROVED?" (the unchanged strict acceptance gate) from "which
+ * candidate should the user actually receive?". A promoted candidate is delivered as PROVISIONAL
+ * — never as approved — so no quality claim is ever inflated by this mechanism. */
+export interface WebBuildCandidateSummary {
+  label: 'initial' | 'repaired';
+  /** Structurally valid + ready for consumption + files present. */
+  renderSafe: boolean;
+  /** The rendered evaluation of THIS candidate observed a runtime failure / blank page. */
+  runtimeFailure: boolean;
+  /** Which deterministic analyzer gates block this candidate. */
+  blockingDimensions: string[];
+  blockingCount: number;
+  severeWarningCodes: string[];
+  severeWarningCount: number;
+  renderedHighFindingCount: number;
+  /** The model review score. TIEBREAK ONLY — never sufficient to promote a candidate. */
+  reviewScore: number;
+  fileCount: number;
+  charCount: number;
+}
+
+export type WebBuildCandidateSelectionReason =
+  | 'strict-gate-accepted'
+  | 'repaired-strictly-better'
+  | 'repaired-not-better'
+  | 'repaired-regressed-obligations'
+  | 'repaired-regressed-render'
+  | 'repaired-not-preserving'
+  | 'repaired-not-render-safe';
+
+export interface WebBuildCandidateSelection {
+  version: 'web-build-candidate-selection-v1';
+  winner: 'initial' | 'repaired';
+  reason: WebBuildCandidateSelectionReason;
+  /** Blocking dimensions the repair genuinely resolved. */
+  improvedDimensions: string[];
+  /** Blocking dimensions the repair introduced (any entry forbids promotion). */
+  regressedDimensions: string[];
+  initial: WebBuildCandidateSummary;
+  repaired: WebBuildCandidateSummary;
+  detail: string;
+}
+
 /* ── Frontend Builder model-native REVISION (Phase 13D) ────────────────────────
  * A source-to-source edit of an EXISTING model-native project: the current files +
  * authoritative specification + the user's revision instruction go to ONE dedicated
@@ -3346,10 +3480,19 @@ export interface FrontendBuilderQualityPipelineResult {
   repair?: FrontendBuilderRepairArtifact;
   finalReview?: FrontendBuilderReviewArtifact;
   acceptance: FrontendBuilderAcceptanceArtifact;
-  /** Present ONLY when acceptance.status === 'repaired-approved': the repaired,
-   *  re-validated project that must replace the active initial model-native files. */
+  /** Present when the repaired, re-validated project must replace the active initial
+   *  model-native files — either because acceptance.status === 'repaired-approved', or
+   *  because Quality V2 best-candidate selection PROMOTED it (see `bestCandidatePromoted`). */
   acceptedRepairedFiles?: FrontendGeneratedFile[];
   acceptedRepairedValidation?: FrontendBuilderValidationArtifact;
+  /** Quality V2 — TRUE when the strict acceptance gate REJECTED the repair but deterministic
+   *  best-candidate selection proved the repaired project strictly better and worse on nothing,
+   *  so it is delivered instead of the earlier one.
+   *
+   *  This NEVER means "approved": the acceptance status stays 'manual-review-required' and
+   *  `approvedForUserPreview` stays false, so the build is surfaced as a PROVISIONAL preview.
+   *  It only decides WHICH validated model-native project the user receives. */
+  bestCandidatePromoted?: boolean;
 }
 
 export interface WebBuildArtifacts {

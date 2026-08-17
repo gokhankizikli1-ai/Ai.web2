@@ -100,6 +100,9 @@ const BUILD_STAGES: readonly StageDef[] = [
   { id: 'structural-repair', detailKind: 'files' },
   { id: 'quality-review', detailKind: 'review' },
   { id: 'quality-repair', detailKind: 'files' },
+  // Quality V2 — the POST-repair rendered re-verification. Reported only when a real before/after
+  // comparison happened; a build with no measurement producer simply never emits it.
+  { id: 'render-verification', detailKind: 'review' },
   { id: 'acceptance', detailKind: 'acceptance' },
   { id: 'preview', detailKind: 'preview' },
 ];
@@ -129,6 +132,7 @@ export const ACTIVITY_TITLES: Record<string, L3> = {
   'structural-repair': { en: 'Repairing the project structure', tr: 'Proje yapısı düzeltiliyor', de: 'Projektstruktur wird repariert' },
   'quality-review': { en: 'Reviewing design quality', tr: 'Tasarım kalitesi inceleniyor', de: 'Designqualität wird geprüft' },
   'quality-repair': { en: 'Applying quality improvements', tr: 'Kalite iyileştirmeleri uygulanıyor', de: 'Qualitätsverbesserungen werden angewendet' },
+  'render-verification': { en: 'Re-checking the rendered page', tr: 'Görüntülenen sayfa yeniden kontrol ediliyor', de: 'Gerenderte Seite wird erneut geprüft' },
   acceptance: { en: 'Finalizing the candidate', tr: 'Candidate hazırlanıyor', de: 'Kandidat wird finalisiert' },
   preview: { en: 'Preparing the preview', tr: 'Önizleme hazırlanıyor', de: 'Vorschau wird vorbereitet' },
   'revision-understanding': { en: 'Understanding the requested change', tr: 'İstenen değişiklik inceleniyor', de: 'Gewünschte Änderung wird verstanden' },

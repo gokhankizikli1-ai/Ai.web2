@@ -60,6 +60,9 @@ const REVIEW_CATEGORIES: ReadonlySet<FrontendBuilderReviewCategory> = new Set([
   'layout-rhythm', 'typography', 'palette-and-surfaces', 'component-composition',
   'motion-and-interaction', 'responsive-intent', 'accessibility-intent',
   'copy-fidelity', 'contract-fidelity', 'honesty', 'maintainability',
+  // Quality V2 — MEASURED efficiency findings. Accepted from the model reviewer too, but it is
+  // primarily produced by the deterministic optimization pass, which constructs issues directly.
+  'performance',
 ]);
 const DIMENSION_KEYS: readonly (keyof FrontendBuilderReviewDimensions)[] = [
   'conceptSpecificity', 'visualHierarchy', 'layoutRhythm', 'typography',

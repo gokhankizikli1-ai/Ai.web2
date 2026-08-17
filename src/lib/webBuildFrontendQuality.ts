@@ -15,11 +15,42 @@
  * Model-call ceiling per turn: initial builder ×1, initial review ≤1, repair ≤1,
  * post-repair review ≤1. Fallback (non-eligible) builds make ZERO Phase 12E calls.
  *
- * HONESTY BOUNDARY: this is a STATIC review of specification + source only. No
- * screenshot, browser DOM, runtime compilation or Sandpack output is observed. Every
- * artifact records renderedScreenshotReviewed:false, runtimeCompilationReviewed:false
- * and renderedVisualTestStatus:'pending-manual-test'. A real rendered visual test is
- * performed MANUALLY after Phase 12E merges.
+ * ── QUALITY V2 ADDITIONS ─────────────────────────────────────────────────────────────────────
+ * Three stages were added to close real quality holes. NONE of them adds a model call:
+ *
+ *   OPTIMIZE   A deterministic optimization pass (`webBuildOptimizationPass`) measures dead
+ *              imports, unreferenced components, duplicate CSS/class literals, eagerly-loaded
+ *              offscreen images, oversized remote image requests, dependency-less state effects
+ *              and excessive DOM wrappers. Its findings ride the EXISTING repair as ONE `minor`
+ *              `performance` issue, so they can only fill leftover room in the fixed issue
+ *              budget and can never displace a functional obligation or block acceptance.
+ *
+ *   RE-VERIFY  The repaired project is MEASURED AGAIN in the same preview host at the same
+ *              viewports, and compared to the pre-repair measurement
+ *              (`webBuildRenderRegression`). Previously the only post-repair evidence was a
+ *              static review, so a repair that fixed the reported issue while breaking the
+ *              rendered page could still be accepted. A proven rendered regression now REJECTS
+ *              the repair. Cost: at most ONE extra measurement, ZERO extra model calls (no
+ *              screenshot is captured, so the vision review still runs at most once per build).
+ *
+ *   DELIVER    Best-candidate selection (`webBuildQualityCandidates`) separates "may this be
+ *              called APPROVED?" from "which candidate does the user receive?". Approval is
+ *              unchanged. When the strict gate rejects, the repaired project is still DELIVERED
+ *              if it is render-safe, preserved the earlier project, regressed no obligation,
+ *              regressed nothing rendered, is worse on NO deterministic dimension and strictly
+ *              better on at least one. It is delivered as PROVISIONAL — the acceptance status
+ *              stays 'manual-review-required' — so no quality claim is ever inflated.
+ *
+ * PREVIEW-AUTHORITY INVARIANT (unchanged, and deliberately reinforced): quality state NEVER
+ * demotes a renderable model-native project to Safe Preview. Every candidate compared above is
+ * a structurally valid, consumed model-native project; Safe Preview remains reserved for a
+ * genuinely non-render-safe result. A low quality score cannot reach the safe renderer.
+ *
+ * HONESTY BOUNDARY: the model review is STATIC (specification + source only). Rendered evidence
+ * comes exclusively from the caller-supplied measurement producer and is recorded as such. Every
+ * artifact still records renderedScreenshotReviewed:false, runtimeCompilationReviewed:false and
+ * renderedVisualTestStatus:'pending-manual-test' — an automated measurement is not a manual
+ * certification, and adding one must never be allowed to read as one.
  *
  * FAIL-OPEN: every Phase 12E problem (reviewer timeout/network/malformed JSON/oversize,
  * repair timeout/network/malformed envelope, invalid repaired project, post-repair
@@ -168,7 +199,22 @@ import {
   buildVisionReviewContext, buildRenderedVisionReviewArtifact,
   type VisionReviewProducerContext,
 } from '@/lib/webBuildVisionReview';
-import type { RenderedVisualInput, RenderedVisualEvaluationArtifact, RenderedVisionReviewArtifact } from '@/lib/webBuildAgents';
+// Quality V2 — DETERMINISTIC optimization pass (a leaf; pure + fail-open + ZERO model calls). Its
+// measured efficiency findings ride the EXISTING deterministic-issue merge as a single `minor`
+// `performance` issue, so they can only ever fill leftover room in the EXISTING single repair and
+// can never displace a functional/visual obligation or block acceptance.
+import { analyzeOptimization, optimizationToReviewIssues } from '@/lib/webBuildOptimizationPass';
+// Quality V2 — POST-repair rendered RE-VERIFICATION comparator (a leaf; pure + fail-open). Closes
+// the churn hole where a repair was judged only from source and could break the rendered page.
+import { compareRenderedEvaluations, rendersWorseAfterRepair } from '@/lib/webBuildRenderRegression';
+// Quality V2 — BEST-CANDIDATE selection (a leaf; pure + fail-open). Separates "may this be called
+// APPROVED?" (the unchanged strict gate) from "which candidate should the user receive?".
+import { summarizeCandidate, selectBestCandidate, promotesUnapprovedRepair } from '@/lib/webBuildQualityCandidates';
+import type { CandidateBlockingFlags } from '@/lib/webBuildQualityCandidates';
+import type {
+  RenderedVisualInput, RenderedVisualEvaluationArtifact, RenderedVisionReviewArtifact,
+  WebBuildOptimizationReport, WebBuildRenderRegressionResult, WebBuildCandidateSelection,
+} from '@/lib/webBuildAgents';
 import type {
   FrontendBuildSpecification, FrontendGeneratedFile,
   FrontendBuilderRepairArtifact, FrontendBuilderAcceptanceArtifact,
@@ -742,6 +788,9 @@ export async function runFrontendBuilderQualityPipeline(
         }, { fallbackReasonCode: 'contract-repair-failed' });
         emit('quality-review', 'skipped');
         emit('quality-repair', 'skipped');
+        // Quality V2 — this path returns before the post-repair rendered re-verification, so the
+        // stage is closed as skipped rather than left permanently pending in the timeline.
+        emit('render-verification', 'skipped');
         emit('acceptance', 'completed', acceptanceRows('skipped', 'internal-fallback'));
         return attachFrontendBuilderQualityResult(working, { ran: false, acceptance: skipped });
       }
@@ -771,6 +820,9 @@ export async function runFrontendBuilderQualityPipeline(
       }, { fallbackReasonCode: 'not-consumable' });
       emit('quality-review', 'skipped');
       emit('quality-repair', 'skipped');
+      // Quality V2 — this path returns before the post-repair rendered re-verification, so the
+      // stage is closed as skipped rather than left permanently pending in the timeline.
+      emit('render-verification', 'skipped');
       emit('acceptance', 'completed', acceptanceRows('skipped', 'internal-fallback'));
       return attachFrontendBuilderQualityResult(working, { ran: false, acceptance: skipped });
     }
@@ -1116,6 +1168,42 @@ export async function runFrontendBuilderQualityPipeline(
         }
       }
     }
+    // ── Quality V2 — DETERMINISTIC OPTIMIZATION PASS. Pure source analysis with ZERO model calls:
+    //    dead imports, unreferenced components, duplicate CSS/class literals, eagerly-loaded
+    //    offscreen images, oversized remote image requests, dependency-less effects that write
+    //    state, and excessive DOM wrappers. It is merged LAST and as a single `minor` advisory
+    //    issue, so it can only ever occupy leftover room in the EXISTING fixed repair budget —
+    //    a performance instruction can never displace a P0–P5 obligation, and never blocks
+    //    acceptance. Fully fail-open. ──
+    let optimization: WebBuildOptimizationReport | undefined;
+    try {
+      optimization = analyzeOptimization(validation?.files, { heroComponentPath });
+      const optIssues = optimizationToReviewIssues(optimization);
+      if (optIssues.length && initialReview.status === 'completed') {
+        const { issues: mergedO, added: addedO } = mergeDeterministicIssues(initialReview.issues, optIssues);
+        // NOTE: `recomputeReviewWithMergedIssues` recomputes `passed` from severity counts. A
+        // `minor` optimization issue adds no blocker/major, so a passing review STAYS passing —
+        // optimization advice never turns an approved build into a repair.
+        if (addedO > 0) initialReview = recomputeReviewWithMergedIssues(initialReview, mergedO, addedO);
+      }
+    } catch { /* fail-open: optimization analysis must never break a build */ }
+
+    /* ── Quality V2 — bounded, secret-free diagnostics for the post-repair rendered
+     * re-verification, the optimization report and the best-candidate decision. Declared as a
+     * closure (like `bindingExtra`) so every acceptance return site reports whatever had been
+     * computed by the time it ran. Counts / bounded codes / paths only. */
+    const v2: {
+      afterRepair?: RenderedVisualEvaluationArtifact;
+      regression?: WebBuildRenderRegressionResult;
+      selection?: WebBuildCandidateSelection;
+    } = {};
+    const qualityV2Extra = (): Partial<FrontendBuilderAcceptanceArtifact> => ({
+      ...(optimization && optimization.findings.length ? { optimization } : {}),
+      ...(v2.afterRepair ? { renderedVisualEvaluationAfterRepair: v2.afterRepair } : {}),
+      ...(v2.regression && v2.regression.compared ? { renderRegression: v2.regression } : {}),
+      ...(v2.selection ? { candidateSelection: v2.selection } : {}),
+    });
+
     emit('quality-review', 'completed', reviewRows(initialReview));
 
     // Fast path — a passing initial review keeps the initial project; no repair/final call.
@@ -1126,8 +1214,11 @@ export async function runFrontendBuilderQualityPipeline(
       const acceptance = acceptanceArtifact('approved', initialProjectName, {
         initialReviewPassed: true, repairAttempted: false, repairAccepted: false, finalReviewPassed: false,
         reason: `Initial static design review passed (score ${initialReview.score ?? '?'}); no severe quality warnings. Rendered visual test pending.`,
-      }, { usedDeterministicFallback, repairTriggeredByShallowQuality: false, severeWarningsBeforeRepair, renderedVisualEvaluation, renderedVisionReview: renderedVisionReviewArtifact, ...bindingExtra() });
+      }, { usedDeterministicFallback, repairTriggeredByShallowQuality: false, severeWarningsBeforeRepair, renderedVisualEvaluation, renderedVisionReview: renderedVisionReviewArtifact, ...bindingExtra(), ...qualityV2Extra() });
       emit('quality-repair', 'skipped');
+      // Quality V2 — this path returns before the post-repair rendered re-verification, so the
+      // stage is closed as skipped rather than left permanently pending in the timeline.
+      emit('render-verification', 'skipped');
       emit('acceptance', 'completed', acceptanceRows('approved', initialProjectName));
       return attachFrontendBuilderQualityResult(working, {
         ran: true, initialReview, repair: repairArtifact('not-run', 'No repair needed — the initial review passed and no severe quality warnings remain.'), acceptance,
@@ -1146,8 +1237,11 @@ export async function runFrontendBuilderQualityPipeline(
       const acceptance = acceptanceArtifact('manual-review-required', initialProjectName, {
         initialReviewPassed: false, repairAttempted: false, repairAccepted: false, finalReviewPassed: false,
         reason: `${reason} The validated project stays active; manual rendered review required.`,
-      }, { usedDeterministicFallback, repairTriggeredByShallowQuality: false, severeWarningsBeforeRepair, fallbackReasonCode: !reviewTrustworthy ? 'initial-review-incomplete' : 'no-actionable-issue', ...bindingExtra() });
+      }, { usedDeterministicFallback, repairTriggeredByShallowQuality: false, severeWarningsBeforeRepair, fallbackReasonCode: !reviewTrustworthy ? 'initial-review-incomplete' : 'no-actionable-issue', ...bindingExtra(), ...qualityV2Extra() });
       emit('quality-repair', 'skipped');
+      // Quality V2 — this path returns before the post-repair rendered re-verification, so the
+      // stage is closed as skipped rather than left permanently pending in the timeline.
+      emit('render-verification', 'skipped');
       emit('acceptance', 'completed', acceptanceRows('manual-review-required', initialProjectName));
       return attachFrontendBuilderQualityResult(working, {
         ran: true, initialReview, repair: repairArtifact('not-run', reason), acceptance,
@@ -1280,8 +1374,11 @@ export async function runFrontendBuilderQualityPipeline(
         reason: gb
           ? `The bounded repair was refused by the AI usage guard (${gb.code}); the initial validated project stays active. Manual rendered review required.`
           : 'The bounded repair call did not complete; the initial validated project stays active. Manual rendered review required.',
-      }, { usedDeterministicFallback, repairTriggeredByShallowQuality, severeWarningsBeforeRepair, fallbackReasonCode: gb ? 'repair-guard-blocked' : 'repair-call-incomplete', ...bindingExtra() });
+      }, { usedDeterministicFallback, repairTriggeredByShallowQuality, severeWarningsBeforeRepair, fallbackReasonCode: gb ? 'repair-guard-blocked' : 'repair-call-incomplete', ...bindingExtra(), ...qualityV2Extra() });
       emit('quality-repair', 'completed', [{ label: 'result', value: gb ? `guard-blocked (${gb.code})` : 'not applied' }]);
+      // Quality V2 — this path returns before the post-repair rendered re-verification, so the
+      // stage is closed as skipped rather than left permanently pending in the timeline.
+      emit('render-verification', 'skipped');
       emit('acceptance', 'completed', acceptanceRows('manual-review-required', initialProjectName));
       return attachFrontendBuilderQualityResult(working, { ran: true, initialReview, repair, acceptance });
     }
@@ -1306,8 +1403,11 @@ export async function runFrontendBuilderQualityPipeline(
       const acceptance = acceptanceArtifact('manual-review-required', initialProjectName, {
         initialReviewPassed: false, repairAttempted: true, repairAccepted: false, finalReviewPassed: false,
         reason: 'The repaired project did not pass static validation; the initial validated project stays active. No post-repair review ran. Manual rendered review required.',
-      }, { usedDeterministicFallback, repairTriggeredByShallowQuality, severeWarningsBeforeRepair, fallbackReasonCode: 'repair-failed-validation', ...bindingExtra() });
+      }, { usedDeterministicFallback, repairTriggeredByShallowQuality, severeWarningsBeforeRepair, fallbackReasonCode: 'repair-failed-validation', ...bindingExtra(), ...qualityV2Extra() });
       emit('quality-repair', 'completed', [{ label: 'result', value: 'rejected' }]);
+      // Quality V2 — this path returns before the post-repair rendered re-verification, so the
+      // stage is closed as skipped rather than left permanently pending in the timeline.
+      emit('render-verification', 'skipped');
       emit('acceptance', 'completed', acceptanceRows('manual-review-required', initialProjectName));
       return attachFrontendBuilderQualityResult(working, { ran: true, initialReview, repair, acceptance });
     }
@@ -1315,6 +1415,48 @@ export async function runFrontendBuilderQualityPipeline(
     // Phase 13C — severe warnings in the REPAIRED project (real-file evidence, no model call).
     const severeWarningsAfterRepair = severeWarningCodes(repairValidation);
     const repairSevereGatePassed = severeWarningGatePassed(repairValidation);
+
+    // ── Quality V2 — POST-REPAIR RENDERED RE-VERIFICATION ("RE-VERIFY"). ──────────────────────
+    //    Previously the ONLY post-repair evidence was a STATIC review, so a repair that fixed the
+    //    reported issue while breaking the rendered page (runtime error, blank first paint, mobile
+    //    horizontal overflow) could still be accepted. This measures the REPAIRED project in the
+    //    SAME existing preview host, at the SAME viewports, and compares it to the pre-repair
+    //    measurement.
+    //
+    //    COST: at most ONE additional measurement per build and ZERO additional model calls (no
+    //    screenshot is captured here — `captureScreenshot` is deliberately not requested, so the
+    //    conditional vision review still runs at most once per build, pre-repair only). It runs
+    //    ONLY when a pre-repair measurement genuinely succeeded, so a build with no measurement
+    //    producer behaves exactly as before. Bounded by the SAME hard budget and abort signal.
+    if (isRenderedVisualEvaluationEnabled() && renderedVisualEvaluation && opts?.renderedVisualProducer) {
+      try {
+        const postInput = await withRenderedMeasurementBudget(
+          opts.renderedVisualProducer({ files: repairValidation.files, spec, signal: opts?.signal, captureScreenshot: false }),
+          opts?.signal,
+        );
+        if (postInput) {
+          v2.afterRepair = evaluateRenderedVisual({
+            ...postInput,
+            files: postInput.files ?? repairValidation.files,
+            spec,
+          });
+        }
+      } catch { /* fail-open: a failed re-measurement means "no comparison", never a rejection */ }
+    }
+    const renderRegression = compareRenderedEvaluations(renderedVisualEvaluation, v2.afterRepair);
+    v2.regression = renderRegression;
+    const renderedRegressionRejects = rendersWorseAfterRepair(renderRegression);
+    if (renderRegression.compared) {
+      emit('render-verification', 'completed', [
+        { label: 'result', value: renderedRegressionRejects ? 'regressed' : 'no regression' },
+        { label: 'newDefects', value: String(renderRegression.newHighCodes.length) },
+        { label: 'resolved', value: String(renderRegression.resolvedHighCodes.length) },
+      ]);
+    } else {
+      // No usable before/after pair (no measurement producer, flags off, timeout, stale run).
+      // Closing the stage as skipped keeps the timeline honest — it is NOT reported as verified.
+      emit('render-verification', 'skipped', [{ label: 'result', value: 'not measured' }]);
+    }
 
     // ── Step 7 — STATIC post-repair review of the repaired files (exactly one parse). The
     //    COMPLETE reconstructed project is ALWAYS parsed/validated locally above; only the model's
@@ -1412,12 +1554,94 @@ export async function runFrontendBuilderQualityPipeline(
       blockingExperienceIdentity,
       blockingMotionExecution,
       obligationRegressionRejects,
+      // Quality V2 — RENDERED truth. Fail-open: false whenever a real before/after comparison
+      // was impossible, so a build without measurement reaches the identical decision.
+      renderedRegressionRejects,
       deltaRepairUsed: !!deltaDiagnostics,
       deltaRepairAccepted: deltaDiagnostics ? deltaDiagnostics.accepted : undefined,
       obligationRegressedCount: obligationComparison ? obligationComparison.regressed.length : undefined,
       severeWarningCodes: severeWarningsAfterRepair,
     });
     const accept = gate.accept;
+
+    // ── Quality V2 — BEST-CANDIDATE SELECTION ("DELIVER THE BEST VERIFIED CANDIDATE"). ─────────
+    //    The strict gate above answers "may this be called APPROVED?". It was ALSO, implicitly,
+    //    deciding "which project does the user receive?" — and because it is a conjunction of
+    //    ~15 conditions, a repair that resolved four of five blocking dimensions and regressed
+    //    nothing was discarded wholesale, leaving the user with the WORSE pre-repair project.
+    //
+    //    These two questions are now separate. Approval is unchanged. Delivery is a deterministic
+    //    comparison that promotes the repaired project ONLY when it is render-safe, preserved the
+    //    earlier project, regressed no obligation, regressed nothing in the rendered page, is
+    //    worse on NO deterministic dimension, and is strictly better on at least one. The model
+    //    review score is a tiebreak only and can never promote on its own.
+    //
+    //    A promoted candidate is NOT approved: the acceptance status stays
+    //    'manual-review-required', so `approvedForUserPreview` remains false and the build is
+    //    surfaced as a PROVISIONAL model-native preview. Safe Preview is untouched — both
+    //    candidates here are structurally valid model-native projects, and a low quality score
+    //    still never demotes a renderable project to the safe renderer.
+    const blockingFlagsFor = (
+      b: BindingAcceptanceResult | undefined, r: ResearchGroundingResult | undefined,
+      c: CompositionAcceptanceResult | undefined, vs: VisualSystemAcceptanceResult | undefined,
+      ct: ContentAcceptanceResult | undefined, sd: SiteDepthAcceptanceResult | undefined,
+      ex: ExperienceAcceptanceResult | undefined, vi: VisualAcceptanceResult | undefined,
+      ei: ExperienceIdentityAcceptanceResult | undefined, mo: MotionExecutionAcceptanceResult | undefined,
+    ): CandidateBlockingFlags => ({
+      binding: hasBlockingBindingFindings(b),
+      research: hasBlockingResearchFindings(r),
+      composition: hasBlockingCompositionFindings(c),
+      visualSystem: hasBlockingVisualSystemFindings(vs),
+      content: hasBlockingContentFindings(ct),
+      siteDepth: hasBlockingSiteDepthFindings(sd),
+      experience: hasBlockingExperienceFindings(ex),
+      visual: hasBlockingVisualFindings(vi),
+      experienceIdentity: hasBlockingExperienceIdentityFindings(ei),
+      motion: hasBlockingMotionExecutionFindings(mo),
+    });
+    const highRenderedCount = (a: RenderedVisualEvaluationArtifact | undefined): number =>
+      a ? a.issues.filter((i) => i.severity === 'high').length : 0;
+    const runtimeFailed = (a: RenderedVisualEvaluationArtifact | undefined): boolean =>
+      !!a && a.issues.some((i) => i.severity === 'high' && (i.code === 'rendered-runtime-error' || i.code === 'rendered-blank'));
+
+    // The repaired project must have PRESERVED the initial one. This reuses the SAME preservation
+    // gate the structural contract repair uses, so a candidate that scores better by collapsing
+    // into a skeleton can never be promoted.
+    const promotionPreservation = evaluatePreservationGate(validation?.files ?? [], repairValidation.files);
+    let bestCandidatePromoted = false;
+    try {
+      v2.selection = selectBestCandidate({
+        initial: summarizeCandidate({
+          label: 'initial',
+          validation,
+          blocking: blockingFlagsFor(initialBinding, initialResearch, initialComposition, initialVisualSystem,
+            initialContent, initialDepth, initialExperience, initialVisual, initialExperienceIdentity, initialMotion),
+          severeWarningCodes: severeWarningsBeforeRepair,
+          renderedHighFindingCount: highRenderedCount(renderedVisualEvaluation),
+          runtimeFailure: runtimeFailed(renderedVisualEvaluation),
+          reviewScore: initialScore,
+        }),
+        repaired: summarizeCandidate({
+          label: 'repaired',
+          validation: repairValidation,
+          blocking: blockingFlagsFor(repairBinding, repairResearch, repairComposition, repairVisualSystem,
+            repairContent, repairDepth, repairExperience, repairVisual, repairExperienceIdentity, repairMotion),
+          severeWarningCodes: severeWarningsAfterRepair,
+          renderedHighFindingCount: highRenderedCount(v2.afterRepair),
+          runtimeFailure: runtimeFailed(v2.afterRepair),
+          reviewScore: finalReview.status === 'completed' ? finalScore : 0,
+        }),
+        strictGateAccepted: accept,
+        obligationRegressionRejects,
+        renderRegressed: renderedRegressionRejects,
+        preservationPassed: promotionPreservation.passed,
+      });
+      bestCandidatePromoted = promotesUnapprovedRepair(v2.selection);
+    } catch {
+      // Fail-open: without a selection the pipeline keeps the pre-Quality-V2 behaviour exactly.
+      v2.selection = undefined;
+      bestCandidatePromoted = false;
+    }
 
     // ── Bounded acceptance-gate / repair ALIGNMENT diagnostics (safe metadata only). Proves every
     //    acceptance-gate blocker became an explicit repair obligation and how many survived one repair,
@@ -1490,7 +1714,7 @@ export async function runFrontendBuilderQualityPipeline(
       const acceptance = acceptanceArtifact('repaired-approved', 'repaired-model-native', {
         initialReviewPassed: false, repairAttempted: true, repairAccepted: true, finalReviewPassed: true,
         reason: `One bounded repair accepted after static validation, a passing post-repair review (score ${initialScore} → ${finalScore}), a clear severe-warning gate and a clear binding/drift gate. Rendered visual test pending.`,
-      }, { usedDeterministicFallback, repairTriggeredByShallowQuality, severeWarningsBeforeRepair, severeWarningsAfterRepair, renderedVisualEvaluation, renderedVisionReview: renderedVisionReviewArtifact, acceptanceGate: gate.diagnostics, ...bindingExtra() });
+      }, { usedDeterministicFallback, repairTriggeredByShallowQuality, severeWarningsBeforeRepair, severeWarningsAfterRepair, renderedVisualEvaluation, renderedVisionReview: renderedVisionReviewArtifact, acceptanceGate: gate.diagnostics, ...bindingExtra(), ...qualityV2Extra() });
       emit('quality-repair', 'completed', [{ label: 'result', value: 'accepted' }, { label: 'score', value: `${initialScore} → ${finalScore}` }]);
       emit('acceptance', 'completed', acceptanceRows('repaired-approved', 'repaired-model-native', gate.reasonCode));
       return attachFrontendBuilderQualityResult(working, {
@@ -1505,7 +1729,9 @@ export async function runFrontendBuilderQualityPipeline(
     // deterministic severe-warning gate even if the model reviewer "passed" it.
     // Same priority order as the deterministic gate's reasonCode cascade; uses the hoisted
     // blocking booleans so the human text and the structured `gate.reasonCode` can never disagree.
-    const rejectReason = blockingExperience
+    const rejectReason = renderedRegressionRejects
+      ? `The repaired project measurably rendered WORSE than the project it would replace (${renderRegression.reason}); the pre-repair project is preserved.`
+      : blockingExperience
       ? `The repaired project still fails the binding integrated experience (${experienceIssueCodes(repairExperience).slice(0, 4).join(', ')} — e.g. a desktop-only/broken-mobile layout, clipped required copy, a shallow interaction with no feedback, an inaccessible control, or eager/oversized media); the repair was not accepted.`
       : blockingContent
       ? `The repaired project still fails the binding content narrative (${contentNarrativeIssueCodes(repairContent).slice(0, 4).join(', ')} — e.g. a required section with no substantive public copy, generic/duplicated propositions across sections, leaked internal planning copy, or no actionable CTA); the repair was not accepted.`
@@ -1546,14 +1772,35 @@ export async function runFrontendBuilderQualityPipeline(
       ...qcExtra(),
       ...appRepairExtra(),
     });
-    const acceptance = acceptanceArtifact('manual-review-required', initialProjectName, {
+    // ── Quality V2 — DELIVER THE BEST VERIFIED CANDIDATE. The strict gate rejected the repair, so
+    //    the build is NOT approved either way. The only remaining question is which of two
+    //    structurally valid model-native projects the user receives. When the deterministic
+    //    comparison proved the repaired one strictly better and worse on nothing, it is delivered
+    //    — as a PROVISIONAL preview, with the acceptance status left at 'manual-review-required'
+    //    so no quality claim is inflated. Otherwise the pre-repair project is preserved, exactly
+    //    as before. Safe Preview is not involved in either branch. ──
+    const activeProjectName: FrontendBuilderAcceptanceArtifact['activeProject'] =
+      bestCandidatePromoted ? 'repaired-model-native' : initialProjectName;
+    const deliveryNote = bestCandidatePromoted
+      ? ` The repaired candidate was still DELIVERED because it is deterministically better and worse on nothing (${v2.selection?.detail ?? ''}). It is shown as a PROVISIONAL preview, not as an approved site.`
+      : '';
+    const acceptance = acceptanceArtifact('manual-review-required', activeProjectName, {
       initialReviewPassed: false, repairAttempted: true, repairAccepted: false,
       finalReviewPassed: finalReview.passed,
-      reason: `${rejectReason} The initial validated project stays active; a structurally valid, consumed, runnable model-native project is shown to users as a PROVISIONAL preview pending final approval (not as an approved site), and only a genuinely non-render-safe project falls back to Safe Preview. Manual rendered review required.`,
-    }, { usedDeterministicFallback, repairTriggeredByShallowQuality, severeWarningsBeforeRepair, severeWarningsAfterRepair, renderedVisualEvaluation, renderedVisionReview: renderedVisionReviewArtifact, acceptanceGate: gate.diagnostics, ...bindingExtra() });
-    emit('quality-repair', 'completed', [{ label: 'result', value: 'rejected' }]);
-    emit('acceptance', 'completed', acceptanceRows('manual-review-required', initialProjectName, gate.reasonCode));
-    return attachFrontendBuilderQualityResult(working, { ran: true, initialReview, repair, finalReview, acceptance });
+      reason: `${rejectReason}${deliveryNote} A structurally valid, consumed, runnable model-native project is shown to users as a PROVISIONAL preview pending final approval (not as an approved site), and only a genuinely non-render-safe project falls back to Safe Preview. Manual rendered review required.`,
+    }, { usedDeterministicFallback, repairTriggeredByShallowQuality, severeWarningsBeforeRepair, severeWarningsAfterRepair, renderedVisualEvaluation, renderedVisionReview: renderedVisionReviewArtifact, acceptanceGate: gate.diagnostics, ...bindingExtra(), ...qualityV2Extra() });
+    emit('quality-repair', 'completed', [{ label: 'result', value: bestCandidatePromoted ? 'rejected — better candidate delivered' : 'rejected' }]);
+    emit('acceptance', 'completed', acceptanceRows('manual-review-required', activeProjectName, gate.reasonCode));
+    return attachFrontendBuilderQualityResult(working, {
+      ran: true, initialReview, repair, finalReview, acceptance,
+      ...(bestCandidatePromoted
+        ? {
+            bestCandidatePromoted: true,
+            acceptedRepairedFiles: repairValidation.files,
+            acceptedRepairedValidation: repairValidation,
+          }
+        : {}),
+    });
   } catch (err) {
     // Explicit caller cancellation must propagate so a cancelled turn is not persisted.
     if (err instanceof WebBuildError && err.kind === 'cancelled') throw err;
@@ -1569,6 +1816,9 @@ export async function runFrontendBuilderQualityPipeline(
     // so a fail-open success never leaves a stage stuck "active" in the summary timeline.
     emit('quality-review', 'skipped');
     emit('quality-repair', 'skipped');
+    // Quality V2 — this path returns before the post-repair rendered re-verification, so the
+    // stage is closed as skipped rather than left permanently pending in the timeline.
+    emit('render-verification', 'skipped');
     emit('acceptance', 'completed', acceptanceRows('skipped', 'internal-fallback'));
     const skipped = acceptanceArtifact('skipped', 'internal-fallback', {
       initialReviewPassed: false, repairAttempted: false, repairAccepted: false, finalReviewPassed: false,
