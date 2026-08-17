@@ -84,8 +84,22 @@ function fromStaticReport(report: VisualEvaluationReport | undefined, seen: Set<
 
 /* Screenshot-metadata signals (the caller's measurements; the image is never parsed). */
 function fromScreenshots(shots: RenderedScreenshotMeta[], seen: Set<string>): RenderedVisualIssue[] {
-  const out: RenderedVisualIssue[] = [];
-  const add = (i: RenderedVisualIssue) => { const k = `${i.dimension}:${i.code}`; if (!seen.has(k)) { seen.add(k); out.push(i); } };
+  // One issue per (dimension, code) across ALL viewports, keeping the WORST severity observed.
+  //
+  // This must not be a first-wins dedup. The same defect carries a different severity per
+  // viewport — horizontal overflow is `medium` on desktop but `high` on mobile — and viewports
+  // are measured desktop-first. A first-wins dedup therefore let a desktop `medium` suppress the
+  // mobile `high`, which inverted the score: a page overflowing at EVERY width scored 91/passed,
+  // while the same page overflowing on mobile ALONE scored 82/failed. Worse defect, better score.
+  const worst = new Map<string, RenderedVisualIssue>();
+  const order: string[] = [];
+  const add = (i: RenderedVisualIssue) => {
+    const k = `${i.dimension}:${i.code}`;
+    if (seen.has(k)) return;                       // already contributed by another source
+    const prev = worst.get(k);
+    if (!prev) { worst.set(k, i); order.push(k); return; }
+    if (SEVERITY_RANK[i.severity] < SEVERITY_RANK[prev.severity]) worst.set(k, i);   // upgrade
+  };
   for (const shot of shots) {
     const isMobile = shot.viewport === 'mobile';
     // PR #517 — a runtime render/compile error is the strongest signal.
@@ -135,7 +149,9 @@ function fromScreenshots(shots: RenderedScreenshotMeta[], seen: Set<string>): Re
         'Consider tightening section count/length so the mobile experience is not an endless scroll.'));
     }
   }
-  return out;
+  // Publish one issue per key, in first-seen order, at the worst severity observed.
+  for (const k of order) seen.add(k);
+  return order.map((k) => worst.get(k)!).filter(Boolean);
 }
 
 /**
