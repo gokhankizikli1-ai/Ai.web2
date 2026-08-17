@@ -35,6 +35,9 @@ export type FrontendAcceptanceGateReasonCode =
   | 'blocking-experience-identity'
   | 'blocking-motion'
   | 'obligation-regression'
+  /** Quality V2 — the post-repair rendered re-verification proved the repair broke the rendered
+   *  page (a new severe rendered defect, or a page that no longer renders at all). */
+  | 'rendered-regression'
   | 'blocking-composition'
   | 'blocking-research'
   | 'blocking-binding'
@@ -79,6 +82,12 @@ export interface AcceptanceGateInput {
   /** The obligation-regression gate rejected the repair (a previously-fulfilled required
    *  obligation regressed). Fails open (false) when the comparison is ambiguous. */
   obligationRegressionRejects: boolean;
+  /** Quality V2 — the POST-repair rendered re-verification proved the repair introduced a new
+   *  severe rendered defect. Optional so existing callers/tests omit it (⇒ non-blocking), and it
+   *  fails open to false whenever a real before/after comparison was impossible. This closes the
+   *  hole where a repair judged only from source could break the rendered page and still be
+   *  accepted. It rejects the REPAIR — it never demotes the build to Safe Preview. */
+  renderedRegressionRejects?: boolean;
 
   /* ── Bounded observability extras (do NOT affect the decision) ── */
   /** Owner-delta / all-delta reconstruction ran for this repair. */
@@ -138,6 +147,9 @@ export interface FrontendAcceptanceGateDiagnostics {
   obligationRegressionRejects: boolean;
   obligationRegressedCount?: number;
 
+  /** Quality V2 — the post-repair rendered re-verification gate (present only when it blocked). */
+  renderedRegressionRejects?: boolean;
+
   // ── delta reconstruction (owner_delta / all_delta only) ──
   deltaRepairUsed: boolean;
   deltaRepairAccepted?: boolean;
@@ -188,7 +200,11 @@ export function evaluateAcceptanceGate(input: AcceptanceGateInput): AcceptanceGa
     scoreImproved &&
     input.severeWarningGatePassed &&
     !anyBlockingAnalyzer &&
-    !input.obligationRegressionRejects;
+    !input.obligationRegressionRejects &&
+    // Quality V2 — a repair that PROVABLY broke the rendered page can never be approved, however
+    // well it scores statically. Optional + fail-open, so a build with no rendered measurement
+    // reaches exactly the same decision as before.
+    input.renderedRegressionRejects !== true;
 
   const reasonCode = resolveReasonCode(accept, input);
 
@@ -224,6 +240,7 @@ export function evaluateAcceptanceGate(input: AcceptanceGateInput): AcceptanceGa
     ...(typeof input.obligationRegressedCount === 'number'
       ? { obligationRegressedCount: input.obligationRegressedCount }
       : {}),
+    ...(input.renderedRegressionRejects === true ? { renderedRegressionRejects: true } : {}),
     deltaRepairUsed: input.deltaRepairUsed === true,
     ...(typeof input.deltaRepairAccepted === 'boolean'
       ? { deltaRepairAccepted: input.deltaRepairAccepted }
@@ -239,6 +256,9 @@ export function evaluateAcceptanceGate(input: AcceptanceGateInput): AcceptanceGa
  *  finally the strict score-improvement gate). */
 function resolveReasonCode(accept: boolean, input: AcceptanceGateInput): FrontendAcceptanceGateReasonCode {
   if (accept) return 'accepted';
+  // Quality V2 — RENDERED truth outranks every static inference below it: if the repaired project
+  // measurably renders worse than the one it replaced, that is the most specific fact available.
+  if (input.renderedRegressionRejects === true) return 'rendered-regression';
   if (input.blockingExperience) return 'blocking-experience';
   if (input.blockingContent) return 'blocking-content';
   if (input.blockingSiteDepth === true) return 'blocking-site-depth';
@@ -270,6 +290,7 @@ export function acceptanceReasonLabel(code: FrontendAcceptanceGateReasonCode): s
     case 'blocking-experience-identity': return 'blocked: experience identity';
     case 'blocking-motion': return 'blocked: motion execution';
     case 'obligation-regression': return 'blocked: obligation regression';
+    case 'rendered-regression': return 'blocked: repair rendered worse';
     case 'blocking-composition': return 'blocked: repeated composition';
     case 'blocking-research': return 'blocked: sector research drift';
     case 'blocking-binding': return 'blocked: binding requirement / drift';
@@ -346,6 +367,11 @@ export function buildUserFacingAcceptanceReason(
       return {
         en: 'Quality gate: the repair regressed a previously-completed requirement, so the earlier version was kept.',
         tr: 'Kalite kapısı: düzeltme daha önce tamamlanmış bir gereksinimi bozdu; bu nedenle önceki sürüm korundu.',
+      };
+    case 'rendered-regression':
+      return {
+        en: 'Quality gate: the repaired version rendered worse than the earlier one, so the earlier version was kept.',
+        tr: 'Kalite kapısı: düzeltilen sürüm öncekinden daha kötü görüntülendi; bu nedenle önceki sürüm korundu.',
       };
     default: {
       // Any of the nine blocking-analyzer reason codes → a sanitized category sentence.

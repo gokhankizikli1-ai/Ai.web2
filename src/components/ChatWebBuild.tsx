@@ -18,6 +18,13 @@ import * as aiGuard from '@/lib/aiGuard';
 import { buildWebBuildPayload, type WebBuildPayload } from '@/lib/webBuildPayload';
 import { runFrontendBuilderQualityPipeline } from '@/lib/webBuildFrontendQuality';
 import { useOwnerMode } from '@/hooks/useOwnerMode';
+// Quality V2 — PARITY FIX. WebsiteBuilder already passed these producers, so the rendered
+// measurement, the conditional vision review and the post-repair rendered re-verification ran
+// there but NOT for a build started from chat: the same prompt got materially weaker quality
+// verification depending on which surface the user happened to use. Both factories return
+// `undefined` when their flags are off, so a disabled configuration is byte-for-byte unchanged.
+import { createMeasurementProducer } from '@/lib/webBuildMeasurementService';
+import { createVisionReviewProducer } from '@/lib/webBuildVisionReview';
 import { runFrontendBuilderRevision } from '@/lib/webBuildFrontendRevision';
 import { saveWebBuildPayloadToProject } from '@/lib/webBuildProject';
 import { attachProductToProject } from '@/lib/projectApi';
@@ -342,7 +349,18 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
       // call + Phase 12C/12D consumption, then the static design review + at most one
       // bounded repair + final acceptance. Fails open (keeps the validated project);
       // only explicit caller cancellation throws. It reports the frontend-* stages itself.
-      const next = await runFrontendBuilderQualityPipeline(planned, { signal: controller.signal, reporter, ownerEligible: ownerEligibleRef.current });
+      // Quality V2 parity — bind the rendered-measurement + vision producers to ONE run identity,
+      // exactly as WebsiteBuilder does, so a chat-started build receives the same rendered
+      // inspection, the same conditional vision review and the same post-repair re-verification.
+      // Both factories return `undefined` when their flags are off ⇒ the pipeline is unchanged.
+      const measurementRunId = `mrun_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+      const next = await runFrontendBuilderQualityPipeline(planned, {
+        signal: controller.signal,
+        reporter,
+        ownerEligible: ownerEligibleRef.current,
+        renderedVisualProducer: createMeasurementProducer(measurementRunId),
+        visionReviewProducer: createVisionReviewProducer(measurementRunId),
+      });
       if (abortRef.current !== controller) return;
       reporter({ phase: 'preview', status: 'active' });
       setPayload(next);

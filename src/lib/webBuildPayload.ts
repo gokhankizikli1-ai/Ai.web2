@@ -459,6 +459,13 @@ export function attachFrontendBuilderRaw(
  * consumption artifact is refreshed while preserving model-native / model-native-sandbox
  * sources. The persisted initial `frontendBuilderRaw` is NEVER overwritten by the repair.
  *
+ * QUALITY V2 — the repaired project ALSO becomes active when `bestCandidatePromoted` is true:
+ * the strict acceptance gate rejected the repair, but deterministic best-candidate selection
+ * proved the repaired project strictly better and worse on nothing. Consumption is byte-for-byte
+ * the same mechanism; only the honest wording differs. The acceptance STATUS is unchanged
+ * ('manual-review-required'), so `approvedForUserPreview` stays false and the build is surfaced
+ * as a PROVISIONAL model-native preview — never as an approved site, and never as Safe Preview.
+ *
  * Pure + fail-open: never mutates the input; returns the input unchanged on any error.
  */
 export function attachFrontendBuilderQualityResult(
@@ -471,8 +478,14 @@ export function attachFrontendBuilderQualityResult(
     const fr = result.finalReview;
     const acc = result.acceptance;
 
+    // Quality V2 — the repaired project is consumed either because the strict gate APPROVED it,
+    // or because deterministic best-candidate selection PROMOTED it. `promoted` never implies
+    // approval: it only decides which validated model-native project the user receives.
+    const promoted =
+      acc.status !== 'repaired-approved' &&
+      result.bestCandidatePromoted === true;
     const accepted =
-      acc.status === 'repaired-approved' &&
+      (acc.status === 'repaired-approved' || promoted) &&
       !!result.acceptedRepairedFiles &&
       !!result.acceptedRepairedValidation;
 
@@ -484,7 +497,9 @@ export function attachFrontendBuilderQualityResult(
           path: f.path,
           content: f.content,
           language: f.language,
-          summary: 'Model-native file improved by the bounded Phase 12E repair',
+          summary: promoted
+            ? 'Model-native file from the better verified candidate (provisional — not approved)'
+            : 'Model-native file improved by the bounded Phase 12E repair',
         })))
       : [];
 
@@ -501,7 +516,9 @@ export function attachFrontendBuilderQualityResult(
           consumedCharCount: result.acceptedRepairedValidation?.totalCharCount ?? 0,
           validationStatus: 'valid',
           readyForConsumption: true,
-          reason: 'The accepted Phase 12E repaired model-native project now drives All Files and the isolated runtime Preview.',
+          reason: promoted
+            ? 'The better verified model-native candidate now drives All Files and the isolated runtime Preview. It is PROVISIONAL — the strict quality gate did not approve it.'
+            : 'The accepted Phase 12E repaired model-native project now drives All Files and the isolated runtime Preview.',
         }
       : undefined;
 

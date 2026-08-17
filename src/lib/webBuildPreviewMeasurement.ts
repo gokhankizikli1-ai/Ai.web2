@@ -38,9 +38,22 @@ export function isPreviewMeasurementEnabled(): boolean {
   }
 }
 
-/** The default viewports measured (desktop + mobile). */
+/**
+ * The default viewports measured.
+ *
+ * Quality V2 adds the TABLET breakpoint (768). Previously only desktop + mobile were measured, so
+ * the single width where multi-column layouts most often collapse badly was never verified at all.
+ * The three widths here are the genuinely distinct layout regimes (wide multi-column, the
+ * two-to-one collapse, single-column touch); 1024 and 430 behave as neighbours of 1440 and 390 and
+ * are deliberately NOT measured by default, because each extra viewport mounts another preview
+ * iframe in the user's browser.
+ *
+ * Cost note: `produceRenderedVisualInput` measures every viewport CONCURRENTLY, so adding tablet
+ * costs no additional wall-clock time and no model call — only one more concurrent iframe.
+ */
 export const DEFAULT_MEASURE_VIEWPORTS: ReadonlyArray<{ viewport: RenderedVisualViewport; width: number; height: number }> = [
   { viewport: 'desktop', width: 1440, height: 900 },
+  { viewport: 'tablet', width: 768, height: 1024 },
   { viewport: 'mobile', width: 390, height: 844 },
 ];
 

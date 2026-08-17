@@ -83,10 +83,15 @@ describe('web build brief intelligence', () => {
     expect(land.has('productDemo')).toBe(false);
     expect(land.has('inventory')).toBe(false);
 
-    // AI/SaaS → product demo + metrics + integrations; NOT gallery.
+    // AI/SaaS → product demo + integrations; NOT gallery.
     expect(saas.has('productDemo')).toBe(true);
-    expect(saas.has('metrics')).toBe(true);
     expect(saas.has('integrations')).toBe(true);
+    // ...and deliberately NO metrics section. A generated SaaS site has no real customer
+    // numbers to show, so a "By the numbers" band could only ever be fabricated. The planner
+    // stopped emitting it (webBuildBrief: "no fabricated logos/SOC2/customer metrics") but this
+    // assertion was never updated, so it had been failing on main ever since. It now pins the
+    // anti-fabrication behaviour instead of the old fabricating one.
+    expect(saas.has('metrics')).toBe(false);
 
     // Dealership → inventory + financing; NOT product demo.
     expect(auto.has('inventory')).toBe(true);
