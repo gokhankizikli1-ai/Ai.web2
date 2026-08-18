@@ -1,4 +1,4 @@
-import type { Project, ProjectAgent, ProjectTask } from '@/types/projects';
+import type { Project, ProjectAgent } from '@/types/projects';
 import {
   currentStorageScope, scopedKey,
   claimLegacyGlobal, quarantineLegacyGlobal, dropLegacyGlobal,
@@ -467,39 +467,25 @@ export function updateAgentMessage(
   return true;
 }
 
-/* ─── Project Tasks ─── */
-function loadTasks(projectId: string): ProjectTask[] {
-  ensureScopeMigrated();
-  try {
-    const stored = localStorage.getItem(tasksKey(projectId));
-    if (stored) return JSON.parse(stored);
-  } catch { /* ignore */ }
-  return [];
-}
-
-function saveTasks(projectId: string, tasks: ProjectTask[]) {
-  ensureScopeMigrated();
-  try { localStorage.setItem(tasksKey(projectId), JSON.stringify(tasks)); } catch { /* ignore */ }
-}
-
-export function getProjectTasks(projectId: string): ProjectTask[] {
-  return loadTasks(projectId);
-}
-
-export function addProjectTask(projectId: string, task: ProjectTask) {
-  const tasks = loadTasks(projectId);
-  tasks.unshift(task);
-  saveTasks(projectId, tasks);
-}
-
-export function updateProjectTask(projectId: string, taskId: string, updates: Partial<ProjectTask>) {
-  const tasks = loadTasks(projectId);
-  const idx = tasks.findIndex(t => t.id === taskId);
-  if (idx >= 0) {
-    tasks[idx] = { ...tasks[idx], ...updates };
-    saveTasks(projectId, tasks);
-  }
-}
+/* ─── Project Tasks ───
+ *
+ * There is NO task API here any more, deliberately.
+ *
+ * A project task is server-authoritative: it lives in the `project_tasks`
+ * table, is scoped to (project, owner) on every read and write, and is reached
+ * through `@/lib/projectApi` (`listProjectTasks` / `createProjectTask` /
+ * `updateProjectTask` / `deleteProjectTask`).
+ *
+ * This module used to also export `getProjectTasks` / `addProjectTask` /
+ * `updateProjectTask` backed by localStorage. Nothing in the app called them —
+ * but they shadowed the real client by name, so an auto-import of
+ * `updateProjectTask` from the wrong module would have written a task to the
+ * browser and silently lost it, with no error anywhere. They are removed rather
+ * than left as a trap.
+ *
+ * The legacy `korvix_project_tasks_*` keys are still MIGRATED and CLEANED UP
+ * below (scope migration, and removal when a project is deleted) so data left
+ * on real devices is tidied away instead of stranded. Nothing reads it back. */
 
 /* ─── Helpers ─── */
 let _idCounter = 0;

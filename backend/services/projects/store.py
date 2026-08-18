@@ -347,12 +347,25 @@ def update_project(
 
 
 def delete_project(project_id: str) -> bool:
-    """Hard delete — cascades to memory/agents/threads/files via FK."""
+    """Hard delete — cascades to memory/agents/threads/files via FK.
+
+    `project_tasks` and `project_views` live in the same file but deliberately
+    carry no FK (they self-initialize on access, so they cannot depend on the
+    projects table existing first). They are therefore purged explicitly here:
+    a deleted project must not leave the user's tasks, or their last-visit
+    metadata, behind. Best-effort — a purge failure never turns a successful
+    project delete into a reported failure."""
     with _conn() as c:
         cur = c.execute("DELETE FROM projects WHERE id = ?", (project_id,))
         deleted = cur.rowcount > 0
     if deleted:
         _bump("projects_deleted")
+        try:
+            from backend.services.projects import tasks_store, views_store
+            tasks_store.purge_project(project_id)
+            views_store.forget_project(project_id)
+        except Exception as exc:   # pragma: no cover — defensive
+            logger.warning("projects.delete: workspace purge failed: %s", exc)
     return deleted
 
 
@@ -435,9 +448,41 @@ def list_memory(
     return [_row_to_memory(r) for r in rows]
 
 
-def delete_memory(memory_id: str) -> bool:
+def get_memory(memory_id: str, *, project_id: Optional[str] = None) -> Optional[ProjectMemoryEntry]:
+    """ONE memory row, optionally constrained to a project.
+
+    Exists so a delete can PROVE the row belongs to the project the caller was
+    authorized against, instead of trusting an id from the request path.
+    Returns None when the row does not exist or is filed under a different
+    project — the caller renders both as the same 404."""
+    if not memory_id:
+        return None
     with _conn() as c:
-        cur = c.execute("DELETE FROM project_memory WHERE id = ?", (memory_id,))
+        if project_id:
+            row = c.execute(
+                "SELECT * FROM project_memory WHERE id = ? AND project_id = ?",
+                (memory_id, project_id),
+            ).fetchone()
+        else:
+            row = c.execute(
+                "SELECT * FROM project_memory WHERE id = ?", (memory_id,),
+            ).fetchone()
+    return _row_to_memory(row) if row else None
+
+
+def delete_memory(memory_id: str, *, project_id: Optional[str] = None) -> bool:
+    """Delete a memory row. When `project_id` is supplied the delete is scoped
+    to it, so an id belonging to another project cannot be removed through a
+    project the caller happens to own. The unscoped form is kept for the legacy
+    `/projects/{id}/memory/{mid}` route, which performs its own project check."""
+    with _conn() as c:
+        if project_id:
+            cur = c.execute(
+                "DELETE FROM project_memory WHERE id = ? AND project_id = ?",
+                (memory_id, project_id),
+            )
+        else:
+            cur = c.execute("DELETE FROM project_memory WHERE id = ?", (memory_id,))
         return cur.rowcount > 0
 
 

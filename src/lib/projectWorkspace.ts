@@ -108,12 +108,113 @@ export interface WorkspaceFreshness {
   last_product_at: string;
 }
 
+/**
+ * TODAY — the top of the page. `attention` is the top-ranked signal passed
+ * through verbatim; `recommendation` is the deterministic next best action the
+ * backend chose from the attention → task → goal ladder. Both may be null, and
+ * null is the truthful state of a quiet project, not a rendering bug.
+ */
+export interface TodayRecommendation {
+  /** Stable reason code → a translated sentence. Never English from the API. */
+  reason: string;
+  /** Which authority the recommendation came from; also names `ref_id`'s space. */
+  source: 'attention' | 'task' | 'goal' | string;
+  ref_id: string;
+  /** The underlying thing's own words (signal summary, task title, goal title). */
+  title: string;
+  context: string;
+  /** Stable action codes, each naming an affordance that exists on this page. */
+  actions: string[];
+}
+
+export interface WorkspaceToday {
+  attention: AttentionItem | null;
+  recommendation: TodayRecommendation | null;
+}
+
+/** The four states a project task can be in. Decided server-side. */
+export type TaskStatus = 'todo' | 'doing' | 'waiting' | 'done';
+
+export interface ProjectTask {
+  id: string;
+  title: string;
+  details: string;
+  status: TaskStatus;
+  /** 1 low · 2 normal · 3 high. An ordinal for ordering — never a score. */
+  priority: number;
+  source: string;
+  origin_ref: string;
+  created_at: string;
+  updated_at: string;
+  completed_at: string;
+}
+
+export interface WorkspaceTasks {
+  items: ProjectTask[];
+  counts: Record<string, number>;
+}
+
+/** The durable knowledge vocabulary, strongest (most binding) first. */
+export type KnowledgeKind = 'decision' | 'requirement' | 'constraint' | 'fact' | 'note';
+
+export interface KnowledgeItem {
+  /** Namespaced (`decision:…` / `memory:…`) — the backend dispatches removal on it. */
+  id: string;
+  kind: KnowledgeKind;
+  text: string;
+  /** A real topic heading when the authority has one (a build decision), else "". */
+  label: string;
+  source: string;
+  created_at: string;
+  /** Whether THIS user may remove it. Items Korvix derived are read-only here. */
+  removable: boolean;
+}
+
+export interface WorkspaceKnowledge {
+  items: KnowledgeItem[];
+  counts: Record<string, number>;
+}
+
+export interface ChangeItem {
+  /** Dedup identity — the thing the change is about, not the event id. */
+  key: string;
+  change: string;
+  source: string;
+  title: string;
+  detail: string;
+  occurred_at: string;
+  ref: string;
+}
+
+/**
+ * The change list AND the claim it is allowed to make.
+ *
+ * `since_last_visit` means a real per-user marker exists and the window starts
+ * there. `recent` means it does not, and the section must be titled "Recent
+ * changes" — the page may never print the stronger claim over the weaker data.
+ */
+export interface WorkspaceChanges {
+  mode: 'since_last_visit' | 'recent';
+  /** The instant the window opens at. */
+  since: string;
+  /** The stored marker ("" when this user has never acknowledged a visit). */
+  last_viewed_at: string;
+  items: ChangeItem[];
+  /** Deduplicated changes in the window — may exceed `items.length`. */
+  count: number;
+  truncated: boolean;
+}
+
 export interface ProjectWorkspace {
   project: WorkspaceProject;
   summary: { text: string; source: string };
+  today: WorkspaceToday;
   goals: WorkspaceGoal[];
   attention: AttentionItem[];
   activity: ActivityItem[];
+  changes: WorkspaceChanges;
+  tasks: WorkspaceTasks;
+  knowledge: WorkspaceKnowledge;
   products: WorkspaceProduct[];
   chats: WorkspaceChat[];
   connectors: WorkspaceConnector[];
@@ -143,6 +244,127 @@ function obj(value: unknown): Record<string, unknown> {
     : {};
 }
 
+const TASK_STATUSES: TaskStatus[] = ['todo', 'doing', 'waiting', 'done'];
+const KNOWLEDGE_KINDS: KnowledgeKind[] = ['decision', 'requirement', 'constraint', 'fact', 'note'];
+
+function counts(value: unknown): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const [k, v] of Object.entries(obj(value))) {
+    const n = num(v);
+    if (n !== null) out[k] = n;
+  }
+  return out;
+}
+
+function normalizeAttentionItem(value: unknown): AttentionItem | null {
+  const o = obj(value);
+  const id = str(o.id);
+  if (!id) return null;
+  const severity = str(o.severity) as AttentionSeverity;
+  return {
+    id,
+    severity: SEVERITIES.includes(severity) ? severity : 'waiting',
+    reason: str(o.reason),
+    source: str(o.source),
+    kind: str(o.kind),
+    title: str(o.title),
+    context: str(o.context),
+    observed_at: str(o.observed_at),
+    ref: str(o.ref),
+  };
+}
+
+/** A task the backend could not describe (no id, no title) is dropped rather
+ *  than rendered as a blank row the user cannot act on. */
+export function normalizeTask(value: unknown): ProjectTask | null {
+  const o = obj(value);
+  const id = str(o.id);
+  const title = str(o.title);
+  if (!id || !title) return null;
+  const status = str(o.status) as TaskStatus;
+  return {
+    id,
+    title,
+    details: str(o.details),
+    status: TASK_STATUSES.includes(status) ? status : 'todo',
+    priority: num(o.priority) ?? 2,
+    source: str(o.source, 'user'),
+    origin_ref: str(o.origin_ref),
+    created_at: str(o.created_at),
+    updated_at: str(o.updated_at),
+    completed_at: str(o.completed_at),
+  };
+}
+
+/** A knowledge item whose kind this bundle does not know is dropped: showing
+ *  the text under a made-up heading would misrepresent what it is. */
+export function normalizeKnowledgeItem(value: unknown): KnowledgeItem | null {
+  const o = obj(value);
+  const id = str(o.id);
+  const text = str(o.text);
+  const kind = str(o.kind) as KnowledgeKind;
+  if (!id || !text || !KNOWLEDGE_KINDS.includes(kind)) return null;
+  return {
+    id,
+    kind,
+    text,
+    label: str(o.label),
+    source: str(o.source),
+    created_at: str(o.created_at),
+    removable: o.removable === true,
+  };
+}
+
+function normalizeToday(value: unknown): WorkspaceToday {
+  const o = obj(value);
+  const reco = obj(o.recommendation);
+  const reason = str(reco.reason);
+  return {
+    attention: normalizeAttentionItem(o.attention),
+    recommendation: reason
+      ? {
+        reason,
+        source: str(reco.source),
+        ref_id: str(reco.ref_id),
+        title: str(reco.title),
+        context: str(reco.context),
+        actions: arr(reco.actions).map((a) => str(a)).filter(Boolean),
+      }
+      : null,
+  };
+}
+
+/**
+ * Normalize the change block, defaulting to the WEAKER claim.
+ *
+ * An unrecognised (or absent) mode becomes `recent`, never `since_last_visit`:
+ * if the payload cannot prove a visit, the page must not print one.
+ */
+function normalizeChanges(value: unknown): WorkspaceChanges {
+  const o = obj(value);
+  const items = arr(o.items).map((raw) => {
+    const c = obj(raw);
+    return {
+      key: str(c.key),
+      change: str(c.change),
+      source: str(c.source),
+      title: str(c.title),
+      detail: str(c.detail),
+      occurred_at: str(c.occurred_at),
+      ref: str(c.ref),
+    };
+  }).filter((c) => !!c.key);
+  return {
+    mode: str(o.mode) === 'since_last_visit' ? 'since_last_visit' : 'recent',
+    since: str(o.since),
+    last_viewed_at: str(o.last_viewed_at),
+    items,
+    // Never claim fewer changes than we are about to render.
+    count: Math.max(num(o.count) ?? 0, items.length),
+    truncated: o.truncated === true,
+  };
+}
+
 /**
  * Turn an untyped API payload into a fully-populated `ProjectWorkspace`, or
  * null when it is not a workspace at all. Every list defaults to empty and
@@ -157,11 +379,8 @@ export function normalizeWorkspace(raw: unknown): ProjectWorkspace | null {
 
   const summary = obj(root.summary);
   const freshness = obj(root.freshness);
-  const counts: Record<string, number> = {};
-  for (const [k, v] of Object.entries(obj(root.counts))) {
-    const n = num(v);
-    if (n !== null) counts[k] = n;
-  }
+  const tasks = obj(root.tasks);
+  const knowledge = obj(root.knowledge);
 
   return {
     project: {
@@ -172,6 +391,7 @@ export function normalizeWorkspace(raw: unknown): ProjectWorkspace | null {
       updated_at: str(project.updated_at),
     },
     summary: { text: str(summary.text), source: str(summary.source) },
+    today: normalizeToday(root.today),
     goals: arr(root.goals).map((g) => {
       const o = obj(g);
       return {
@@ -181,21 +401,9 @@ export function normalizeWorkspace(raw: unknown): ProjectWorkspace | null {
         source: str(o.source, 'goals'),
       };
     }).filter((g) => !!g.title),
-    attention: arr(root.attention).map((a) => {
-      const o = obj(a);
-      const severity = str(o.severity) as AttentionSeverity;
-      return {
-        id: str(o.id),
-        severity: SEVERITIES.includes(severity) ? severity : 'waiting',
-        reason: str(o.reason),
-        source: str(o.source),
-        kind: str(o.kind),
-        title: str(o.title),
-        context: str(o.context),
-        observed_at: str(o.observed_at),
-        ref: str(o.ref),
-      };
-    }).filter((a) => !!a.id),
+    attention: arr(root.attention)
+      .map(normalizeAttentionItem)
+      .filter((a): a is AttentionItem => a !== null),
     activity: arr(root.activity).map((a) => {
       const o = obj(a);
       return {
@@ -207,6 +415,17 @@ export function normalizeWorkspace(raw: unknown): ProjectWorkspace | null {
         ref: str(o.ref),
       };
     }),
+    changes: normalizeChanges(root.changes),
+    tasks: {
+      items: arr(tasks.items).map(normalizeTask)
+        .filter((t): t is ProjectTask => t !== null),
+      counts: counts(tasks.counts),
+    },
+    knowledge: {
+      items: arr(knowledge.items).map(normalizeKnowledgeItem)
+        .filter((k): k is KnowledgeItem => k !== null),
+      counts: counts(knowledge.counts),
+    },
     products: arr(root.products).map((p) => obj(p) as WorkspaceProduct),
     chats: arr(root.chats).map((c) => {
       const o = obj(c);
@@ -238,7 +457,7 @@ export function normalizeWorkspace(raw: unknown): ProjectWorkspace | null {
       last_chat_at: str(freshness.last_chat_at),
       last_product_at: str(freshness.last_product_at),
     },
-    counts,
+    counts: counts(root.counts),
   };
 }
 
@@ -333,6 +552,8 @@ export function sourceLabel(source: string): SourceLabel {
   if (provider) return { kind: 'provider', name: provider };
   if (source === 'chat') return { kind: 'i18n', key: 'projectSourceChat' };
   if (source === 'build') return { kind: 'i18n', key: 'projectSourceBuild' };
+  if (source === 'task') return { kind: 'i18n', key: 'projectSourceTask' };
+  if (source === 'knowledge') return { kind: 'i18n', key: 'projectSourceKnowledge' };
   return { kind: 'i18n', key: 'projectSourceActivity' };
 }
 
@@ -405,6 +626,168 @@ export function connectorSummary(connector: WorkspaceConnector): ConnectorSummar
   if (connector.resources.length === 0) return { kind: 'enabled' };
   const named = connector.resources.slice(0, 2);
   return { kind: 'resources', named, extra: Math.max(0, connector.resource_count - named.length) };
+}
+
+/* ── Today: recommendation + actions ──────────────────────────────────────── */
+
+/**
+ * i18n key for a next-best-action reason code.
+ *
+ * Unknown codes (a backend that shipped a new reason before this bundle) fall
+ * back to a neutral key rather than rendering a raw identifier — the same rule
+ * `attentionReasonKey` follows.
+ */
+const RECOMMENDATION_KEYS: Record<string, string> = {
+  investigate_failed_deploy: 'projectTodayRecoInvestigateDeploy',
+  investigate_failed_preview_deploy: 'projectTodayRecoInvestigatePreviewDeploy',
+  fix_failing_checks: 'projectTodayRecoFixChecks',
+  fix_failed_build: 'projectTodayRecoFixBuild',
+  review_open_pull_request: 'projectTodayRecoReviewPr',
+  prepare_for_meeting: 'projectTodayRecoPrepareMeeting',
+  review_calendar_change: 'projectTodayRecoReviewCalendar',
+  review_signal: 'projectTodayRecoReviewSignal',
+  continue_task: 'projectTodayRecoContinueTask',
+  start_task: 'projectTodayRecoStartTask',
+  unblock_task: 'projectTodayRecoUnblockTask',
+  continue_goal: 'projectTodayRecoContinueGoal',
+};
+
+export function recommendationReasonKey(reason: string): string {
+  return RECOMMENDATION_KEYS[reason] || 'projectTodayRecoGeneric';
+}
+
+/** The action codes this bundle can actually render. An action the backend
+ *  sends that is not in this list is DROPPED rather than rendered as a button
+ *  with an unknown label — a dead button is worse than a missing one. */
+const ACTION_KEYS: Record<string, string> = {
+  ask_korvix: 'projectActionAsk',
+  create_task: 'projectTodayActionCreateTask',
+  open_tasks: 'projectTodayActionOpenTasks',
+};
+
+export function recommendationActionKey(action: string): string | null {
+  return ACTION_KEYS[action] || null;
+}
+
+export function renderableActions(recommendation: TodayRecommendation | null): string[] {
+  if (!recommendation) return [];
+  return recommendation.actions.filter((a) => ACTION_KEYS[a] !== undefined);
+}
+
+/**
+ * The prompt to seed "Ask Korvix" with from a recommendation, as an i18n key,
+ * or null when there is no recommendation. The question is always about the
+ * SAME thing the recommendation names, so the two can never disagree.
+ */
+export function recommendationAskKey(recommendation: TodayRecommendation | null): string | null {
+  if (!recommendation) return null;
+  if (recommendation.source === 'task') return 'projectTodayAskTaskPrompt';
+  if (recommendation.source === 'goal') return 'projectTodayAskGoalPrompt';
+  return 'projectTodayAskSignalPrompt';
+}
+
+/* ── Tasks ────────────────────────────────────────────────────────────────── */
+
+/** Display order of the four states — the same order the backend sorts by. */
+export const TASK_STATUS_ORDER: TaskStatus[] = ['todo', 'doing', 'waiting', 'done'];
+
+const TASK_STATUS_KEYS: Record<TaskStatus, string> = {
+  todo: 'projectTaskStatusTodo',
+  doing: 'projectTaskStatusDoing',
+  waiting: 'projectTaskStatusWaiting',
+  done: 'projectTaskStatusDone',
+};
+
+export function taskStatusKey(status: TaskStatus): string {
+  return TASK_STATUS_KEYS[status] || TASK_STATUS_KEYS.todo;
+}
+
+/**
+ * The state a one-tap toggle moves a task to.
+ *
+ * Deliberately only the completion axis: `done` ⇄ the state it came back to.
+ * A finished task returns to `todo` rather than guessing which of the three
+ * open states it used to be in — the full move lives in the explicit status
+ * control, and a checkbox should never make a choice the user did not.
+ */
+export function toggledTaskStatus(status: TaskStatus): TaskStatus {
+  return status === 'done' ? 'todo' : 'done';
+}
+
+/** Open (unfinished) tasks, in the order the backend already sorted them. */
+export function openTasks(tasks: readonly ProjectTask[]): ProjectTask[] {
+  return tasks.filter((t) => t.status !== 'done');
+}
+
+/** The open-task count, from the backend's own totals — NOT from the bounded
+ *  slice on the page, which would under-report a project with many tasks. */
+export function openTaskCount(workspace: ProjectWorkspace | null): number {
+  return workspace?.tasks.counts.open ?? 0;
+}
+
+/* ── Knowledge ────────────────────────────────────────────────────────────── */
+
+export const KNOWLEDGE_KIND_ORDER: KnowledgeKind[] =
+  ['decision', 'requirement', 'constraint', 'fact', 'note'];
+
+const KNOWLEDGE_KIND_KEYS: Record<KnowledgeKind, string> = {
+  decision: 'projectKnowledgeKindDecision',
+  requirement: 'projectKnowledgeKindRequirement',
+  constraint: 'projectKnowledgeKindConstraint',
+  fact: 'projectKnowledgeKindFact',
+  note: 'projectKnowledgeKindNote',
+};
+
+export function knowledgeKindKey(kind: KnowledgeKind): string {
+  return KNOWLEDGE_KIND_KEYS[kind] || KNOWLEDGE_KIND_KEYS.note;
+}
+
+/** Total knowledge items the project holds, from the backend's own totals. */
+export function knowledgeCount(workspace: ProjectWorkspace | null): number {
+  return workspace?.knowledge.counts.total ?? 0;
+}
+
+/* ── Changes ──────────────────────────────────────────────────────────────── */
+
+/**
+ * The section title — and it is NOT cosmetic. `since_last_visit` is the only
+ * mode allowed to say "Since your last visit"; anything else says "Recent
+ * changes", because we cannot prove a visit we never recorded.
+ */
+export function changesTitleKey(changes: WorkspaceChanges | null | undefined): string {
+  return changes?.mode === 'since_last_visit'
+    ? 'projectChangesSinceTitle'
+    : 'projectChangesRecentTitle';
+}
+
+/** i18n key for the "N changes" line, singular-aware. */
+export function changesCountKey(count: number): string {
+  return count === 1 ? 'projectChangesCountOne' : 'projectChangesCountMany';
+}
+
+const CHANGE_KIND_KEYS: Record<string, string> = {
+  connector: 'projectChangeKindConnector',
+  chat: 'projectChangeKindChat',
+  build: 'projectChangeKindBuild',
+  task: 'projectChangeKindTask',
+  knowledge: 'projectChangeKindKnowledge',
+};
+
+export function changeKindKey(change: string): string | null {
+  return CHANGE_KIND_KEYS[change] || null;
+}
+
+/**
+ * Should the page acknowledge this visit?
+ *
+ * Only once the workspace has actually rendered, and only when the snapshot
+ * carries the instant it was generated at — that timestamp IS the marker, so
+ * without it the acknowledgement would land on "now" and swallow anything that
+ * arrived while the read was in flight.
+ */
+export function seenThrough(workspace: ProjectWorkspace | null): string | null {
+  const generated = workspace?.freshness.generated_at || '';
+  return generated ? generated : null;
 }
 
 /* ── "Ask Korvix" suggestions ─────────────────────────────────────────────── */

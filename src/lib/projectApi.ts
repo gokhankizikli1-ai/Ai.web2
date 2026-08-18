@@ -15,7 +15,11 @@ import { apiCall, apiCallDetailed } from '@/lib/serverApi';
 import { serverChatEnabled, syncSession, listUserThreads } from '@/lib/sessionsSync';
 import { getProjects } from '@/stores/projectStore';
 import { resolveBuildType, type BuildType } from '@/lib/buildType';
-import { normalizeWorkspace, type ProjectWorkspace } from '@/lib/projectWorkspace';
+import {
+  normalizeKnowledgeItem, normalizeTask, normalizeWorkspace,
+  type KnowledgeItem, type KnowledgeKind, type ProjectTask,
+  type ProjectWorkspace, type TaskStatus,
+} from '@/lib/projectWorkspace';
 
 export interface BindingResult {
   ok: boolean;
@@ -334,4 +338,201 @@ export async function getProjectBrainContext(projectId: string): Promise<Project
   );
   if (!data || data.empty || !data.brain) return null;
   return data.brain;
+}
+
+/* ── Project TASKS ────────────────────────────────────────────────────────────
+ *
+ * Backend-authoritative in every direction. The browser never holds task truth:
+ * each mutation returns the stored row, and the caller re-reads rather than
+ * patching a local copy. localStorage is not involved at any point.
+ *
+ * A task write is ORGANIZATIONAL STATE — it starts no run, proposes no action
+ * and asks for no approval. `ok=false, status=404` means the caller does not
+ * own the project or the task (both existence-hidden). Nothing throws.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+export interface TaskListResult {
+  tasks: ProjectTask[];
+  counts: Record<string, number>;
+  status: number;
+  notFound: boolean;
+}
+
+function toCounts(raw: unknown): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (raw && typeof raw === 'object') {
+    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+      if (typeof v === 'number' && Number.isFinite(v)) out[k] = v;
+    }
+  }
+  return out;
+}
+
+/** Every task in the project (server truth), for the dedicated Tasks view. */
+export async function listProjectTasks(
+  projectId: string,
+  options?: { status?: TaskStatus },
+): Promise<TaskListResult> {
+  const query = options?.status ? `?status=${encodeURIComponent(options.status)}` : '';
+  const res = await apiCallDetailed<{ tasks?: unknown[]; counts?: unknown }>(
+    'GET',
+    `/v2/projects/${encodeURIComponent(projectId)}/tasks${query}`,
+  );
+  const tasks = (res.data?.tasks || [])
+    .map(normalizeTask)
+    .filter((t): t is ProjectTask => t !== null);
+  return {
+    tasks,
+    counts: toCounts(res.data?.counts),
+    status: res.status,
+    notFound: res.status === 404,
+  };
+}
+
+export interface TaskMutationResult {
+  ok: boolean;
+  status: number;
+  task: ProjectTask | null;
+}
+
+export interface CreateTaskInput {
+  title: string;
+  details?: string;
+  status?: TaskStatus;
+  /** Provenance only — where the user captured it from. Grants no behaviour. */
+  source?: string;
+  originRef?: string;
+}
+
+export async function createProjectTask(
+  projectId: string,
+  input: CreateTaskInput,
+): Promise<TaskMutationResult> {
+  const res = await apiCallDetailed<{ task?: unknown }>(
+    'POST',
+    `/v2/projects/${encodeURIComponent(projectId)}/tasks`,
+    {
+      title: input.title,
+      details: input.details ?? '',
+      status: input.status ?? 'todo',
+      source: input.source ?? 'user',
+      origin_ref: input.originRef ?? '',
+    },
+  );
+  return { ok: res.ok, status: res.status, task: normalizeTask(res.data?.task) };
+}
+
+export async function updateProjectTask(
+  projectId: string,
+  taskId: string,
+  patch: { title?: string; details?: string; status?: TaskStatus },
+): Promise<TaskMutationResult> {
+  const res = await apiCallDetailed<{ task?: unknown }>(
+    'PATCH',
+    `/v2/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}`,
+    patch,
+  );
+  return { ok: res.ok, status: res.status, task: normalizeTask(res.data?.task) };
+}
+
+export async function deleteProjectTask(
+  projectId: string,
+  taskId: string,
+): Promise<{ ok: boolean; status: number }> {
+  const res = await apiCallDetailed<{ deleted?: boolean }>(
+    'DELETE',
+    `/v2/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}`,
+  );
+  return { ok: res.ok, status: res.status };
+}
+
+/* ── Project KNOWLEDGE ────────────────────────────────────────────────────────
+ *
+ * Durable decisions, requirements, constraints and facts. The backend routes
+ * each kind to the authority that owns it (the canonical decision store, or the
+ * project's own curated memory) — this client only ever speaks the merged
+ * projection, so the frontend can never pick the wrong store.
+ *
+ * Every item here exists because a person recorded it. Nothing on this path
+ * extracts knowledge from a conversation.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+export interface KnowledgeListResult {
+  items: KnowledgeItem[];
+  counts: Record<string, number>;
+  status: number;
+  notFound: boolean;
+}
+
+export async function listProjectKnowledge(
+  projectId: string,
+  options?: { kind?: KnowledgeKind },
+): Promise<KnowledgeListResult> {
+  const query = options?.kind ? `?kind=${encodeURIComponent(options.kind)}` : '';
+  const res = await apiCallDetailed<{ knowledge?: unknown[]; counts?: unknown }>(
+    'GET',
+    `/v2/projects/${encodeURIComponent(projectId)}/knowledge${query}`,
+  );
+  const items = (res.data?.knowledge || [])
+    .map(normalizeKnowledgeItem)
+    .filter((k): k is KnowledgeItem => k !== null);
+  return {
+    items,
+    counts: toCounts(res.data?.counts),
+    status: res.status,
+    notFound: res.status === 404,
+  };
+}
+
+export async function addProjectKnowledge(
+  projectId: string,
+  kind: KnowledgeKind,
+  text: string,
+): Promise<{ ok: boolean; status: number; item: KnowledgeItem | null }> {
+  const res = await apiCallDetailed<{ item?: unknown }>(
+    'POST',
+    `/v2/projects/${encodeURIComponent(projectId)}/knowledge`,
+    { kind, text },
+  );
+  return {
+    ok: res.ok,
+    status: res.status,
+    item: normalizeKnowledgeItem(res.data?.item),
+  };
+}
+
+export async function removeProjectKnowledge(
+  projectId: string,
+  knowledgeId: string,
+): Promise<{ ok: boolean; status: number }> {
+  const res = await apiCallDetailed<{ deleted?: boolean }>(
+    'DELETE',
+    `/v2/projects/${encodeURIComponent(projectId)}/knowledge/${encodeURIComponent(knowledgeId)}`,
+  );
+  return { ok: res.ok, status: res.status };
+}
+
+/* ── "I have seen this" ───────────────────────────────────────────────────────
+ *
+ * The ONLY call that moves this user's last-visit marker for a project, sent
+ * AFTER the workspace has rendered. `seenThrough` is the snapshot's own
+ * `generated_at`, so the marker lands exactly where the list the user saw was
+ * computed — a change that arrived while they were reading is still new next
+ * time instead of being silently swallowed. The server clamps the value to
+ * [stored marker, now], so it is a hint and never an authority.
+ *
+ * Best-effort: a failure here costs one visit's worth of precision on the next
+ * "Since your last visit", and nothing else. It never blocks the page.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+export async function markProjectWorkspaceSeen(
+  projectId: string,
+  seenThrough: string,
+): Promise<{ ok: boolean; lastViewedAt: string }> {
+  const res = await apiCallDetailed<{ last_viewed_at?: string }>(
+    'POST',
+    `/v2/projects/${encodeURIComponent(projectId)}/workspace/seen`,
+    { seen_through: seenThrough },
+  );
+  return { ok: res.ok, lastViewedAt: res.data?.last_viewed_at ?? '' };
 }
