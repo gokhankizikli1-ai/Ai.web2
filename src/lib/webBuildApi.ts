@@ -31,6 +31,11 @@ import { orderFilesForReviewBounding, compactContextFromIncludedFiles, buildRevi
 import { stripLeadingFieldLabel } from '@/lib/webBuildFieldLabel';
 import { renderBindingRequirementsBlock } from '@/lib/webBuildBindingRequirements';
 import { renderResearchDirectionBlock } from '@/lib/webBuildResearchDirection';
+import {
+  deriveDesignIntelligence, renderDesignIntelligencePlanningBlock,
+  renderDesignIntelligenceP1Block, renderDesignIntelligenceP2Block,
+  renderDesignIntelligenceP3Block, renderDesignIntelligenceP4Block,
+} from '@/lib/webBuildDesignIntelligence';
 import { renderCompositionBlock } from '@/lib/webBuildComposition';
 import { renderVisualSystemBlock } from '@/lib/webBuildVisualSystem';
 import { renderContentNarrativeBlock, renderSiteDepthBlock } from '@/lib/webBuildContentNarrative';
@@ -931,6 +936,16 @@ export function buildWebBuildRequest(
     }
     lines.push('', `Requested change: ${idea}`);
   } else if (!isApp) {
+    // Design Intelligence V3 — a compact, deterministic SITE DIRECTION derived from the raw
+    // idea alone (no spec exists at planning time). Without it the planner reasons about every
+    // idea as a generic marketing site, so a conference, a journal or a dental practice all
+    // arrive at the same "hero + features + testimonials + CTA" architecture before the
+    // generator ever sees them. It is CONTEXT for the planner, not a template: the planner is
+    // told to correct it when the idea clearly says otherwise. App planning is untouched.
+    const planningDirection = renderDesignIntelligencePlanningBlock(
+      deriveDesignIntelligence({ prompt: idea }),
+    );
+    if (planningDirection.length) lines.push(...planningDirection);
     lines.push(
       'You are a SENIOR Website Strategy, UX Architecture and Conversion Copy Director.',
       'Produce the complete PLANNING package for the idea below by REASONING FROM THE IDEA',
@@ -2218,6 +2233,12 @@ export const FRONTEND_BUILDER_MODE = 'frontend_builder' as const;
  * repairs below); the lightweight static review keeps its own smaller bound. */
 const FRONTEND_BUILDER_ATTEMPT_TIMEOUT_MS = 210_000;
 const MAX_FRONTEND_SPEC_CHARS = 120_000;
+/** Design Intelligence V3 — the budget `buildFrontendBuilderRequest` fits its DROPPABLE
+ *  (P2–P4) guidance under. Set just below MAX_FRONTEND_SPEC_CHARS so a request that would
+ *  otherwise be rejected outright (no generation at all) instead sheds decorative guidance
+ *  and still carries the product requirements. P0/P1 blocks and the spec JSON are never
+ *  dropped, so an irreducible request still fails honestly at the existing guard. */
+export const SAFE_FRONTEND_BUILDER_REQUEST_CHARS = 118_000;
 // Phase 13F.2 — a full-source task now configures a 30,000-token max_output_tokens, but that
 // budget INCLUDES hidden reasoning; the visible frontend-files-v1 source is a subset. Even the
 // worst case (all 30k tokens visible, ~4 chars/token ≈ 120k chars) fits comfortably under this
@@ -2330,6 +2351,27 @@ function builderProjection(spec: FrontendBuildSpecification): Record<string, unk
       + 'a section id/name, or a planning enumeration as visible page copy — write real, '
       + 'concrete audience-facing sentences instead.',
   };
+}
+
+/**
+ * The specification as a QUALITY task (review / repair) should see it.
+ *
+ * Design Intelligence V3 is a FIRST-GENERATION direction authority with NO acceptance
+ * surface: no analyzer scores it, no acceptance gate reads it and no repair can regress
+ * against it, so sending it downstream would pay ~8k chars on every review/repair call
+ * (pushing rich builds into spec compaction earlier) while inviting the reviewer to judge
+ * against a contract Web Build Quality V2 does not own. The design direction a repair must
+ * not undo is already carried by the composition / visualSystem / visualConcept authorities
+ * and by the source the repair is editing.
+ *
+ * A spec without the field (every APP spec, and every pre-V3 reopened build) is returned
+ * unchanged by identity, so those requests are byte-for-byte what they were before.
+ */
+function specForQualityTask(spec: FrontendBuildSpecification): FrontendBuildSpecification {
+  if (!spec || !spec.designIntelligence) return spec;
+  const rest = { ...(spec as unknown as Record<string, unknown>) };
+  delete rest.designIntelligence;
+  return rest as unknown as FrontendBuildSpecification;
 }
 
 /** Serialize the Phase 12A specification into the dedicated builder request. Sends ONLY
@@ -2455,6 +2497,17 @@ export function buildFrontendBuilderRequest(spec: FrontendBuildSpecification): s
   const appDepthLines = isApp ? withGap(renderScreenDepthBlock(spec.screenDepth)) : [];
   const appShellLines = isApp ? withGap(renderAppShellBlock(spec.appVisual)) : [];
 
+  // Design Intelligence V3 — the BINDING site-archetype / brand-character / design-direction
+  // direction, rendered as FOUR SEPARATE TIERS so each can carry its honest priority below.
+  // Rendering it as one block would have meant its P2–P4 material (visual direction, imagery,
+  // the generic fingerprint ban) inherited P1 protection, and a budget cut could then have
+  // dropped the canonical composition / visualSystem / visualConcept authorities while keeping
+  // Design Intelligence decoration. WEB only — every tier is [] for an app spec.
+  const diP1Block = renderDesignIntelligenceP1Block(spec.designIntelligence);
+  const diP2Block = renderDesignIntelligenceP2Block(spec.designIntelligence);
+  const diP3Block = renderDesignIntelligenceP3Block(spec.designIntelligence);
+  const diP4Block = renderDesignIntelligenceP4Block(spec.designIntelligence);
+
   const introLines = isApp ? [
     'Implement the FrontendBuildSpecification projection below EXACTLY as an authoritative',
     'contract. This is a CLIENT-ROUTED, MULTI-SCREEN React + TypeScript + Tailwind application',
@@ -2470,33 +2523,7 @@ export function buildFrontendBuilderRequest(spec: FrontendBuildSpecification): s
     'Return ONLY the frontend-files-v1 envelope (## FRONTEND_FILES_V1 … ## END_FRONTEND_FILES_V1).',
   ];
 
-  return [
-    '[FRONTEND BUILDER REQUEST]',
-    'Contract version: frontend-spec-v1',
-    'Required response format: frontend-files-v1',
-    '',
-    ...introLines,
-    '',
-    ...contractLines,
-    ...experienceBlock,
-    ...obligationManifestBlock,
-    // App authority blocks (empty for web builds).
-    ...appArchLines,
-    ...appNavLines,
-    ...appDepthLines,
-    ...appShellLines,
-    ...experienceIdentityBlock,
-    ...visualConceptBlock,
-    ...motionExecutionBlock,
-    ...researchDirectionBlock,
-    ...compositionBlock,
-    ...visualSystemBlock,
-    ...contentNarrativeBlock,
-    ...siteDepthBlock,
-    ...experienceBlock2,
-    ...imageBlock,
-    ...coverageBlock,
-    ...bindingLines,
+  const disciplineLines = [
     // Phase 13F.2 — eliminate REDUNDANT tokens (not design quality). Fully implement the spec —
     // required sections, motion/composition and the quality bar are UNCHANGED — but do not waste
     // the output budget on non-source noise or duplicated copy.
@@ -2513,10 +2540,85 @@ export function buildFrontendBuilderRequest(spec: FrontendBuildSpecification): s
       'the design, remove motion/composition or lower the quality bar).',
     ]),
     '',
-    'BEGIN_FRONTEND_BUILD_SPEC_JSON',
-    json,
-    'END_FRONTEND_BUILD_SPEC_JSON',
-  ].join('\n');
+  ];
+
+  /* ── PROMPT PRIORITY ORDER (Design Intelligence V3) ────────────────────────────
+   * Blocks are assembled in a fixed order AND carry an explicit priority. When the
+   * assembled request exceeds the safe request budget, low-priority DECORATIVE
+   * guidance is dropped before anything the product actually requires — previously
+   * an oversized request was rejected outright in generateFrontendBuilderRaw and NO
+   * generation happened at all.
+   *   P0 — the request frame, the hard contract, explicit user requirements, the
+   *        obligation manifest, the app authority blocks, output discipline, spec JSON.
+   *   P1 — what kind of site this is + what it must contain + truth policy
+   *        (designIntelligence), and the real/required image contracts.
+   *   P2 — information architecture, composition, content narrative, site depth,
+   *        visual system, experience identity/quality.
+   *   P3 — imagery/interaction refinement: visual concept, motion execution, research.
+   *   P4 — the superseded legacy experience-enforcement block.
+   * Order within the message is unchanged from the pre-V3 assembly except for the
+   * new P1 designIntelligence block; only DROPPING is priority-driven. ────────── */
+  type BlockPriority = 0 | 1 | 2 | 3 | 4;
+  const parts: Array<{ lines: string[]; priority: BlockPriority }> = [
+    { priority: 0, lines: [
+      '[FRONTEND BUILDER REQUEST]',
+      'Contract version: frontend-spec-v1',
+      'Required response format: frontend-files-v1',
+      '',
+      ...introLines,
+      '',
+    ] },
+    { priority: 0, lines: contractLines },
+    // The legacy experience-enforcement block. P4 (first to go) when the hard contract has
+    // SUPERSEDED it; P3 when the hard-contract flag is off, because then it is the only
+    // representation of the experience plan and should not be the very first thing dropped.
+    { priority: contract ? 4 : 3, lines: experienceBlock },
+    { priority: 0, lines: obligationManifestBlock },
+    // App authority blocks (empty for web builds) — for an app they ARE the architecture.
+    { priority: 0, lines: appArchLines },
+    { priority: 0, lines: appNavLines },
+    { priority: 0, lines: appDepthLines },
+    { priority: 0, lines: appShellLines },
+    // Design Intelligence V3 — WEB only, every tier [] for an app spec. Each tier sits at
+    // its OWN honest priority: only P1 (what this site is, what it must structurally contain,
+    // what may never be invented) outranks the canonical authorities below.
+    { priority: 1, lines: diP1Block },
+    { priority: 2, lines: experienceIdentityBlock },
+    { priority: 2, lines: diP2Block },       // peer of composition/visualSystem, never above them
+    { priority: 3, lines: visualConceptBlock },
+    { priority: 3, lines: motionExecutionBlock },
+    { priority: 3, lines: researchDirectionBlock },
+    { priority: 2, lines: compositionBlock },
+    { priority: 2, lines: visualSystemBlock },
+    { priority: 2, lines: contentNarrativeBlock },
+    { priority: 2, lines: siteDepthBlock },
+    { priority: 2, lines: experienceBlock2 },
+    { priority: 3, lines: diP3Block },       // peer of visualConcept/motion/research
+    { priority: 1, lines: imageBlock },
+    { priority: 1, lines: coverageBlock },
+    { priority: 4, lines: diP4Block },       // the generic fingerprint ban — first to go
+    { priority: 0, lines: bindingLines },
+    { priority: 0, lines: disciplineLines },
+    { priority: 0, lines: ['BEGIN_FRONTEND_BUILD_SPEC_JSON', json, 'END_FRONTEND_BUILD_SPEC_JSON'] },
+  ];
+
+  const serialize = (dropAtOrAbove: BlockPriority | 5): string =>
+    parts.filter((p) => p.priority < dropAtOrAbove).flatMap((p) => p.lines).join('\n');
+
+  // Cheapest path first: the full request, byte-identical to a flat assembly.
+  const message = serialize(5);
+  // WEB ONLY. Priority shedding is a Web Build behaviour: an APP request must be
+  // byte-for-byte what it was before Design Intelligence V3 existed AT EVERY SIZE, not
+  // just for normal-sized fixtures — so an oversized app request keeps every block and
+  // still fails honestly at the existing MAX_FRONTEND_SPEC_CHARS guard, exactly as before.
+  if (isApp || message.length <= SAFE_FRONTEND_BUILDER_REQUEST_CHARS) return message;
+  for (const cutoff of [4, 3, 2] as BlockPriority[]) {
+    const shed = serialize(cutoff);
+    if (shed.length <= SAFE_FRONTEND_BUILDER_REQUEST_CHARS) return shed;
+  }
+  // Irreducible even at the deepest cut — send the smallest request rather than one
+  // still padded with decoration, and let the existing size guard reject it truthfully.
+  return serialize(2);
 }
 
 /* ── Phase 13C.1 — truthful AI-transport execution metadata ─────────────────────
@@ -3462,7 +3564,7 @@ export function buildFrontendBuilderReviewRequest(
     const appInput: Record<string, unknown> = {
       task: 'frontend-design-review',
       responseContract: 'frontend-review-v1',
-      specification: spec,
+      specification: specForQualityTask(spec),
       ...(authorityDigest ? { authorityDigest } : {}),
       // ── varying region (after the stable contract) ──
       stage,
@@ -3511,7 +3613,7 @@ export function buildFrontendBuilderReviewRequest(
     task: 'frontend-design-review',
     responseContract: 'frontend-review-v1',
     stage,
-    specification: spec,
+    specification: specForQualityTask(spec),
     files: filesForReq,
   };
   if (compact) input.omittedFilesManifest = compact.omittedManifest;
@@ -3855,7 +3957,7 @@ function buildFrontendRepairInputPayload(
   const input: Record<string, unknown> = {
     task: 'frontend-repair',
     responseContract: 'frontend-files-v1',
-    specification: spec,
+    specification: specForQualityTask(spec),
     files: frontendFilesForRequest(files),
     issuesToFix,
     strengthsToPreserve: (initialReview.strengths || []).slice(0, 6),

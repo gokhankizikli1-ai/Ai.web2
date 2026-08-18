@@ -2076,6 +2076,16 @@ export interface FrontendBuildSpecification {
    *  deterministically from the EXISTING research + Vertical Intelligence artifacts (no new call). */
   researchDirection?: import('@/lib/webBuildResearchDirection').ResearchDirectionContract;
 
+  /** Design Intelligence V3 — the authoritative SITE ARCHETYPE + BRAND CHARACTER + design
+   *  direction contract for the FIRST generation: what kind of website this is, what it must
+   *  genuinely contain, its page-composition strategy, within-build anti-repetition rules,
+   *  content-truth policy, image intent and designed mobile behaviour. WEB builds only (never
+   *  derived for buildType='app'). OPTIONAL and additive: present only on fresh web builds;
+   *  absent ⇒ legacy behavior. Derived deterministically from the raw prompt + the EXISTING
+   *  identity/section artifacts (no new model/network call). It has NO acceptance surface —
+   *  Web Build Quality V2 remains the sole judge/repair authority. */
+  designIntelligence?: import('@/lib/webBuildDesignIntelligence').DesignIntelligenceContract;
+
   /** Phase (composition) — the BINDING page-composition contract: per-section composition family,
    *  hierarchy, alignment, media role, adjacency rhythm and desktop/mobile order. OPTIONAL and
    *  additive: present only on fresh builds; absent ⇒ legacy behavior (no composition block, no

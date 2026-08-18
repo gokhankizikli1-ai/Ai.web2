@@ -511,6 +511,12 @@ const REVIEW_SPEC_DROPPABLE_FIELDS = [
   'experienceArchitecture', 'bindingRequirements', 'researchDirection', 'composition',
   'visualSystem', 'contentNarrative', 'experienceQuality', 'visualConcept',
   'experienceIdentity', 'motionExecution', 'executionObligations',
+  // Design Intelligence V3 — a FIRST-GENERATION direction authority with NO acceptance
+  // surface: no analyzer scores it and no repair can regress against it, so it needs no
+  // entry in the repair-authority digest below. It stays on the normal (uncompacted)
+  // review/repair request so a repair keeps the same design direction, and it is dropped
+  // first when a rich build needs compaction to fit the backend cap.
+  'designIntelligence',
 ] as const;
 
 /** Build the review-scoped projection: keep every core/required field, drop the heavy optional

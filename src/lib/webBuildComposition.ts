@@ -29,6 +29,7 @@ import type {
 } from '@/lib/webBuildAgents';
 import type { ResearchDirectionContract } from '@/lib/webBuildResearchDirection';
 import type { ImageCoverageRequirement } from '@/lib/webBuildImageCoverage';
+import type { ArchetypeCompositionSteer, DesignIntelligenceContract } from '@/lib/webBuildDesignIntelligence';
 // Shared, authoritative section-source correlation/extraction (single source of truth; see PR #561).
 import { collectSectionUnits } from '@/lib/webBuildSectionSource';
 
@@ -222,6 +223,11 @@ export interface CompositionInput {
   imageCoverage?: ImageCoverageRequirement;
   imageSlots?: FrontendSpecImageSlot[];
   ledger?: StrategicThinkingLedger;
+  /** Design Intelligence V3 — read ONLY for its archetype composition steer. This module
+   *  remains the owner of every per-section family, rhythm and diversity decision; the
+   *  steer supplies archetype-aware defaults where this module previously had one
+   *  universal default (hero shape + the catch-all fallback). Absent ⇒ prior behaviour. */
+  designIntelligence?: DesignIntelligenceContract;
 }
 
 function sectionText(s: FrontendSpecSection): string {
@@ -238,21 +244,67 @@ function bindingInteractiveId(s: FrontendSpecSection, binding: FrontendBindingRe
   return req?.id;
 }
 
-function classifyFamily(s: FrontendSpecSection, index: number, total: number, functional: boolean): CompositionFamily {
+/** A family decision plus whether it came from a STRONG content signal (a functional
+ *  requirement or an explicit section-content keyword). Weak decisions — the hero
+ *  default and the catch-all fallback — are the ones the site archetype may steer;
+ *  strong, content-derived decisions are never overridden by archetype taste. */
+interface FamilyDecision { family: CompositionFamily; strong: boolean }
+
+function classifyFamily(
+  s: FrontendSpecSection,
+  index: number,
+  total: number,
+  functional: boolean,
+  steer?: ArchetypeCompositionSteer,
+  /** The RESOLVED media-ness of this section (may differ from `sectionHasMedia` when the
+   *  archetype's imagery role turns a media-planned hero text-led). Defaults to the
+   *  section's own media signal so every existing caller behaves exactly as before. */
+  mediaResolved?: boolean,
+): FamilyDecision {
   const p = sectionText(s);
-  const media = sectionHasMedia(s);
-  if (index === 0) return media ? 'immersive-hero' : 'editorial-split';
-  if (functional) return 'focused-tool';
-  if (has(p, /gallery|portfolio|showcase|\bwork\b|projects|lookbook|destinations?/)) return 'gallery-strip';
-  if (has(p, /\bstep|process|how it works|journey|timeline|itinerary|workflow/)) return 'sequential-steps';
-  if (has(p, /compar|pricing|plans?|packages?|tiers?|membership/)) return 'comparison-band';
-  if (has(p, /testimonial|review|proof|trusted|logos|clients?|press|awards?|stats?|results|credential|accredit/)) return 'proof-ledger';
-  if (has(p, /catalog|products?|\bmenu\b|listings?|rooms?|inventory|collection|shop|store|fleet|properties/)) return 'catalog-index';
-  if (has(p, /feature|benefit|service|offer|capabilit|amenit|highlight|what we|why /)) return 'feature-mosaic';
-  if (has(p, /about|story|mission|team|values|who we|philosophy|heritage/)) return media ? 'editorial-split' : 'narrative-rail';
-  if (index === total - 1 || has(p, /\bcta\b|contact|get started|book now|sign up|enquir|reserve|final|newsletter|subscribe|join/)) return 'conversion-finale';
-  if (has(p, /banner|quote|statement|manifesto/)) return 'full-bleed-transition';
-  return media ? 'asymmetric-media' : 'standard-stack';
+  const media = mediaResolved === undefined ? sectionHasMedia(s) : mediaResolved;
+  const weak = (family: CompositionFamily): FamilyDecision => ({ family, strong: false });
+  const strong = (family: CompositionFamily): FamilyDecision => ({ family, strong: true });
+  if (index === 0) {
+    // Design Intelligence V3 — the site ARCHETYPE decides the hero shape (an editorial
+    // publication, a developer product and a restaurant must not all open the same way).
+    // A media-led hero family still requires actual media, so this never invents imagery.
+    const steered = steer?.heroFamily as CompositionFamily | undefined;
+    if (steered && steered in FAMILY_SPEC) {
+      const needsMedia = FAMILY_SPEC[steered].textMedia === 'media-led';
+      if (!needsMedia || media) return weak(steered);
+      return weak('editorial-split');
+    }
+    return weak(media ? 'immersive-hero' : 'editorial-split');
+  }
+  if (functional) return strong('focused-tool');
+  if (has(p, /gallery|portfolio|showcase|\bwork\b|projects|lookbook|destinations?/)) return strong('gallery-strip');
+  if (has(p, /\bstep|process|how it works|journey|timeline|itinerary|workflow/)) return strong('sequential-steps');
+  if (has(p, /compar|pricing|plans?|packages?|tiers?|membership/)) return strong('comparison-band');
+  if (has(p, /testimonial|review|proof|trusted|logos|clients?|press|awards?|stats?|results|credential|accredit/)) return strong('proof-ledger');
+  if (has(p, /catalog|products?|\bmenu\b|listings?|rooms?|inventory|collection|shop|store|fleet|properties/)) return strong('catalog-index');
+  if (has(p, /feature|benefit|service|offer|capabilit|amenit|highlight|what we|why /)) return strong('feature-mosaic');
+  if (has(p, /about|story|mission|team|values|who we|philosophy|heritage/)) return strong(media ? 'editorial-split' : 'narrative-rail');
+  if (index === total - 1 || has(p, /\bcta\b|contact|get started|book now|sign up|enquir|reserve|final|newsletter|subscribe|join/)) return strong('conversion-finale');
+  if (has(p, /banner|quote|statement|manifesto/)) return strong('full-bleed-transition');
+  // Catch-all: prefer a family this archetype actually reaches for, matched to whether
+  // the section has media, instead of the same two generic fallbacks for every site.
+  const preferred = (steer?.preferredFamilies || []).filter((f): f is CompositionFamily => f in FAMILY_SPEC);
+  const fit = preferred.find((f) => (FAMILY_SPEC[f].textMedia === 'media-led') === media);
+  if (fit) return weak(fit);
+  return weak(media ? 'asymmetric-media' : 'standard-stack');
+}
+
+/** Remap a WEAK family that is wrong for this archetype onto one the archetype prefers.
+ *  Strong, content-derived families are never remapped — a restaurant that genuinely
+ *  planned a pricing comparison still gets a comparison band. */
+function steerAwayFromDiscouraged(d: FamilyDecision, media: boolean, steer?: ArchetypeCompositionSteer): FamilyDecision {
+  if (!steer || d.strong) return d;
+  const discouraged = new Set(steer.discouragedFamilies || []);
+  if (!discouraged.has(d.family)) return d;
+  const preferred = (steer.preferredFamilies || []).filter((f): f is CompositionFamily => f in FAMILY_SPEC && !discouraged.has(f));
+  const fit = preferred.find((f) => (FAMILY_SPEC[f].textMedia === 'media-led') === media) || preferred[0];
+  return fit ? { family: fit, strong: false } : d;
 }
 
 function pickDensity(s: FrontendSpecSection, fam: CompositionFamily): CompositionDensity {
@@ -333,11 +385,21 @@ export function deriveCompositionContract(input: CompositionInput): CompositionC
 
   // ── 1. Initial per-section family + role. ──
   interface Draft { s: FrontendSpecSection; family: CompositionFamily; functional: boolean; bindingId?: string; media: boolean; reasons: string[]; }
+  const steer = input.designIntelligence?.compositionSteer;
+  // Design Intelligence V3 — when the site archetype's imagery role says the argument is
+  // NOT carried by pictures (a developer product, a campaign page), the first viewport must
+  // not silently take a photographic anchor just because the asset pipeline planned a slot
+  // there: that anchor propagates into the hero contract and the downstream visual authority,
+  // and the request then carries two contradictory instructions. The image-coverage authority
+  // still owns the photography FLOOR — a required / image-led coverage mode always wins.
+  const coverageRequiresImages = input.imageCoverage?.mode === 'required' || input.imageCoverage?.mode === 'image-led';
+  const heroTextLed = steer?.heroMediaPreference === 'text-led' && !coverageRequiresImages && !isImageLed;
   const drafts: Draft[] = ordered.map((s, i) => {
     const bindingId = bindingInteractiveId(s, input.binding);
     const functional = !!bindingId || (s.interactionHints || []).length > 0;
-    const family = classifyFamily(s, i, total, functional);
-    return { s, family, functional, bindingId, media: sectionHasMedia(s), reasons: [] };
+    const media = sectionHasMedia(s) && !(i === 0 && heroTextLed);
+    const decision = steerAwayFromDiscouraged(classifyFamily(s, i, total, functional, steer, media), media, steer);
+    return { s, family: decision.family, functional, bindingId, media, reasons: [] };
   });
 
   // ── 2. Deterministic adjacency resolution — no two adjacent top-level sections share a family. ──
