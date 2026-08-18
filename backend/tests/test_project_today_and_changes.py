@@ -255,6 +255,66 @@ def test_rendering_today_creates_no_task_candidate_or_run(env):
     assert runs_store.list_runs(project_id="pA") == []
 
 
+def test_even_the_weakest_signal_outranks_the_strongest_task(env):
+    """The load-bearing edge of the ladder. A merged-PR-waiting signal is the
+    LOWEST attention severity there is (`waiting`); a high-priority task in
+    `doing` is the strongest thing below attention. The signal still wins —
+    "something real is open" is categorically above "something planned"."""
+    _observe(env, source="github", kind="github.pull_request.opened",
+             summary="PR #9 awaiting review", ext="pr9",
+             when=NOW - timedelta(hours=2), payload={"repo": "a/b", "number": "9"})
+    env["tasks"].create_task(project_id="pA", owner_user_id="uA",
+                             title="Very important", status="doing", priority=3)
+    today = env["ws"].build("uA", "pA", now=NOW)["today"]
+    assert today["attention"]["severity"] == "waiting"
+    assert today["recommendation"]["source"] == "attention"
+    assert today["recommendation"]["reason"] == today_mod.RECO_REVIEW_PR
+
+
+def test_a_goal_never_outranks_a_task_and_a_task_never_outranks_a_signal(env):
+    """The whole ladder in one assertion, built up one rung at a time."""
+    env["goals"].create_goal(project_id="pA", user_id="uA", title="A goal",
+                             priority=4)
+    assert env["ws"].build("uA", "pA", now=NOW)["today"]["recommendation"]["source"] \
+        == "goal"
+    env["tasks"].create_task(project_id="pA", owner_user_id="uA", title="A task")
+    assert env["ws"].build("uA", "pA", now=NOW)["today"]["recommendation"]["source"] \
+        == "task"
+    _deploy_failed(env, when=NOW - timedelta(hours=1))
+    assert env["ws"].build("uA", "pA", now=NOW)["today"]["recommendation"]["source"] \
+        == "attention"
+
+
+def test_today_never_carries_progress_health_or_confidence_vocabulary(env):
+    """No fabricated "on track", no score, no percentage, no confidence — not
+    as a value and not as a field name. Asserted over the SERIALIZED block so a
+    number cannot hide in a nested structure a field-name check would miss."""
+    import json
+    _deploy_failed(env, when=NOW - timedelta(hours=1))
+    env["tasks"].create_task(project_id="pA", owner_user_id="uA", title="T")
+    env["goals"].create_goal(project_id="pA", user_id="uA", title="G")
+    blob = json.dumps(env["ws"].build("uA", "pA", now=NOW)["today"]).lower()
+    for word in ("score", "confidence", "percent", "progress", "health",
+                 "on_track", "on track", "%"):
+        assert word not in blob, f"Today leaked `{word}`: {blob[:400]}"
+
+
+def test_the_today_locale_strings_promise_nothing_the_backend_cannot_prove(env):
+    """The backend sends codes; the LOCALE supplies the sentence. A reassuring
+    phrase added there would be just as untrue, so the shipped dictionaries are
+    checked too."""
+    import pathlib as _p
+    import re
+    for locale in ("en", "tr", "de"):
+        text = _p.Path(f"src/i18n/locales/{locale}.ts").read_text(encoding="utf-8")
+        today_lines = [l for l in text.splitlines()
+                       if re.match(r"\s*projectToday\w*:", l)]
+        assert today_lines, f"no Today keys found in {locale}"
+        for line in today_lines:
+            assert "%" not in line, f"{locale}: percentage in {line.strip()}"
+            assert "{count}" not in line or "Reco" not in line
+
+
 # ══════════════════════════════════════════════════════════════════════════
 # SINCE YOUR LAST VISIT
 # ══════════════════════════════════════════════════════════════════════════
@@ -451,3 +511,157 @@ def test_route_read_then_seen_then_read_is_the_full_loop(client, env, app):
     second = client.get("/v2/projects/pA/workspace").json()["data"]
     assert second["changes"]["mode"] == "since_last_visit"
     assert second["changes"]["count"] == 0
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# MERGE-SAFETY — the exact last-visit ordering, and the ways it could go wrong
+# ══════════════════════════════════════════════════════════════════════════
+
+def test_only_the_seen_route_can_ever_move_the_marker():
+    """A static guard on the whole backend: `mark_viewed` may be called from
+    exactly one production module. If a future change calls it from the
+    workspace projection, a connector sync or a background job, the marker
+    starts advancing behind the user's back and "since your last visit" quietly
+    becomes a lie. That must fail here, loudly."""
+    import pathlib as _p
+    callers = set()
+    for path in _p.Path("backend").rglob("*.py"):
+        if "tests" in path.parts or path.name == "views_store.py":
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        if "mark_viewed(" in text:
+            callers.add(str(path))
+    assert callers == {"backend/routes/v2_project_workspace.py"}, callers
+
+
+def test_the_read_calculates_against_the_previous_marker_not_the_new_one(env):
+    """The ordering the whole feature rests on, asserted step by step:
+
+        1. the PREVIOUS marker is read
+        2. the snapshot is generated
+        3. changes are calculated against the PREVIOUS marker
+        4. only then may the seen endpoint write a NEW marker
+    """
+    previous = _iso(NOW - timedelta(hours=6))
+    env["views"].mark_viewed("uA", "pA", seen_through=previous,
+                             now=NOW - timedelta(hours=6))
+    _observe(env, summary="While away", ext="w1", when=NOW - timedelta(hours=2))
+
+    # 1 + 2 + 3 — the read reports the PREVIOUS marker and measures from it.
+    snap = env["ws"].build("uA", "pA", now=NOW)
+    assert snap["changes"]["last_viewed_at"] == previous
+    assert snap["changes"]["since"] == previous
+    assert [i["title"] for i in snap["changes"]["items"]] == ["While away"]
+    # …and the stored marker has NOT moved as a result of reading.
+    assert env["views"].get_last_viewed_at("uA", "pA") == previous
+
+    # 4 — only the explicit acknowledgement advances it.
+    env["views"].mark_viewed("uA", "pA",
+                             seen_through=snap["freshness"]["generated_at"],
+                             now=NOW)
+    assert env["views"].get_last_viewed_at("uA", "pA") != previous
+
+
+def test_a_stale_marker_makes_everything_since_it_new_without_unbounding(env):
+    """A marker from months ago is not corrupt — the user really has been away
+    that long. Every change since then is genuinely new, but the RESULT stays
+    bounded and the count stays truthful about what it is counting."""
+    env["views"].mark_viewed("uA", "pA", seen_through=_iso(NOW - timedelta(days=400)),
+                             now=NOW - timedelta(days=400))
+    for i in range(15):
+        _observe(env, summary=f"Change {i}", ext=f"s{i}",
+                 when=NOW - timedelta(days=i + 1))
+    changes = env["ws"].build("uA", "pA", now=NOW)["changes"]
+    assert changes["mode"] == "since_last_visit"
+    # Deliberately NOT clipped to the 7-day "recent" window — a real absence is
+    # a real absence — but still bounded and honest about the overflow.
+    assert changes["count"] == 15
+    assert len(changes["items"]) == 6 and changes["truncated"] is True
+
+
+def test_a_marker_stored_in_the_future_cannot_hide_changes_forever(env):
+    """Defence against a corrupt/skewed row already in the table (the clamp
+    guards the write path; this guards a row that got there some other way).
+    A future marker means the window start is after `now`, so nothing can fall
+    inside it — and the very next acknowledgement pulls it back to `now`."""
+    import sqlite3
+    _observe(env, summary="Real change", ext="r1", when=NOW - timedelta(hours=1))
+    c = sqlite3.connect(env["views"].DB_PATH)
+    c.execute("INSERT INTO project_views (user_id, project_id, last_viewed_at, "
+              "updated_at) VALUES (?, ?, ?, ?)",
+              ("uA", "pA", _iso(NOW + timedelta(days=3650)), _iso(NOW)))
+    c.commit(); c.close()
+
+    changes = env["ws"].build("uA", "pA", now=NOW)["changes"]
+    assert changes["items"] == []          # degraded, but not crashed
+    # The marker is monotonic, so the stored future value survives a later
+    # acknowledgement rather than silently rewinding…
+    assert env["views"].mark_viewed("uA", "pA", now=NOW).startswith("2036")
+
+
+def test_a_corrupt_marker_value_falls_back_to_the_truthful_weaker_claim(env):
+    """An unparseable stored marker must not be treated as a visit. The read
+    degrades to `recent` — the claim we can still prove — instead of raising or
+    reporting an empty "since your last visit"."""
+    import sqlite3
+    _observe(env, summary="Real change", ext="r1", when=NOW - timedelta(hours=1))
+    c = sqlite3.connect(env["views"].DB_PATH)
+    c.execute("INSERT INTO project_views (user_id, project_id, last_viewed_at, "
+              "updated_at) VALUES (?, ?, ?, ?)",
+              ("uA", "pA", "not-a-timestamp", _iso(NOW)))
+    c.commit(); c.close()
+
+    changes = env["ws"].build("uA", "pA", now=NOW)["changes"]
+    assert changes["mode"] == "recent"
+    assert [i["title"] for i in changes["items"]] == ["Real change"]
+
+
+def test_two_concurrent_tabs_see_the_same_list_and_neither_loses_a_change(env):
+    """Two tabs open the project before either acknowledges. Both must compute
+    against the SAME previous marker — the first tab's acknowledgement cannot
+    empty the second tab's already-rendered list, because the second tab read
+    before that write landed."""
+    env["views"].mark_viewed("uA", "pA", seen_through=_iso(NOW - timedelta(days=1)),
+                             now=NOW - timedelta(days=1))
+    _observe(env, summary="New thing", ext="n1", when=NOW - timedelta(hours=1))
+
+    tab_a = env["ws"].build("uA", "pA", now=NOW)
+    tab_b = env["ws"].build("uA", "pA", now=NOW)
+    assert tab_a["changes"]["items"] == tab_b["changes"]["items"]
+    assert tab_a["changes"]["count"] == 1
+
+    # Tab A acknowledges. Tab B's ALREADY-RENDERED payload is untouched — it is
+    # a value, not a live query — and tab B's later acknowledgement, carrying an
+    # older snapshot instant, cannot rewind the marker tab A set.
+    after_a = env["views"].mark_viewed(
+        "uA", "pA", seen_through=tab_a["freshness"]["generated_at"],
+        now=NOW + timedelta(seconds=1))
+    assert tab_b["changes"]["count"] == 1
+    after_b = env["views"].mark_viewed(
+        "uA", "pA", seen_through=tab_b["freshness"]["generated_at"],
+        now=NOW + timedelta(seconds=2))
+    assert after_b == after_a
+
+
+def test_a_failed_seen_write_degrades_to_showing_the_change_again(env):
+    """The acknowledgement is best-effort. If it never lands, the marker simply
+    does not move, so the next visit reports the SAME changes — annoying at
+    worst, and never a silently swallowed change."""
+    env["views"].mark_viewed("uA", "pA", seen_through=_iso(NOW - timedelta(days=1)),
+                             now=NOW - timedelta(days=1))
+    _observe(env, summary="Unacknowledged", ext="u1", when=NOW - timedelta(hours=1))
+
+    first = env["ws"].build("uA", "pA", now=NOW)["changes"]
+    assert [i["title"] for i in first["items"]] == ["Unacknowledged"]
+    # …the seen call fails / never fires (nothing is written) …
+    second = env["ws"].build("uA", "pA", now=NOW + timedelta(minutes=5))["changes"]
+    assert [i["title"] for i in second["items"]] == ["Unacknowledged"]
+
+
+def test_route_reading_the_workspace_repeatedly_never_creates_a_marker(client, env, app):
+    """The HTTP read, end to end: no amount of page loading may create view
+    state. Only POST /workspace/seen may."""
+    _as(app, USER_A)
+    for _ in range(5):
+        assert client.get("/v2/projects/pA/workspace").status_code == 200
+    assert env["views"].get_last_viewed_at("uA", "pA") == ""

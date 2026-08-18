@@ -245,29 +245,57 @@ def list_knowledge(project_id: str, *, kinds: Optional[List[str]] = None,
     return items[:max(1, min(int(limit or 50), MAX_LIMIT))]
 
 
-def count_items(items: List[Dict[str, Any]]) -> Dict[str, int]:
-    """Counts per kind over an ALREADY-READ list. Pure.
+def count_by_kind(project_id: str) -> Dict[str, int]:
+    """EXACT counts per kind, at any project size.
 
-    This exists so a caller that has just listed knowledge does not read both
-    authorities a second time purely to count what it is already holding —
-    which is exactly the hidden double-read the workspace projection and the
-    Knowledge route would otherwise each perform. Every kind is present (0 when
-    empty) so the frontend never has to guess a missing key."""
+    Deliberately an aggregate rather than `len()` over the bounded list. The
+    list is capped at `MAX_LIMIT`; the count must not be, or a project holding
+    120 constraints would report "100 recorded" — a fabricated number, and one
+    that gets quietly less true the more the user records. The invariant the
+    task authority already follows holds here too: THE LIST IS BOUNDED, THE
+    COUNTS ARE THE TRUTH.
+
+    Two indexed aggregates, one per backing authority. Every kind is present
+    (0 when empty) so the frontend never has to guess a missing key."""
     counts = {k: 0 for k in VALID_KINDS}
     counts["total"] = 0
-    for item in items or []:
-        kind = str(item.get("kind") or "")
-        if kind not in counts:
-            continue
-        counts[kind] += 1
-        counts["total"] += 1
+    if not project_id:
+        return counts
+
+    try:
+        from backend.services.orchestrator import _sqlite, decisions_store as dec
+        dec.init_decisions_table()
+        with _sqlite.connection(dec.DB_PATH) as c:
+            row = c.execute(
+                "SELECT COUNT(*) AS n FROM project_decisions "
+                "WHERE project_id=? AND status='active' AND value != ''",
+                (str(project_id),),
+            ).fetchone()
+        counts[KIND_DECISION] = int(row["n"] or 0) if row else 0
+    except Exception as exc:
+        logger.debug("project_knowledge: decision count unavailable: %s", exc)
+
+    try:
+        from backend.services.projects import store as projects_store
+        with projects_store._conn() as c:
+            rows = c.execute(
+                "SELECT kind, COUNT(*) AS n FROM project_memory "
+                "WHERE project_id=? AND content != '' GROUP BY kind",
+                (str(project_id),),
+            ).fetchall()
+        for row in rows:
+            kind = normalize_kind(row["kind"])
+            if kind and kind != KIND_DECISION:
+                counts[kind] += int(row["n"] or 0)
+            elif kind == KIND_DECISION:
+                # A legacy `decision` memory row. It is listed as a decision, so
+                # it is counted as one.
+                counts[KIND_DECISION] += int(row["n"] or 0)
+    except Exception as exc:
+        logger.debug("project_knowledge: memory count unavailable: %s", exc)
+
+    counts["total"] = sum(counts[k] for k in VALID_KINDS)
     return counts
-
-
-def count_by_kind(project_id: str) -> Dict[str, int]:
-    """Counts per kind for a project. Prefer `count_items` when you already
-    hold the list — this convenience form performs the read itself."""
-    return count_items(list_knowledge(project_id, limit=MAX_LIMIT))
 
 
 # ── write (explicit user action only) ────────────────────────────────────────
@@ -369,6 +397,5 @@ __all__ = [
     "KIND_DECISION", "KIND_REQUIREMENT", "KIND_CONSTRAINT", "KIND_FACT",
     "KIND_NOTE", "VALID_KINDS", "HEADLINE_KINDS", "MAX_TEXT", "MAX_LIMIT",
     "normalize_kind", "user_topic_for", "item_id",
-    "list_knowledge", "count_items", "count_by_kind", "add_knowledge",
-    "remove_knowledge",
+    "list_knowledge", "count_by_kind", "add_knowledge", "remove_knowledge",
 ]

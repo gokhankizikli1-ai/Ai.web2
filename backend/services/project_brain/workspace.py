@@ -72,15 +72,6 @@ logger = logging.getLogger(__name__)
 # ── Bounds (all deliberate; the page is meant to be scannable) ───────────────
 _MAX_OBSERVATIONS_READ = 60   # the slice attention + activity are derived from
 _MAX_ACTIVITY = 12
-# No single EVENT KIND may occupy the whole activity window. Six `chore` commits
-# pushed in one minute are one thing that happened, not six; without this they
-# fill a newest-first list of 12 and the timeline stops mentioning the issue
-# somebody opened, the meeting that moved, or the deploy that failed. The cap is
-# applied AFTER the global sort, so the rows that survive for a kind are still
-# that kind's newest. Kept per-KIND rather than per-source deliberately: GitHub
-# is one source but commits, issues, PRs, checks and deployments are different
-# things, and a commit burst must not be allowed to hide an opened issue.
-_MAX_ACTIVITY_PER_KIND = 3
 _MAX_ATTENTION = attention_mod.MAX_ATTENTION
 _MAX_GOALS = 5
 _MAX_PRODUCTS = 8
@@ -88,10 +79,11 @@ _MAX_CHATS = 8
 _MAX_CONNECTOR_RESOURCES = 4  # resource labels named per provider before "+N"
 _MAX_TASKS_READ = 40          # the slice Today + the change list are derived from
 _MAX_TASKS = 6                # rows in the Overview's compact task block
-# The knowledge read is taken at the projection's own hard cap, and the counts
-# are derived FROM that read rather than from a second one (see
-# `knowledge.count_items`) — otherwise every workspace load would query both
-# backing authorities twice purely to count what it is already holding.
+# The knowledge ROWS are read at the projection's hard cap; the knowledge
+# COUNTS come from a separate exact aggregate (`knowledge.count_by_kind`), not
+# from `len()` over this list. Deriving them from the capped read would report
+# "100 recorded" for a project holding 120 — the same invariant the task
+# authority follows: the list is bounded, the counts are the truth.
 _MAX_KNOWLEDGE_READ = 100
 _MAX_KNOWLEDGE = 4            # rows in the Overview's compact knowledge block
 _MAX_CHANGES = changes_mod.MAX_CHANGES
@@ -344,12 +336,12 @@ def _read_knowledge(project_id: str) -> List[dict]:
         return []
 
 
-def _knowledge_counts(items: List[dict]) -> Dict[str, int]:
-    """Counts over the knowledge ALREADY read for this snapshot — never a second
-    trip to both backing authorities."""
+def _knowledge_counts(project_id: str) -> Dict[str, int]:
+    """EXACT knowledge counts — two indexed aggregates, never `len()` over the
+    bounded row read above."""
     try:
         from backend.services.projects import knowledge as knowledge_mod
-        return knowledge_mod.count_items(items)
+        return knowledge_mod.count_by_kind(str(project_id))
     except Exception as exc:
         logger.debug("project_workspace: knowledge counts unavailable: %s", exc)
         return {}
@@ -442,7 +434,21 @@ def _build_activity(observations: List[dict], chats: List[dict],
     rows carry the observation's own bounded `summary` (which the normalizers
     already produced for humans), never the raw payload object.
 
-    Ordering: timestamp DESC, then source ASC, then id ASC (stable)."""
+    Ordering: timestamp DESC, then source ASC, then id ASC (stable), then ONE
+    global bound. Deliberately no per-kind or per-source quota.
+
+    A quota was tried and removed. It cannot promote anything — it can only
+    drop the Nth row of a kind — so it never surfaces an important event; it
+    only hides real ones, and it hides them even when nothing is competing for
+    the space (five CI failures and nothing else would still show three). It
+    also makes the rendered count silently smaller than the bound with nothing
+    saying so. Importance is not this function's job: `attention.py` owns
+    "which few things deserve a look now" and Today reads from that. Activity
+    answers a different question — "what happened, newest first" — and a
+    chronology that quietly drops events to look balanced is not a chronology.
+    If a push burst fills the timeline, that burst genuinely is the newest
+    thing that happened, and the deploy that failed this morning is still
+    sitting in Needs Attention where it belongs."""
     rows: List[dict] = []
     for o in observations or []:
         rows.append({
@@ -498,20 +504,7 @@ def _build_activity(observations: List[dict], chats: List[dict],
         return (-stamp, str(row.get("source") or ""), str(row.get("id") or ""))
 
     rows.sort(key=_key)
-
-    # Per-kind fairness, then the global bound.
-    per_kind: Dict[str, int] = {}
-    balanced: List[dict] = []
-    for row in rows:
-        kind = str(row.get("kind") or "")
-        seen = per_kind.get(kind, 0)
-        if seen >= _MAX_ACTIVITY_PER_KIND:
-            continue
-        per_kind[kind] = seen + 1
-        balanced.append(row)
-        if len(balanced) >= _MAX_ACTIVITY:
-            break
-    return balanced
+    return rows[:_MAX_ACTIVITY]
 
 
 # ── the read model ───────────────────────────────────────────────────────────
@@ -600,7 +593,7 @@ def build(user_id: str, project_id: str, *,
         },
         "knowledge": {
             "items":  _headline_knowledge(knowledge),
-            "counts": _knowledge_counts(knowledge),
+            "counts": _knowledge_counts(project_id),
         },
         "products":   products,
         "chats":      chats,

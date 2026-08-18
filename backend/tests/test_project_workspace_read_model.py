@@ -259,22 +259,46 @@ def test_activity_is_newest_first_and_deterministic(env):
     assert [a["id"] for a in first] == [a["id"] for a in second]
 
 
-def test_a_burst_of_one_event_kind_cannot_fill_the_activity_window(env):
-    """Six `chore` commits pushed in one minute are ONE thing that happened.
-    Without a per-kind cap they fill a newest-first list of twelve and the
-    timeline stops mentioning the issue somebody opened right after."""
+def test_activity_is_a_chronology_and_does_not_ration_by_event_kind(env):
+    """Activity reports WHAT HAPPENED, newest first — it does not decide what
+    matters. A per-kind quota was tried here and removed: it can only ever drop
+    real rows (never promote an important one), it drops them even when nothing
+    else is competing for the space, and it makes the rendered count quietly
+    smaller than the bound. Importance is `attention`'s job.
+
+    So a burst is reported as a burst — and the CI failure underneath it is
+    still surfaced, by the authority that actually owns importance."""
     for i in range(8):
         _observe(env, ext=f"c{i}", kind="github.commit.pushed",
-                 summary=f"chore {i}",
-                 when=f"2026-05-20T10:0{i}:00Z")
-    _observe(env, ext="issue", kind="github.issue.opened",
-             summary="Dark mode request", when="2026-05-20T09:00:00Z")
-    activity = env["ws"].build("uA", "pA")["activity"]
-    commits = [a for a in activity if a["kind"] == "github.commit.pushed"]
-    assert len(commits) == 3                     # capped…
-    assert [a["title"] for a in commits] == ["chore 7", "chore 6", "chore 5"]
-    # …and the older, rarer event still survives.
-    assert any(a["kind"] == "github.issue.opened" for a in activity)
+                 summary=f"chore {i}", when=f"2026-05-20T10:0{i}:00Z")
+    _observe(env, ext="ci", kind="github.check.failed", summary="CI failed",
+             when="2026-05-20T09:00:00Z",
+             payload={"repo": "acme/site", "check_id": "42"})
+
+    # A fixed `now` near the fixture, so the CI signal is current rather than
+    # aged out by the attention window.
+    from datetime import datetime, timezone
+    snap = env["ws"].build("uA", "pA",
+                           now=datetime(2026, 5, 20, 12, 0, tzinfo=timezone.utc))
+    activity = snap["activity"]
+    # Newest-first, nothing rationed away, one global bound.
+    assert [a["title"] for a in activity][:3] == ["chore 7", "chore 6", "chore 5"]
+    assert len([a for a in activity if a["kind"] == "github.commit.pushed"]) == 8
+    assert len(activity) <= 12
+    # The important thing is NOT relying on the timeline to surface it.
+    assert [a["reason"] for a in snap["attention"]] == ["ci_failed"]
+    assert snap["today"]["attention"]["reason"] == "ci_failed"
+
+
+def test_activity_ordering_is_total_and_stable_with_many_same_kind_rows(env):
+    """Ties within one kind resolve deterministically (timestamp, then source,
+    then id), so repeat reads never reshuffle the timeline."""
+    for i in range(6):
+        _observe(env, ext=f"t{i}", kind="github.commit.pushed",
+                 summary=f"commit {i}", when="2026-05-20T10:00:00Z")
+    first = env["ws"].build("uA", "pA")["activity"]
+    second = env["ws"].build("uA", "pA")["activity"]
+    assert [a["id"] for a in first] == [a["id"] for a in second]
 
 
 def test_activity_merges_connector_chat_and_build_sources(env):

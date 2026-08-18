@@ -338,3 +338,126 @@ def test_route_ignores_a_client_supplied_owner(client, env, app):
                       json={"kind": "fact", "text": "x", "user_id": "uA"})
     assert res.status_code == 404
     assert env["k"].list_knowledge("pA") == []
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# MERGE-SAFETY — a knowledge write must not reach anything it does not own
+# ══════════════════════════════════════════════════════════════════════════
+
+def test_a_user_fact_supersedes_nothing_at_all(env):
+    """Only DECISIONS have supersession semantics, and only within one topic.
+    A fact/constraint/requirement is an INSERT into curated memory — it must
+    leave every pre-existing row, of every kind and every author, untouched."""
+    env["projects"].add_memory("pA", content="agent scratch", kind="agent_note",
+                               source="agent")
+    env["projects"].add_memory("pA", content="uploaded.pdf summary",
+                               kind="file_summary", source="tool")
+    env["projects"].add_memory("pA", content="Project created", kind="system",
+                               source="system")
+    env["projects"].add_memory("pA", content="An older user fact", kind="fact",
+                               source="user")
+    env["dec"].record_decision(project_id="pA", user_id="uA", topic="pricing",
+                               value="$19/mo", source=env["dec"].SOURCE_BUILD)
+    before = {(m.kind, m.content) for m in env["projects"].list_memory("pA")}
+
+    for kind in ("fact", "constraint", "requirement", "note"):
+        env["k"].add_knowledge(project_id="pA", user_id="uA", kind=kind,
+                               text=f"new {kind}")
+
+    after = {(m.kind, m.content) for m in env["projects"].list_memory("pA")}
+    assert before <= after                       # nothing was replaced
+    assert len(after) == len(before) + 4         # only additions
+    # …and the build's decision is still active and untouched.
+    assert [d["value"] for d in env["dec"].active_decisions("pA")] == ["$19/mo"]
+
+
+def test_removing_a_knowledge_item_cannot_erase_unrelated_internal_memory(env):
+    """The blast radius of a delete. Agent notes, file summaries and system
+    rows are not knowledge, are never listed as knowledge, and cannot be
+    deleted through the knowledge surface even when their real id is supplied."""
+    hidden = [
+        env["projects"].add_memory("pA", content="agent scratch",
+                                   kind="agent_note", source="agent"),
+        env["projects"].add_memory("pA", content="uploaded.pdf summary",
+                                   kind="file_summary", source="tool"),
+        env["projects"].add_memory("pA", content="Project created",
+                                   kind="system", source="system"),
+    ]
+    mine = env["k"].add_knowledge(project_id="pA", user_id="uA", kind="fact",
+                                  text="Hosted on Vercel.")
+
+    for row in hidden:
+        assert env["k"].remove_knowledge(project_id="pA", user_id="uA",
+                                         knowledge_id=f"memory:{row.id}") is False
+    # Mine still deletes, and ONLY mine went.
+    assert env["k"].remove_knowledge(project_id="pA", user_id="uA",
+                                     knowledge_id=mine["id"]) is True
+    survivors = {m.id for m in env["projects"].list_memory("pA")}
+    assert survivors == {r.id for r in hidden}
+
+
+def test_a_user_authored_row_of_a_non_knowledge_kind_is_still_not_removable(env):
+    """`source == 'user'` alone is not enough — the row must also BE knowledge.
+    A user-authored note of a kind outside the vocabulary stays out of reach."""
+    row = env["projects"].add_memory("pA", content="user system row",
+                                     kind="system", source="user")
+    assert env["k"].remove_knowledge(project_id="pA", user_id="uA",
+                                     knowledge_id=f"memory:{row.id}") is False
+    assert len(env["projects"].list_memory("pA")) == 1
+
+
+def test_the_id_namespaces_are_collision_safe(env):
+    """Ids are `<authority>:<row id>` split on the FIRST colon. Underlying ids
+    are hex, so they contain no colon of their own — but a crafted id must not
+    be able to cross authorities either."""
+    memo = env["k"].add_knowledge(project_id="pA", user_id="uA", kind="fact",
+                                  text="A fact.")
+    decision = env["k"].add_knowledge(project_id="pA", user_id="uA",
+                                      kind="decision", text="A decision.")
+    memo_row = memo["id"].split(":", 1)[1]
+    decision_row = decision["id"].split(":", 1)[1]
+    assert ":" not in memo_row and ":" not in decision_row
+
+    crafted = [
+        f"decision:{memo_row}",              # memory id through the decision path
+        f"memory:{decision_row}",            # decision id through the memory path
+        f"memory:decision:{decision_row}",   # nested prefix
+        f"decision:memory:{memo_row}",
+        f"MEMORY:{memo_row}",                # authority is case-sensitive
+        f":{memo_row}",
+        f"memory:{memo_row} ",               # trailing space
+    ]
+    for bad in crafted:
+        assert env["k"].remove_knowledge(project_id="pA", user_id="uA",
+                                         knowledge_id=bad) is False
+    # Both real items survived every attempt.
+    assert len(env["k"].list_knowledge("pA")) == 2
+
+
+def test_a_knowledge_write_reaches_no_execution_surface(env, monkeypatch):
+    """Same guarantee as a task write: recording a decision must not start a
+    run, propose a candidate action or request an approval — even though it DOES
+    legitimately write to the decision authority the build pipeline reads."""
+    fired = []
+    import importlib
+    for module_path, attr in (
+        ("backend.services.orchestrator.runs_store", "create_run"),
+        ("backend.services.orchestrator.tasks_store", "create_task"),
+        ("backend.services.orchestrator.candidate_actions_store",
+         "record_candidate_action"),
+        ("backend.services.orchestrator.approvals_store", "record_approval"),
+        ("backend.services.orchestrator.observations_store",
+         "record_observation"),
+    ):
+        mod = importlib.import_module(module_path)
+        monkeypatch.setattr(
+            mod, attr,
+            lambda *a, _n=f"{module_path}.{attr}", **k: fired.append(_n),
+            raising=False)
+
+    for kind in ("decision", "requirement", "constraint", "fact", "note"):
+        item = env["k"].add_knowledge(project_id="pA", user_id="uA", kind=kind,
+                                      text=f"a {kind}")
+        env["k"].remove_knowledge(project_id="pA", user_id="uA",
+                                  knowledge_id=item["id"])
+    assert fired == []

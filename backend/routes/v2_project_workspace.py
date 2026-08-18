@@ -221,16 +221,16 @@ def list_knowledge(
     decision and project-memory authorities. Reading it promotes nothing and
     writes nothing."""
     _gate(user, project_id)
-    # ONE read of both authorities serves both the (optionally filtered, always
-    # bounded) list AND the unfiltered counts. Counting through a second
-    # `count_by_kind` call would double every knowledge request for nothing.
+    # ONE row read of both authorities serves the (optionally filtered, always
+    # bounded) list; the counts are a separate EXACT aggregate, so a project
+    # past the cap reports what it really holds instead of the cap.
     everything = knowledge_mod.list_knowledge(project_id,
                                               limit=knowledge_mod.MAX_LIMIT)
     wanted = knowledge_mod.normalize_kind(kind) if kind.strip() else ""
     items = [i for i in everything if not wanted or i["kind"] == wanted][:limit]
     return envelope_ok(
         data={"knowledge": items,
-              "counts": knowledge_mod.count_items(everything)},
+              "counts": knowledge_mod.count_by_kind(project_id)},
         endpoint=f"/v2/projects/{project_id}/knowledge", user_id=user.id,
     )
 

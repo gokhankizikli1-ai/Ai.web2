@@ -584,3 +584,130 @@ describe('activity sources', () => {
     }
   });
 });
+
+
+/* ══════════════════════════════════════════════════════════════════════════
+   MERGE-SAFETY — the regressions this change is most able to cause.
+
+   The Project page is the entry point to chat, builds and connectors, so the
+   ways it can break other people's features are: losing the project binding on
+   "Ask Korvix", losing the originating chat on a product, or letting a big
+   project render an unbounded list.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+describe('merge safety — chat + product routing survives', () => {
+  it('Ask Korvix still carries the project id, seeded and unseeded', () => {
+    // The binding is what makes it a PROJECT chat rather than a standalone one.
+    const plain = newProjectChatUrl('p-123');
+    expect(plain).toContain('newChatForProject=p-123');
+    const seeded = newProjectChatUrl('p-123', 'What should I look at first?');
+    expect(seeded).toContain('newChatForProject=p-123');
+    expect(seeded).toContain('prefill=');
+    // …and every Today recommendation seeds a prompt that resolves to real copy.
+    for (const source of ['attention', 'task', 'goal']) {
+      const key = recommendationAskKey({
+        reason: 'review_signal', source, ref_id: '', title: '', context: '',
+        actions: [],
+      })!;
+      for (const locale of ['en', 'tr', 'de'] as const) {
+        expect(LOCALES[locale][key], `${locale}:${key}`).toBeTruthy();
+      }
+    }
+  });
+
+  it('a project id needing encoding is escaped, not injected', () => {
+    const url = newProjectChatUrl('a b&c=d');
+    expect(url).toContain('newChatForProject=a%20b%26c%3Dd');
+    expect(url.split('?')[1].split('&').length).toBe(1);
+  });
+
+  it('a product still opens the chat it was generated in', () => {
+    expect(productOpenTarget({ thread_id: 'th-9' })).toBe(openProjectChatUrl('th-9'));
+    // …and a product with no recorded thread offers NO link rather than a dead one.
+    expect(productOpenTarget({})).toBeNull();
+    expect(productOpenTarget({ thread_id: '' })).toBeNull();
+    expect(productOpenTarget({ thread_id: '   ' })).toBeNull();
+  });
+
+  it('chat rows key off the SERVER thread id, never a local session id', () => {
+    const w = normalizeWorkspace({
+      project: { id: 'p1' },
+      chats: [{ thread_id: 'srv-1', title: 'A' }, { title: 'no id' }],
+    })!;
+    // A row without a server thread id is dropped — it could not be opened,
+    // bound or removed, so rendering it would only produce a dead control.
+    expect(w.chats.map((c) => c.thread_id)).toEqual(['srv-1']);
+  });
+});
+
+describe('merge safety — a large project stays bounded in the UI layer', () => {
+  it('renders whatever the backend sends without re-deriving totals from it', () => {
+    // 6 task rows on screen, 137 open in reality: the count must come from the
+    // backend's own total, never from `items.length`, or a bounded list would
+    // quietly under-report a busy project.
+    const w = normalizeWorkspace({
+      project: { id: 'p1' },
+      tasks: {
+        items: Array.from({ length: 6 }, (_, i) => ({ id: `t${i}`, title: `task ${i}` })),
+        counts: { open: 137, todo: 130, doing: 5, waiting: 2, done: 11 },
+      },
+      knowledge: {
+        items: Array.from({ length: 4 }, (_, i) => ({
+          id: `memory:k${i}`, kind: 'constraint', text: `c ${i}` })),
+        counts: { total: 212, constraint: 200, decision: 12 },
+      },
+    })!;
+    expect(w.tasks.items).toHaveLength(6);
+    expect(openTaskCount(w)).toBe(137);
+    expect(w.knowledge.items).toHaveLength(4);
+    expect(w.knowledge.counts.total).toBe(212);
+  });
+
+  it('survives a huge payload without dropping or duplicating rows', () => {
+    const big = normalizeWorkspace({
+      project: { id: 'p1', name: 'x'.repeat(5000), description: 'y'.repeat(5000) },
+      tasks: { items: Array.from({ length: 500 }, (_, i) => ({ id: `t${i}`, title: 't' })) },
+      activity: Array.from({ length: 500 }, (_, i) => ({ id: `a${i}`, source: 'github' })),
+      changes: { mode: 'recent', items: Array.from({ length: 500 }, (_, i) => ({ key: `k${i}` })) },
+    })!;
+    expect(big.tasks.items).toHaveLength(500);
+    expect(new Set(big.tasks.items.map((t) => t.id)).size).toBe(500);
+    // A very long name is passed through intact — truncation is the page's job
+    // (CSS), not the contract's, so nothing is silently lost.
+    expect(big.project.name).toHaveLength(5000);
+  });
+
+  it('an empty project normalizes to honest empties, never to null holes', () => {
+    const empty = normalizeWorkspace({ project: { id: 'p1', name: 'New' } })!;
+    expect(empty.tasks.items).toEqual([]);
+    expect(empty.knowledge.items).toEqual([]);
+    expect(empty.activity).toEqual([]);
+    expect(empty.goals).toEqual([]);
+    expect(empty.attention).toEqual([]);
+    expect(empty.today).toEqual({ attention: null, recommendation: null });
+    expect(empty.changes.items).toEqual([]);
+    expect(openTaskCount(empty)).toBe(0);
+    expect(askSuggestions(empty).length).toBeGreaterThan(0); // never an empty row
+  });
+});
+
+describe('merge safety — localStorage is not a task authority', () => {
+  it('the project store exports no task read/write API', async () => {
+    // A localStorage `updateProjectTask` used to sit alongside the real one and
+    // shadowed it by name. An auto-import from the wrong module would have
+    // written a task to the browser and lost it silently.
+    const store = await import('@/stores/projectStore');
+    for (const banned of ['getProjectTasks', 'addProjectTask', 'updateProjectTask',
+                          'saveTasks', 'loadTasks']) {
+      expect(banned in store, `projectStore re-exported ${banned}`).toBe(false);
+    }
+  });
+
+  it('the only task client is the server-authoritative one', async () => {
+    const api = await import('@/lib/projectApi');
+    for (const fn of ['listProjectTasks', 'createProjectTask', 'updateProjectTask',
+                      'deleteProjectTask']) {
+      expect(typeof (api as Record<string, unknown>)[fn]).toBe('function');
+    }
+  });
+});

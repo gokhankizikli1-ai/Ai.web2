@@ -166,8 +166,25 @@ def normalize_source(value: Any, *, default: str = SOURCE_USER) -> str:
 
 
 def _row_to_dict(row) -> Dict[str, Any]:
+    """A stored row → the shape callers get, TOTAL over anything the file can
+    hold.
+
+    SQLite columns are dynamically typed, so `priority INTEGER` does not stop a
+    non-numeric value being present — from a hand-edited database, a restored
+    backup, or a future writer with a bug. A bare `int(...)` here raised
+    ValueError out of `list_tasks`, which the workspace projection swallowed
+    (the entire task section silently vanished) and the tasks route did not
+    (HTTP 500). One malformed row must cost that row's fidelity, never the
+    list, so every field is coerced through the same normalizers the write path
+    uses and an unknown status/source/priority falls back rather than raising."""
     d = dict(row)
-    d["priority"] = int(d.get("priority") or PRIORITY_NORMAL)
+    d["priority"] = normalize_priority(d.get("priority"))
+    d["status"] = normalize_status(d.get("status"))
+    d["source"] = normalize_source(d.get("source"))
+    for field in ("id", "project_id", "owner_user_id", "title", "details",
+                  "origin_ref", "created_at", "updated_at", "completed_at",
+                  "archived_at"):
+        d[field] = "" if d.get(field) is None else str(d.get(field))
     return d
 
 
@@ -406,10 +423,11 @@ def count_by_status(project_id: str, *, owner_user_id: str) -> Dict[str, int]:
         logger.debug("projects.tasks_store.count failed: %s", exc)
         return counts
     for row in rows:
-        status = normalize_status(row["status"], default="")
-        if not status:
-            continue
-        counts[status] = int(row["n"] or 0)
+        # Normalized, NOT skipped, so the counts agree with what `list_tasks`
+        # actually renders: both treat an unrecognised stored status as `todo`
+        # rather than one hiding the row and the other showing it.
+        status = normalize_status(row["status"])
+        counts[status] = counts.get(status, 0) + int(row["n"] or 0)
     counts["open"] = sum(counts[s] for s in OPEN_STATUSES)
     return counts
 
