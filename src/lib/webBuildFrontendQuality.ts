@@ -204,6 +204,13 @@ import {
 // `performance` issue, so they can only ever fill leftover room in the EXISTING single repair and
 // can never displace a functional/visual obligation or block acceptance.
 import { analyzeOptimization, optimizationToReviewIssues } from '@/lib/webBuildOptimizationPass';
+// Experience Intelligence — the OPTIMIZATION GUARD POLICY for the pass above (protected
+// surfaces/media + the motion / above-the-fold / effect budgets the design was planned
+// against). Pure + fail-open; `undefined` for any build without the contract, in which case
+// the optimization pass behaves exactly as it did before this layer existed.
+import { buildOptimizationGuardPolicy, buildExperienceIntelligenceDiagnostics } from '@/lib/experienceIntelligence';
+// The app screen → component-path helper (pure, no IO) from the OWNING app architecture module.
+import { screenFilePath } from '@/lib/appArchitecture';
 // Quality V2 — POST-repair rendered RE-VERIFICATION comparator (a leaf; pure + fail-open). Closes
 // the churn hole where a repair was judged only from source and could break the rendered page.
 import { compareRenderedEvaluations, rendersWorseAfterRepair } from '@/lib/webBuildRenderRegression';
@@ -1226,8 +1233,19 @@ export async function runFrontendBuilderQualityPipeline(
     //    acceptance. Fully fail-open. ──
     let optimization: WebBuildOptimizationReport | undefined;
     try {
-      optimization = analyzeOptimization(validation?.files, { heroComponentPath });
-      const optIssues = optimizationToReviewIssues(optimization);
+      // The guard policy makes this the SAME single optimizer, now aware of what it may not
+      // propose: it withholds "delete this dead component" for a planned surface and "lazy-load
+      // this" for a required lead image, adds the design's own first-viewport / motion / effect
+      // budgets, and prefixes the one repair instruction with what performance may never cost.
+      // The first-viewport file: a website's hero component, or an app's entry SCREEN component
+      // (an app has no hero, so `heroComponentPath` is empty for one — without this the app's
+      // first-viewport budget could never be measured at all).
+      const entryViewportPath = spec?.buildType === 'app' && spec?.appArchitecture?.primaryEntryScreenId
+        ? screenFilePath(spec.appArchitecture.primaryEntryScreenId)
+        : heroComponentPath;
+      const optimizationPolicy = buildOptimizationGuardPolicy(spec?.experienceIntelligence, entryViewportPath);
+      optimization = analyzeOptimization(validation?.files, { heroComponentPath, policy: optimizationPolicy });
+      const optIssues = optimizationToReviewIssues(optimization, optimizationPolicy);
       if (optIssues.length && initialReview.status === 'completed') {
         const { issues: mergedO, added: addedO } = mergeDeterministicIssues(initialReview.issues, optIssues);
         // NOTE: `recomputeReviewWithMergedIssues` recomputes `passed` from severity counts. A
@@ -1250,7 +1268,11 @@ export async function runFrontendBuilderQualityPipeline(
       // App Build Quality V2 — bounded, secret-free app diagnostics. `undefined` for every
       // website build and for an app with no architecture, so the artifact is unchanged there.
       const appQuality = buildAppQualityDiagnostics(initialAppQuality, repairAppQuality);
+      // Which experience direction this candidate was generated + repaired against. Bounded enums
+      // and counts only; absent for any build without the contract.
+      const experienceDirection = buildExperienceIntelligenceDiagnostics(spec?.experienceIntelligence);
       return {
+        ...(experienceDirection ? { experienceDirection } : {}),
         ...(optimization && optimization.findings.length ? { optimization } : {}),
         ...(v2.afterRepair ? { renderedVisualEvaluationAfterRepair: v2.afterRepair } : {}),
         ...(v2.regression && v2.regression.compared ? { renderRegression: v2.regression } : {}),

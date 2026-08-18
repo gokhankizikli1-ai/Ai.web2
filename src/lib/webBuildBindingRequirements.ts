@@ -86,6 +86,10 @@ const CTA_RE = /\b([\p{L}][\p{L} -]{0,24}?)?\bc(?:all[- ]to[- ]action|ta)\b/iu;
 const NAV_RE = /\b(?:responsive\s+navigation|mobile\s+(?:nav|menu|navigation)|hamburger|nav(?:igation)?\s+(?:that\s+)?collaps\w*|mobil\s+men[üu]|mobil\s+navigasyon)\b/iu;
 const RESPONSIVE_RE = /\b(?:responsive|mobile[- ]friendly|mobile[- ]responsive|works?\s+on\s+mobile|adapts?\s+to\s+(?:screen|device)|mobil\s+uyumlu|duyarl[ıi])\b/iu;
 const MEDIA_RE = /((?:[\p{L}][\p{L}-]*\s+){0,2})(imagery|photograph(?:y|s)?|photos?|pictures?|images?|gallery|visuals?|g[öo]rsel(?:ler)?|foto[ğg]raf(?:lar)?|resim(?:ler)?|galeri)\b/giu;
+/** Negations that turn a media phrase into a prohibition. Deliberately matched over a short
+ *  window immediately before/inside the media phrase so an unrelated "no" elsewhere in a long
+ *  prompt cannot suppress a genuine media requirement. */
+const MEDIA_NEGATION_RE = /\b(?:no|not|without|avoid|never|zero|don'?t|remove|drop|delete|exclude|omit|skip)\b|g[öo]rselsiz|foto[ğg]rafsız|olmadan|kullanma|kald[ıi]r|[çc][ıi]kar|istemiyorum/iu;
 const MOTION_RE = /\b((?:purposeful|smooth|subtle|tasteful|cinematic|elegant|gentle)\s+)?(motion|animation|animations|animate[d]?|parallax|transitions?|micro[- ]interactions?|animasyon|hareket)\b/iu;
 const PROHIBITION_RE = /\b(?:do\s+not|don'?t|avoid|never|no\s+(?!back[- ]?end|server)|without\s+(?!a\s+back|any\s+back|a\s+server|any\s+server))\s+([\p{L}][\p{L}0-9 &/-]{2,40}?)(?=[.,;!?]|\band\b|\bor\b|$)/giu;
 
@@ -248,7 +252,18 @@ export function deriveBindingRequirements(prompt: string, brief?: BindingBriefLi
     }
 
     // ── 7. Media / imagery. ──
-    MEDIA_RE.lastIndex = 0; const mm = MEDIA_RE.exec(primary);
+    // A NEGATED media phrase ("no images at all", "without photography", "görselsiz") is a
+    // PROHIBITION, not a requirement — section 9 below owns it. `MEDIA_RE` captures up to two
+    // preceding words as a qualifier, so without this guard "no images at all" produced a
+    // REQUIRED media requirement labelled "no images", and the generation request then told the
+    // model: 'REQUIRED media "no images": include real rendered imagery'. Exactly backwards.
+    MEDIA_RE.lastIndex = 0;
+    let mm = MEDIA_RE.exec(primary);
+    while (mm) {
+      const context = primary.slice(Math.max(0, mm.index - 24), mm.index + mm[0].length);
+      if (!MEDIA_NEGATION_RE.test(context)) break;
+      mm = MEDIA_RE.exec(primary);
+    }
     if (mm) {
       const qualifier = (mm[1] || '').replace(TOOL_FILLER_RE, '').trim();
       const label = cleanLabel(`${qualifier} ${mm[2]}`) || 'imagery';

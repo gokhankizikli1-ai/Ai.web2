@@ -923,7 +923,7 @@ describe('surface parity and App Build isolation', () => {
     } as FrontendBuildSpecification;
   }
 
-  it('an OVERSIZED app request sheds nothing — every app authority block survives at any size', () => {
+  it('an OVERSIZED app request is never re-prioritised — every app authority block survives at any size', () => {
     const normal = buildFrontendBuilderRequest(specFor('Build a CRM for a sales team with contacts and deals', 'en', 'app'));
     // The blocks an app request actually carries, captured from the normal-size request so the
     // test cannot pass vacuously if the app block set ever changes.
@@ -935,24 +935,28 @@ describe('surface parity and App Build isolation', () => {
     for (const overshoot of [200, 2_000, 20_000, 60_000]) {
       const req = buildFrontendBuilderRequest(appSpecOvershootingBy(overshoot));
       const ctx = `app overshoot ${overshoot}`;
-      // Over budget — and deliberately NOT shed.
-      expect(req.length, ctx).toBeGreaterThan(SAFE_FRONTEND_BUILDER_REQUEST_CHARS);
+      // NOT re-prioritised: no P1–P4 cut is ever applied to an app request, so every one of these
+      // survives at every size. (An oversized app request now gives back the Experience
+      // Intelligence tiers — and ONLY those — so that layer can never be the reason a request
+      // which used to generate is rejected for size. That is asserted in its own suite.)
       for (const m of appMarkers) expect(req, `${ctx}: ${m}`).toContain(m);
       expect(req, ctx).toContain('BEGIN_FRONTEND_BUILD_SPEC_JSON');
       expect(req, ctx).toContain('SOURCE OUTPUT DISCIPLINE:');
+      expect(req, ctx).toContain('[APP ARCHITECTURE]');
       // Still no web-only design direction anywhere.
       expect(req, ctx).not.toContain('BINDING SITE DESIGN DIRECTION');
       expect(req, ctx).not.toContain('PAGE COMPOSITION STRATEGY');
     }
   });
 
-  it('an oversized app request is byte-identical to the un-shed assembly of the same spec', () => {
-    // Equivalent statement of the same contract without hard-coding the block list: for an app,
-    // the returned request must equal the full assembly, i.e. nothing was dropped.
+  it('an oversized app request keeps more than the web twin of the same spec', () => {
+    // Equivalent statement of the same contract without hard-coding the block list: an app is
+    // never re-prioritised, so it retains strictly more than the shed web assembly of the same
+    // (oversized) spec.
     const spec = appSpecOvershootingBy(30_000);
     const req = buildFrontendBuilderRequest(spec);
     const webTwin = buildFrontendBuilderRequest({ ...spec, buildType: 'web' } as FrontendBuildSpecification);
-    // The web twin of the SAME oversized spec IS shed; the app one is not.
+    // The web twin of the SAME oversized spec IS shed by priority; the app one is not.
     expect(webTwin.length).toBeLessThan(req.length);
     expect(req.length).toBeGreaterThan(SAFE_FRONTEND_BUILDER_REQUEST_CHARS);
   });

@@ -167,10 +167,37 @@ function toId(name: string): string {
 
 /** Classify the app archetype from the prompt (primary) + the derived identity.
  *  The prompt wins: identity sector/business-model only breaks ties. */
+/**
+ * Turkish app-type vocabulary. Korvix treats Turkish as a first-class prompt language, but every
+ * keyword group below was English-only, so a Turkish app request could match nothing and fall
+ * through to `generic-app` — measured: "küçük bir işletme için randevu yönetimi uygulaması"
+ * (an appointment-management app) classified as generic-app, losing the booking playbook, its
+ * shell and its screens. Matched WITHOUT `\b` anchors because JS word boundaries are ASCII-only
+ * and would never fire before "ş"/"ö"/"ğ"; the terms are distinctive enough for substring matching.
+ */
+const APP_TYPE_TR: Array<{ type: AppType; re: RegExp }> = [
+  { type: 'utility', re: /(hesap makinesi|çevirici|dönüştürücü|kronometre|zamanlayıcı|bahşiş hesap)/ },
+  { type: 'crm', re: /(müşteri ilişkileri|satış ekibi|satış hunisi|potansiyel müşteri|cari hesap|müşteri yönetimi)/ },
+  { type: 'analytics-dashboard', re: /(analitik panel|raporlama paneli|metrik panel|iş zekası|gösterge paneli)/ },
+  { type: 'ecommerce-admin', re: /(e-?ticaret yönetim|sipariş yönetim|stok yönetim|mağaza yönetim|ürün yönetim)/ },
+  { type: 'fitness', re: /(antrenman|egzersiz|fitness|spor takip|kilo takip|koşu takip)/ },
+  { type: 'booking', re: /(randevu|rezervasyon|takvim yönetimi|müsaitlik)/ },
+  { type: 'messaging', re: /(mesajlaşma|sohbet uygulaması|gelen kutusu|konuşmalar)/ },
+  { type: 'productivity', re: /(görev yönetimi|yapılacaklar|not uygulaması|proje yönetimi|kanban|planlayıcı)/ },
+  { type: 'media-content', re: /(içerik uygulaması|makale okuma|müzik uygulaması|video uygulaması|podcast uygulaması|haber uygulaması|içerik kütüphane)/ },
+];
+
 export function classifyAppType(prompt: string, identity?: FrontendSpecIdentity): AppType {
   const p = lc(prompt);
   const concept = `${lc(identity?.primaryConcept)} ${lc(identity?.subsector)} ${lc(identity?.siteType)}`;
   const t = `${p} ${concept}`;
+
+  // Turkish vocabulary is checked FIRST, in the same precedence order as the English groups
+  // below (utility first so an intentionally tiny tool is not over-built). A Turkish request
+  // that matches nothing here still falls through to the English groups unchanged.
+  for (const entry of APP_TYPE_TR) {
+    if (entry.re.test(t)) return entry.type;
+  }
 
   // Small utility / intentionally simple — checked first so "simple task app" that
   // is really a utility is not over-built, but a "task manager" still gets more.

@@ -2086,6 +2086,23 @@ export interface FrontendBuildSpecification {
    *  Web Build Quality V2 remains the sole judge/repair authority. */
   designIntelligence?: import('@/lib/webBuildDesignIntelligence').DesignIntelligenceContract;
 
+  /** EXPERIENCE INTELLIGENCE — the SHARED, canonical pre-generation direction for BOTH build
+   *  types: what carries the experience (typography / imagery / interface / editorial /
+   *  catalogue / data / narrative / utility), whether media is genuinely useful at all and
+   *  which media, content density + hierarchy, the content ROLES the product needs, the
+   *  evidence-scoped generic-signature ban, and the OPTIMIZATION STRATEGY (media sizing, lazy
+   *  loading, above-the-fold and motion budgets, effect budgets, mobile simplification,
+   *  dependency policy) together with the binding priority order that forbids an optimization
+   *  from damaging the product. Exactly ONE of its `web` / `app` adapters is populated, so web
+   *  page/hero direction can never reach an app request and app navigation direction can never
+   *  reach a web request. OPTIONAL and additive: present only on fresh builds; absent ⇒ legacy
+   *  behaviour. Derived deterministically from artifacts that already exist (no new model or
+   *  network call). It has NO acceptance surface of its own — Web Build Quality V2 remains the
+   *  sole judge/repair authority; this layer contributes prevention (generation direction), a
+   *  guard policy for the EXISTING deterministic optimization pass, and a bounded preservation
+   *  entry in the EXISTING repair-authority digest. */
+  experienceIntelligence?: import('@/lib/experienceIntelligence').ExperienceIntelligenceContract;
+
   /** Phase (composition) — the BINDING page-composition contract: per-section composition family,
    *  hierarchy, alignment, media role, adjacency rhythm and desktop/mobile order. OPTIONAL and
    *  additive: present only on fresh builds; absent ⇒ legacy behavior (no composition block, no
@@ -2949,6 +2966,14 @@ export interface FrontendBuilderAcceptanceArtifact {
   optimization?: WebBuildOptimizationReport;
   candidateSelection?: WebBuildCandidateSelection;
 
+  /** EXPERIENCE INTELLIGENCE — bounded, secret-free diagnostics of the direction this build was
+   *  generated against (lead / density / hierarchy / media verdict / motion budget / adapter).
+   *  Present only when the contract existed, so every older saved build simply lacks it. Bounded
+   *  enum values and counts only — never source, prompts, provider output or PII. It carries NO
+   *  score and does NOT change `renderedVisualTestStatus`: this layer has no acceptance surface,
+   *  it only records which direction the delivered candidate was built and repaired against. */
+  experienceDirection?: import('@/lib/experienceIntelligence').ExperienceIntelligenceDiagnostics;
+
   /* ── App Build Quality V2 — bounded, secret-free APP-quality diagnostics. Present ONLY for
    *  `buildType='app'` builds that carried an app architecture, so every website build and every
    *  older saved build simply lacks it. Counts / bounded codes / measured widths only — never
@@ -3267,7 +3292,13 @@ export type WebBuildOptimizationCode =
   | 'eager-offscreen-image'
   | 'oversized-remote-image'
   | 'unbounded-effect'
-  | 'redundant-dom-wrapper';
+  | 'redundant-dom-wrapper'
+  /* ── Experience-Intelligence budget codes. Emitted ONLY when an optimization guard policy
+   * is supplied (i.e. an Experience Intelligence contract exists); without one the pass
+   * behaves exactly as it did before, so an old/reopened build is unaffected. ── */
+  | 'above-fold-media-overweight'
+  | 'motion-budget-exceeded'
+  | 'excessive-visual-effects';
 
 export interface WebBuildOptimizationFinding {
   code: WebBuildOptimizationCode;
@@ -3298,6 +3329,13 @@ export interface WebBuildOptimizationReport {
     oversizedImageCount: number;
     unboundedEffectCount: number;
     redundantWrapperCount: number;
+    /* ── Budget measurements. Present only when a guard policy was supplied; `undefined`
+     * on every report produced without one (and on every previously-saved build). ── */
+    aboveFoldMediaCount?: number;
+    animatedLayerCount?: number;
+    blurLayerCount?: number;
+    /** Findings withheld because acting on them would have damaged a protected element. */
+    guardSuppressedCount?: number;
   };
 }
 
