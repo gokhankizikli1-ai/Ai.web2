@@ -148,37 +148,36 @@ function distinctHits(hay: string, re: RegExp): number {
  * and a CLI gets interface evidence and an explicit ban on stock lifestyle imagery.
  * ──────────────────────────────────────────────────────────────────────────── */
 
-interface MediaSignal { kind: MediaKind; re: RegExp; weight: number; label: string }
+/**
+ * REFINEMENT signals only — deliberately NOT a classifier.
+ *
+ * An earlier revision of this module carried a full weighted subject lexicon (restaurant, hotel,
+ * ceramics, magazine, photographer, streaming…). That was a second classification authority
+ * sitting beside the site-archetype and app-type authorities, and it had the failure mode every
+ * duplicate classifier has: it drifted. It was English + Turkish only, so a correctly classified
+ * German request still produced the wrong medium, and every new language would have had to be
+ * taught to it as well as to the real classifiers.
+ *
+ * The medium is now READ from the owning classification (site archetype for web, app type for an
+ * app) and only refined here by the two subjects a classification genuinely cannot express:
+ * whether the request asked for ILLUSTRATION rather than photography, and whether the people
+ * themselves are the subject. Those are properties of the request, not of the category — a
+ * restaurant that wants illustrated dishes and one that wants room photography are the same
+ * archetype.
+ */
+interface MediaRefinement { kind: MediaKind; re: RegExp; label: string }
 
-/** Subjects whose whole point is a real photograph of a real thing. */
-const MEDIA_SUBJECT_EN: MediaSignal[] = [
-  { kind: 'people-photography', re: /\b(photograph(?:y|er|s)?|photo\s+shoot|portrait(?:s|ure)?|wedding\s+photo|headshots?)\b/i, weight: 4, label: 'photography is the subject' },
-  { kind: 'product-photography', re: /\b(handmade|handcrafted|ceramics?|stoneware|pottery|jewell?ery|furniture|apparel|clothing|skincare|candles?|textiles?|prints?\s+shop|product\s+(?:catalog|catalogue|range|line)|our\s+products?)\b/i, weight: 3, label: 'physical products are the offer' },
-  { kind: 'place-photography', re: /\b(restaurant|bistro|caf[eé]|coffee\s+shop|bakery|patisserie|dining|tasting\s+menu|hotel|\binn\b|guest\s?house|\bresort\b|\bspa\b|venue|showroom|interior(?:s)?|salon|studio\s+space|gallery\s+space|farm|vineyard|winery)\b/i, weight: 3, label: 'a real physical place is the offer' },
-  { kind: 'editorial-photography', re: /\b(magazine|publication|journal(?:ism)?|longform|photo\s+essay|documentary|reportage|zine)\b/i, weight: 3, label: 'editorial publishing' },
-  { kind: 'people-photography', re: /\b(team\s+(?:page|section|photos?)|our\s+team|staff\s+photos?|practitioners?|instructors?|therapists?|stylists?)\b/i, weight: 2, label: 'real people are the trust signal' },
-  { kind: 'product-photography', re: /\b(menu|dishes|plates?|cuisine|food\s+photo)\b/i, weight: 2, label: 'the food itself is the offer' },
-  { kind: 'content-thumbnail', re: /\b(streaming|video\s+library|podcast|episodes?|watchlist|shelves?\s+of|browse\s+(?:titles|content)|covers?\s+art)\b/i, weight: 3, label: 'browsable content items' },
-  { kind: 'illustration', re: /\b(illustrat(?:ion|ed|or)|hand[-\s]drawn|mascot|character\s+design|comic|storybook)\b/i, weight: 3, label: 'illustration was asked for' },
-  // An event happens in a real place, with real speakers, on real dates — the venue and the
-  // line-up are the two things an attendee wants to SEE before committing.
-  { kind: 'place-photography', re: /\b(conference|summit|symposium|festival|expo\b|trade\s+show|venue|line-?up|speakers?)\b/i, weight: 2, label: 'a real venue and line-up carry the decision' },
-  // A practice/clinic is a physical place staffed by identifiable people — the two things a
-  // nervous first-time patient checks before booking.
-  { kind: 'place-photography', re: /\b(clinic|(?:dental|medical|veterinary|private|family)\s+practice|surgery|dentist|physio|veterinar|barber|gym|pilates|yoga\s+studio)\b/i, weight: 2, label: 'a physical practice a first-time visitor wants to see' },
-];
-
-const MEDIA_SUBJECT_TR: MediaSignal[] = [
-  { kind: 'people-photography', re: /(fotoğrafçı|fotoğraf çekim|portre|düğün fotoğraf|vesikalık)/i, weight: 4, label: 'fotoğrafçılık konunun kendisi' },
-  { kind: 'product-photography', re: /(el yapımı|seramik|çömlek|takı(?!m)|mobilya|giyim|tekstil|ürün katalo|ürünlerimiz)/i, weight: 3, label: 'fiziksel ürünler sunuluyor' },
-  { kind: 'place-photography', re: /(lokanta|restoran|meyhane|kafe|kahve dükkan|pastane|fırın|otel|pansiyon|tatil köyü|mekan(?!ik)|showroom|kuaför|güzellik salonu|şaraphane|bağcılık)/i, weight: 3, label: 'gerçek bir mekan sunuluyor' },
-  { kind: 'editorial-photography', re: /(dergi|gazete|yayın|köşe yazı|foto röportaj|belgesel)/i, weight: 3, label: 'editoryal yayıncılık' },
-  { kind: 'people-photography', re: /(ekibimiz|kadromuz|eğitmen|uzmanlar)/i, weight: 2, label: 'gerçek kişiler güven unsuru' },
-  { kind: 'product-photography', re: /(menü|yemek|tabak|mutfağı|lezzet)/i, weight: 2, label: 'yemeğin kendisi sunuluyor' },
-  { kind: 'content-thumbnail', re: /(içerik kütüphane|bölümler|podcast|dizi|film arşiv)/i, weight: 3, label: 'gezilebilir içerik' },
-  { kind: 'illustration', re: /(illüstrasyon|çizim|maskot|karakter tasarım)/i, weight: 3, label: 'illüstrasyon istendi' },
-  { kind: 'place-photography', re: /(konferans|zirve|festival|etkinlik|fuar|konuşmacı|mekan)/i, weight: 2, label: 'gerçek mekan ve konuşmacılar kararı taşıyor' },
-  { kind: 'place-photography', re: /(klinik|muayenehane|diş hekim|fizyoterapi|veteriner|spor salonu|güzellik merkezi)/i, weight: 2, label: 'ziyaretçinin görmek istediği fiziksel bir işletme' },
+const MEDIA_REFINEMENTS: MediaRefinement[] = [
+  {
+    kind: 'illustration',
+    re: /\b(illustrat(?:ion|ions|ed|or)|hand[-\s]drawn|hand[-\s]painted|mascot|character\s+design|comic|storybook)\b|illüstrasyon|çizim|maskot|karakter tasarım|illustration(?:en)?|handgezeichnet|maskottchen/i,
+    label: 'the request asked for illustration rather than photography',
+  },
+  {
+    kind: 'people-photography',
+    re: /\b(portrait(?:s|ure)?|headshots?|wedding\s+photo\w*|our\s+team|team\s+(?:page|section|photos?)|staff\s+photos?|the\s+people\s+behind)\b|portre|vesikalık|ekibimiz|kadromuz|düğün fotoğraf|porträt|teamfotos?|unser team|mitarbeiterfotos?/i,
+    label: 'the people themselves are the subject',
+  },
 ];
 
 /** Evidence that real INTERFACE/product proof beats decorative photography. */
@@ -210,7 +209,8 @@ const DENSE_WANTED = /\b(dense|information[-\s]dense|data[-\s]rich|comprehensive
 const SPARSE_WANTED = /\b(minimal|minimalist|simple|clean|sparse|understated|one[-\s]pager?|single\s+page|sade|yalın|basit|minimalist)\b/i;
 
 interface MediaEvidence {
-  scores: Map<MediaKind, number>;
+  /** Subjects the classification cannot express (illustration requested, people are the subject). */
+  refinements: MediaRefinement[];
   labels: string[];
   interfaceHits: number;
   noImage: boolean;
@@ -238,17 +238,16 @@ interface MediaEvidence {
  */
 function readEvidence(subjectText: string, promptText: string): MediaEvidence {
   const text = subjectText;
-  const scores = new Map<MediaKind, number>();
+  const refinements: MediaRefinement[] = [];
   const labels: string[] = [];
-  const add = (kind: MediaKind, weight: number, label: string): void => {
-    scores.set(kind, (scores.get(kind) || 0) + weight);
-    if (labels.length < MAX_EVIDENCE && !labels.includes(label)) labels.push(label);
-  };
-  for (const sig of [...MEDIA_SUBJECT_EN, ...MEDIA_SUBJECT_TR]) {
-    if (matches(text, sig.re)) add(sig.kind, sig.weight, sig.label);
+  for (const sig of MEDIA_REFINEMENTS) {
+    if (matches(text, sig.re)) {
+      refinements.push(sig);
+      if (labels.length < MAX_EVIDENCE) labels.push(sig.label);
+    }
   }
   return {
-    scores,
+    refinements,
     labels,
     interfaceHits: distinctHits(text, INTERFACE_EVIDENCE_EN) + distinctHits(text, INTERFACE_EVIDENCE_TR),
     reading: distinctHits(text, READING_EVIDENCE_EN) + distinctHits(text, READING_EVIDENCE_TR),
@@ -263,14 +262,9 @@ function readEvidence(subjectText: string, promptText: string): MediaEvidence {
   };
 }
 
-/** The strongest media kind by score, with its score. `none` when nothing scored. */
-function topMediaKind(ev: MediaEvidence): { kind: MediaKind; score: number } {
-  let best: MediaKind = 'none';
-  let score = 0;
-  for (const [kind, s] of ev.scores) {
-    if (s > score) { best = kind; score = s; }
-  }
-  return { kind: best, score };
+/** The refined medium, when the request named one the classification cannot express. */
+function refinedMediaKind(ev: MediaEvidence): MediaKind | undefined {
+  return ev.refinements.length ? ev.refinements[0].kind : undefined;
 }
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -299,7 +293,15 @@ const FUNCTIONAL_APP_TYPES = new Set(['crm', 'analytics-dashboard', 'ecommerce-a
 /** App types whose value is content the user consumes. */
 const CONTENT_APP_TYPES = new Set(['media-content']);
 
-function leadFor(input: ExperienceIntelligenceInput, ev: MediaEvidence, top: { kind: MediaKind; score: number }): ExperienceLead {
+/**
+ * What carries the experience.
+ *
+ * Read entirely from the OWNING classification (site archetype + its imagery role for web, app
+ * type for an app) plus the user's own stated appetite. It contains no category lexicon of its
+ * own, which is why a concise English, Turkish or German request that the classifiers understood
+ * identically also gets the same lead here — the languages are taught in ONE place, upstream.
+ */
+function leadFor(input: ExperienceIntelligenceInput, ev: MediaEvidence): ExperienceLead {
   if (ev.noImage) return 'typography-led';
 
   if (input.buildType === 'app') {
@@ -307,10 +309,9 @@ function leadFor(input: ExperienceIntelligenceInput, ev: MediaEvidence, top: { k
     if (t === 'utility') return 'utility-led';
     if (t === 'analytics-dashboard') return 'data-led';
     if (t === 'crm' || t === 'ecommerce-admin') return ev.operational >= 2 ? 'data-led' : 'interface-led';
-    if (t && CONTENT_APP_TYPES.has(t)) return top.score >= 3 ? 'image-led' : 'editorial-led';
+    if (t && CONTENT_APP_TYPES.has(t)) return 'editorial-led';
     if (t === 'messaging' || t === 'productivity' || t === 'booking' || t === 'fitness') return 'interface-led';
-    // generic-app — decide from the request, never from a default playbook.
-    if (top.score >= 4) return 'image-led';
+    // generic-app — the app-type authority found nothing decisive, so read the request's intent.
     if (ev.reading >= 2) return 'editorial-led';
     if (ev.operational >= 2 || ev.interfaceHits >= 2) return 'interface-led';
     return 'utility-led';
@@ -320,24 +321,26 @@ function leadFor(input: ExperienceIntelligenceInput, ev: MediaEvidence, top: { k
   const role = input.designIntelligence?.image?.role;
   const archetype = input.designIntelligence?.archetype;
   const coverage = input.imageCoverage?.mode;
-  // An editorial publication is carried by its writing unless the request is DECISIVELY
-  // photographic (a photo essay, a documentary project). Checked before the generic image-led
-  // rule because the sector's image-led coverage floor would otherwise make every journal a
-  // picture-led site. This never lowers the coverage floor — the media verdict is separate.
-  if (archetype === 'editorial-media' && top.score < 4) return 'editorial-led';
-  if (coverage === 'image-led' || role === 'central' || top.score >= 4) return 'image-led';
+  // An editorial publication is carried by its writing unless a hard media floor says otherwise
+  // (a photo-essay-led request reaches that floor through the binding/coverage authorities).
+  if (archetype === 'editorial-media' && coverage !== 'image-led') return 'editorial-led';
+  if (coverage === 'image-led' || coverage === 'required' || role === 'central') return 'image-led';
   if (ev.reading >= 3) return 'editorial-led';
   if (archetype === 'ecommerce-brand' || archetype === 'marketplace') return 'catalogue-led';
   // A software product's site is carried by the product itself. The archetype authority already
-  // decided this IS a software product, so it does not need to say "API" for the site to be
-  // interface-led — but real photographic subject evidence (a customer story shoot, a physical
-  // product) still outranks it via the `top.score < 3` guard.
+  // decided this IS a software product, so the request need not also say "API".
   const softwareArchetype = archetype === 'developer-product' || archetype === 'saas-software' || archetype === 'ai-product';
-  if ((softwareArchetype || ev.interfaceHits >= 2) && top.score < 3) return 'interface-led';
+  if (softwareArchetype || ev.interfaceHits >= 2) return 'interface-led';
   if (role === 'unnecessary' || ev.sparseWanted) return 'typography-led';
-  if (top.score >= 3) return 'image-led';
+  if (role === 'supporting' && VISUAL_ARCHETYPES.has(String(archetype))) return 'image-led';
   return 'narrative-led';
 }
+
+/** Archetypes whose imagery, when the archetype authority rates it at least SUPPORTING, is
+ *  what the visitor actually came to look at. Consumed, never re-derived. */
+const VISUAL_ARCHETYPES = new Set<string>([
+  'restaurant-hospitality', 'portfolio', 'agency-studio', 'ecommerce-brand', 'event',
+]);
 
 function densityFor(input: ExperienceIntelligenceInput, ev: MediaEvidence, lead: ExperienceLead): ExperienceDensity {
   if (ev.sparseWanted && !ev.denseWanted) return 'sparse';
@@ -455,26 +458,60 @@ const PHOTOGRAPHIC_KINDS: MediaKind[] = [
   'people-photography', 'place-photography',
 ];
 
-/** Section-name evidence for a per-surface media policy (web). Bounded + language-aware. */
-const SURFACE_MEDIA_RE = /\b(hero|gallery|galeri|portfolio|portföy|work|works|projects?|projeler|menu|menü|dishes|products?|ürünler|shop|collection|koleksiyon|team|ekip|about|hakk|space|venue|mekan|rooms?|odalar|showcase|case[-\s]?stud|lookbook|press|stories)\b/i;
-/** Section names that should almost never carry decorative media. */
-const SURFACE_NO_MEDIA_RE = /\b(faq|sss|pricing|fiyat|contact|iletişim|footer|legal|terms|privacy|gizlilik|cta|newsletter|bülten|specs?|comparison|karşılaştırma)\b/i;
+/**
+ * Which SECTIONS carry media.
+ *
+ * Read from the page-composition contract's per-section `mediaRole`, which is the authority that
+ * already decided it. The previous implementation regex-matched section NAMES against an
+ * English + Turkish word list ("hero|gallery|menu|team|galeri|menü|ekip…") — a third
+ * language-dependent lexicon, with no German, deciding something another authority already owned.
+ * Removing it means a new language is taught upstream once and this layer needs no words at all.
+ *
+ * The fallback (a build with no composition contract — a legacy or failed-open spec) is
+ * deliberately conservative: the FIRST section carries the lead visual when one is required, and
+ * nothing else is asserted, rather than guessing from names.
+ */
+function surfacesForWeb(
+  sections: FrontendSpecSection[] | undefined,
+  composition: ExperienceIntelligenceInput['composition'],
+  necessity: MediaNecessity,
+  primaryKind: MediaKind,
+  leadVisual: MediaDirection['leadVisual'],
+): MediaSurfacePolicy[] {
+  const list = (sections || []).slice(0, MAX_SURFACES);
+  const roleById = new Map<string, string>();
+  for (const cs of (composition?.sections || [])) {
+    const id = clipText((cs as { id?: string })?.id, 60);
+    const role = clipText((cs as { mediaRole?: string })?.mediaRole, 20);
+    if (id && role) roleById.set(id, role);
+  }
+  const supporting: SurfaceMediaPolicy = necessity === 'required' ? 'required'
+    : necessity === 'beneficial' ? 'beneficial' : 'optional';
 
-function surfacesForWeb(sections: FrontendSpecSection[] | undefined, necessity: MediaNecessity, primaryKind: MediaKind, leadVisual: MediaDirection['leadVisual']): MediaSurfacePolicy[] {
   const out: MediaSurfacePolicy[] = [];
-  for (const s of (sections || []).slice(0, MAX_SURFACES)) {
+  for (const s of list) {
     const id = clipText(s?.id, 60);
     if (!id) continue;
-    const label = `${id} ${clipText(s?.name, 60)}`;
-    const isFirst = out.length === 0;
-    if (SURFACE_NO_MEDIA_RE.test(label)) { out.push({ id, policy: 'none', kind: 'none' }); continue; }
-    if (isFirst && leadVisual === 'required') { out.push({ id, policy: 'required', kind: primaryKind }); continue; }
-    if (leadVisual === 'forbidden') { out.push({ id, policy: 'none', kind: 'none' }); continue; }
-    if (SURFACE_MEDIA_RE.test(label)) {
-      out.push({ id, policy: necessity === 'required' ? 'required' : necessity === 'beneficial' ? 'beneficial' : 'optional', kind: primaryKind });
+    if (leadVisual === 'forbidden' || necessity === 'unnecessary' || primaryKind === 'none') {
+      out.push({ id, policy: 'none', kind: 'none' });
       continue;
     }
-    out.push({ id, policy: 'none', kind: 'none' });
+    const role = roleById.get(id);
+    if (role === undefined) {
+      // No composition verdict for this section: assert only the lead visual, never a guess.
+      const isFirst = out.length === 0;
+      out.push(isFirst && leadVisual === 'required'
+        ? { id, policy: 'required', kind: primaryKind }
+        : { id, policy: 'none', kind: 'none' });
+      continue;
+    }
+    if (role === 'none') { out.push({ id, policy: 'none', kind: 'none' }); continue; }
+    if (role === 'anchor') {
+      out.push({ id, policy: leadVisual === 'required' ? 'required' : supporting, kind: primaryKind });
+      continue;
+    }
+    // 'support' / 'background' — media belongs here, but it is never the required floor.
+    out.push({ id, policy: supporting === 'required' ? 'beneficial' : supporting, kind: primaryKind });
   }
   return out;
 }
@@ -512,10 +549,56 @@ function bindingMediaCount(binding: FrontendBindingRequirements | undefined): nu
   return (binding?.requirements || []).filter((r) => r && r.kind === 'media' && r.required).length;
 }
 
+/**
+ * The MEDIUM, read from the owning classification.
+ *
+ * These are not a classifier — they are the answer to "given that the archetype authority already
+ * decided this is X, what kind of picture would X's imagery even be?". Every language the product
+ * supports is taught to the archetype authority once; this map never needs to know about any of
+ * them. `general` is deliberately absent: an unresolved archetype falls through to the lead.
+ */
+const MEDIA_KIND_BY_ARCHETYPE: Record<string, MediaKind> = {
+  'restaurant-hospitality': 'place-photography',
+  'ecommerce-brand': 'product-photography',
+  marketplace: 'product-photography',
+  portfolio: 'editorial-photography',
+  'agency-studio': 'editorial-photography',
+  'editorial-media': 'editorial-photography',
+  event: 'place-photography',
+  'local-service': 'place-photography',
+  education: 'people-photography',
+  community: 'people-photography',
+  'professional-services': 'people-photography',
+  'saas-software': 'interface-preview',
+  'developer-product': 'interface-preview',
+  'ai-product': 'interface-preview',
+};
+
+/** The same, for the app-type authority. */
+const MEDIA_KIND_BY_APP_TYPE: Record<string, MediaKind> = {
+  'media-content': 'content-thumbnail',
+  utility: 'iconography',
+  crm: 'interface-preview',
+  'analytics-dashboard': 'interface-preview',
+  'ecommerce-admin': 'interface-preview',
+  productivity: 'interface-preview',
+  messaging: 'interface-preview',
+  booking: 'interface-preview',
+  fitness: 'interface-preview',
+};
+
+/** The archetype authority's imagery ROLE, mapped onto the shared necessity vocabulary. This is
+ *  the primary source for a web build: it is the verdict the archetype authority already made. */
+const NECESSITY_BY_IMAGERY_ROLE: Record<string, MediaNecessity> = {
+  central: 'required',
+  supporting: 'beneficial',
+  incidental: 'optional',
+  unnecessary: 'unnecessary',
+};
+
 function deriveMedia(
   input: ExperienceIntelligenceInput,
   ev: MediaEvidence,
-  top: { kind: MediaKind; score: number },
   lead: ExperienceLead,
   chartsJustified: boolean,
 ): MediaDirection {
@@ -546,7 +629,7 @@ function deriveMedia(
       supportingKinds: ['iconography'],
       forbiddenKinds: [...PHOTOGRAPHIC_KINDS, 'background-media', 'illustration'],
       imageryPriority: 'none',
-      surfaces: isApp ? surfacesForApp(input.appArchitecture, 'unnecessary', 'none') : surfacesForWeb(input.sections, 'unnecessary', 'none', 'forbidden'),
+      surfaces: isApp ? surfacesForApp(input.appArchitecture, 'unnecessary', 'none') : surfacesForWeb(input.sections, input.composition, 'unnecessary', 'none', 'forbidden'),
       strongerWithoutMedia: [
         'The request asked for no photography: carry the first viewport with type, scale, spacing and colour.',
         'Where an image would have gone, use real structured content (a list, a table, a specimen, a quote) — not a gradient placeholder.',
@@ -558,43 +641,54 @@ function deriveMedia(
     };
   }
 
-  /* ── Necessity. The coverage floor and explicit requirements can only RAISE it. ── */
+  /* ── Necessity, read from the OWNING authority for this build type, then raised (never
+   *    lowered) by the hard floors. Web: the archetype authority already rated imagery
+   *    central/supporting/incidental/unnecessary — that IS the verdict, so it is consumed rather
+   *    than recomputed from a second lexicon. App: the app visual adapter already decided whether
+   *    photography suits this product class. ── */
+  const archetype = String(input.designIntelligence?.archetype || '');
+  const appType = String(input.appArchitecture?.appType || '');
   let necessity: MediaNecessity;
-  if (top.score >= 4) necessity = 'required';
-  else if (top.score >= 3) necessity = 'beneficial';
-  else if (top.score >= 1) necessity = 'optional';
-  else necessity = ev.interfaceHits >= 2 ? 'beneficial' : 'optional';
+  if (isApp) {
+    if (appType === 'media-content') necessity = 'beneficial';          // the catalogue IS the product
+    else if (input.appVisual?.imageStrategy?.usePhotography === false) {
+      necessity = ev.interfaceHits >= 1 || lead === 'data-led' || lead === 'interface-led' ? 'beneficial' : 'optional';
+    } else necessity = 'optional';
+  } else {
+    const role = input.designIntelligence?.image?.role;
+    necessity = (role && NECESSITY_BY_IMAGERY_ROLE[role]) || (ev.interfaceHits >= 2 ? 'beneficial' : 'optional');
+  }
 
   if (explicitMedia > 0) necessity = 'required';
   if (!isApp && coverage) {
     if (coverage.mode === 'image-led' || coverage.mode === 'required') necessity = 'required';
     else if (coverage.mode === 'none') necessity = 'unnecessary';
   }
-  if (isApp && input.appArchitecture?.appType === 'media-content' && necessity === 'optional') {
-    // The catalogue is the product: item imagery is not optional decoration here.
-    necessity = 'beneficial';
-  }
-  if (isApp && input.appVisual && input.appVisual.imageStrategy?.usePhotography === false && explicitMedia === 0 && top.score < 4) {
-    // The app visual adapter already decided photography is wrong for this product class.
-    necessity = ev.interfaceHits >= 1 || lead === 'data-led' || lead === 'interface-led' ? 'beneficial' : 'optional';
-  }
 
-  /* ── Primary kind. Evidence first; the LEAD only decides when evidence is silent. ── */
-  let primaryKind: MediaKind = top.score > 0 ? top.kind : 'none';
+  /* ── Primary medium. CLASSIFICATION first (the archetype / app-type authority already knows
+   *    what this product is, in every language it supports), then the LEAD when the
+   *    classification was not decisive, then the request's own REFINEMENT when it named a
+   *    subject no category can express (illustration, or the people themselves). ── */
+  let primaryKind: MediaKind = (isApp ? MEDIA_KIND_BY_APP_TYPE[appType] : MEDIA_KIND_BY_ARCHETYPE[archetype]) || 'none';
   if (primaryKind === 'none') {
-    // A browse-and-consume app's media IS its catalogue: covers and thumbnails attached to real
-    // items. Decided from the app-type authority, not re-classified here.
-    if (isApp && input.appArchitecture?.appType === 'media-content') primaryKind = 'content-thumbnail';
-    else if (lead === 'interface-led' || lead === 'data-led') primaryKind = 'interface-preview';
+    if (lead === 'interface-led' || lead === 'data-led') primaryKind = 'interface-preview';
     else if (lead === 'utility-led') primaryKind = 'iconography';
     else if (lead === 'editorial-led') primaryKind = 'editorial-photography';
     else if (lead === 'catalogue-led') primaryKind = 'product-photography';
-    else if (necessity === 'required') primaryKind = 'hero-photography';
+    else if (lead === 'image-led' || necessity === 'required') primaryKind = 'hero-photography';
     else primaryKind = 'iconography';
   }
-  // An interface-led product keeps interface evidence as the PRIMARY visual even when a
-  // secondary photographic subject scored — the screenshot is the proof, the photo is decor.
-  if (lead === 'interface-led' && ev.interfaceHits >= 3 && top.score < 4) primaryKind = 'interface-preview';
+  const refined = refinedMediaKind(ev);
+  // A refinement never overrides an INTERFACE medium: "our team" on a devtool site adds a team
+  // photo, it does not make the product's evidence photographic.
+  if (refined && primaryKind !== 'interface-preview') primaryKind = refined;
+  // …but an EXPLICIT media requirement extracted from the request does. When the user asks a
+  // software product for photography, the category default (a product screenshot) is no longer
+  // the primary medium — the thing they asked to see is. The subject is not re-classified here:
+  // the binding authority owns what was asked for, and the interface evidence stays as support.
+  if (explicitMedia > 0 && (primaryKind === 'interface-preview' || primaryKind === 'iconography')) {
+    primaryKind = refined || 'hero-photography';
+  }
 
   /* ── Lead visual. An app NEVER inherits a marketing hero requirement. ── */
   let leadVisual: MediaDirection['leadVisual'];
@@ -602,7 +696,12 @@ function deriveMedia(
     const t = input.appArchitecture?.appType;
     const functional = !!t && (FUNCTIONAL_APP_TYPES.has(t) || t === 'utility');
     leadVisual = functional ? 'forbidden' : (necessity === 'required' ? 'required' : 'optional');
-  } else if (coverage?.heroRequired || necessity === 'required') {
+  } else if (coverage?.heroRequired || explicitMedia > 0) {
+    // A REQUIRED lead visual is a hard build instruction, so it may only come from the authority
+    // that also owns the floor and the sourcing: the image-coverage contract, or an explicit
+    // media requirement in the request. A high NECESSITY on its own says imagery matters here —
+    // it must not conscript a hero image that nothing downstream is going to source, which would
+    // leave the builder with a required slot it can only fill with a placeholder.
     leadVisual = 'required';
   } else {
     // A web build without a REQUIRED coverage floor never forces a lead image: the page may
@@ -622,7 +721,7 @@ function deriveMedia(
   const forbidden: MediaKind[] = [];
   if (lead === 'interface-led' || lead === 'data-led' || lead === 'utility-led') {
     forbidden.push('hero-photography', 'background-media');
-    if (top.score < 2) forbidden.push('people-photography');
+    if (!ev.refinements.some((r) => r.kind === 'people-photography')) forbidden.push('people-photography');
   }
   if (isApp) {
     const t = input.appArchitecture?.appType;
@@ -667,7 +766,7 @@ function deriveMedia(
     supportingKinds: boundedList(supporting, 4) as MediaKind[],
     forbiddenKinds: boundedList(forbidden, 5) as MediaKind[],
     imageryPriority,
-    surfaces: isApp ? surfacesForApp(input.appArchitecture, necessity, primaryKind) : surfacesForWeb(input.sections, necessity, primaryKind, leadVisual),
+    surfaces: isApp ? surfacesForApp(input.appArchitecture, necessity, primaryKind) : surfacesForWeb(input.sections, input.composition, necessity, primaryKind, leadVisual),
     strongerWithoutMedia,
     rationale,
     evidence,
@@ -1045,9 +1144,7 @@ export function deriveExperienceIntelligence(
     const text = `${promptText} ${clipText(input.briefText, 400)}`.slice(0, 2000);
 
     const ev = readEvidence(text, promptText);
-    const top = topMediaKind(ev);
-
-    const lead = leadFor(input, ev, top);
+    const lead = leadFor(input, ev);
     const density = densityFor(input, ev, lead);
     const hierarchy = hierarchyFor(lead, density, input.buildType);
     const primaryInteraction = primaryInteractionFor(input, ev, lead);
@@ -1055,7 +1152,7 @@ export function deriveExperienceIntelligence(
     const chartsJustified = chartsJustifiedFor(input, text, ev);
     const cardsAppropriate = cardsAppropriateFor(lead, hierarchy, density);
 
-    const media = deriveMedia(input, ev, top, lead, chartsJustified);
+    const media = deriveMedia(input, ev, lead, chartsJustified);
     const content = deriveContent(input, lead, density, primaryInteraction, media, chartsJustified);
     const optimization = deriveOptimization(input, ev, lead, density, media, chartsJustified);
 

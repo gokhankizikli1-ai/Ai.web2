@@ -403,7 +403,7 @@ const PROMPT_LEXICON: Record<Exclude<SiteArchetype, 'general'>, RegExp> = {
  * the terms are distinctive enough that substring matching is safe.
  */
 const PROMPT_LEXICON_TR: Record<Exclude<SiteArchetype, 'general'>, RegExp> = {
-  'saas-software': /(yazılım (?:ürünü|firması|platformu)|abonelik|kurumsal yazılım|crm|erp|iş akışı (?:aracı|platformu)|yönetim paneli ürünü)/i,
+  'saas-software': /(yazılımı?\b|yazılım (?:ürünü|firması|platformu)|abonelik|kurumsal yazılım|crm|erp|iş akışı (?:aracı|platformu)|yönetim paneli ürünü)/i,
   'developer-product': /(geliştirici|yazılımcı|altyapı|veritabanı|kütüphane|dokümantasyon sitesi|açık kaynak|sunucusuz)/i,
   'ai-product': /(yapay zek[âa]|makine öğrenmesi|üretken yapay|sohbet botu|ai asistan)/i,
   'ecommerce-brand': /(e-?ticaret|online (?:mağaza|satış)|internet mağazası|ürün katalo|sepete ekle|mağazamız|el yapımı ürün)/i,
@@ -421,6 +421,40 @@ const PROMPT_LEXICON_TR: Record<Exclude<SiteArchetype, 'general'>, RegExp> = {
   'editorial-media': /(dergi|gazete|haber sitesi|makale|yayın|köşe yazı|editoryal)/i,
   'landing-campaign': /(açılış sayfası|tanıtım sayfası|bekleme listesi|kampanya sayfası|yakında|erken erişim)/i,
   community: /(dernek|vakıf|topluluk|gönüllü|kulüb?ü?|üyelik|kooperatif)/i,
+};
+
+/**
+ * German lexicon. Symmetric with the Turkish one above, and added for the same measured
+ * reason: the archetype scorer had EN + TR channels only, so a concise German request
+ * matched nothing and degraded to the adaptive fallback — measured: "eine Website für einen
+ * Klempner" → general, "ein Onlineshop für Keramik" → general, "ein Online-Magazin" → general,
+ * while their English and Turkish twins resolved correctly. The few German requests that DID
+ * resolve only did so through accidental English cognates ("Restaurant", "Portfolio", "SaaS"),
+ * which is not coverage — it is luck.
+ *
+ * Matched WITHOUT `\b` anchors, for two reasons: JS word boundaries are ASCII-only and would
+ * never fire before "ä"/"ö"/"ü"/"ß", and German compounds glue the meaningful stem inside a
+ * longer word ("Aufgabenverwaltung", "Verwaltungssoftware", "Fotografie-Portfolio"). Every term
+ * below is therefore chosen to be long and distinctive enough that substring matching is safe —
+ * short, ambiguous stems ("kurs" inside "Diskurs", "art" inside "Artikel") are deliberately
+ * absent, exactly as the Turkish table avoids "ata" and "oku".
+ */
+const PROMPT_LEXICON_DE: Record<Exclude<SiteArchetype, 'general'>, RegExp> = {
+  'saas-software': /(saas|softwareprodukt|software-produkt|softwarefirma|softwareunternehmen|unternehmenssoftware|abonnement|projektmanagement|verwaltungssoftware|workflow-tool|crm|erp)/i,
+  'developer-product': /(entwickler|programmierschnittstelle|open source|quelloffen|datenbank|bibliothek für|dokumentationsseite|infrastruktur|serverlos|kommandozeile)/i,
+  'ai-product': /(künstliche intelligenz|kuenstliche intelligenz|maschinelles lernen|sprachmodell|ki-assistent|ki-produkt|ki-plattform|chatbot|generative ki)/i,
+  'ecommerce-brand': /(onlineshop|online-shop|webshop|onlineladen|e-commerce|warenkorb|produktkatalog|handgemacht|handgefertigt|versandkosten|zum warenkorb)/i,
+  marketplace: /(marktplatz|kleinanzeigen|anbieter und käufer|vermittlungsplattform)/i,
+  'restaurant-hospitality': /(restaurant|gaststätte|wirtshaus|brauhaus|bistro|café|cafe|kaffeehaus|bäckerei|konditorei|speisekarte|feinschmecker|weingut|hotel|pension|gasthof|herberge)/i,
+  portfolio: /(portfolio|fotograf|fotografie|illustratorin|illustrator|künstlerin|künstler|architekturbüro|freiberuflich|arbeitsproben)/i,
+  'agency-studio': /(agentur|werbeagentur|designstudio|kreativagentur|markenagentur|produktionsfirma|digitalagentur)/i,
+  'local-service': /(klempner|installateur|elektriker|friseur|frisör|zahnarzt|arztpraxis|tierarzt|physiotherapie|reinigungsfirma|gebäudereinigung|umzugsunternehmen|schlüsseldienst|malerbetrieb|kfz-werkstatt|autowerkstatt|fitnessstudio|kosmetikstudio|hundesalon)/i,
+  'professional-services': /(kanzlei|rechtsanwalt|rechtsanwältin|steuerberat|wirtschaftsprüf|notariat|unternehmensberatung|versicherungsmakler|ingenieurbüro)/i,
+  event: /(konferenz|kongress|fachmesse|festival|tagung|symposium|veranstaltungsreihe|eintrittskarten|referentinnen|referenten|programm und redner)/i,
+  education: /(lehrplan|kursangebot|online-kurs|onlinekurs|weiterbildung|akademie|hochschule|universität|studierende|anmeldung zum kurs|bildungsangebot)/i,
+  'editorial-media': /(magazin|zeitschrift|zeitung|redaktion|journalismus|reportage|feuilleton|kolumne|nachrichtenseite)/i,
+  'landing-campaign': /(landingpage|landing-page|kampagnenseite|warteliste|demnächst verfügbar|vorab-zugang|produktstart)/i,
+  community: /(verein|gemeinnützig|stiftung|ehrenamt|mitgliedschaft|genossenschaft|nachbarschaftsinitiative)/i,
 };
 
 /** Structural votes from the ALREADY-derived identity (never re-derived here). A sector
@@ -533,10 +567,16 @@ function scoreArchetypes(input: DesignIntelligenceInput): ArchetypeScore[] {
     acc.set(a, cur);
   };
 
-  // Channel 1 — prompt lexicon (what the user asked for), English + Turkish.
+  // Channel 1 — prompt lexicon (what the user asked for), English + Turkish + German.
+  // All three are matched against EVERY request, never selected by the declared language: that
+  // language is inferred, and a request routinely mixes languages ("bir SaaS landing page yap",
+  // "eine Website für ein Bistro"). Selecting one channel by a possibly-wrong inference would
+  // blind the strongest evidence source the scorer has.
   const promptBacked = new Set<SiteArchetype>();
   for (const key of Object.keys(PROMPT_LEXICON) as Array<Exclude<SiteArchetype, 'general'>>) {
-    const n = hits(promptText, PROMPT_LEXICON[key]) + hits(promptText, PROMPT_LEXICON_TR[key]);
+    const n = hits(promptText, PROMPT_LEXICON[key])
+      + hits(promptText, PROMPT_LEXICON_TR[key])
+      + hits(promptText, PROMPT_LEXICON_DE[key]);
     if (n <= 0) continue;
     promptBacked.add(key);
     const capped = Math.min(n, 3);

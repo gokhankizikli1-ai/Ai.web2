@@ -164,6 +164,38 @@ describe('optimization guard — budgets', () => {
     expect(issues[0].repairInstruction.length).toBeLessThanOrEqual(360);
   });
 
+  it('above-the-fold PRODUCT-DEFINING media is never removed or deferred, only resized', () => {
+    // The exact scenario the priority order exists for: a required lead image sitting in the
+    // first viewport, on a page the optimizer would otherwise want to make lighter.
+    const files = [
+      f('src/sections/Hero.tsx',
+        '<section><img src="https://cdn/hero.jpg?w=3200" data-korvix-image-slot="korvix-coverage-hero" alt="the dining room" />'
+        + '<img src="https://cdn/b.jpg" data-korvix-image-slot="korvix-coverage-menu" alt="the menu" />'
+        + '<a href="#book">Book a table</a></section>'),
+    ];
+    const pol = policy({
+      protectedMediaSlotIds: ['korvix-coverage-hero', 'korvix-coverage-menu'],
+      firstViewportPath: 'src/sections/Hero.tsx',
+      leadVisualRequired: true,
+    });
+    const report = analyzeOptimization(files, { policy: pol });
+    // Nothing proposes deferring either required image…
+    expect(report.findings.some((x) => x.code === 'eager-offscreen-image')).toBe(false);
+    expect(report.measured.guardSuppressedCount).toBeGreaterThan(0);
+    // …the over-weight first viewport is reported but explicitly forbids deletion…
+    const overweight = report.findings.find((x) => x.code === 'above-fold-media-overweight');
+    expect(overweight?.suggestion).toMatch(/Do NOT delete a required image/);
+    // …and the oversized source is still resized, which is the safe half of the fix.
+    expect(report.findings.find((x) => x.code === 'oversized-remote-image')?.suggestion)
+      .toMatch(/Keep the same image/);
+    // The single instruction leads with the protection.
+    const [issue] = optimizationToReviewIssues(report, pol);
+    expect(issue.repairInstruction.startsWith('Do NOT remove or weaken')).toBe(true);
+    for (const x of report.findings) {
+      expect(x.suggestion, x.code).not.toMatch(/remove (the )?(image|photo|hero|cta|nav)/i);
+    }
+  });
+
   it('fails open on unusable input', () => {
     expect(analyzeOptimization(undefined, { policy: policy() }).findings).toEqual([]);
     expect(analyzeOptimization([], { policy: policy() }).findings).toEqual([]);

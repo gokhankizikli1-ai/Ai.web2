@@ -112,6 +112,31 @@ const IMAGE_LED_SECTORS = new Set<string>([
 // Software/product concepts that legitimately prefer CSS/SVG/product-UI mockups → not forced.
 const SOFTWARE_SECTORS = new Set<string>(['ai-saas']);
 
+/**
+ * ARCHETYPE channel — additive, and the reason it exists.
+ *
+ * This module resolved its floor from `identity.sector` alone. That sector classifier has the
+ * weakest multilingual coverage of the three request-understanding authorities, so a correctly
+ * understood request could still land here as an unknown sector and keep an `optional` floor even
+ * though its imagery is product-defining. Measured, before this channel: "bir meyhane sitesi" (a
+ * Turkish tavern) → sector unresolved → optional; "an online shop selling ceramics" → sector
+ * `marketplace` (which is not in the image-led set) → optional.
+ *
+ * The site-archetype authority classified all of those correctly. So the floor now reads BOTH:
+ * the sector set is untouched, and the archetype set can only ever RAISE the floor. Nothing here
+ * re-classifies anything — this is the existing archetype verdict, consumed.
+ *
+ * Deliberately narrow: only archetypes whose imagery IS the offer. An event, a school or a
+ * community site benefits from photography but does not have it by definition, and forcing a
+ * floor there would push a build toward stock imagery it should not need.
+ */
+const IMAGE_LED_ARCHETYPES = new Set<string>([
+  'restaurant-hospitality',   // the room and the food ARE the product
+  'portfolio',                // the work is the argument
+  'agency-studio',            // the work is the argument
+  'ecommerce-brand',          // the goods must be seen to be bought
+]);
+
 const NOPHOTO_RE = /\b(?:no|without|zero)\s+(?:photo|photos|photography|image|images|imagery|picture|pictures)\b|\b(?:typography|text|type|copy)[\s-]*only\b|\bpurely\s+typographic\b|\bno\s+stock\s+(?:photo|image)/i;
 const IMAGE_LED_DIRECTION_RE = /\b(?:image[- ]led|photo[- ]led|photography[- ]led|editorial\s+photography|full[- ]bleed\s+(?:photo|image)|immersive\s+(?:photo|imagery)|photo[- ]forward|visually\s+rich\s+photography|destination\s+photography|hero\s+photography)\b/i;
 
@@ -199,12 +224,19 @@ export function deriveImageCoverageRequirement(spec: FrontendBuildSpecification 
   const directionText = `${ds.selectedVisualDirection || ''} ${ds.visualSignature || ''} ${ds.heroComposition || ''} ${ds.designThesis || ''} ${spec.assets?.strategy || ''} ${spec.assets?.visualLanguage || ''}`;
   const imageLedDirection = IMAGE_LED_DIRECTION_RE.test(directionText) || IMAGE_LED_DIRECTION_RE.test(promptText);
   const imageLedSector = IMAGE_LED_SECTORS.has(sector);
+  // The archetype authority's verdict (see IMAGE_LED_ARCHETYPES). Additive: it can raise the
+  // floor where the sector classifier missed, never lower one the sector already set.
+  const archetype = (spec.designIntelligence?.archetype || '') as string;
+  const imageLedArchetype = IMAGE_LED_ARCHETYPES.has(archetype);
+  // An archetype whose imagery role was explicitly derived as UNNECESSARY never gets a floor
+  // from this channel, even if its archetype is in the set above — the request wins.
+  const archetypeSuppressesImagery = spec.designIntelligence?.image?.role === 'unnecessary';
   const softwareSector = SOFTWARE_SECTORS.has(sector);
 
   // Resolve mode from the strongest applicable authority.
   let mode: ImageCoverageMode = 'optional';
   if (mediaTargets.length > 0) mode = 'required';
-  if (imageLedSector || imageLedDirection) mode = 'image-led';
+  if (imageLedSector || imageLedDirection || (imageLedArchetype && !archetypeSuppressesImagery)) mode = 'image-led';
   // Software/product concepts prefer UI mockups; do NOT force stock unless media was explicit.
   if (softwareSector && mediaTargets.length === 0 && !imageLedDirection) mode = 'optional';
 

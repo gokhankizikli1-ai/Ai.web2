@@ -591,6 +591,54 @@ describe('experience intelligence — request integration', () => {
     expect(shed.includes(renderExperienceAntiPatternBlock(xi).join('\n').trim())).toBe(false);
   });
 
+  it('the MEDIA VERDICT survives every level of request truncation', () => {
+    const spec = specFor(WEB_PROMPTS.restaurant);
+    const xi = spec.experienceIntelligence;
+    expect(xi?.media.necessity).toBe('required');
+    // A request bloated far past the safe budget, so the shedder reaches its deepest cut.
+    const bloated: FrontendBuildSpecification = {
+      ...spec,
+      architecture: {
+        ...spec.architecture,
+        sections: spec.architecture.sections.map((s) => ({
+          ...s, purpose: 'x'.repeat(20000), interactionHints: Array.from({ length: 8 }, () => 'y'.repeat(9000)),
+        })),
+      },
+    };
+    const shed = buildFrontendBuilderRequest(bloated);
+    // P1 survives every cut: whether media is needed at all is a product truth, not decoration.
+    expect(shed).toMatch(/MEDIA VERDICT — imagery is REQUIRED for this product/);
+    expect(shed).toContain('Primary medium: place photography');
+    // And the verdict is early enough in its own block that the block's char ceiling cannot
+    // truncate it either — asserted against the rendered block, not just the request.
+    const core = renderExperienceCoreBlock(xi).join('\n');
+    expect(core.indexOf('MEDIA VERDICT')).toBeGreaterThan(-1);
+    expect(core.indexOf('MEDIA VERDICT')).toBeLessThan(core.length / 2);
+  });
+
+  it('the rendered direction cannot grow with the prompt — a 40k prompt costs the same', () => {
+    const long = `${WEB_PROMPTS.restaurant} ${'and also please make sure it is very good indeed. '.repeat(800)}`;
+    expect(long.length).toBeGreaterThan(38000);
+    const shortSpec = specFor(WEB_PROMPTS.restaurant);
+    const longSpec = specFor(long);
+    const size = (spec: FrontendBuildSpecification): number => {
+      const xi = spec.experienceIntelligence;
+      return [
+        renderExperienceCoreBlock(xi).join('\n'),
+        renderWebExperienceBlock(xi?.web).join('\n'),
+        renderExperienceOptimizationBlock(xi).join('\n'),
+        renderExperienceAntiPatternBlock(xi).join('\n'),
+      ].reduce((n, t) => n + t.length, 0);
+    };
+    // Every field is clipped and every list capped, so a 40k prompt buys no extra direction.
+    expect(size(longSpec)).toBeLessThanOrEqual(EXPERIENCE_INTELLIGENCE_WEB_CHAR_CEILING);
+    expect(Math.abs(size(longSpec) - size(shortSpec))).toBeLessThan(400);
+    // No single rendered line is unbounded either.
+    for (const line of renderExperienceCoreBlock(longSpec.experienceIntelligence)) {
+      expect(line.length, line.slice(0, 80)).toBeLessThanOrEqual(400);
+    }
+  });
+
   it('quality tasks never receive the full contract — the bounded digest carries it instead', () => {
     const spec = specFor(WEB_PROMPTS.restaurant);
     const review = buildFrontendBuilderReviewRequest(spec, [{ path: 'src/App.tsx', content: 'x', language: 'tsx' } as never], 'initial');

@@ -261,6 +261,9 @@ export interface ExperienceIntelligenceInput {
   designIntelligence?: DesignIntelligenceContract;
   imageCoverage?: ImageCoverageRequirement;
   imageSlots?: FrontendSpecImageSlot[];
+  /** The page-composition contract. Read ONLY for its per-section `mediaRole` — the authority
+   *  that already decided which sections carry media. Consumed, never re-derived. */
+  composition?: import('@/lib/webBuildComposition').CompositionContract;
   /** Planned section component files — protected from "delete the dead file" advice. */
   requiredComponentFiles?: string[];
 

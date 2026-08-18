@@ -777,6 +777,26 @@ export function deriveFrontendBuildSpecification(input: FrontendBuildSpecInput):
       if (bindingRequirements) built.bindingRequirements = bindingRequirements;
     } catch { /* never block the build on requirement extraction */ }
 
+    // Design Intelligence V3 — the SITE ARCHETYPE + brand character + design direction
+    // contract. Derived BEFORE composition so the composition authority can consume its
+    // archetype steer (it stays the family owner; we only supply archetype-aware defaults).
+    // WEB ONLY: never derived for an app build, so an App Build specification and request
+    // are byte-for-byte unchanged. Deterministic, no model/network call, fail-open.
+    // NOTE ON ORDER: this now runs BEFORE image coverage (it used to run after). The coverage
+    // floor consumes the archetype verdict, and the archetype authority reads only the prompt,
+    // identity and sections — none of which coverage produces — so there is no cycle.
+    const isAppBuild = built.buildType === 'app';
+    if (!isAppBuild) try {
+      const designIntelligence = deriveDesignIntelligence({
+        prompt: built.prompt,
+        identity: built.identity,
+        sections: built.architecture?.sections || [],
+        briefText: [brief.coreIdea, brief.type, brief.audience, brief.style, brief.goal, brief.visitorIntent]
+          .filter((x): x is string => typeof x === 'string' && !!x.trim()).join(' '),
+      });
+      if (designIntelligence) built.designIntelligence = designIntelligence;
+    } catch { /* never block the build on design-intelligence derivation */ }
+
     // Phase (image coverage) — attach the authoritative semantic image-coverage requirement
     // (deterministic; no model call; fail-open). Derived from binding media, sector/vertical,
     // image-led direction and explicit no-photo signals. FRESH build only — reopened builds keep
@@ -811,23 +831,7 @@ export function deriveFrontendBuildSpecification(input: FrontendBuildSpecInput):
     // skipped so App Build never inherits marketing-page assumptions. The NEUTRAL
     // contracts (visualSystem, experienceQuality, executionObligations, image
     // coverage) still run — they carry no scroll/hero assumptions.
-    const isApp = built.buildType === 'app';
-
-    // Design Intelligence V3 — the SITE ARCHETYPE + brand character + design direction
-    // contract. Derived BEFORE composition so the composition authority can consume its
-    // archetype steer (it stays the family owner; we only supply archetype-aware defaults).
-    // WEB ONLY: never derived for an app build, so an App Build specification and request
-    // are byte-for-byte unchanged. Deterministic, no model/network call, fail-open.
-    if (!isApp) try {
-      const designIntelligence = deriveDesignIntelligence({
-        prompt: built.prompt,
-        identity: built.identity,
-        sections: built.architecture?.sections || [],
-        briefText: [brief.coreIdea, brief.type, brief.audience, brief.style, brief.goal, brief.visitorIntent]
-          .filter((x): x is string => typeof x === 'string' && !!x.trim()).join(' '),
-      });
-      if (designIntelligence) built.designIntelligence = designIntelligence;
-    } catch { /* never block the build on design-intelligence derivation */ }
+    const isApp = isAppBuild;
 
     if (isApp) {
       try {
@@ -1050,6 +1054,9 @@ export function deriveFrontendBuildSpecification(input: FrontendBuildSpecInput):
         designIntelligence: built.designIntelligence,
         imageCoverage: built.imageCoverage,
         imageSlots: built.assets?.imageSlots,
+        // The composition authority's per-section media role — the owner of "which sections carry
+        // media". Consumed so this layer needs no section-name lexicon of its own.
+        composition: isApp ? undefined : built.composition,
         // The planned surface component files an optimization may never propose deleting. A web
         // spec lists them as section components; an app spec puts its SCREEN components in
         // `requiredFiles` (its `requiredSectionComponentFiles` is empty by design), so the app
