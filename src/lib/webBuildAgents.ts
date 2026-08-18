@@ -2086,6 +2086,23 @@ export interface FrontendBuildSpecification {
    *  Web Build Quality V2 remains the sole judge/repair authority. */
   designIntelligence?: import('@/lib/webBuildDesignIntelligence').DesignIntelligenceContract;
 
+  /** EXPERIENCE INTELLIGENCE — the SHARED, canonical pre-generation direction for BOTH build
+   *  types: what carries the experience (typography / imagery / interface / editorial /
+   *  catalogue / data / narrative / utility), whether media is genuinely useful at all and
+   *  which media, content density + hierarchy, the content ROLES the product needs, the
+   *  evidence-scoped generic-signature ban, and the OPTIMIZATION STRATEGY (media sizing, lazy
+   *  loading, above-the-fold and motion budgets, effect budgets, mobile simplification,
+   *  dependency policy) together with the binding priority order that forbids an optimization
+   *  from damaging the product. Exactly ONE of its `web` / `app` adapters is populated, so web
+   *  page/hero direction can never reach an app request and app navigation direction can never
+   *  reach a web request. OPTIONAL and additive: present only on fresh builds; absent ⇒ legacy
+   *  behaviour. Derived deterministically from artifacts that already exist (no new model or
+   *  network call). It has NO acceptance surface of its own — Web Build Quality V2 remains the
+   *  sole judge/repair authority; this layer contributes prevention (generation direction), a
+   *  guard policy for the EXISTING deterministic optimization pass, and a bounded preservation
+   *  entry in the EXISTING repair-authority digest. */
+  experienceIntelligence?: import('@/lib/experienceIntelligence').ExperienceIntelligenceContract;
+
   /** Phase (composition) — the BINDING page-composition contract: per-section composition family,
    *  hierarchy, alignment, media role, adjacency rhythm and desktop/mobile order. OPTIONAL and
    *  additive: present only on fresh builds; absent ⇒ legacy behavior (no composition block, no
@@ -2949,6 +2966,14 @@ export interface FrontendBuilderAcceptanceArtifact {
   optimization?: WebBuildOptimizationReport;
   candidateSelection?: WebBuildCandidateSelection;
 
+  /** EXPERIENCE INTELLIGENCE — bounded, secret-free diagnostics of the direction this build was
+   *  generated against (lead / density / hierarchy / media verdict / motion budget / adapter).
+   *  Present only when the contract existed, so every older saved build simply lacks it. Bounded
+   *  enum values and counts only — never source, prompts, provider output or PII. It carries NO
+   *  score and does NOT change `renderedVisualTestStatus`: this layer has no acceptance surface,
+   *  it only records which direction the delivered candidate was built and repaired against. */
+  experienceDirection?: import('@/lib/experienceIntelligence').ExperienceIntelligenceDiagnostics;
+
   /* ── App Build Quality V2 — bounded, secret-free APP-quality diagnostics. Present ONLY for
    *  `buildType='app'` builds that carried an app architecture, so every website build and every
    *  older saved build simply lacks it. Counts / bounded codes / measured widths only — never
@@ -3267,7 +3292,13 @@ export type WebBuildOptimizationCode =
   | 'eager-offscreen-image'
   | 'oversized-remote-image'
   | 'unbounded-effect'
-  | 'redundant-dom-wrapper';
+  | 'redundant-dom-wrapper'
+  /* ── Experience-Intelligence budget codes. Emitted ONLY when an optimization guard policy
+   * is supplied (i.e. an Experience Intelligence contract exists); without one the pass
+   * behaves exactly as it did before, so an old/reopened build is unaffected. ── */
+  | 'above-fold-media-overweight'
+  | 'motion-budget-exceeded'
+  | 'excessive-visual-effects';
 
 export interface WebBuildOptimizationFinding {
   code: WebBuildOptimizationCode;
@@ -3298,6 +3329,13 @@ export interface WebBuildOptimizationReport {
     oversizedImageCount: number;
     unboundedEffectCount: number;
     redundantWrapperCount: number;
+    /* ── Budget measurements. Present only when a guard policy was supplied; `undefined`
+     * on every report produced without one (and on every previously-saved build). ── */
+    aboveFoldMediaCount?: number;
+    animatedLayerCount?: number;
+    blurLayerCount?: number;
+    /** Findings withheld because acting on them would have damaged a protected element. */
+    guardSuppressedCount?: number;
   };
 }
 
@@ -3703,7 +3741,7 @@ export type ConceptCategory =
  *  and deterministic — never a per-prompt hack. */
 const CONCEPT_KEYWORDS: Array<{ cat: ConceptCategory; weight: number; words: string[] }> = [
   { cat: 'archive', weight: 3, words: ['archive', 'museum', 'catalogue', 'catalog', 'collection', 'library', 'exhibit', 'manuscript', 'heritage', 'provenance', 'artifact', 'ottoman', 'historical', 'digital archive', 'arşiv', 'müze', 'koleksiyon', 'kütüphane', 'elyazma', 'osmanlı', 'tarihî', 'tarihi eser'] },
-  { cat: 'hospitality', weight: 3, words: ['restaurant', 'restoran', 'cafe', 'kafe', 'menu', 'menü', 'reservation', 'rezervasyon', 'dining', 'bistro', 'brasserie', 'bakery', 'fırın', 'catering', 'hotel', 'otel', 'coffee shop', 'lokanta', 'brunch', 'patisserie'] },
+  { cat: 'hospitality', weight: 3, words: ['restaurant', 'restoran', 'cafe', 'kafe', 'menu', 'menü', 'reservation', 'rezervasyon', 'dining', 'bistro', 'brasserie', 'bakery', 'fırın', 'catering', 'hotel', 'otel', 'coffee shop', 'lokanta', 'meyhane', 'ocakbaşı', 'kebapçı', 'brunch', 'patisserie', 'gaststätte', 'wirtshaus', 'speisekarte', 'bäckerei', 'konditorei', 'kaffeehaus'] },
   // Travel/tourism OPERATOR businesses (a travel company/agency/tour operator/journey
   // designer selling trips & itineraries) — NOT a hotel/restaurant venue (hospitality) and
   // NOT travel software. Strong, unambiguous travel nouns + phrases only; deliberately no
@@ -4882,26 +4920,50 @@ const VERTICAL_KEYWORDS: Record<IndustrySector, readonly string[]> = {
   // NOTE: tokens ending with '*' are Unicode-safe PREFIX/stem matches (plural /
   // inflected forms). Short, ambiguous words ('gold', 'gem', 'ring', 'car', 'spa')
   // are deliberately kept EXACT to avoid false positives.
-  jewelry: ['jewelry', 'jewellery', 'jeweler*', 'jeweller*', 'goldsmith', 'gold', 'diamond', 'diamonds', 'gemstone', 'gem', 'ring', 'rings', 'necklace', 'bracelet', 'earring', 'earrings', 'pendant', 'engagement ring', 'wedding ring', 'bridal jewelry', 'watch', 'watches', 'karat', 'carat', 'mücevher', 'kuyumcu*', 'takı', 'altın', 'pırlanta', 'elmas', 'yüzük', 'kolye', 'bilezik', 'küpe', 'gümüş', 'alyans', 'saat'],
-  landscaping: ['landscaping', 'landscape', 'landscaper*', 'garden', 'gardens', 'gardening', 'lawn', 'hardscape', 'hardscaping', 'patio', 'terrace', 'nursery', 'horticulture', 'irrigation', 'yard', 'outdoor', 'peyzaj', 'peyzajcı*', 'bahçe', 'bahçıvan*', 'çim', 'çevre düzenleme', 'yeşil alan', 'sulama', 'teras'],
-  'automotive-dealership': ['dealer*', 'car dealer*', 'auto dealer*', 'used car', 'used cars', 'second-hand car', 'pre-owned', 'vehicle', 'vehicles', 'automotive', 'test drive', 'showroom', 'motors', 'oto galeri', 'galeri', 'galerici*', 'araba', 'araç', 'ikinci el araç', 'sıfır araç', 'otomotiv', 'test sürüşü', 'vasıta'],
+  jewelry: ['jewelry', 'jewellery', 'jeweler*', 'jeweller*', 'goldsmith', 'gold', 'diamond', 'diamonds', 'gemstone', 'gem', 'ring', 'rings', 'necklace', 'bracelet', 'earring', 'earrings', 'pendant', 'engagement ring', 'wedding ring', 'bridal jewelry', 'watch', 'watches', 'karat', 'carat', 'mücevher', 'kuyumcu*', 'takı', 'altın', 'pırlanta', 'elmas', 'yüzük', 'kolye', 'bilezik', 'küpe', 'gümüş', 'alyans', 'saat',
+    // German
+    'schmuck', 'schmuckstück*', 'juwelier*', 'goldschmied*', 'trauring*', 'verlobungsring*', 'edelstein*', 'diamant*', 'halskette*', 'ohrring*', 'armband*'],
+  landscaping: ['landscaping', 'landscape', 'landscaper*', 'garden', 'gardens', 'gardening', 'lawn', 'hardscape', 'hardscaping', 'patio', 'terrace', 'nursery', 'horticulture', 'irrigation', 'yard', 'outdoor', 'peyzaj', 'peyzajcı*', 'bahçe', 'bahçıvan*', 'çim', 'çevre düzenleme', 'yeşil alan', 'sulama', 'teras',
+    // German
+    'garten', 'gartenbau', 'gartengestaltung', 'gärtner*', 'landschaftsbau', 'landschaftsgärtner*', 'rasen', 'bewässerung', 'terrasse'],
+  'automotive-dealership': ['dealer*', 'car dealer*', 'auto dealer*', 'used car', 'used cars', 'second-hand car', 'pre-owned', 'vehicle', 'vehicles', 'automotive', 'test drive', 'showroom', 'motors', 'oto galeri', 'galeri', 'galerici*', 'araba', 'araç', 'ikinci el araç', 'sıfır araç', 'otomotiv', 'test sürüşü', 'vasıta',
+    // German
+    'autohaus', 'autohändler*', 'gebrauchtwagen', 'neuwagen', 'fahrzeug*', 'probefahrt', 'kfz-handel'],
   // Generic manufacturing stems ('manufactur*', 'üretici*', 'imalat*') are NOT
   // furniture-specific — they live ONLY in the furniture-manufacturer SUBSECTOR
   // rule, so "Medical device manufacturer" never scores as furniture. The sector is
   // identified by furniture-specific words; manufacturing words only refine the
   // subsector once furniture is already the sector.
-  'furniture-interiors': ['furniture', 'furnishings', 'sofa', 'couch', 'armchair', 'cabinet', 'wardrobe', 'kitchen', 'interior', 'interiors', 'interior design', 'interior designer', 'decor', 'decoration', 'upholstery', 'joinery', 'carpentry', 'mobilya', 'mobilyacı*', 'koltuk', 'kanepe', 'dolap', 'mutfak', 'iç mimar', 'iç mimari', 'dekorasyon', 'ahşap', 'marangoz*', 'döşeme'],
-  'restaurant-hospitality': ['restaurant*', 'cafe*', 'café', 'bistro', 'brasserie', 'diner', 'eatery', 'menu', 'dining', 'cuisine', 'bakery', 'patisserie', 'pastry', 'catering', 'coffee shop', 'chef', 'fine dining', 'restoran*', 'lokanta', 'kafe*', 'menü', 'mutfak', 'pastane', 'fırın', 'yemek', 'şef', 'kahve'],
+  'furniture-interiors': ['furniture', 'furnishings', 'sofa', 'couch', 'armchair', 'cabinet', 'wardrobe', 'kitchen', 'interior', 'interiors', 'interior design', 'interior designer', 'decor', 'decoration', 'upholstery', 'joinery', 'carpentry', 'mobilya', 'mobilyacı*', 'koltuk', 'kanepe', 'dolap', 'mutfak', 'iç mimar', 'iç mimari', 'dekorasyon', 'ahşap', 'marangoz*', 'döşeme',
+    // German
+    'möbel', 'möbelhaus', 'schreiner*', 'tischler*', 'inneneinrichtung', 'innenarchitekt*', 'einrichtungs*', 'polsterei', 'küchenstudio'],
+  'restaurant-hospitality': ['restaurant*', 'cafe*', 'café', 'bistro', 'brasserie', 'diner', 'eatery', 'menu', 'dining', 'cuisine', 'bakery', 'patisserie', 'pastry', 'catering', 'coffee shop', 'chef', 'fine dining', 'restoran*', 'lokanta', 'meyhane*', 'ocakbaşı', 'kebapçı*', 'kahvaltı salonu', 'kafe*', 'menü', 'mutfak', 'pastane', 'fırın', 'yemek', 'şef', 'kahve',
+    // German
+    'gaststätte', 'wirtshaus', 'brauhaus', 'gasthof', 'kaffeehaus', 'bäckerei', 'konditorei', 'speisekarte', 'weingut', 'feinschmecker*', 'hotel', 'pension', 'herberge'],
   // Travel/tourism OPERATOR businesses. Strong, specific travel nouns/phrases + stems; NO bare
   // 'journey'/'experience' (metaphor-prone in SaaS). 'travel' as a stem covers travel/traveller/
   // travelling; short/ambiguous words stay exact.
-  'travel-tourism': ['travel*', 'traveler*', 'traveller*', 'tourism', 'tourist*', 'tour operator*', 'tour', 'tours', 'itinerary', 'itineraries', 'itinerary planner', 'destination', 'destinations', 'destination specialist', 'vacation', 'vacations', 'holiday', 'holidays', 'holiday package', 'getaway', 'getaways', 'excursion*', 'safari*', 'cruise', 'cruises', 'sightseeing', 'travel agency', 'travel agencies', 'travel agent*', 'travel advisor*', 'travel concierge', 'bespoke travel', 'luxury travel', 'guided tour*', 'tour package*', 'trip', 'trips', 'trip planner', 'journey designer', 'personalized journeys', 'personalised journeys', 'honeymoon*', 'expedition*', 'seyahat', 'tur', 'turlar', 'tur operatörü*', 'seyahat acentesi', 'seyahat acentası', 'seyahat danışman*', 'gezi', 'gezi turu', 'tatil', 'tatil paketi', 'tur paketi', 'turizm', 'tur rehber*', 'rota planı'],
-  'real-estate': ['real estate', 'real-estate', 'realtor*', 'realty', 'property', 'properties', 'listing', 'listings', 'apartment', 'apartments', 'condo', 'housing', 'rental', 'rentals', 'lease', 'broker*', 'estate agent*', 'floor plan', 'emlak', 'emlakçı*', 'gayrimenkul', 'konut', 'daire', 'satılık', 'kiralık', 'arsa', 'müteahhit', 'kat planı'],
-  'clinic-healthcare': ['clinic*', 'dental', 'dentist*', 'dentistry', 'orthodontic', 'doctor*', 'physician*', 'medical', 'healthcare', 'aesthetic', 'dermatolog*', 'physiotherapy', 'physio', 'therapy', 'therapist*', 'psychology', 'psychologist*', 'psychiatry', 'treatment', 'patient', 'polyclinic', 'klinik*', 'diş', 'diş hekimi', 'doktor*', 'tıp', 'sağlık', 'estetik', 'dermatoloji', 'fizyoterapi', 'terapi', 'psikolog', 'tedavi', 'hasta', 'poliklinik', 'muayenehane'],
-  'ai-saas': ['ai', 'artificial intelligence', 'machine learning', 'llm', 'gpt', 'chatbot', 'chat bot', 'copilot', 'saas', 'software', 'platform', 'dashboard', 'crm', 'erp', 'api', 'sdk', 'automation', 'workflow', 'no-code', 'low-code', 'yapay zeka', 'yapay zekâ', 'yazılım', 'otomasyon', 'analitik'],
-  marketplace: ['marketplace', 'market place', 'multi-vendor', 'multivendor', 'two-sided', 'classifieds', 'classified', 'vendors', 'buyers and sellers', 'pazaryeri', 'çok satıcılı', 'ilan sitesi', 'alıcı ve satıcı'],
-  'portfolio-agency': ['portfolio', 'freelance', 'freelancer*', 'designer*', 'photographer*', 'photography', 'illustrator*', 'architect*', 'architecture', 'creative studio', 'design studio', 'agenc*', 'marketing agenc*', 'advertising', 'branding', 'production studio', 'case study', 'showreel', 'portfolyo', 'tasarımcı*', 'fotoğrafçı*', 'mimar', 'mimarlık', 'stüdyo', 'ajans*', 'reklam ajans*', 'markalaşma', 'prodüksiyon'],
-  'local-service': ['plumber*', 'plumbing', 'electrician*', 'electrical', 'cleaning', 'cleaner*', 'barber*', 'hairdresser*', 'hair salon', 'beauty salon', 'salon', 'spa', 'repair', 'handyman', 'moving', 'movers', 'locksmith', 'painter', 'pest control', 'consulting', 'consultant*', 'tesisatçı*', 'elektrikçi*', 'temizlik', 'berber*', 'kuaför*', 'güzellik salonu', 'tamir', 'tamirci*', 'nakliyat*', 'çilingir', 'boyacı*', 'danışman*'],
+  'travel-tourism': ['travel*', 'traveler*', 'traveller*', 'tourism', 'tourist*', 'tour operator*', 'tour', 'tours', 'itinerary', 'itineraries', 'itinerary planner', 'destination', 'destinations', 'destination specialist', 'vacation', 'vacations', 'holiday', 'holidays', 'holiday package', 'getaway', 'getaways', 'excursion*', 'safari*', 'cruise', 'cruises', 'sightseeing', 'travel agency', 'travel agencies', 'travel agent*', 'travel advisor*', 'travel concierge', 'bespoke travel', 'luxury travel', 'guided tour*', 'tour package*', 'trip', 'trips', 'trip planner', 'journey designer', 'personalized journeys', 'personalised journeys', 'honeymoon*', 'expedition*', 'seyahat', 'tur', 'turlar', 'tur operatörü*', 'seyahat acentesi', 'seyahat acentası', 'seyahat danışman*', 'gezi', 'gezi turu', 'tatil', 'tatil paketi', 'tur paketi', 'turizm', 'tur rehber*', 'rota planı',
+    // German
+    'reisebüro', 'reiseveranstalter*', 'reiseleit*', 'rundreise*', 'reiseroute*', 'pauschalreise*', 'urlaubsreise*', 'kreuzfahrt*', 'ausflug*', 'sehenswürdigkeit*', 'tourismus'],
+  'real-estate': ['real estate', 'real-estate', 'realtor*', 'realty', 'property', 'properties', 'listing', 'listings', 'apartment', 'apartments', 'condo', 'housing', 'rental', 'rentals', 'lease', 'broker*', 'estate agent*', 'floor plan', 'emlak', 'emlakçı*', 'gayrimenkul', 'konut', 'daire', 'satılık', 'kiralık', 'arsa', 'müteahhit', 'kat planı',
+    // German
+    'immobilie*', 'immobilienmakler*', 'makler*', 'wohnung*', 'eigentumswohnung*', 'grundstück*', 'mietwohnung*', 'grundriss*'],
+  'clinic-healthcare': ['clinic*', 'dental', 'dentist*', 'dentistry', 'orthodontic', 'doctor*', 'physician*', 'medical', 'healthcare', 'aesthetic', 'dermatolog*', 'physiotherapy', 'physio', 'therapy', 'therapist*', 'psychology', 'psychologist*', 'psychiatry', 'treatment', 'patient', 'polyclinic', 'klinik*', 'diş', 'diş hekimi', 'doktor*', 'tıp', 'sağlık', 'estetik', 'dermatoloji', 'fizyoterapi', 'terapi', 'psikolog', 'tedavi', 'hasta', 'poliklinik', 'muayenehane',
+    // German
+    'arztpraxis', 'zahnarzt*', 'zahnarztpraxis', 'kieferorthopäd*', 'hautarzt*', 'tierarzt*', 'physiotherapie', 'praxisteam', 'patient*', 'behandlung*', 'gesundheitszentrum'],
+  'ai-saas': ['ai', 'artificial intelligence', 'machine learning', 'llm', 'gpt', 'chatbot', 'chat bot', 'copilot', 'saas', 'software', 'platform', 'dashboard', 'crm', 'erp', 'api', 'sdk', 'automation', 'workflow', 'no-code', 'low-code', 'yapay zeka', 'yapay zekâ', 'yazılım', 'otomasyon', 'analitik',
+    // German
+    'künstliche intelligenz', 'maschinelles lernen', 'sprachmodell', 'softwareprodukt', 'unternehmenssoftware', 'verwaltungssoftware', 'schnittstelle', 'automatisierung', 'auswertung*'],
+  marketplace: ['marketplace', 'market place', 'multi-vendor', 'multivendor', 'two-sided', 'classifieds', 'classified', 'vendors', 'buyers and sellers', 'pazaryeri', 'çok satıcılı', 'ilan sitesi', 'alıcı ve satıcı',
+    // German
+    'marktplatz', 'kleinanzeigen', 'vermittlungsplattform', 'anbieter und käufer'],
+  'portfolio-agency': ['portfolio', 'freelance', 'freelancer*', 'designer*', 'photographer*', 'photography', 'illustrator*', 'architect*', 'architecture', 'creative studio', 'design studio', 'agenc*', 'marketing agenc*', 'advertising', 'branding', 'production studio', 'case study', 'showreel', 'portfolyo', 'tasarımcı*', 'fotoğrafçı*', 'mimar', 'mimarlık', 'stüdyo', 'ajans*', 'reklam ajans*', 'markalaşma', 'prodüksiyon',
+    // German
+    'fotograf*', 'fotografie', 'illustrator*', 'architekturbüro', 'agentur', 'werbeagentur', 'designstudio', 'kreativagentur', 'markenagentur', 'produktionsfirma', 'arbeitsproben', 'freiberuflich'],
+  'local-service': ['plumber*', 'plumbing', 'electrician*', 'electrical', 'cleaning', 'cleaner*', 'barber*', 'hairdresser*', 'hair salon', 'beauty salon', 'salon', 'spa', 'repair', 'handyman', 'moving', 'movers', 'locksmith', 'painter', 'pest control', 'consulting', 'consultant*', 'tesisatçı*', 'elektrikçi*', 'temizlik', 'berber*', 'kuaför*', 'güzellik salonu', 'tamir', 'tamirci*', 'nakliyat*', 'çilingir', 'boyacı*', 'danışman*',
+    // German
+    'klempner*', 'installateur*', 'elektriker*', 'friseur*', 'frisör*', 'gebäudereinigung', 'reinigungsfirma', 'umzugsunternehmen', 'schlüsseldienst', 'malerbetrieb', 'autowerkstatt', 'kfz-werkstatt', 'fitnessstudio', 'kosmetikstudio', 'handwerk*'],
 };
 
 /** Software/product signals — when present in the PRODUCT part of a "<product> for
@@ -4911,12 +4973,16 @@ const VERTICAL_SOFTWARE_WORDS: readonly string[] = [
   'copilot', 'saas', 'software', 'platform', 'dashboard', 'analytics', 'crm', 'erp', 'api', 'sdk',
   'automation', 'automate', 'workflow', 'no-code', 'low-code', 'developer tool', 'dev tool', 'cli',
   'yapay zeka', 'yapay zekâ', 'yazılım', 'otomasyon', 'uygulama yazılımı',
+  // German — the same channel the sector table gained; compounds are expressed as stems.
+  'künstliche intelligenz', 'maschinelles lernen', 'sprachmodell', 'softwareprodukt',
+  'unternehmenssoftware', 'verwaltungssoftware', 'automatisierung', 'schnittstelle',
 ];
 /** Genuine two-sided / multi-vendor signals → the concept itself IS a marketplace. */
 const VERTICAL_MARKETPLACE_WORDS: readonly string[] = [
   'marketplace', 'market place', 'multi-vendor', 'multivendor', 'two-sided', 'two sided',
   'buyers and sellers', 'classifieds', 'classified listings', 'vendors list', 'pazaryeri',
   'çok satıcılı', 'ilan sitesi', 'alıcı ve satıcı',
+  'marktplatz', 'kleinanzeigen', 'anbieter und käufer',
 ];
 /** Marketplace-MANAGEMENT software signals → software used to operate/manage a
  *  marketplace (an `ai-saas` product), NOT the marketplace model itself. Kept
@@ -5954,7 +6020,17 @@ export function deriveVerticalIntelligence(input: VerticalIntelligenceInput): Ve
     const marketplaceLooksLikeTool = marketplaceToolKw.hits > 0;
     if (marketplaceLooksLikeTool) { for (const kw of marketplaceToolKw.matched.slice(0, 3)) softwareSignals.push(`product: ${kw}`); }
 
-    const softwareByStructured = conceptIsSoftware || ledgerIsSoftware || inferredIsSoftware || experienceIsSoftware;
+    // The EXPERIENCE-BLUEPRINT vote alone must not establish a software product identity.
+    // It is the weakest structured signal and it DEFAULTS for vague English text: measured,
+    // "a website for my business" produced siteExperienceType 'b2b-product-landing' and was
+    // therefore classified `ai-saas`, while its Turkish and German twins ("işim için bir web
+    // sitesi", "eine Website für mein Unternehmen") produced 'unknown' and correctly stayed
+    // `general`. The same vague request must not be a software product in one language and a
+    // general business in another — so this vote now needs corroboration from a signal that
+    // actually read the request: the concept authority, the ledger, the inferred industry, or a
+    // software keyword. A genuine software prompt still carries at least one of those.
+    const softwareByStructured = conceptIsSoftware || ledgerIsSoftware || inferredIsSoftware
+      || (experienceIsSoftware && softwareKw.hits > 0);
     const softwareByKeyword = split.hadSplit ? softwareKw.hits > 0 : softwareKw.hits >= 2;
     // A marketplace-management tool is itself a software product identity.
     const isSoftware = softwareByStructured || softwareByKeyword || marketplaceLooksLikeTool;

@@ -38,6 +38,7 @@ import { deriveBindingRequirements } from '@/lib/webBuildBindingRequirements';
 import { deriveImageCoverageRequirement } from '@/lib/webBuildImageCoverage';
 import { deriveResearchDirection } from '@/lib/webBuildResearchDirection';
 import { deriveDesignIntelligence } from '@/lib/webBuildDesignIntelligence';
+import { deriveExperienceIntelligence } from '@/lib/experienceIntelligence';
 import { deriveCompositionContract } from '@/lib/webBuildComposition';
 import { deriveVisualSystemContract } from '@/lib/webBuildVisualSystem';
 import { deriveContentNarrativeContract, deriveSiteDepthContract } from '@/lib/webBuildContentNarrative';
@@ -65,6 +66,14 @@ export interface FrontendBuildSpecInput {
    *  branch on `spec.buildType` rather than re-inferring from prompt text. */
   buildType?: import('@/lib/buildType').BuildType;
   brief: WebBuildBrief;
+  /**
+   * The FIRST turn's request, when this turn is a revision. `prompt` above is always the CURRENT
+   * turn's text, so on a revision ("make the hero bigger") it no longer describes the product at
+   * all. Experience Intelligence reads both — the original supplies the subject, the revision
+   * supplies any new explicit instruction ("drop the photos", "make it minimal") — so a revision
+   * can refine the direction without erasing what the product is. Absent on a fresh build.
+   */
+  originalPrompt?: string;
   sectionItems: WebBuildSectionItem[];
   layoutPlan: WebBuildLayoutPlan;
 
@@ -768,6 +777,26 @@ export function deriveFrontendBuildSpecification(input: FrontendBuildSpecInput):
       if (bindingRequirements) built.bindingRequirements = bindingRequirements;
     } catch { /* never block the build on requirement extraction */ }
 
+    // Design Intelligence V3 — the SITE ARCHETYPE + brand character + design direction
+    // contract. Derived BEFORE composition so the composition authority can consume its
+    // archetype steer (it stays the family owner; we only supply archetype-aware defaults).
+    // WEB ONLY: never derived for an app build, so an App Build specification and request
+    // are byte-for-byte unchanged. Deterministic, no model/network call, fail-open.
+    // NOTE ON ORDER: this now runs BEFORE image coverage (it used to run after). The coverage
+    // floor consumes the archetype verdict, and the archetype authority reads only the prompt,
+    // identity and sections — none of which coverage produces — so there is no cycle.
+    const isAppBuild = built.buildType === 'app';
+    if (!isAppBuild) try {
+      const designIntelligence = deriveDesignIntelligence({
+        prompt: built.prompt,
+        identity: built.identity,
+        sections: built.architecture?.sections || [],
+        briefText: [brief.coreIdea, brief.type, brief.audience, brief.style, brief.goal, brief.visitorIntent]
+          .filter((x): x is string => typeof x === 'string' && !!x.trim()).join(' '),
+      });
+      if (designIntelligence) built.designIntelligence = designIntelligence;
+    } catch { /* never block the build on design-intelligence derivation */ }
+
     // Phase (image coverage) — attach the authoritative semantic image-coverage requirement
     // (deterministic; no model call; fail-open). Derived from binding media, sector/vertical,
     // image-led direction and explicit no-photo signals. FRESH build only — reopened builds keep
@@ -802,23 +831,7 @@ export function deriveFrontendBuildSpecification(input: FrontendBuildSpecInput):
     // skipped so App Build never inherits marketing-page assumptions. The NEUTRAL
     // contracts (visualSystem, experienceQuality, executionObligations, image
     // coverage) still run — they carry no scroll/hero assumptions.
-    const isApp = built.buildType === 'app';
-
-    // Design Intelligence V3 — the SITE ARCHETYPE + brand character + design direction
-    // contract. Derived BEFORE composition so the composition authority can consume its
-    // archetype steer (it stays the family owner; we only supply archetype-aware defaults).
-    // WEB ONLY: never derived for an app build, so an App Build specification and request
-    // are byte-for-byte unchanged. Deterministic, no model/network call, fail-open.
-    if (!isApp) try {
-      const designIntelligence = deriveDesignIntelligence({
-        prompt: built.prompt,
-        identity: built.identity,
-        sections: built.architecture?.sections || [],
-        briefText: [brief.coreIdea, brief.type, brief.audience, brief.style, brief.goal, brief.visitorIntent]
-          .filter((x): x is string => typeof x === 'string' && !!x.trim()).join(' '),
-      });
-      if (designIntelligence) built.designIntelligence = designIntelligence;
-    } catch { /* never block the build on design-intelligence derivation */ }
+    const isApp = isAppBuild;
 
     if (isApp) {
       try {
@@ -1014,6 +1027,49 @@ export function deriveFrontendBuildSpecification(input: FrontendBuildSpecInput):
       });
       if (motionExecution) built.motionExecution = motionExecution;
     } catch { /* never block the build on motion-execution derivation */ }
+
+    // EXPERIENCE INTELLIGENCE — the SHARED, canonical experience/media/content/optimization
+    // direction, derived LAST so it can compose every authority above as EVIDENCE:
+    //   web → designIntelligence (archetype), imageCoverage (photography floor), the section
+    //         architecture, the image slots and the output contract's planned component files;
+    //   app → appArchitecture (app type / screens / flows), appVisual (photography verdict),
+    //         the navigation contract and the app output contract's planned screen files.
+    // It never re-decides any of them. Exactly one adapter (`web` or `app`) is derived, which is
+    // what keeps web page direction out of app requests and app navigation direction out of web
+    // requests. Deterministic, no model/network call, fail-open. Absent ⇒ legacy behaviour.
+    try {
+      const original = str(input.originalPrompt);
+      const experienceIntelligence = deriveExperienceIntelligence({
+        // On a revision the current turn's text describes the CHANGE, not the product; the first
+        // turn's request describes the product. Both are read (deduped) so neither is lost.
+        prompt: original && original !== built.prompt ? `${original} ${built.prompt}` : built.prompt,
+        language: built.language,
+        buildType: built.buildType || 'web',
+        identity: built.identity,
+        briefText: [brief.coreIdea, brief.type, brief.audience, brief.style, brief.goal, brief.visitorIntent]
+          .filter((x): x is string => typeof x === 'string' && !!x.trim()).join(' '),
+        binding: built.bindingRequirements,
+        primaryCTA: built.architecture?.primaryCTA,
+        sections: isApp ? undefined : (built.architecture?.sections || []),
+        designIntelligence: built.designIntelligence,
+        imageCoverage: built.imageCoverage,
+        imageSlots: built.assets?.imageSlots,
+        // The composition authority's per-section media role — the owner of "which sections carry
+        // media". Consumed so this layer needs no section-name lexicon of its own.
+        composition: isApp ? undefined : built.composition,
+        // The planned surface component files an optimization may never propose deleting. A web
+        // spec lists them as section components; an app spec puts its SCREEN components in
+        // `requiredFiles` (its `requiredSectionComponentFiles` is empty by design), so the app
+        // paths are read from there — same authority, different shape.
+        requiredComponentFiles: isApp
+          ? (built.outputContract?.requiredFiles || []).filter((f) => /^src\/screens\//.test(f))
+          : built.outputContract?.requiredSectionComponentFiles,
+        appArchitecture: isApp ? built.appArchitecture : undefined,
+        appVisual: isApp ? built.appVisual : undefined,
+        navigation: isApp ? built.navigation : undefined,
+      });
+      if (experienceIntelligence) built.experienceIntelligence = experienceIntelligence;
+    } catch { /* never block the build on experience-intelligence derivation */ }
 
     // Phase (execution obligations) — collect the high-value, verifiable obligations from EVERY derived
     // contract into one accountability registry with stable ids (composes; never re-decides). Runs last so

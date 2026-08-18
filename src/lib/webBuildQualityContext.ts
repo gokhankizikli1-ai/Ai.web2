@@ -695,6 +695,33 @@ export function buildRepairAuthorityDigest(spec: FrontendBuildSpecification): Re
       .filter((r) => Object.keys(r).length);
     dPut(digest, 'requiredObligations', required.length ? required : undefined);
 
+    // 12) EXPERIENCE INTELLIGENCE — the selected experience direction a repair must not destroy.
+    //     The full contract is deliberately stripped from every quality request (see
+    //     `specForQualityTask`), so this bounded entry is the ONLY thing that carries the media
+    //     verdict, the composition/density decision, the never-remove list and the binding
+    //     optimization priority order into the single repair. Without it a repair asked to
+    //     "make it faster" could legitimately delete the required lead image or the primary CTA.
+    const xi = dObj(s.experienceIntelligence);
+    if (xi) {
+      const xExp = dObj(xi.experience);
+      const xMedia = dObj(xi.media);
+      const xOpt = dObj(xi.optimization);
+      const dir: Record<string, unknown> = {};
+      dPut(dir, 'lead', dStr(xExp?.lead));
+      dPut(dir, 'density', dStr(xExp?.density));
+      dPut(dir, 'hierarchy', dStr(xExp?.hierarchy));
+      dPut(dir, 'composition', dStr(xExp?.composition));
+      if (typeof xExp?.cardsAppropriate === 'boolean') dir.cardsAppropriate = xExp.cardsAppropriate;
+      if (typeof xExp?.chartsJustified === 'boolean') dir.chartsJustified = xExp.chartsJustified;
+      dPut(dir, 'mediaNecessity', dStr(xMedia?.necessity));
+      dPut(dir, 'leadVisual', dStr(xMedia?.leadVisual));
+      dPut(dir, 'primaryMedium', dStr(xMedia?.primaryKind));
+      dPut(dir, 'forbiddenMedia', dStrList(xMedia?.forbiddenKinds, 5));
+      dPut(dir, 'neverRemove', dStrList(xOpt?.protectedElements, 7));
+      dPut(dir, 'optimizationPriority', 'experience correctness > visual quality > usability/accessibility > performance > cleanliness');
+      dPut(digest, 'experienceDirection', dir);
+    }
+
     // 11) experience architecture — hard section-architecture / medium / proof contract.
     const ea = dObj(s.experienceArchitecture);
     if (ea) {

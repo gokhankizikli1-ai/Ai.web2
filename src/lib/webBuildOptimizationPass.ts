@@ -23,11 +23,33 @@
  *
  * It deliberately does NOT: rewrite the project, redesign anything, introduce caching, remove
  * requested visual effects, or change architecture. It only reports what is provably wasteful.
+ *
+ * ── EXPERIENCE-INTELLIGENCE GUARD (optional) ────────────────────────────────────────────────
+ * When the caller supplies an `OptimizationGuardPolicy` (derived from the build's Experience
+ * Intelligence contract) this pass gains TWO things and loses none of its previous behaviour:
+ *
+ *   PROTECTION  Findings whose only available remedy would damage a higher-order goal are never
+ *               raised. A planned section/screen component is never reported as a deletable dead
+ *               file, and a required lead image is never reported as a lazy-loading candidate.
+ *               Those suppressions are COUNTED (`measured.guardSuppressedCount`) so the report
+ *               stays honest about what it chose not to say.
+ *
+ *   BUDGETS     Three additional MEASURED findings compare the generated source against the
+ *               budgets the design was actually planned against: first-viewport media weight,
+ *               looping-animation count and blur/effect layer count. They are advisory like every
+ *               other finding and ride the SAME single consolidated issue.
+ *
+ * Without a policy the analysis is byte-for-byte what it was before: the three budget codes are
+ * never emitted, no finding is suppressed, and the new `measured` fields stay undefined.
  */
 import type {
   FrontendGeneratedFile, FrontendBuilderReviewIssue,
   WebBuildOptimizationReport, WebBuildOptimizationFinding, WebBuildOptimizationCode,
 } from '@/lib/webBuildAgents';
+// Experience Intelligence supplies the OPTIMIZATION GUARD POLICY: the protected surfaces/media
+// this analysis may never propose removing, plus the motion / above-the-fold / effect budgets the
+// design was planned against. Type-only — this module still performs no IO and calls nothing.
+import type { OptimizationGuardPolicy } from '@/lib/experienceIntelligence';
 
 /* ── Thresholds. Set high on purpose: a finding must be obvious to a human reviewer. ────────── */
 /** A declaration body must be at least this long before repetition is worth consolidating. */
@@ -46,6 +68,10 @@ const WRAPPER_MIN_OCCURRENCES = 6;
 const MAX_FINDINGS = 12;
 /** How many findings are described inside the single consolidated repair instruction. */
 const MAX_FINDINGS_IN_ISSUE = 4;
+/** Hard bound on the consolidated repair instruction. Raised from the previous inline 240 to
+ *  360 so the preservation clause and at least one concrete fix always fit together; still a
+ *  fraction of one issue's share of the request and well inside the existing size guards. */
+const MAX_REPAIR_INSTRUCTION_CHARS = 360;
 
 /** Severity weight used only for ranking findings for reporting. Never a build score. */
 const SEVERITY_RANK: Record<WebBuildOptimizationFinding['severity'], number> = { high: 0, medium: 1, low: 2 };
@@ -199,10 +225,13 @@ function findDuplicateClassLiterals(files: FrontendGeneratedFile[]): { literals:
 function findImageIssues(
   files: FrontendGeneratedFile[],
   heroComponentPath: string | undefined,
-): { total: number; eagerOffscreen: number; oversized: number; oversizedPaths: string[]; eagerPaths: string[] } {
+  protectedSlotIds: string[],
+  leadVisualRequired: boolean,
+): { total: number; eagerOffscreen: number; oversized: number; oversizedPaths: string[]; eagerPaths: string[]; suppressed: number } {
   let total = 0;
   let eagerOffscreen = 0;
   let oversized = 0;
+  let suppressed = 0;
   const oversizedPaths = new Set<string>();
   const eagerPaths = new Set<string>();
   for (const f of files) {
@@ -213,10 +242,18 @@ function findImageIssues(
     while ((m = re.exec(f.content)) !== null) {
       const tag = m[0];
       total += 1;
+      // GUARD — a REQUIRED coverage image is load-critical evidence, not decoration. When the
+      // experience direction says the lead visual is required, an image carrying one of those
+      // protected slot ids is never reported as a lazy-loading candidate: telling the repair to
+      // defer it would trade the first meaningful paint of the product's own subject for bytes.
+      const isProtectedSlot = leadVisualRequired && protectedSlotIds.some((id) => id && tag.includes(id));
       // Eager offscreen media — the hero is legitimately eager, everything else should be lazy.
       if (!isHero && !/\bloading\s*=/.test(tag)) {
-        eagerOffscreen += 1;
-        eagerPaths.add(f.path);
+        if (isProtectedSlot) suppressed += 1;
+        else {
+          eagerOffscreen += 1;
+          eagerPaths.add(f.path);
+        }
       }
       // An explicit remote request for a 2000px+ asset.
       const dims = /[?&](?:w|width|h|height)=(\d{3,5})/gi;
@@ -231,7 +268,7 @@ function findImageIssues(
     }
   }
   return {
-    total, eagerOffscreen, oversized,
+    total, eagerOffscreen, oversized, suppressed,
     oversizedPaths: [...oversizedPaths].slice(0, 6),
     eagerPaths: [...eagerPaths].slice(0, 6),
   };
@@ -292,6 +329,52 @@ function findRedundantWrappers(files: FrontendGeneratedFile[]): { count: number;
   return { count, paths: [...paths].slice(0, 6) };
 }
 
+/* ── 8) BUDGET detectors (guard-policy only) ────────────────────────────────────────────────
+ * These compare the generated source against the budgets the DESIGN was planned against. They
+ * exist only when a policy is supplied, and — like every detector here — they under-report. */
+
+/** Media assets in the first-viewport component (the hero for a website, the entry screen for an
+ *  app): `<img>` tags plus CSS background-image declarations in that ONE file.
+ *
+ *  When the caller cannot name the first-viewport file the check is SKIPPED rather than guessed.
+ *  Picking "the first component file" would be arbitrary — file order carries no meaning — and a
+ *  false "your first viewport is too heavy" instruction is exactly the kind of confident-but-wrong
+ *  advice this module is written to avoid. */
+function countAboveFoldMedia(files: FrontendGeneratedFile[], entryPath: string | undefined): { count: number; path?: string } | undefined {
+  if (!entryPath) return undefined;
+  const entry = files.find((f) => f.path === entryPath);
+  if (!entry) return undefined;
+  const imgs = entry.content.match(/<img\b/gi);
+  const bgs = entry.content.match(/background-image\s*:/gi);
+  return { count: (imgs ? imgs.length : 0) + (bgs ? bgs.length : 0), path: entry.path };
+}
+
+/** LOOPING animations — the only animations that provably run at the same time. A finite
+ *  entrance transition is not counted: it is over before the next one starts. */
+function countLoopingAnimations(files: FrontendGeneratedFile[]): { count: number; paths: string[] } {
+  let count = 0;
+  const paths = new Set<string>();
+  for (const f of files) {
+    const hits = f.content.match(/\banimate-(?:pulse|spin|bounce|ping)\b|animation[^;{}]*\binfinite\b|repeat\s*:\s*Infinity/g);
+    const n = hits ? hits.length : 0;
+    if (n > 0) { count += n; paths.add(f.path); }
+  }
+  return { count, paths: [...paths].slice(0, 6) };
+}
+
+/** Blur / backdrop-blur / heavy drop-shadow layers. Paint-expensive and, past a couple, a
+ *  substitute for real hierarchy rather than an addition to it. */
+function countEffectLayers(files: FrontendGeneratedFile[]): { count: number; paths: string[] } {
+  let count = 0;
+  const paths = new Set<string>();
+  for (const f of files) {
+    const hits = f.content.match(/\bbackdrop-blur(?:-[a-z0-9]+)?\b|\bblur-(?:sm|md|lg|xl|2xl|3xl)\b|filter\s*:[^;{}]*blur\s*\(|\bdrop-shadow-(?:lg|xl|2xl)\b/g);
+    const n = hits ? hits.length : 0;
+    if (n > 0) { count += n; paths.add(f.path); }
+  }
+  return { count, paths: [...paths].slice(0, 6) };
+}
+
 /* ── Report assembly ────────────────────────────────────────────────────────────────────────── */
 
 function finding(
@@ -340,7 +423,7 @@ function emptyReport(fileCount: number): WebBuildOptimizationReport {
  */
 export function analyzeOptimization(
   files: FrontendGeneratedFile[] | undefined,
-  opts?: { heroComponentPath?: string },
+  opts?: { heroComponentPath?: string; policy?: OptimizationGuardPolicy },
 ): WebBuildOptimizationReport {
   const list = Array.isArray(files) ? files.filter((f) => !!f && typeof f.content === 'string') : [];
   if (list.length === 0) return emptyReport(0);
@@ -348,14 +431,33 @@ export function analyzeOptimization(
     const sourceCharCount = list.filter((f) => f.language !== 'css').reduce((n, f) => n + f.content.length, 0);
     const cssCharCount = list.filter((f) => f.language === 'css').reduce((n, f) => n + f.content.length, 0);
 
+    const policy = opts?.policy;
+    const protectedFiles = new Set((policy?.protectedFiles || []).filter((f) => typeof f === 'string'));
+    let guardSuppressed = 0;
+
     const dead = findDeadImports(list);
     const deadImportCount = dead.reduce((n, d) => n + d.names.length, 0);
-    const unreferenced = findUnreferencedComponents(list);
+    const unreferencedAll = findUnreferencedComponents(list);
+    // GUARD — a PLANNED surface component that is not yet imported is a contract-fidelity defect
+    // (the section/screen is missing), and the owning analyzer already reports it as such. Telling
+    // the repair it is a deletable dead file here would be a priority inversion: it would trade the
+    // product's own surface for a smaller bundle. Those paths are withheld and counted.
+    const unreferenced = unreferencedAll.filter((path) => {
+      if (!protectedFiles.has(path)) return true;
+      guardSuppressed += 1;
+      return false;
+    });
     const css = findDuplicateCss(list);
     const cls = findDuplicateClassLiterals(list);
-    const img = findImageIssues(list, opts?.heroComponentPath);
+    const img = findImageIssues(list, opts?.heroComponentPath, policy?.protectedMediaSlotIds || [], !!policy?.leadVisualRequired);
+    guardSuppressed += img.suppressed;
     const effects = findUnboundedEffects(list);
     const wrappers = findRedundantWrappers(list);
+
+    /* Budget measurements — only meaningful with a policy, so they stay undefined without one. */
+    const aboveFold = policy ? countAboveFoldMedia(list, policy.firstViewportPath || opts?.heroComponentPath) : undefined;
+    const looping = policy ? countLoopingAnimations(list) : undefined;
+    const effectLayers = policy ? countEffectLayers(list) : undefined;
 
     const findings: WebBuildOptimizationFinding[] = [];
 
@@ -417,6 +519,31 @@ export function analyzeOptimization(
       ));
     }
 
+    /* ── Budget findings. Advisory like every other finding; they ride the SAME single
+     *    consolidated `minor` performance issue, so they consume no extra repair budget. ── */
+    if (policy && aboveFold && aboveFold.count > policy.maxAboveFoldMedia) {
+      findings.push(finding(
+        'above-fold-media-overweight', 'medium', aboveFold.count - policy.maxAboveFoldMedia,
+        aboveFold.path ? [aboveFold.path] : [],
+        `The first-viewport component loads ${aboveFold.count} media asset(s); this experience was planned for at most ${policy.maxAboveFoldMedia}.`,
+        `Keep at most ${policy.maxAboveFoldMedia} eagerly-loaded media asset in the first viewport and defer the rest with loading="lazy". Do NOT delete a required image — move it below the fold or lazy-load it.`,
+      ));
+    }
+    if (policy && looping && looping.count > policy.maxSimultaneousAnimations) {
+      findings.push(finding(
+        'motion-budget-exceeded', 'low', looping.count - policy.maxSimultaneousAnimations, looping.paths,
+        `${looping.count} looping animation(s) run continuously; the planned motion budget allows ${policy.maxSimultaneousAnimations}.`,
+        'Stop the purely decorative looping animations (keep any that communicate a real state such as loading). Do not remove functional transitions or the signature moment the design calls for.',
+      ));
+    }
+    if (policy && effectLayers && effectLayers.count > policy.maxBlurLayers + 2) {
+      findings.push(finding(
+        'excessive-visual-effects', 'low', effectLayers.count - policy.maxBlurLayers, effectLayers.paths,
+        `${effectLayers.count} blur / backdrop-blur / heavy drop-shadow layer(s) are applied; this design was planned for about ${policy.maxBlurLayers}.`,
+        'Remove the blur and heavy shadow layers that are not doing real work (an overlay behind text may stay). Replace that depth with spacing, borders and value contrast — the layout must read the same or better.',
+      ));
+    }
+
     const ranked = findings
       .sort((a, b) => (SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity]) || (b.magnitude - a.magnitude))
       .slice(0, MAX_FINDINGS);
@@ -439,6 +566,10 @@ export function analyzeOptimization(
         oversizedImageCount: img.oversized,
         unboundedEffectCount: effects.count,
         redundantWrapperCount: wrappers.count,
+        ...(aboveFold ? { aboveFoldMediaCount: aboveFold.count } : {}),
+        ...(looping ? { animatedLayerCount: looping.count } : {}),
+        ...(effectLayers ? { blurLayerCount: effectLayers.count } : {}),
+        ...(policy ? { guardSuppressedCount: guardSuppressed } : {}),
       },
     };
   } catch {
@@ -457,21 +588,34 @@ export function analyzeOptimization(
  */
 export function optimizationToReviewIssues(
   report: WebBuildOptimizationReport | undefined,
+  policy?: OptimizationGuardPolicy,
 ): FrontendBuilderReviewIssue[] {
   if (!report || report.version !== 'web-build-optimization-v1') return [];
   const top = report.findings.slice(0, MAX_FINDINGS_IN_ISSUE);
   if (top.length === 0) return [];
   const files = Array.from(new Set(top.flatMap((f) => f.files))).slice(0, 6);
+  /* The PRESERVATION clause. Without it, the single performance instruction reads as an open
+   * licence to make the project lighter; with it, the repair is told in the same breath what
+   * "lighter" may never cost. It is placed FIRST and the concrete fixes then fill the remaining
+   * room, so a long suggestion list can never truncate the guard away — the reverse ordering
+   * would have made the protection the first thing lost on a busy build. */
+  const guard = policy && policy.protectedElements.length
+    ? `Do NOT remove or weaken ${policy.protectedElements.slice(0, 2).join('; ')}. `
+    : '';
+  const lead = `${guard}Apply these SAFE efficiency fixes without changing the design, layout, copy or any requested visual effect:`;
+  let instruction = lead;
+  for (const f of top) {
+    const next = `${instruction} ${f.suggestion}`;
+    if (next.length > MAX_REPAIR_INSTRUCTION_CHARS) break;
+    instruction = next;
+  }
   return [{
     id: `optimization:${top.map((f) => f.code).join('+')}`.slice(0, 80),
     severity: 'minor',
     category: 'performance',
     files,
     evidence: trunc(top.map((f) => f.evidence).join(' '), 240),
-    repairInstruction: trunc(
-      `Apply these SAFE efficiency fixes without changing the design, layout, copy or any requested visual effect: ${top.map((f) => f.suggestion).join(' ')}`,
-      240,
-    ),
+    repairInstruction: trunc(instruction, MAX_REPAIR_INSTRUCTION_CHARS),
   }];
 }
 

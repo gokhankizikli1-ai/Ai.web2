@@ -1654,6 +1654,9 @@ function assembleWebBuildPayload(
       try {
         const frontendBuildSpec = deriveFrontendBuildSpecification({
           prompt,
+          // The FIRST turn's request (the payload's canonical prompt), so a revision can refine
+          // the derived experience direction instead of re-deriving it from the change request.
+          originalPrompt: prev?.prompt,
           lang: effLang,
           buildType: effBuildType,
           brief: artBrief,

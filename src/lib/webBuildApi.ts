@@ -28,6 +28,13 @@ import { hasAffirmedIntent } from '@/lib/webBuildProductIntent';
 import type { WebBuildFile } from '@/lib/webBuildPayload';
 import type { CompactSourceContext } from '@/lib/webBuildQualityContext';
 import { orderFilesForReviewBounding, compactContextFromIncludedFiles, buildReviewScopedSpecProjection, buildRepairAuthorityDigest } from '@/lib/webBuildQualityContext';
+// EXPERIENCE INTELLIGENCE — the shared pre-generation direction. Pure renderers (no IO); each
+// returns [] when the contract is absent, so an old/reopened build's request is unchanged.
+import {
+  renderExperienceCoreBlock, renderExperienceOptimizationBlock, renderExperienceAntiPatternBlock,
+} from '@/lib/experienceIntelligence';
+import { renderWebExperienceBlock } from '@/lib/experienceIntelligenceWeb';
+import { renderAppExperienceBlock } from '@/lib/experienceIntelligenceApp';
 import { stripLeadingFieldLabel } from '@/lib/webBuildFieldLabel';
 import { renderBindingRequirementsBlock } from '@/lib/webBuildBindingRequirements';
 import { renderResearchDirectionBlock } from '@/lib/webBuildResearchDirection';
@@ -2368,9 +2375,16 @@ function builderProjection(spec: FrontendBuildSpecification): Record<string, unk
  * unchanged by identity, so those requests are byte-for-byte what they were before.
  */
 function specForQualityTask(spec: FrontendBuildSpecification): FrontendBuildSpecification {
-  if (!spec || !spec.designIntelligence) return spec;
+  if (!spec || (!spec.designIntelligence && !spec.experienceIntelligence)) return spec;
   const rest = { ...(spec as unknown as Record<string, unknown>) };
   delete rest.designIntelligence;
+  // Experience Intelligence is a FIRST-GENERATION direction authority for the same reason: no
+  // analyzer scores it and no acceptance gate reads it, so sending the full contract on every
+  // review/repair call would pay for a contract Quality V2 does not own. What a repair must not
+  // regress (media necessity, lead visual, forbidden media, the never-remove list and the
+  // optimization priority order) travels instead as the bounded `experienceDirection` entry in
+  // the repair-authority digest, which is attached regardless of spec compaction.
+  delete rest.experienceIntelligence;
   return rest as unknown as FrontendBuildSpecification;
 }
 
@@ -2505,8 +2519,30 @@ export function buildFrontendBuilderRequest(spec: FrontendBuildSpecification): s
   // Design Intelligence decoration. WEB only — every tier is [] for an app spec.
   const diP1Block = renderDesignIntelligenceP1Block(spec.designIntelligence);
   const diP2Block = renderDesignIntelligenceP2Block(spec.designIntelligence);
-  const diP3Block = renderDesignIntelligenceP3Block(spec.designIntelligence);
   const diP4Block = renderDesignIntelligenceP4Block(spec.designIntelligence);
+
+  // EXPERIENCE INTELLIGENCE — the SHARED experience/media/content/optimization direction, in
+  // four tiers so each carries its honest priority below. Every tier is [] when the contract is
+  // absent, so an old/reopened build's request is byte-for-byte unchanged. Exactly one adapter
+  // tier is non-empty: `renderWebExperienceBlock` returns [] for an app contract (it is fed
+  // `spec.experienceIntelligence.web`, which an app build never has) and vice versa — that is
+  // the structural reason web page direction cannot leak into an app request.
+  const xi = spec.experienceIntelligence;
+  const xiCoreBlock = renderExperienceCoreBlock(xi);
+  const xiWebBlock = renderWebExperienceBlock(xi?.web);
+  const xiAppBlock = renderAppExperienceBlock(xi?.app);
+  const xiOptimizationBlock = renderExperienceOptimizationBlock(xi);
+  const xiAntiBlock = renderExperienceAntiPatternBlock(xi);
+
+  // Design Intelligence's P3 IMAGE-INTENT tier is KEPT even when Experience Intelligence is
+  // present, because the two are not duplicates: P3 carries the WEB archetype's subject guidance,
+  // crop roles and forbidden treatments, while the media verdict answers the prior question — is
+  // imagery needed at all here, in what medium, on which surfaces, and where would type/layout be
+  // stronger. Dropping P3 would have lost real, archetype-specific art direction. The overlap that
+  // DOES exist (media vocabulary) is removed on the OTHER side instead: on a web build whose design
+  // intelligence already states the imagery vocabulary, the media block renders the verdict and the
+  // per-surface policy and defers the vocabulary to P3 (`mediaVocabularyOwnedElsewhere`).
+  const diP3Block = renderDesignIntelligenceP3Block(spec.designIntelligence);
 
   const introLines = isApp ? [
     'Implement the FrontendBuildSpecification projection below EXACTLY as an authoritative',
@@ -2559,7 +2595,9 @@ export function buildFrontendBuilderRequest(spec: FrontendBuildSpecification): s
    * Order within the message is unchanged from the pre-V3 assembly except for the
    * new P1 designIntelligence block; only DROPPING is priority-driven. ────────── */
   type BlockPriority = 0 | 1 | 2 | 3 | 4;
-  const parts: Array<{ lines: string[]; priority: BlockPriority }> = [
+  /** `xi` marks the tiers ADDED by Experience Intelligence. An app request is never
+   *  re-prioritised (see below), but it must still be able to give these back. */
+  const parts: Array<{ lines: string[]; priority: BlockPriority; xi?: true }> = [
     { priority: 0, lines: [
       '[FRONTEND BUILDER REQUEST]',
       'Contract version: frontend-spec-v1',
@@ -2583,6 +2621,11 @@ export function buildFrontendBuilderRequest(spec: FrontendBuildSpecification): s
     // its OWN honest priority: only P1 (what this site is, what it must structurally contain,
     // what may never be invented) outranks the canonical authorities below.
     { priority: 1, lines: diP1Block },
+    // Experience Intelligence P1 — what carries this experience, and whether media belongs at
+    // all. It sits at P1 because "this product does not need photography" / "imagery is the
+    // argument" is a product truth, not decoration: dropping it would let the build fall back
+    // to the default assumption that every page opens with a picture.
+    { priority: 1, lines: xiCoreBlock, xi: true },
     { priority: 2, lines: experienceIdentityBlock },
     { priority: 2, lines: diP2Block },       // peer of composition/visualSystem, never above them
     { priority: 3, lines: visualConceptBlock },
@@ -2594,24 +2637,43 @@ export function buildFrontendBuilderRequest(spec: FrontendBuildSpecification): s
     { priority: 2, lines: siteDepthBlock },
     { priority: 2, lines: experienceBlock2 },
     { priority: 3, lines: diP3Block },       // peer of visualConcept/motion/research
+    // The build-type adapter tier — the page (web) or surface (app) translation of the shared
+    // verdict. Peer of composition/visualSystem; never above them.
+    { priority: 2, lines: xiWebBlock, xi: true },
+    { priority: 2, lines: xiAppBlock, xi: true },
+    // The optimization strategy. P3 is its honest priority: performance is FOURTH in the binding
+    // priority order the block itself states, so it must shed before composition/content/visual.
+    { priority: 3, lines: xiOptimizationBlock, xi: true },
     { priority: 1, lines: imageBlock },
     { priority: 1, lines: coverageBlock },
     { priority: 4, lines: diP4Block },       // the generic fingerprint ban — first to go
+    { priority: 4, lines: xiAntiBlock, xi: true },   // the evidence-scoped signature ban — first to go
     { priority: 0, lines: bindingLines },
     { priority: 0, lines: disciplineLines },
     { priority: 0, lines: ['BEGIN_FRONTEND_BUILD_SPEC_JSON', json, 'END_FRONTEND_BUILD_SPEC_JSON'] },
   ];
 
-  const serialize = (dropAtOrAbove: BlockPriority | 5): string =>
-    parts.filter((p) => p.priority < dropAtOrAbove).flatMap((p) => p.lines).join('\n');
+  const serialize = (dropAtOrAbove: BlockPriority | 5, dropExperienceTiers = false): string =>
+    parts
+      .filter((p) => p.priority < dropAtOrAbove && !(dropExperienceTiers && p.xi))
+      .flatMap((p) => p.lines).join('\n');
 
-  // Cheapest path first: the full request, byte-identical to a flat assembly.
+  // Cheapest path first: the full request, byte-identical to a flat assembly. EVERY request that
+  // fits the safe budget takes this path, so no measured web or app build reaches the shedding
+  // below (measured app requests sit at ~45k against a 118k budget).
   const message = serialize(5);
-  // WEB ONLY. Priority shedding is a Web Build behaviour: an APP request must be
-  // byte-for-byte what it was before Design Intelligence V3 existed AT EVERY SIZE, not
-  // just for normal-sized fixtures — so an oversized app request keeps every block and
-  // still fails honestly at the existing MAX_FRONTEND_SPEC_CHARS guard, exactly as before.
-  if (isApp || message.length <= SAFE_FRONTEND_BUILDER_REQUEST_CHARS) return message;
+  if (message.length <= SAFE_FRONTEND_BUILDER_REQUEST_CHARS) return message;
+
+  // APP — priority shedding stays deliberately OFF: an app request is never re-prioritised, so
+  // every pre-existing app authority block survives at any size, exactly as before. The one thing
+  // an oversized app request now gives back is the direction THIS layer added, so Experience
+  // Intelligence can never be the reason an app request that used to generate is rejected for
+  // size. If that does not help (the spec JSON alone is over budget) the full request is returned
+  // and fails honestly at the existing MAX_FRONTEND_SPEC_CHARS guard, exactly as before.
+  if (isApp) {
+    const withoutExperienceTiers = serialize(5, true);
+    return withoutExperienceTiers.length < message.length ? withoutExperienceTiers : message;
+  }
   for (const cutoff of [4, 3, 2] as BlockPriority[]) {
     const shed = serialize(cutoff);
     if (shed.length <= SAFE_FRONTEND_BUILDER_REQUEST_CHARS) return shed;
@@ -4022,6 +4084,13 @@ export function buildFrontendBuilderRepairRequest(
     'and render) — this is the one allowed exception to preserving sections. Give each section a',
     'DISTINCT composition tied to its own purpose; do not let one section repeat another section\'s',
     'card/label structure.',
+    'EXPERIENCE DIRECTION (when `repairAuthorityDigest.experienceDirection` is present): it records the',
+    'direction this product was designed against — what carries the experience, its density and',
+    'hierarchy, whether imagery is required/forbidden and which medium, and the list of things that may',
+    'never be removed. Keep that direction. In particular, never trade it for performance: the stated',
+    'priority order is experience correctness > visual quality > usability/accessibility > performance >',
+    'cleanliness, so an efficiency fix that would remove required media, the primary call to action, key',
+    'navigation or a product-defining interaction must be skipped, not applied.',
     'AUTHORITY DIGEST (when `repairAuthorityDigest` is present): it lists the bounded acceptance-critical',
     'requirements (required bindings/interactions, required + forbidden sector patterns, per-section',
     'composition families, required content sections/CTA, required visuals, motion and execution',
@@ -4168,6 +4237,13 @@ export function buildFrontendBuilderDeltaRepairRequest(
     'import and render (you need not delete the component file) — the one allowed exception to preserving',
     'sections. Give each section a DISTINCT composition tied to its own purpose; do not let one section',
     'repeat another section\'s card/label structure.',
+    'EXPERIENCE DIRECTION (when `repairAuthorityDigest.experienceDirection` is present): it records the',
+    'direction this product was designed against — what carries the experience, its density and',
+    'hierarchy, whether imagery is required/forbidden and which medium, and the list of things that may',
+    'never be removed. Keep that direction. In particular, never trade it for performance: the stated',
+    'priority order is experience correctness > visual quality > usability/accessibility > performance >',
+    'cleanliness, so an efficiency fix that would remove required media, the primary call to action, key',
+    'navigation or a product-defining interaction must be skipped, not applied.',
     'AUTHORITY DIGEST (when `repairAuthorityDigest` is present): it lists the bounded acceptance-critical',
     'requirements (required bindings/interactions, required + forbidden sector patterns, per-section',
     'composition families, required content sections/CTA, required visuals, motion and execution',

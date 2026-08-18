@@ -167,10 +167,63 @@ function toId(name: string): string {
 
 /** Classify the app archetype from the prompt (primary) + the derived identity.
  *  The prompt wins: identity sector/business-model only breaks ties. */
+/**
+ * Turkish app-type vocabulary. Korvix treats Turkish as a first-class prompt language, but every
+ * keyword group below was English-only, so a Turkish app request could match nothing and fall
+ * through to `generic-app` — measured: "küçük bir işletme için randevu yönetimi uygulaması"
+ * (an appointment-management app) classified as generic-app, losing the booking playbook, its
+ * shell and its screens. Matched WITHOUT `\b` anchors because JS word boundaries are ASCII-only
+ * and would never fire before "ş"/"ö"/"ğ"; the terms are distinctive enough for substring matching.
+ */
+const APP_TYPE_TR: Array<{ type: AppType; re: RegExp }> = [
+  { type: 'utility', re: /(hesap makinesi|çevirici|dönüştürücü|kronometre|zamanlayıcı|bahşiş hesap)/ },
+  { type: 'crm', re: /(müşteri ilişkileri|satış ekibi|satış hunisi|potansiyel müşteri|cari hesap|müşteri yönetimi)/ },
+  { type: 'analytics-dashboard', re: /(analitik panel|raporlama paneli|metrik panel|iş zekası|gösterge paneli)/ },
+  { type: 'ecommerce-admin', re: /(e-?ticaret yönetim|sipariş yönetim|stok yönetim|mağaza yönetim|ürün yönetim)/ },
+  { type: 'fitness', re: /(antrenman|egzersiz|fitness|spor takip|kilo takip|koşu takip)/ },
+  { type: 'booking', re: /(randevu|rezervasyon|takvim yönetimi|müsaitlik)/ },
+  { type: 'messaging', re: /(mesajlaşma|sohbet uygulaması|gelen kutusu|konuşmalar)/ },
+  { type: 'productivity', re: /(görev yönetimi|yapılacaklar|not uygulaması|proje yönetimi|kanban|planlayıcı)/ },
+  { type: 'media-content', re: /(içerik uygulaması|makale okuma|müzik uygulaması|video uygulaması|podcast uygulaması|haber uygulaması|içerik kütüphane)/ },
+];
+
+/**
+ * German app-type vocabulary. Symmetric with the Turkish table above and added for the same
+ * measured reason — the keyword groups were English-only, so a concise German app request
+ * matched nothing and fell through to `generic-app` (measured: "eine App zur Aufgabenverwaltung"
+ * → generic-app, losing the productivity playbook). Matched WITHOUT `\b` anchors: JS word
+ * boundaries are ASCII-only and never fire before "ä"/"ö"/"ü"/"ß", and German compounds glue the
+ * meaningful stem inside a longer word ("Aufgabenverwaltung"). Every term is long and distinctive
+ * enough for safe substring matching.
+ */
+const APP_TYPE_DE: Array<{ type: AppType; re: RegExp }> = [
+  { type: 'utility', re: /(taschenrechner|umrechner|stoppuhr|zeitmesser|trinkgeldrechner|einheitenrechner)/ },
+  { type: 'crm', re: /(kundenverwaltung|kundenbeziehung|vertriebsteam|vertriebspipeline|kontaktverwaltung|lead-verwaltung)/ },
+  { type: 'analytics-dashboard', re: /(analyse-dashboard|analysedashboard|kennzahlen|berichts-dashboard|auswertungs|business intelligence)/ },
+  { type: 'ecommerce-admin', re: /(shop-verwaltung|shopverwaltung|bestellverwaltung|lagerverwaltung|produktverwaltung|warenwirtschaft)/ },
+  { type: 'fitness', re: /(trainingsplan|workout|fitness|trainingsverfolgung|gewichtsverfolgung|laufverfolgung)/ },
+  { type: 'booking', re: /(terminbuchung|terminverwaltung|reservierung|buchungssystem|verfügbarkeiten)/ },
+  { type: 'messaging', re: /(nachrichten-app|chat-app|posteingang|unterhaltungen|direktnachrichten)/ },
+  { type: 'productivity', re: /(aufgabenverwaltung|aufgabenliste|projektverwaltung|notiz-app|notizen-app|kanban|wochenplaner)/ },
+  { type: 'media-content', re: /(inhalte-app|artikel lesen|musik-app|video-app|podcast-app|nachrichten-app|mediathek)/ },
+];
+
 export function classifyAppType(prompt: string, identity?: FrontendSpecIdentity): AppType {
   const p = lc(prompt);
   const concept = `${lc(identity?.primaryConcept)} ${lc(identity?.subsector)} ${lc(identity?.siteType)}`;
   const t = `${p} ${concept}`;
+
+  // Turkish and German vocabulary are checked FIRST, in the same precedence order as the
+  // English groups below (utility first so an intentionally tiny tool is not over-built). A
+  // request that matches neither still falls through to the English groups unchanged, and all
+  // three channels run against every request — the declared language is inferred and requests
+  // routinely mix languages, so selecting a channel by that inference would blind the scorer.
+  for (const entry of APP_TYPE_TR) {
+    if (entry.re.test(t)) return entry.type;
+  }
+  for (const entry of APP_TYPE_DE) {
+    if (entry.re.test(t)) return entry.type;
+  }
 
   // Small utility / intentionally simple — checked first so "simple task app" that
   // is really a utility is not over-built, but a "task manager" still gets more.
