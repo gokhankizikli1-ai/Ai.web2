@@ -15,7 +15,7 @@ from backend.services.projects.store import (
     # projects
     create_project, get_project, list_projects, update_project, delete_project,
     # memory
-    add_memory, list_memory, delete_memory,
+    add_memory, list_memory, get_memory, delete_memory,
     # threads binding
     attach_thread, detach_thread, list_project_threads, get_project_of_thread,
     # agents
@@ -33,7 +33,7 @@ from backend.services.projects.context import (
 __all__ = [
     "init",
     "create_project", "get_project", "list_projects", "update_project", "delete_project",
-    "add_memory", "list_memory", "delete_memory",
+    "add_memory", "list_memory", "get_memory", "delete_memory",
     "attach_thread", "detach_thread", "list_project_threads", "get_project_of_thread",
     "create_agent", "list_agents", "update_agent", "delete_agent",
     "register_file", "list_files",

@@ -14,7 +14,12 @@ PROJECTION over authorities that already exist, assembled once per page load:
     project_products        generated Web/App products    (read-only)
     projects↔thread links   the project's chats           (read-only)
     connectors store        which tools this project uses (read-only)
+    projects.tasks_store    the user's own project tasks  (read-only)
+    projects.knowledge      decisions + durable knowledge (read-only projection)
+    projects.views_store    this user's last-visit marker (read-only)
     attention               the deterministic ranking     (pure)
+    today                   the deterministic Today block (pure)
+    recent_changes          "since your last visit"       (pure)
 
 WHAT IT IS NOT
 --------------
@@ -25,9 +30,16 @@ WHAT IT IS NOT
   * NOT a second observation store, and NOT a connector sync. Nothing here calls
     Gmail / GitHub / Vercel / Slack / Calendar. Opening the Project page performs
     ZERO provider API calls — it reads what a previous explicit sync ingested.
-  * NOT a writer. No task, run, candidate action, decision, memory or
-    observation is created by reading this. "Observation ≠ execution" holds.
+  * NOT a writer. No task, run, candidate action, decision, memory,
+    observation — and NOT even the last-visit marker — is created by reading
+    this. "Observation ≠ execution" holds, and so does "reading is not
+    visiting": the marker only moves on the page's EXPLICIT
+    `POST /workspace/seen` acknowledgement, which is why the change list is not
+    emptied by the very read that computed it.
   * NOT a model call. Nothing here spends a token.
+  * NOT a second task, decision or memory system. Tasks come from the one
+    canonical project-task authority; knowledge is a projection over the
+    EXISTING decision and project-memory authorities.
 
 ISOLATION
 ---------
@@ -52,22 +64,44 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from backend.services.project_brain import attention as attention_mod
+from backend.services.project_brain import recent_changes as changes_mod
+from backend.services.project_brain import today as today_mod
 
 logger = logging.getLogger(__name__)
 
 # ── Bounds (all deliberate; the page is meant to be scannable) ───────────────
 _MAX_OBSERVATIONS_READ = 60   # the slice attention + activity are derived from
 _MAX_ACTIVITY = 12
+# No single EVENT KIND may occupy the whole activity window. Six `chore` commits
+# pushed in one minute are one thing that happened, not six; without this they
+# fill a newest-first list of 12 and the timeline stops mentioning the issue
+# somebody opened, the meeting that moved, or the deploy that failed. The cap is
+# applied AFTER the global sort, so the rows that survive for a kind are still
+# that kind's newest. Kept per-KIND rather than per-source deliberately: GitHub
+# is one source but commits, issues, PRs, checks and deployments are different
+# things, and a commit burst must not be allowed to hide an opened issue.
+_MAX_ACTIVITY_PER_KIND = 3
 _MAX_ATTENTION = attention_mod.MAX_ATTENTION
 _MAX_GOALS = 5
 _MAX_PRODUCTS = 8
 _MAX_CHATS = 8
 _MAX_CONNECTOR_RESOURCES = 4  # resource labels named per provider before "+N"
+_MAX_TASKS_READ = 40          # the slice Today + the change list are derived from
+_MAX_TASKS = 6                # rows in the Overview's compact task block
+# The knowledge read is taken at the projection's own hard cap, and the counts
+# are derived FROM that read rather than from a second one (see
+# `knowledge.count_items`) — otherwise every workspace load would query both
+# backing authorities twice purely to count what it is already holding.
+_MAX_KNOWLEDGE_READ = 100
+_MAX_KNOWLEDGE = 4            # rows in the Overview's compact knowledge block
+_MAX_CHANGES = changes_mod.MAX_CHANGES
 
 #: Activity rows carry these non-connector sources so the frontend can label
 #: them without inventing a provider.
 ACTIVITY_SOURCE_CHAT = "chat"
 ACTIVITY_SOURCE_BUILD = "build"
+ACTIVITY_SOURCE_TASK = "task"
+ACTIVITY_SOURCE_KNOWLEDGE = "knowledge"
 
 
 def _now_iso(now: datetime) -> str:
@@ -111,6 +145,13 @@ def _owned_project(user_id: str, project_id: str):
     if project is None or str(project.owner_user_id) != str(user_id):
         return None
     return project
+
+
+#: The SAME gate, exported. Every route that touches a project's tasks,
+#: knowledge or view marker goes through this one function rather than
+#: re-deriving "does this person own this project?" — one implementation means
+#: one place to get it right, and one place a test can attack.
+owned_project = _owned_project
 
 
 # ── slices ───────────────────────────────────────────────────────────────────
@@ -264,8 +305,136 @@ def _read_connectors(user_id: str, project_id: str) -> List[dict]:
     return out
 
 
+def _read_tasks(user_id: str, project_id: str) -> List[dict]:
+    """This user's project tasks, in the task authority's own canonical order
+    (doing → todo → waiting → done, then priority DESC, created_at ASC).
+
+    Read-only: the workspace NEVER creates, moves or completes a task. Both
+    scopes are enforced in the store — the row must belong to this project AND
+    this owner — on top of the project ownership gate above."""
+    try:
+        from backend.services.projects import tasks_store
+        return tasks_store.list_tasks(str(project_id), owner_user_id=str(user_id),
+                                      limit=_MAX_TASKS_READ)
+    except Exception as exc:
+        logger.debug("project_workspace: tasks unavailable: %s", exc)
+        return []
+
+
+def _task_counts(user_id: str, project_id: str) -> Dict[str, int]:
+    try:
+        from backend.services.projects import tasks_store
+        return tasks_store.count_by_status(str(project_id),
+                                           owner_user_id=str(user_id))
+    except Exception as exc:
+        logger.debug("project_workspace: task counts unavailable: %s", exc)
+        return {}
+
+
+def _read_knowledge(project_id: str) -> List[dict]:
+    """Durable project knowledge — a PROJECTION over the existing decision and
+    project-memory authorities (see `projects.knowledge`). No new store, and
+    nothing here promotes a chat message into knowledge."""
+    try:
+        from backend.services.projects import knowledge as knowledge_mod
+        return knowledge_mod.list_knowledge(str(project_id),
+                                            limit=_MAX_KNOWLEDGE_READ)
+    except Exception as exc:
+        logger.debug("project_workspace: knowledge unavailable: %s", exc)
+        return []
+
+
+def _knowledge_counts(items: List[dict]) -> Dict[str, int]:
+    """Counts over the knowledge ALREADY read for this snapshot — never a second
+    trip to both backing authorities."""
+    try:
+        from backend.services.projects import knowledge as knowledge_mod
+        return knowledge_mod.count_items(items)
+    except Exception as exc:
+        logger.debug("project_workspace: knowledge counts unavailable: %s", exc)
+        return {}
+
+
+def _headline_knowledge(items: List[dict]) -> List[dict]:
+    """The few knowledge rows the Overview shows: decisions, requirements and
+    constraints only. Notes and loose facts are real knowledge but they are not
+    what someone scanning a project needs first, so they live in the Knowledge
+    view. Already newest-first from the projection."""
+    try:
+        from backend.services.projects import knowledge as knowledge_mod
+        headline = set(knowledge_mod.HEADLINE_KINDS)
+    except Exception:   # pragma: no cover — defensive
+        return []
+    return [i for i in items if i.get("kind") in headline][:_MAX_KNOWLEDGE]
+
+
+def _read_view_marker(user_id: str, project_id: str) -> str:
+    """When this user last ACKNOWLEDGED a visit to this project, or "" when they
+    never have. Purely a read — see the module docstring on why the marker never
+    moves here."""
+    try:
+        from backend.services.projects import views_store
+        return _s(views_store.get_last_viewed_at(str(user_id), str(project_id)), 64)
+    except Exception as exc:
+        logger.debug("project_workspace: view marker unavailable: %s", exc)
+        return ""
+
+
+def _change_rows(observations: List[dict], chats: List[dict],
+                 products: List[dict], tasks: List[dict],
+                 knowledge: List[dict], *, now: datetime) -> List[dict]:
+    """Every candidate change, normalized and given a DEDUP KEY naming the
+    real-world thing it is about. `recent_changes.build_changes` then keeps the
+    newest row per key inside the window, so five deploy attempts on one target
+    read as one change and a task moved twice reads as one line.
+
+    A connector row borrows its key from `attention`'s subject when the
+    observation is one of the classified concepts — that is the same identity
+    the supersession rules already use, so "deploy failed" and the later "deploy
+    recovered" collapse onto each other rather than both being reported."""
+    rows: List[dict] = []
+    for o in observations or []:
+        signal = attention_mod.classify_observation(o, now=now)
+        subject = _s(signal.get("subject"), 200) if signal else ""
+        source = _s(o.get("source"), 40)
+        title = _s(o.get("summary"), 240) or _s(o.get("kind"), 120)
+        rows.append(changes_mod.change_row(
+            key=subject or f"{source}:{_s(o.get('kind'), 120)}:{title[:80]}",
+            change=changes_mod.CHANGE_CONNECTOR, source=source, title=title,
+            occurred_at=o.get("observed_at")))
+    for c in chats or []:
+        thread_id = _s(c.get("thread_id"), 64)
+        rows.append(changes_mod.change_row(
+            key=f"chat:{thread_id}", change=changes_mod.CHANGE_CHAT,
+            source=ACTIVITY_SOURCE_CHAT, title=_s(c.get("title"), 240),
+            occurred_at=c.get("updated_at"), ref=thread_id))
+    for p in products or []:
+        ref = _s(p.get("deliverable_id"), 200)
+        rows.append(changes_mod.change_row(
+            key=f"build:{ref}", change=changes_mod.CHANGE_BUILD,
+            source=ACTIVITY_SOURCE_BUILD, title=_s(p.get("title"), 240),
+            detail=_s(p.get("status"), 60), occurred_at=p.get("updated_at"),
+            ref=ref))
+    for t in tasks or []:
+        tid = _s(t.get("id"), 64)
+        rows.append(changes_mod.change_row(
+            key=f"task:{tid}", change=changes_mod.CHANGE_TASK,
+            source=ACTIVITY_SOURCE_TASK, title=_s(t.get("title"), 240),
+            detail=_s(t.get("status"), 40), occurred_at=t.get("updated_at"),
+            ref=tid))
+    for k in knowledge or []:
+        kid = _s(k.get("id"), 64)
+        rows.append(changes_mod.change_row(
+            key=f"knowledge:{kid}", change=changes_mod.CHANGE_KNOWLEDGE,
+            source=ACTIVITY_SOURCE_KNOWLEDGE, title=_s(k.get("text"), 240),
+            detail=_s(k.get("kind"), 40), occurred_at=k.get("created_at"),
+            ref=kid))
+    return rows
+
+
 def _build_activity(observations: List[dict], chats: List[dict],
-                    products: List[dict]) -> List[dict]:
+                    products: List[dict], tasks: List[dict] = (),
+                    knowledge: List[dict] = ()) -> List[dict]:
     """ONE unified "what changed around this project" stream.
 
     Presentation is normalized here; STORAGE is not — every row still lives in
@@ -304,13 +473,45 @@ def _build_activity(observations: List[dict], chats: List[dict],
             "ref":         _s(p.get("deliverable_id"), 200),
         })
 
+    for t in tasks or []:
+        rows.append({
+            "id":          _s(t.get("id"), 64),
+            "source":      ACTIVITY_SOURCE_TASK,
+            "kind":        f"task.{_s(t.get('status'), 40) or 'todo'}",
+            "title":       _s(t.get("title"), 240),
+            "occurred_at": _s(t.get("updated_at"), 64),
+            "ref":         _s(t.get("id"), 64),
+        })
+    for k in knowledge or []:
+        rows.append({
+            "id":          _s(k.get("id"), 64),
+            "source":      ACTIVITY_SOURCE_KNOWLEDGE,
+            "kind":        f"knowledge.{_s(k.get('kind'), 40) or 'note'}",
+            "title":       _s(k.get("text"), 240),
+            "occurred_at": _s(k.get("created_at"), 64),
+            "ref":         _s(k.get("id"), 64),
+        })
+
     def _key(row: dict):
         parsed = attention_mod.parse_iso(row.get("occurred_at"))
         stamp = parsed.timestamp() if parsed is not None else float("-inf")
         return (-stamp, str(row.get("source") or ""), str(row.get("id") or ""))
 
     rows.sort(key=_key)
-    return rows[:_MAX_ACTIVITY]
+
+    # Per-kind fairness, then the global bound.
+    per_kind: Dict[str, int] = {}
+    balanced: List[dict] = []
+    for row in rows:
+        kind = str(row.get("kind") or "")
+        seen = per_kind.get(kind, 0)
+        if seen >= _MAX_ACTIVITY_PER_KIND:
+            continue
+        per_kind[kind] = seen + 1
+        balanced.append(row)
+        if len(balanced) >= _MAX_ACTIVITY:
+            break
+    return balanced
 
 
 # ── the read model ───────────────────────────────────────────────────────────
@@ -336,6 +537,8 @@ def build(user_id: str, project_id: str, *,
     chats = _read_chats(user_id, project_id)
     goals = _read_goals(user_id, project_id)
     connectors = _read_connectors(user_id, project_id)
+    tasks = _read_tasks(user_id, project_id)
+    knowledge = _read_knowledge(project_id)
 
     # Summary — the Project Brain's OWN rule (a stashed summary memory, else the
     # sessions workspace). When the brain is disabled it returns "" and the
@@ -355,11 +558,26 @@ def build(user_id: str, project_id: str, *,
 
     attention = attention_mod.rank_attention(
         observations, products=products, now=when, limit=_MAX_ATTENTION)
-    activity = _build_activity(observations, chats, products)
+    activity = _build_activity(observations, chats, products, tasks, knowledge)
+
+    # TODAY — pure choice over the ranking + the project's own tasks and goals.
+    # Chooses, never re-ranks; creates nothing.
+    today = today_mod.build_today(attention=attention, tasks=tasks, goals=goals)
+
+    # SINCE YOUR LAST VISIT — or, when this user has never acknowledged a visit
+    # here, a truthfully-labelled "recent" window. The marker is READ, never
+    # written: see the module docstring.
+    last_viewed_at = _read_view_marker(user_id, project_id)
+    changes = changes_mod.build_changes(
+        _change_rows(observations, chats, products, tasks, knowledge, now=when),
+        last_viewed_at=last_viewed_at, now=when, limit=_MAX_CHANGES)
+    changes["last_viewed_at"] = last_viewed_at
 
     last_observation_at = _max_iso(*[o.get("observed_at") for o in observations])
     last_chat_at = _max_iso(*[c.get("updated_at") for c in chats])
     last_product_at = _max_iso(*[p.get("updated_at") for p in products])
+    last_task_at = _max_iso(*[t.get("updated_at") for t in tasks])
+    last_knowledge_at = _max_iso(*[k.get("created_at") for k in knowledge])
     last_sync_at = _max_iso(*[c.get("last_sync_at") for c in connectors])
 
     return {
@@ -371,20 +589,33 @@ def build(user_id: str, project_id: str, *,
             "updated_at":  _s(getattr(project, "updated_at", ""), 64),
         },
         "summary":    {"text": summary_text, "source": summary_source},
+        "today":      today,
         "goals":      goals,
         "attention":  attention,
         "activity":   activity,
+        "changes":    changes,
+        "tasks": {
+            "items":  tasks[:_MAX_TASKS],
+            "counts": _task_counts(user_id, project_id),
+        },
+        "knowledge": {
+            "items":  _headline_knowledge(knowledge),
+            "counts": _knowledge_counts(knowledge),
+        },
         "products":   products,
         "chats":      chats,
         "connectors": connectors,
         "freshness": {
             "generated_at":            _now_iso(when),
             "last_activity_at":        _max_iso(last_observation_at, last_chat_at,
-                                                last_product_at),
+                                                last_product_at, last_task_at,
+                                                last_knowledge_at),
             "last_connector_sync_at":  last_sync_at,
             "last_observation_at":     last_observation_at,
             "last_chat_at":            last_chat_at,
             "last_product_at":         last_product_at,
+            "last_task_at":            last_task_at,
+            "last_knowledge_at":       last_knowledge_at,
         },
         "counts": {
             "attention":  len(attention),
@@ -393,8 +624,13 @@ def build(user_id: str, project_id: str, *,
             "products":   len(products),
             "chats":      len(chats),
             "connectors": len(connectors),
+            "tasks":      len(tasks),
+            "knowledge":  len(knowledge),
+            "changes":    int(changes.get("count") or 0),
         },
     }
 
 
-__all__ = ["build", "ACTIVITY_SOURCE_CHAT", "ACTIVITY_SOURCE_BUILD"]
+__all__ = ["build", "owned_project",
+           "ACTIVITY_SOURCE_CHAT", "ACTIVITY_SOURCE_BUILD",
+           "ACTIVITY_SOURCE_TASK", "ACTIVITY_SOURCE_KNOWLEDGE"]

@@ -382,8 +382,15 @@ def test_a_project_with_no_connectors_renders_truthfully(env):
     assert snap["goals"] == []
     assert snap["summary"] == {"text": "", "source": ""}
     assert snap["freshness"]["last_activity_at"] == ""
+    assert snap["today"] == {"attention": None, "recommendation": None}
+    assert snap["tasks"]["items"] == [] and snap["knowledge"]["items"] == []
+    # No visit has ever been acknowledged for this project, so the change list
+    # must NOT claim to be "since your last visit".
+    assert snap["changes"]["mode"] == "recent"
+    assert snap["changes"]["items"] == [] and snap["changes"]["count"] == 0
     assert snap["counts"] == {"attention": 0, "activity": 0, "goals": 0,
-                              "products": 0, "chats": 0, "connectors": 0}
+                              "products": 0, "chats": 0, "connectors": 0,
+                              "tasks": 0, "knowledge": 0, "changes": 0}
 
 
 def test_a_project_whose_connectors_are_disabled_on_the_deployment_still_renders(env,

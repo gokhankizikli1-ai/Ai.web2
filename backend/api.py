@@ -316,6 +316,7 @@ def _build_full_app():
         "backend.routes.v2_assets",    # Phase 8 — /v2/assets/* Asset System (gated by ENABLE_ASSET_SYSTEM)
         "backend.routes.v2_vision",    # Phase 8 — /v2/assets/{id}/analyze + /analysis (gated by ENABLE_VISION_PIPELINE)
         "backend.routes.v2_brain",     # Phase 8 — /v2/projects/{id}/brain/* (gated by ENABLE_PROJECT_BRAIN)
+        "backend.routes.v2_project_workspace",  # Project Workspace — /v2/projects/{id}/tasks|knowledge|workspace/seen (auth-gated on the canonical project record; no run, no model, no provider call)
         "backend.routes.v2_workflows", # Phase 8 — /v2/workflows/* (gated by ENABLE_WORKFLOWS)
         "backend.routes.v2_agent_tasks", # Phase 8 — /v2/agents/{id}/tasks/* (gated by ENABLE_AGENT_ORCHESTRATION)
         "backend.routes.v2_recreate",  # Phase 8 — /v2/recreate/* (gated by ENABLE_WEBSITE_RECREATION)

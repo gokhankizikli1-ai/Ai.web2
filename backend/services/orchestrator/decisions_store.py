@@ -143,6 +143,47 @@ def get_decision(decision_id: str) -> Optional[dict]:
         return None
 
 
+def retire_decision(decision_id: str, *, project_id: str,
+                    user_id: str = "", source: str = "") -> bool:
+    """Retire ONE active decision — it stops being current without a successor
+    replacing it.
+
+    This is the store's OWN vocabulary, not a new concept: `status` has always
+    been `active | superseded`, and `superseded_by` has always been nullable.
+    `record_decision` retires the previous decision on a topic *because a newer
+    one arrived*; this retires one because the person who recorded it removed
+    it from Project Knowledge. Nothing is deleted, so the decision's history for
+    its topic stays intact.
+
+    Scoped defensively: the row must belong to `project_id`, and when `user_id`
+    / `source` are supplied it must match those too — the Knowledge surface only
+    ever offers removal for a decision the CALLER recorded, so a decision a
+    build or research capability derived can never be dropped out from under the
+    pipeline that depends on it."""
+    if not (decision_id and project_id):
+        return False
+    init_decisions_table()
+    clauses = ["id=?", "project_id=?", "status='active'"]
+    params: List[Any] = [str(decision_id), str(project_id)]
+    if user_id:
+        clauses.append("user_id=?")
+        params.append(str(user_id))
+    if source:
+        clauses.append("source=?")
+        params.append(str(source))
+    try:
+        with _sqlite.writer_tx(DB_PATH) as c:
+            cur = c.execute(
+                f"UPDATE project_decisions SET status='superseded' "
+                f"WHERE {' AND '.join(clauses)}",
+                tuple(params),
+            )
+            return int(cur.rowcount or 0) > 0
+    except Exception as exc:
+        logger.warning("orchestrator.decisions_store.retire failed: %s", exc)
+        return False
+
+
 def history_for_topic(project_id: str, topic: str) -> List[dict]:
     try:
         with _sqlite.connection(DB_PATH) as c:
@@ -191,5 +232,6 @@ __all__ = [
     "SOURCE_USER", "SOURCE_RESEARCH", "SOURCE_PRODUCT", "SOURCE_BUILD",
     "SOURCE_SYSTEM",
     "init_decisions_table", "record_decision", "active_decisions",
-    "get_decision", "history_for_topic", "ingest_decisions_from_content",
+    "get_decision", "retire_decision", "history_for_topic",
+    "ingest_decisions_from_content",
 ]

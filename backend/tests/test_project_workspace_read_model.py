@@ -259,6 +259,24 @@ def test_activity_is_newest_first_and_deterministic(env):
     assert [a["id"] for a in first] == [a["id"] for a in second]
 
 
+def test_a_burst_of_one_event_kind_cannot_fill_the_activity_window(env):
+    """Six `chore` commits pushed in one minute are ONE thing that happened.
+    Without a per-kind cap they fill a newest-first list of twelve and the
+    timeline stops mentioning the issue somebody opened right after."""
+    for i in range(8):
+        _observe(env, ext=f"c{i}", kind="github.commit.pushed",
+                 summary=f"chore {i}",
+                 when=f"2026-05-20T10:0{i}:00Z")
+    _observe(env, ext="issue", kind="github.issue.opened",
+             summary="Dark mode request", when="2026-05-20T09:00:00Z")
+    activity = env["ws"].build("uA", "pA")["activity"]
+    commits = [a for a in activity if a["kind"] == "github.commit.pushed"]
+    assert len(commits) == 3                     # capped…
+    assert [a["title"] for a in commits] == ["chore 7", "chore 6", "chore 5"]
+    # …and the older, rarer event still survives.
+    assert any(a["kind"] == "github.issue.opened" for a in activity)
+
+
 def test_activity_merges_connector_chat_and_build_sources(env):
     _observe(env, ext="g1", summary="Commit abc", when="2026-05-20T10:00:00Z")
     _chat(env, title="Design chat")
@@ -371,8 +389,9 @@ def test_route_returns_the_snapshot_for_the_owner(client, env, app):
     assert body["success"] is True
     assert body["data"]["project"]["id"] == "pA"
     assert set(body["data"]) == {
-        "project", "summary", "goals", "attention", "activity", "products",
-        "chats", "connectors", "freshness", "counts",
+        "project", "summary", "today", "goals", "attention", "activity",
+        "changes", "tasks", "knowledge", "products", "chats", "connectors",
+        "freshness", "counts",
     }
 
 

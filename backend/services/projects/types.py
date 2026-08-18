@@ -20,6 +20,19 @@ VALID_MEMORY_KINDS = (
     "agent_note",   # something an agent wrote for itself / its peers
     "file_summary", # summary of an uploaded file (Phase 2.5)
     "system",       # automatically injected (e.g. "Project created on …")
+    # Project Knowledge — the two durable shapes the existing taxonomy could
+    # not express. A CONSTRAINT is a boundary the project must respect
+    # ("connectors are read-only in V1"); a REQUIREMENT is something it must
+    # deliver ("the homepage must support Turkish and English"). Neither is a
+    # `decision` (a decision is a choice that was made and can be superseded by
+    # a later choice on the same topic — see `orchestrator.decisions_store`, the
+    # authority that still owns decisions) and neither is a bare `fact`.
+    #
+    # Purely ADDITIVE: `normalize_memory_kind` used to coerce these two words to
+    # "note", so no stored row changes meaning and no reader that predates this
+    # sees anything new it cannot handle.
+    "constraint",   # a boundary the project must respect
+    "requirement",  # something the project must deliver
 )
 VALID_MEMORY_SOURCES = ("user", "agent", "tool", "system")
 
