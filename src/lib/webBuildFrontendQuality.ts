@@ -262,10 +262,48 @@ function visualPlanningRows(s: VisualStrategy): WebBuildActivityDetailRow[] {
   rows.push({ label: 'photos', value: photos === 0 ? 'none needed' : String(photos) });
   return rows;
 }
+/**
+ * The media this build actually PLACED and must never lose: every required coverage target's
+ * resolved slot + dom id, plus the lead/hero image itself — whatever source resolved it (stock or
+ * generated). The Experience Intelligence contract is derived at PLANNING time, before any image
+ * is resolved, so its own `protectedMediaSlotIds` can only name planned targets; without this the
+ * optimizer could propose lazy-loading the very lead image the design requires.
+ *
+ * WEB ONLY — a strictly web-gated fix to a web-only pipeline. An app build returns [] so its
+ * optimizer guard stays byte-for-byte what it was. Pure, bounded, ids only (never URLs).
+ */
+export function placedMediaIdsForSpec(spec: FrontendBuildSpecification | undefined): string[] {
+  try {
+    if (!spec || spec.buildType === 'app') return [];
+    const slots = spec.assets?.imageSlots || [];
+    const requiredSlotIds = new Set(
+      (spec.imageCoverage?.targets || []).filter((t) => t?.required).map((t) => t?.slotId || t?.id).filter(Boolean) as string[],
+    );
+    const out: string[] = [];
+    for (const sl of slots) {
+      if (!sl?.url) continue;
+      const isLead = /^hero-(?:image|background)$/.test(sl.kind || '');
+      if (!isLead && !requiredSlotIds.has(sl.id)) continue;
+      if (sl.id) out.push(sl.id);
+      if (sl.domId) out.push(sl.domId);
+    }
+    return [...new Set(out)].slice(0, 12);
+  } catch { return []; }
+}
+
 function imageSourcingRows(m: ImageAssetManifest): WebBuildActivityDetailRow[] {
   const rows: WebBuildActivityDetailRow[] = [
     { label: 'images', value: `${m.sourced}/${m.requested}` },
   ];
+  // The routing verdict + the generated arm, when this build used them (web only; absent
+  // otherwise, so an app build's timeline rows are byte-for-byte unchanged).
+  const ss = m.sourceStrategy;
+  if (ss) rows.push({ label: 'routing', value: `stock ${ss.stockCount} · generated ${ss.generatedCount} · none ${ss.noneCount}` });
+  const gi = m.generatedImagery;
+  if (gi && (gi.requested > 0 || gi.produced > 0)) {
+    const weight = gi.heaviestBytes > 0 ? ` · heaviest ${Math.round(gi.heaviestBytes / 1024)}KB` : '';
+    rows.push({ label: 'generated', value: `${gi.produced}/${gi.attempted} (budget ${gi.budget})${weight}` });
+  }
   if (m.providers) rows.push({ label: 'providers', value: `pexels ${m.providers.pexels} · unsplash ${m.providers.unsplash}` });
   if (typeof m.elapsedMs === 'number' && m.elapsedMs > 0) rows.push({ label: 'elapsed', value: `${Math.round(m.elapsedMs / 1000)}s` });
   return rows;
@@ -722,7 +760,9 @@ export async function runFrontendBuilderQualityPipeline(
   try {
     const sourced = await sourceStockImagesForPayload(basePayload, { signal: opts?.signal });
     basePayload = sourced.payload;
-    emit('image-sourcing', sourced.manifest.sourced > 0 ? 'completed' : 'skipped', imageSourcingRows(sourced.manifest));
+    // "completed" means the build actually got imagery — from EITHER arm of the routing.
+    const placed = sourced.manifest.sourced + (sourced.manifest.generatedImagery?.produced ?? 0);
+    emit('image-sourcing', placed > 0 ? 'completed' : 'skipped', imageSourcingRows(sourced.manifest));
   } catch {
     emit('image-sourcing', 'skipped');
   }
@@ -902,6 +942,9 @@ export async function runFrontendBuilderQualityPipeline(
     //    modules blocked only for a non-software operator sector). Fully fail-open. ──
     const bindingReqs = spec?.bindingRequirements;
     const imageCoverage = spec?.imageCoverage;
+    // The image SOURCE-STRATEGY routing verdict (WEB only; undefined for every app build), so
+    // acceptance can see that this build was told the interface — not a photograph — is the visual.
+    const imageSourceStrategy = spec?.buildType === 'app' ? undefined : spec?.imageSourceStrategy;
     const coverageDiag = basePayload.artifacts?.imageAssetManifest?.coverage;
     const imageIntelDiag = basePayload.artifacts?.imageAssetManifest?.imageIntelligence;
     // Phase (research-grounded direction) — the sector/research direction contract drives BOTH the
@@ -962,7 +1005,7 @@ export async function runFrontendBuilderQualityPipeline(
     let initialAppQuality: AppQualityAcceptanceResult | undefined;
     let repairAppQuality: AppQualityAcceptanceResult | undefined;
     try {
-      initialBinding = analyzeBindingAcceptance(validation?.files, bindingReqs, driftPolicy, imageCoverage);
+      initialBinding = analyzeBindingAcceptance(validation?.files, bindingReqs, driftPolicy, imageCoverage, imageSourceStrategy);
       initialResearch = analyzeResearchGrounding(validation?.files, researchDirection);
       initialComposition = analyzeComposition(validation?.files, composition);
       initialVisualSystem = analyzeVisualSystem(validation?.files, visualSystem);
@@ -1243,7 +1286,13 @@ export async function runFrontendBuilderQualityPipeline(
       const entryViewportPath = spec?.buildType === 'app' && spec?.appArchitecture?.primaryEntryScreenId
         ? screenFilePath(spec.appArchitecture.primaryEntryScreenId)
         : heroComponentPath;
-      const optimizationPolicy = buildOptimizationGuardPolicy(spec?.experienceIntelligence, entryViewportPath);
+      // The media this build actually PLACED and must never lose: every required coverage target's
+      // resolved slot + dom id, plus the lead/hero image itself — whatever source resolved it
+      // (stock or generated). Derived from the ENRICHED spec, which the planning-time contract
+      // could not see. Bounded; ids only, never URLs.
+      const optimizationPolicy = buildOptimizationGuardPolicy(
+        spec?.experienceIntelligence, entryViewportPath, placedMediaIdsForSpec(spec),
+      );
       optimization = analyzeOptimization(validation?.files, { heroComponentPath, policy: optimizationPolicy });
       const optIssues = optimizationToReviewIssues(optimization, optimizationPolicy);
       if (optIssues.length && initialReview.status === 'completed') {
@@ -1565,7 +1614,7 @@ export async function runFrontendBuilderQualityPipeline(
     //    so there is NO analysis gap). A repaired project can NEVER be accepted merely because the
     //    review score improved: a blocking binding requirement or cross-sector drift still blocks. ──
     try {
-      repairBinding = analyzeBindingAcceptance(repairValidation.files, bindingReqs, driftPolicy, imageCoverage);
+      repairBinding = analyzeBindingAcceptance(repairValidation.files, bindingReqs, driftPolicy, imageCoverage, imageSourceStrategy);
       repairResearch = analyzeResearchGrounding(repairValidation.files, researchDirection);
       repairComposition = analyzeComposition(repairValidation.files, composition);
       repairVisualSystem = analyzeVisualSystem(repairValidation.files, visualSystem);

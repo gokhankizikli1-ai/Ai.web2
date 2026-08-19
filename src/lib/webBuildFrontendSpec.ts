@@ -36,6 +36,7 @@ import { stripLeadingFieldLabel } from '@/lib/webBuildFieldLabel';
 import { deriveExperienceArchitecturePlan } from '@/lib/webBuildExperienceArchitecture';
 import { deriveBindingRequirements } from '@/lib/webBuildBindingRequirements';
 import { deriveImageCoverageRequirement } from '@/lib/webBuildImageCoverage';
+import { deriveImageSourceStrategyForSpec } from '@/lib/webBuildImageSourceStrategy';
 import { deriveResearchDirection } from '@/lib/webBuildResearchDirection';
 import { deriveDesignIntelligence } from '@/lib/webBuildDesignIntelligence';
 import { deriveExperienceIntelligence } from '@/lib/experienceIntelligence';
@@ -1070,6 +1071,17 @@ export function deriveFrontendBuildSpecification(input: FrontendBuildSpecInput):
       });
       if (experienceIntelligence) built.experienceIntelligence = experienceIntelligence;
     } catch { /* never block the build on experience-intelligence derivation */ }
+
+    // IMAGE SOURCE STRATEGY (web-build-image-intelligence-v1) — the per-slot stock / generated /
+    // none routing verdict. Derived LAST of the image authorities so it can compose all of them:
+    // the image-coverage floor, the visual-concept art direction, the Experience Intelligence
+    // media verdict and the archetype's imagery role. It re-decides none of them; it only routes.
+    // WEB ONLY — never derived for an app build, which is what structurally keeps the generated
+    // image route out of App Build. Deterministic, no model/network call, fail-open.
+    if (!isApp) try {
+      const imageSourceStrategy = deriveImageSourceStrategyForSpec(built);
+      if (imageSourceStrategy) built.imageSourceStrategy = imageSourceStrategy;
+    } catch { /* never block the build on image-source routing */ }
 
     // Phase (execution obligations) — collect the high-value, verifiable obligations from EVERY derived
     // contract into one accountability registry with stable ids (composes; never re-decides). Runs last so

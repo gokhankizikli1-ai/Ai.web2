@@ -31,6 +31,7 @@ import type {
   FrontendBuilderReviewIssue, FrontendBuilderReviewSeverity, FrontendBuilderReviewCategory,
 } from '@/lib/webBuildAgents';
 import type { ImageCoverageRequirement } from '@/lib/webBuildImageCoverage';
+import type { ImageSourceStrategyContract } from '@/lib/webBuildImageSourceStrategy';
 
 /* ── Bounds ───────────────────────────────────────────────────────────────── */
 const MAX_SRC_CHARS = 240_000;      // total source scanned
@@ -56,7 +57,10 @@ export type BindingIssueCode =
   // Semantic image-coverage findings (feature-scoped; reuse of the media analysis).
   | 'required-image-not-rendered'
   | 'required-image-semantically-mismatched'
-  | 'required-image-uncovered';
+  | 'required-image-uncovered'
+  // Image SOURCE-STRATEGY finding: photography was rendered where the routing verdict said the
+  // honest visual is the interface / type / a native component. Advisory (never blocking).
+  | 'unnecessary-imagery-used';
 
 export interface BindingIssue {
   code: BindingIssueCode;
@@ -154,6 +158,9 @@ interface ControlSlot {
 interface ImageInfo {
   tokens: string[];            // alt text / src filename / image-slot name / nearby caption+heading
   decorative: boolean;         // empty alt, role=presentation, or logo/icon/avatar/favicon/decoration
+  /** The exact `data-korvix-image-slot` value, when the rendered image carries one. This is the
+   *  APPROVED asset's own identity — stronger evidence than token overlap. */
+  slotId?: string;
   content: boolean;            // a real content image (has src / slot / picture), not a pure shape
 }
 interface DerivedVar {
@@ -277,11 +284,11 @@ function extractControls(content: string): { controls: ControlSlot[]; drivenStat
 function extractImages(content: string): ImageInfo[] {
   const out: ImageInfo[] = [];
   const decoRe = /logo|favicon|avatar|\bicon\b|sprite|badge|decorat|pattern|texture|placeholder|blur|noise/i;
-  const pushImg = (tokensStr: string[], src: string, alt: string | null, decorativeAttr: boolean, content = true) => {
+  const pushImg = (tokensStr: string[], src: string, alt: string | null, decorativeAttr: boolean, content = true, slotId = '') => {
     const tokens = new Set<string>();
     tokensStr.forEach((s) => tokenize(s).forEach((t) => tokens.add(t)));
     const decorative = decorativeAttr || alt === '' || decoRe.test(src) || (alt != null && decoRe.test(alt)) || tokensStr.some((s) => decoRe.test(s));
-    out.push({ tokens: [...tokens].filter((t) => !STOP.has(t)), decorative, content });
+    out.push({ tokens: [...tokens].filter((t) => !STOP.has(t)), decorative, content, ...(slotId ? { slotId } : {}) });
   };
   for (const m of content.matchAll(/<img\b([^>]*)>/gi)) {
     if (out.length >= MAX_SLOTS_PER_FILE) break;
@@ -294,11 +301,11 @@ function extractImages(content: string): ImageInfo[] {
     const near = content.slice(idx, Math.min(content.length, idx + 300));
     const cap2 = [...near.matchAll(/<figcaption\b[^>]*>([\s\S]{0,120}?)<\/figcaption>/gi)].map((x) => x[1].replace(/<[^>]*>/g, ' '));
     const srcName = (src.split(/[\\/]/).pop() || '').replace(/\.[a-z0-9]+$/i, '').replace(/[-_]+/g, ' ');
-    pushImg([alt || '', srcName, slot, ...cap2], src, alt, role, true);
+    pushImg([alt || '', srcName, slot, ...cap2], src, alt, role, true, slot);
   }
   for (const m of content.matchAll(/data-korvix-image-slot=["']([^"']+)["']/gi)) {
     if (out.length >= MAX_SLOTS_PER_FILE) break;
-    pushImg([m[1].replace(/[-_]+/g, ' ')], '', null, false, true);
+    pushImg([m[1].replace(/[-_]+/g, ' ')], '', null, false, true, m[1]);
   }
   for (const m of content.matchAll(/background-image\s*:\s*url\(([^)]+)\)/gi)) {
     if (out.length >= MAX_SLOTS_PER_FILE) break;
@@ -544,7 +551,17 @@ function analyzeImageCoverage(
     // Purpose/section words help match a relevant image; drop generic stop tokens.
     [...exp].filter((x) => STOP.has(x)).forEach((x) => exp.delete(x));
 
-    const hit = pool.find((p) => !p.used && p.im.tokens.some((tok) => exp.has(tok)));
+    /* STRONGEST evidence first: the approved asset the pipeline assigned to THIS target was
+     * actually rendered, identified by its own `data-korvix-image-slot`. Token overlap is a
+     * proxy for that, and it fails whenever the image's alt honestly describes something the
+     * target's query words do not contain — which is exactly the case for an AI-generated
+     * illustrative visual ("Illustrative brand artwork…") covering a required lead slot. Falling
+     * back to tokens keeps every existing match working; nothing is loosened, because a slot id
+     * is assigned by the sourcing pipeline and cannot be claimed by an unrelated image. */
+    const byApprovedSlot = t.slotId
+      ? pool.find((p) => !p.used && !!p.im.slotId && p.im.slotId === t.slotId)
+      : undefined;
+    const hit = byApprovedSlot || pool.find((p) => !p.used && p.im.tokens.some((tok) => exp.has(tok)));
     if (hit) { hit.used = true; rendered += 1; continue; }
 
     uncovered += 1;
@@ -575,6 +592,40 @@ function analyzeImageCoverage(
   return { issues, required: requiredTargets.length, rendered, uncovered };
 }
 
+/* ── Image SOURCE-STRATEGY acceptance (advisory) ──────────────────────────────────────────────
+ * The routing contract can conclude that a build needs NO photography at all — a dashboard-like
+ * web product, a developer tool, an explicit "no images" request. When it did, and the generated
+ * project nevertheless renders real content photography, the build silently ignored the verdict.
+ *
+ * Deliberately conservative and NON-BLOCKING: it fires only when EVERY routed slot was `none`
+ * (so there is no ambiguity about which image was allowed), the media verdict agrees that imagery
+ * is unnecessary, and at least two real, non-decorative content images were rendered. It reuses
+ * the SAME image model the coverage analysis uses — there is no second image scanner. Pure. */
+const MIN_UNNECESSARY_IMAGES = 2;
+
+function analyzeSourceStrategy(
+  units: FileUnit[], list: FrontendGeneratedFile[],
+  routing: ImageSourceStrategyContract | undefined,
+): BindingIssue[] {
+  if (!routing || !routing.decisions.length) return [];
+  if (routing.stockCount > 0 || routing.generatedCount > 0) return [];
+  const noPhotoVerdict = routing.mediaNecessity === 'unnecessary'
+    || routing.coverageMode === 'none'
+    || routing.reasons.includes('explicit-no-photo')
+    || routing.reasons.includes('interface-native-visual');
+  if (!noPhotoVerdict) return [];
+  const rendered = units.flatMap((u) => u.images).filter((im) => im.content && !im.decorative);
+  if (rendered.length < MIN_UNNECESSARY_IMAGES) return [];
+  return [{
+    code: 'unnecessary-imagery-used',
+    severity: 'minor',
+    label: 'imagery used where the interface is the visual',
+    files: filesMatching(list, ['img', 'image', 'picture']),
+    evidence: cap(`the image source strategy resolved every planned visual to "none" (${routing.reasons.slice(0, 3).join(', ')}) yet ${rendered.length} content photographs are rendered`),
+    repairInstruction: cap('Replace the decorative photographs with the real evidence this product has — a labelled interface, a table, a specimen, type and space. Keep logos, icons and diagrams.'),
+  }];
+}
+
 /**
  * Run the deterministic binding-satisfaction + cross-sector-drift + image-coverage analysis over the
  * COMPLETE generated project. `binding` undefined ⇒ legacy binding result, but drift AND image
@@ -585,6 +636,8 @@ export function analyzeBindingAcceptance(
   binding: FrontendBindingRequirements | undefined,
   policy?: DriftPolicy,
   coverage?: ImageCoverageRequirement,
+  /** WEB only; absent for an app build and for every legacy spec ⇒ no source-strategy findings. */
+  routing?: ImageSourceStrategyContract,
 ): BindingAcceptanceResult {
   try {
     if (!binding || !Array.isArray(binding.requirements) || binding.requirements.length === 0) {
@@ -592,11 +645,13 @@ export function analyzeBindingAcceptance(
       const listNB = Array.isArray(files) ? files : [];
       const srcLowerNB = listNB.map((f) => f.content).join('\n').slice(0, MAX_SRC_CHARS).toLowerCase();
       const driftOnly = analyzeDrift(listNB, srcLowerNB, policy);
-      const cov = analyzeImageCoverage(listNB.slice(0, MAX_UNITS).map(buildUnit), listNB, srcLowerNB, coverage);
+      const unitsNB = listNB.slice(0, MAX_UNITS).map(buildUnit);
+      const cov = analyzeImageCoverage(unitsNB, listNB, srcLowerNB, coverage);
+      const routeIssuesNB = analyzeSourceStrategy(unitsNB, listNB, routing);
       const covFields = cov.required
         ? { imageCoverageStatus: (cov.uncovered ? 'fail' : 'pass') as 'fail' | 'pass', requiredImageCount: cov.required, renderedRequiredImageCount: cov.rendered, uncoveredRequiredImageCount: cov.uncovered }
         : {};
-      const allIssues = [...driftOnly, ...cov.issues].slice(0, MAX_ISSUES);
+      const allIssues = [...driftOnly, ...cov.issues, ...routeIssuesNB].slice(0, MAX_ISSUES);
       if (allIssues.length) {
         const blockingNB = allIssues.some((i) => i.severity === 'blocker' || i.code === 'cross-sector-semantic-drift' || i.code.startsWith('required-image-'));
         return { ...LEGACY_RESULT, legacyContractUsed: !binding, status: blockingNB ? 'fail' : 'warning', driftIssueCount: driftOnly.length, issues: allIssues, ...covFields };
@@ -775,6 +830,9 @@ export function analyzeBindingAcceptance(
     const coverageAnalysis = analyzeImageCoverage(units, list, srcLower, coverage);
     for (const c of coverageAnalysis.issues) push(c);
 
+    // ── Image SOURCE-STRATEGY acceptance (advisory; never blocks). ──
+    for (const r of analyzeSourceStrategy(units, list, routing)) push(r);
+
     const blocking = issues.some((i) => i.severity === 'blocker'
       || i.code === 'binding-control-missing' || i.code === 'binding-media-missing'
       || i.code === 'binding-section-missing' || i.code === 'binding-mobile-nav-nonfunctional'
@@ -828,6 +886,7 @@ const CODE_CATEGORY: Record<BindingIssueCode, FrontendBuilderReviewCategory> = {
   'required-image-not-rendered': 'component-composition',
   'required-image-semantically-mismatched': 'component-composition',
   'required-image-uncovered': 'component-composition',
+  'unnecessary-imagery-used': 'component-composition',
 };
 
 export function bindingIssuesToReviewIssues(result: BindingAcceptanceResult | undefined): FrontendBuilderReviewIssue[] {

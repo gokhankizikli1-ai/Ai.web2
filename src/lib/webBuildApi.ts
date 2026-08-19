@@ -2375,9 +2375,18 @@ function builderProjection(spec: FrontendBuildSpecification): Record<string, unk
  * unchanged by identity, so those requests are byte-for-byte what they were before.
  */
 function specForQualityTask(spec: FrontendBuildSpecification): FrontendBuildSpecification {
-  if (!spec || (!spec.designIntelligence && !spec.experienceIntelligence)) return spec;
+  if (!spec || (!spec.designIntelligence && !spec.experienceIntelligence && !spec.imageSourceStrategy)) return spec;
   const rest = { ...(spec as unknown as Record<string, unknown>) };
   delete rest.designIntelligence;
+  // The image SOURCE-STRATEGY routing contract is dropped for the same reason: it is a
+  // FIRST-GENERATION routing decision with no model-facing acceptance surface. Nothing the
+  // reviewer or repairer can do is improved by knowing WHERE an image came from — what they must
+  // honour is already materialized on the image slots themselves (url + imageSource +
+  // honestyLabel) and stated in the request's image block. Sending it would pay ~1.5–4k chars on
+  // EVERY review and repair call and invite the reviewer to judge against a contract Quality V2
+  // does not own. The deterministic acceptance analyzer reads it locally from the spec, never
+  // from the request, so this removal costs no enforcement.
+  delete rest.imageSourceStrategy;
   // Experience Intelligence is a FIRST-GENERATION direction authority for the same reason: no
   // analyzer scores it and no acceptance gate reads it, so sending the full contract on every
   // review/repair call would pay for a contract Quality V2 does not own. What a repair must not
@@ -2411,12 +2420,17 @@ export function buildFrontendBuilderRequest(spec: FrontendBuildSpecification): s
   const experienceBlock = (!contract && spec.experienceArchitecture)
     ? buildExperienceEnforcementBlock(spec.experienceArchitecture).split('\n')
     : [];
-  // Phase 14K.4 — real, pre-approved stock photos were sourced for some image slots.
+  // Phase 14K.4 — real, pre-approved images were resolved for some image slots. The image-source
+  // strategy may have resolved a slot as a licensed stock PHOTOGRAPH or as bespoke AI-GENERATED
+  // artwork; both arrive through the same slot contract, so the rendering rules below are shared
+  // and only the honesty clause differs. Slots the strategy resolved as `none` carry no url and
+  // stay type/CSS/native, exactly as an unsourced slot always has.
   const sourcedImageSlots = (spec.assets?.imageSlots || []).filter((s) => !!s.url);
+  const generatedImageSlots = sourcedImageSlots.filter((s) => s.imageSource === 'generated');
   const imageBlock = sourcedImageSlots.length > 0 ? [
     'REAL SOURCED IMAGES:',
-    'Some assets.imageSlots entries include a "url" — these are REAL, pre-approved,',
-    'license-cleared stock photographs (provider CDN, HTTPS). For EACH such slot you MUST:',
+    'Some assets.imageSlots entries include a "url" — these are REAL, pre-approved, pre-cleared',
+    'assets (HTTPS). For EACH such slot you MUST:',
     '- render a semantic <img> (or a single safe HTTPS background-image only if the design needs it),',
     '- use the "url" EXACTLY as given (never modify, resize-via-query, proxy or swap it),',
     '- set alt to the slot "alt" text,',
@@ -2426,6 +2440,13 @@ export function buildFrontendBuilderRequest(spec: FrontendBuildSpecification): s
     'Do NOT invent any other remote image URL, lorem-image service, Unsplash Source random',
     'endpoint, or base64 image as final artwork. Image slots WITHOUT a "url" stay CSS/SVG/',
     'typography exactly as before. Keep the provider/photographer fields intact for attribution.',
+    ...(generatedImageSlots.length > 0 ? [
+      `A slot whose "imageSource" is "generated" (${generatedImageSlots.length} here) is AI-GENERATED`,
+      'illustrative artwork, not a photograph of anything real. Render it exactly like the others,',
+      'and keep it honest: never caption, label or describe it as a photo of this business, its',
+      'team, its premises, its products or its customers; never present it as evidence, a result,',
+      'a certificate or a case study; and never attribute a photographer to it.',
+    ] : []),
     '',
   ] : [];
   // Phase (research-grounded direction) — one compact block that names the researched business

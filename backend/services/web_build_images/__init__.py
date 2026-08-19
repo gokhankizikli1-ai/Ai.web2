@@ -132,12 +132,27 @@ def generation_allowed(kind: str, source: str, manual_upload_recommended: bool) 
 
 # ── Aspect ratio → provider size helpers ──────────────────────────────────────
 def _openai_size(aspect: str) -> str:
+    """Map a requested aspect ratio onto the sizes the model actually supports.
+
+    Portrait ratios are resolved by COMPARING the two numbers, not by matching the single
+    literal "9:16". A request for 4:5 / 2:3 / 3:4 previously fell through to landscape, so an
+    art direction that asked for a vertical composition received a wide image — the prompt and
+    the file contradicted each other, and the layout box then cropped it badly.
+    """
     a = (aspect or "").strip()
     if a in ("1:1",):
         return "1024x1024"
-    if a in ("9:16",):
-        return "1024x1792"
-    # 16:9 / 21:9 / 3:2 / 4:3 and anything else → landscape
+    try:
+        w_s, h_s = a.split(":", 1)
+        w, h = int(w_s), int(h_s)
+        if w > 0 and h > 0:
+            if h > w:
+                return "1024x1792"      # any portrait ratio
+            if w == h:
+                return "1024x1024"
+    except (ValueError, AttributeError):
+        pass
+    # 16:9 / 21:9 / 3:2 / 4:3 and anything unparseable → landscape
     return "1792x1024"
 
 

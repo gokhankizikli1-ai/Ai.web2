@@ -11,11 +11,13 @@
  * conservative deterministic fallback that fills ONLY the missing mandatory coverage while
  * preserving the strategy's mood/style/authenticity guidance.
  *
- * Everything here is PURE and bounded. Stock is always the first choice. AI generation is a
- * bounded, cost-controlled, last-resort fallback whose persistence safety is classified here: a
- * provider that can only return a session-only base64 data URL (openai / stability today) is
- * NEVER injected into generated source — the required slot stays honestly uncovered with the
- * reason `ai-fallback-not-persistable`, for the existing manual-review path to handle.
+ * Everything here is PURE and bounded. For the REQUIRED floor stock is always the first choice —
+ * which source a given slot should use is decided by the image-source-strategy contract, not here.
+ * AI generation stays a bounded, cost-controlled fallback whose persistence safety is enforced: an
+ * image that cannot be stored durably is NEVER injected into generated source (it would not
+ * survive save/reopen/revision), so the required slot stays honestly uncovered with the reason
+ * `ai-fallback-not-persistable`. Durability is MEASURED by the caller and passed in as
+ * `AiFallbackContext.persistable`; with no measurement the conservative default is "not durable".
  *
  * No new env vars, no provider/model calls, no dependencies. Additive & optional on old builds.
  */
@@ -365,10 +367,14 @@ export function diagnoseStrategyForCoverage(
 /* ── AI fallback persistence classifier + bounded planner ──────────────────── */
 
 /**
- * Whether an AI image from `provider` can be DURABLY persisted/rendered as a normal remote asset.
- * openai/stability return a session-only base64 data URL → NOT persistable (must never be injected
- * into generated source). `custom` cannot be guaranteed to return a hosted HTTPS URL without a
- * live call, so it is treated conservatively as non-persistable in the automatic path.
+ * The CONSERVATIVE default classifier: whether an AI image from `provider` can be assumed durably
+ * persistable WITHOUT evidence. It stays `false` for every provider, because a provider's own
+ * response is a session-only base64 data URL that must never be injected into generated source.
+ *
+ * Durability is a property of the PIPELINE, not of the provider: the generated route stores its
+ * result through the existing asset system and reports the real outcome, which the caller passes
+ * as `AiFallbackContext.persistable`. This function remains the answer when no such measurement
+ * exists (an old build, a caller that never ran the generated route).
  */
 export function aiProviderPersistable(provider: string | undefined): boolean {
   const p = (provider || '').trim().toLowerCase();
@@ -381,6 +387,12 @@ export interface AiFallbackContext {
   provider: string;
   enabled: boolean;
   authorized: boolean;
+  /**
+   * Whether a generated image can be DURABLY persisted for THIS build. Supplied by the caller
+   * from a MEASURED outcome (the generated route actually stored an asset), not assumed. Absent
+   * ⇒ the conservative provider classification below, which is the pre-existing behaviour.
+   */
+  persistable?: boolean;
 }
 export type AiFallbackOutcome =
   | 'ai-usable' | 'not-persistable' | 'unsafe-slot' | 'not-authorized' | 'over-ceiling';
@@ -427,7 +439,8 @@ export function planAiFallback(uncoveredRequired: ImageCoverageTarget[], ctx: Ai
       pushReason(reasons, 'ai-fallback-not-authorized');
       continue;
     }
-    if (!aiProviderPersistable(ctx.provider)) {
+    const persistable = typeof ctx.persistable === 'boolean' ? ctx.persistable : aiProviderPersistable(ctx.provider);
+    if (!persistable) {
       decisions.push({ targetId: t.id, hero: t.hero, outcome: 'not-persistable', reason: 'ai-fallback-not-persistable' });
       pushReason(reasons, 'ai-fallback-not-persistable');
       continue;

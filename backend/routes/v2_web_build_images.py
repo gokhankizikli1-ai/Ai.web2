@@ -35,7 +35,7 @@ from backend.services.billing.entitlements import gating
 from backend.services.billing.usage import service as usage
 from backend.services.billing.usage.enforcement import require_quota
 from backend.services import web_build_images as img
-from backend.services.web_build_images import stock, sourcing, uploads
+from backend.services.web_build_images import persistence, stock, sourcing, uploads
 from backend.services.assets import client as assets_client
 from backend.services.assets.errors import AssetError, AssetSystemDisabled
 
@@ -79,6 +79,12 @@ class GenerateBody(BaseModel):
     # the centralized image table — never from any client-sent value (task #8).
     buildId: Optional[str] = Field(default=None, max_length=120)
     quality: Optional[str] = Field(default=None, max_length=20)
+    # Ask for the result to be stored DURABLY through the existing asset system and returned as a
+    # stable delivery URL. Required for any image written into generated project source — a
+    # session-only data: URL must never be persisted into a build. Default false keeps the manual
+    # Preview path byte-for-byte unchanged.
+    persist: bool = Field(default=False)
+    projectId: Optional[str] = Field(default=None, max_length=120)
 
 
 @router.get("/health")
@@ -176,6 +182,16 @@ def image_gen_generate(
         },
     }
     asset = img.generate_image(req)
+
+    # ── DURABLE persistence (opt-in) — reuses the EXISTING asset system, the same storage the
+    # device-upload route uses. On any failure the asset is returned unchanged with
+    # persisted=false, and the caller treats it as non-durable (never injected into a build). ──
+    if body.persist:
+        asset = persistence.attach_persistence(
+            asset, user_id=str(getattr(user, "id", "") or "anon"),
+            project_id=(body.projectId or None),
+        )
+
     logger.info(
         "[WEB_BUILD_IMG] slot=%s kind=%s status=%s provider=%s uid=%s",
         body.slotId, body.kind, asset.get("status"), asset.get("provider"), getattr(user, "id", "?"),
@@ -185,7 +201,10 @@ def image_gen_generate(
     # tool cost against its build (task #4). Only when a real image was
     # produced; priced from the centralized image table by provider+quality.
     try:
-        if str(asset.get("status") or "").lower() in ("ok", "generated", "success", "completed"):
+        # `generate_image` reports a produced image as "ready"; the other spellings are kept for
+        # any provider adapter that reports differently. Without "ready" this never fired, so no
+        # generated image was ever costed.
+        if str(asset.get("status") or "").lower() in ("ready", "ok", "generated", "success", "completed"):
             from backend.services.cost_tracking import tracker as _ct
             from backend.services.cost_tracking.types import (
                 OP_IMAGE_GEN, STAGE_IMAGE_GENERATION, AGENT_IMAGE,
