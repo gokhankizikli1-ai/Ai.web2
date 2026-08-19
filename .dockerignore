@@ -1,0 +1,47 @@
+# Build-context exclusions for the Railway production image (see Dockerfile).
+#
+# Scope: things that are pure weight or actively harmful to copy into the
+# image. Application source (backend/, src/, build-worker/, public/) is
+# deliberately NOT excluded so the image stays a faithful copy of the repo.
+
+# Git metadata — large, never read at runtime.
+.git
+.gitignore
+
+# Locally-installed Node modules. Not in the repo (gitignored), but present
+# in a developer/CI checkout, where they would dominate the build context.
+node_modules
+
+# Frontend build output. The frontend is deployed on Vercel (vercel.json);
+# the backend never serves dist/ — no StaticFiles mount exists.
+dist
+
+# Python bytecode / local virtualenvs.
+__pycache__/
+*.py[cod]
+.venv
+venv
+env
+
+# Local SQLite databases. Copying a developer's DB into a production image
+# would ship stale data; production resolves these via KORVIX_DATA_DIR /
+# RAILWAY_VOLUME_MOUNT_PATH (backend/core/paths.py).
+*.db
+*.sqlite
+*.sqlite3
+
+# Secrets — must never enter an image layer.
+.env
+.env.local
+.env.*.local
+
+# Root-level UI screenshots (~9 MB). Scoped to the repo root with a leading
+# slash so images under public/ and docs/ are untouched.
+/*.png
+
+# Editor / OS noise.
+.vscode
+.idea
+.DS_Store
+*.swp
+*.log

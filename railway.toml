@@ -7,38 +7,47 @@
 #
 # WHY THIS FILE EXISTS
 # --------------------
-# Railway has been migrating its default builder from Nixpacks to
-# Railpack. Railpack uses `mise` internally for runtime detection.
-# That's why our prior nixpacks.toml fix had no effect — Railway
-# wasn't even invoking Nixpacks anymore.
+# Railway made Railpack the default builder and put Nixpacks into
+# maintenance mode. Railpack installs Python through `mise`, and
+# `mise` now REQUIRES GitHub artifact attestations for the binaries
+# it fetches. The python-build-standalone assets it wanted predate
+# attestations, so every build died with:
 #
-# Without this file, the build now fails with:
+#   mise ERROR Failed to install core:python@3.11.9
+#   No GitHub artifact attestations found for python@3.11.9
 #
-#   mise ERROR Failed to install core: python@3.11.9
-#   verify GitHub artifact attestations
-#   process "mise install" did not complete successfully
+# Nothing in this repo changed — an upstream verification policy did.
 #
-# This file explicitly selects NIXPACKS as the builder, so Railway
-# uses Nixpacks + reads our nixpacks.toml (which pins Python via
-# Nix packages, bypassing mise entirely).
+# Two earlier attempts failed because they both aimed at Nixpacks:
+# `nixpacks.toml` (Railpack never reads it) and `builder = "NIXPACKS"`
+# here (no longer reliably honoured now that Nixpacks is deprecated —
+# builds fell through to Railpack anyway, which is also why toggling
+# the builder in the Railway UI changed nothing).
+#
+# So we stop trying to steer the buildpack and pin the build outright:
+# `Dockerfile` ships Python 3.11 INSIDE the base image, so `mise` is
+# never invoked, no version is resolved, and no attestation is checked.
+# See the Dockerfile header for why 3.11 specifically (requirements.txt
+# has a hard ceiling below 3.13).
 #
 # WHAT THIS FILE DOES NOT DO
 # --------------------------
-# * NO start command override — Procfile still drives the
-#   `web:` (API) and `worker:` (Celery) services.
-# * NO Dockerfile path — we deliberately stay on Nixpacks so the
-#   Procfile-per-service-process pattern keeps working.
+# * NO start command override — the web service keeps the start
+#   command configured on the service in the Railway dashboard.
+#   (The Dockerfile carries a matching CMD as a fallback only; note
+#   that the Dockerfile builder does NOT read the Procfile — that was
+#   a Nixpacks/Railpack feature.)
 # * NO restart policy change — keep Railway's defaults.
+# * NO dependency change — the image runs the same
+#   `pip install -r requirements.txt` the Nixpacks build did.
 #
-# IF RAILWAY MIGRATES BUILDERS AGAIN
-# ----------------------------------
-# 1. Check the Railway docs for the new builder identifier
-# 2. Update [build].builder below
-# 3. Test with a preview deploy before merging the change
+# `nixpacks.toml` is now inert (no builder reads it). It is left in
+# place deliberately so this change stays small and trivially
+# revertible; removing it is a separate cleanup.
 
 [build]
-# Force Nixpacks even when the Railway account default has moved on
-# to Railpack or a newer builder. Nixpacks is mature, supports our
-# Procfile-driven multi-service setup, and our nixpacks.toml
-# explicitly pins Python via Nix packages (no mise round-trip).
-builder = "NIXPACKS"
+# Explicit, version-pinned build. Immune to Railpack's Python version
+# resolution, to `mise` attestation policy, and to any further default-
+# builder migration — the interpreter comes from the base image.
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
