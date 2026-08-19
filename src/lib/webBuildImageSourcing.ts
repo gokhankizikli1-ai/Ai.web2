@@ -29,6 +29,16 @@ import {
   type ImageCoverageRequirement, type ImageCoverageTarget, type ImageCoveragePurpose,
   type ImageCoverageReasonCode, type ImageCoverageDiagnostics, type AiFallbackContext,
 } from '@/lib/webBuildImageCoverage';
+// The ONE routing authority: stock / generated / none per slot (WEB only; undefined for an app
+// build, which is what structurally keeps the generated route out of App Build).
+import {
+  deriveImageSourceStrategyForSpec, decisionForSlot, resolveImageRoleForSlot,
+  buildImageSourceStrategyDiagnostics,
+  type ImageSourceStrategyContract, type ImageSourceDecision,
+} from '@/lib/webBuildImageSourceStrategy';
+import {
+  runGeneratedImagery, type GeneratedImageryDiagnostics,
+} from '@/lib/webBuildGeneratedImagery';
 
 const BUNDLED_BACKEND = 'https://worker-production-1345.up.railway.app';
 export const MAX_SOURCED_IMAGES = 8;
@@ -168,22 +178,11 @@ function slotAlt(slot: FrontendSpecImageSlot, spec: FrontendBuildSpecification, 
   return clean(`${purpose} photograph for a ${subject} website`, 200);
 }
 
-function normSlot(s: string | undefined): string { return (s || '').toLowerCase().replace(/[^a-z0-9]+/g, ''); }
-const PURPOSE_TO_ROLE: Record<ImagePurpose, string> = {
-  hero: 'hero-signature', background: 'background-atmosphere', team: 'social-proof-portrait',
-  about: 'trust-lifestyle', product: 'product-context', gallery: 'editorial-break',
-  project: 'editorial-break', other: 'feature-explanation',
-};
-/** Find the already-derived visualConcept image-role art direction for a need (exact slot id, else the
- *  role that maps to the need's purpose). Returns undefined when visualConcept/imageRoles are absent. */
+/** Find the already-derived visualConcept image-role art direction for a need. The resolver (and
+ *  its purpose→role map) lives in the image-source-strategy module, so routing and sourcing read
+ *  art direction through exactly ONE lookup instead of two copies that could drift. */
 function artRoleForNeed(spec: FrontendBuildSpecification, slotId: string, purpose: ImagePurpose): ImageRoleDirection | undefined {
-  const roles = spec.visualConcept?.imageRoles;
-  if (!Array.isArray(roles) || !roles.length) return undefined;
-  const nid = normSlot(slotId);
-  const exact = roles.find((r) => normSlot(r.slotId) === nid && nid.length > 0);
-  if (exact) return exact;
-  const wanted = PURPOSE_TO_ROLE[purpose];
-  return roles.find((r) => r.role === wanted) || (purpose === 'hero' ? roles.find((r) => r.role === 'hero-signature') : undefined);
+  return resolveImageRoleForSlot(spec.visualConcept, slotId, purpose);
 }
 /** Compose a bounded, sanitized query plan: a concrete primary query + up to 3 role-aware variations. */
 function buildQueryPlan(seed: string, art: ImageRoleDirection | undefined, purpose: ImagePurpose, orientation: ImageOrientation): { query: string; variants: string[] } {
@@ -535,13 +534,22 @@ export function enrichSpecWithSourcedImages(
     const n = (sectionCount[key] = (sectionCount[key] || 0) + 1);
     const domId = n === 1 ? `home.${key}.image` : `home.${key}.image-${n}`;
     domIdBySlot.set(slot.id, domId);
+    const generated = asset.source === 'generated';
     return {
       ...slot,
       url: asset.url,
       alt: asset.altText || slot.alt,
-      imageProvider: asset.provider,
-      photographer: asset.photographerName,
-      providerPageUrl: asset.providerPageUrl,
+      // A generated visual has no stock provider/photographer — leaving those fields unset keeps
+      // the attribution surface honest (nothing to attribute), and `imageSource` + `honestyLabel`
+      // tell the builder and every downstream reader what this image actually is.
+      ...(generated
+        ? { imageSource: 'generated' as const, honestyLabel: asset.honestyLabel }
+        : {
+          imageSource: 'stock' as const,
+          imageProvider: asset.provider,
+          photographer: asset.photographerName,
+          providerPageUrl: asset.providerPageUrl,
+        }),
       domId,
     };
   });
@@ -701,7 +709,9 @@ export function finalizeCoverage(input: {
     if (!t.slotId) continue;
     const slot = slotsById.get(t.slotId);
     if (slot && slot.url) {
-      t.matchStatus = 'sourced'; t.domId = slot.domId; t.provider = slot.imageProvider;
+      t.matchStatus = 'sourced'; t.domId = slot.domId;
+      // The honest provenance of the image that covered this target.
+      t.provider = slot.imageSource === 'generated' ? 'generated' : slot.imageProvider;
     } else if (t.required) {
       t.matchStatus = 'uncovered';
     }
@@ -739,6 +749,49 @@ export function finalizeCoverage(input: {
 
 function uniqReasons(r: ImageCoverageReasonCode[]): ImageCoverageReasonCode[] { return [...new Set(r)].slice(0, 20); }
 
+/* ── Image SOURCE ROUTING (web-build-image-intelligence-v1) ────────────────────
+ * The needs plan above answers "which slots want an image, and what should it show". The routing
+ * contract answers "where should that image COME FROM". This function is the only place the two
+ * meet, and it is deliberately conservative:
+ *
+ *   • no contract (app build, legacy spec, fail-open) ⇒ every need stays STOCK — byte-for-byte
+ *     the behaviour that existed before this contract;
+ *   • no decision for a need ⇒ that need stays STOCK;
+ *   • `none` ⇒ the need is suppressed and the slot stays typography/CSS/native, UNLESS the
+ *     COVERAGE authority requires that image (this layer never lowers a floor it does not own).
+ *     "Required" here means the coverage floor, not the deterministic planner's own
+ *     `required: purpose === 'hero'` marker — that marker says "this is the lead slot", and
+ *     treating it as a floor would have made a `none` verdict unreachable for every hero, which
+ *     is precisely the case this contract exists to decide (a dev tool, a dashboard product);
+ *   • `generated` ⇒ the need is handed to the generated route, which may hand it back.
+ *
+ * It never invents a need, so this contract can only re-route or REMOVE an image — it can never
+ * increase the number of images in a build. Pure. */
+export interface RoutedImageNeeds {
+  stock: ImageNeed[];
+  generated: Array<{ need: ImageNeed; decision: ImageSourceDecision }>;
+  /** Needs the routing removed because the honest answer is no photo at all. */
+  suppressed: ImageNeed[];
+  /** Required needs a `none` verdict could NOT remove (the coverage floor wins). */
+  floorProtected: number;
+}
+
+export function routeImageNeeds(
+  needs: ImageNeed[], routing: ImageSourceStrategyContract | undefined,
+): RoutedImageNeeds {
+  const out: RoutedImageNeeds = { stock: [], generated: [], suppressed: [], floorProtected: 0 };
+  const floorEnforced = routing?.coverageMode === 'required' || routing?.coverageMode === 'image-led';
+  for (const n of needs) {
+    const d = decisionForSlot(routing, n.slotId);
+    if (!d || d.strategy === 'stock') { out.stock.push(n); continue; }
+    if (d.strategy === 'generated') { out.generated.push({ need: n, decision: d }); continue; }
+    // 'none' — only the coverage floor can override it.
+    if (n.required && (d.required || floorEnforced)) { out.floorProtected += 1; out.stock.push(n); continue; }
+    out.suppressed.push(n);
+  }
+  return out;
+}
+
 /**
  * Source real stock images for a NEW build's spec and return a NEW payload with
  * the enriched spec + a persisted attribution manifest. FAIL-OPEN: on any problem
@@ -766,7 +819,7 @@ export async function sourceStockImagesForPayload(
     ? buildCoverageAwareNeeds(spec, strategy, cov)
     : { needs: deriveImageNeeds(spec, strategy), synthesizedSlots: [] as FrontendSpecImageSlot[], reasons: [] as ImageCoverageReasonCode[], fallbackUsed: false, targets: (cov?.targets || []) };
   const specForSourcing = mergeSynthesizedSlots(spec, built.synthesizedSlots);
-  const needs = built.needs;
+  let needs = built.needs;
 
   const hasSlots = !!(specForSourcing.assets && Array.isArray(specForSourcing.assets.imageSlots) && specForSourcing.assets.imageSlots.length);
   if (!enforce && !hasSlots) return { payload, manifest: emptyManifest('empty', ['no image slots']) };
@@ -774,6 +827,50 @@ export async function sourceStockImagesForPayload(
   // ENFORCES a floor, zero usable needs cannot occur (a required slot is synthesized) — so this
   // legacy short-circuit only applies to the non-enforcing (`none`/`optional`) modes.
   if (!enforce && needs.length === 0) return { payload, manifest: emptyManifest('empty', ['no photographic image needs']) };
+
+  /* ── IMAGE SOURCE ROUTING (web-build-image-intelligence-v1) ────────────────────────────────
+   * WEB ONLY. The contract was derived at planning time and persisted on the spec; an older
+   * (reopened) spec re-derives it deterministically from the same authorities. An APP spec has
+   * no contract at all — `routing` stays undefined and every need below stays STOCK, so App
+   * Build is byte-for-byte unchanged and NO generated-image call can originate from it. ── */
+  const routing: ImageSourceStrategyContract | undefined = specForSourcing.buildType === 'app'
+    ? undefined
+    : (specForSourcing.imageSourceStrategy || deriveImageSourceStrategyForSpec(specForSourcing));
+  const routed = routeImageNeeds(needs, routing);
+
+  /* ── The GENERATED route runs FIRST, so a failure falls back into the SAME single stock
+   *    request rather than costing a second round trip. Hard-bounded by the routing contract's
+   *    budget (≤ the product-wide ceiling) and skipped entirely — with ZERO provider calls —
+   *    when nothing is routed to it. ── */
+  let generatedAssets: SourcedImageAsset[] = [];
+  let generatedDiagnostics: GeneratedImageryDiagnostics | undefined;
+  let generatedPersistable = false;
+  if (routed.generated.length > 0 && routing) {
+    try {
+      const gen = await runGeneratedImagery(
+        routed.generated.map((g) => g.decision),
+        { spec: specForSourcing, budget: routing.generatedBudget },
+        opts,
+      );
+      generatedDiagnostics = gen.diagnostics;
+      generatedAssets = gen.assets;
+      generatedPersistable = gen.diagnostics.produced > 0;
+      const readySlots = new Set(gen.assets.map((a) => a.slotId));
+      for (const g of routed.generated) {
+        if (readySlots.has(g.need.slotId)) continue;
+        // Honest fallback, decision by decision: a real photograph only where authenticity and
+        // semantics allow one; otherwise no image at all (never an irrelevant substitute).
+        if (g.decision.fallback.includes('stock')) routed.stock.push(g.need);
+      }
+    } catch {
+      // Fail-open: the generated route can never break a build. Every decision falls back.
+      for (const g of routed.generated) {
+        if (g.decision.fallback.includes('stock')) routed.stock.push(g.need);
+      }
+    }
+  }
+
+  needs = routed.stock;
 
   const designContext = buildDesignContext(specForSourcing);
   const res = needs.length > 0 ? await fetchSourcedImages(needs, designContext, opts) : null;
@@ -791,9 +888,12 @@ export async function sourceStockImagesForPayload(
   let manifest: ImageAssetManifest;
   let enrichedSpec: FrontendBuildSpecification = specForSourcing;
   if (!res) {
+    const emptyReason = routed.suppressed.length > 0 && needs.length === 0
+      ? 'image source strategy: no photo needed here'
+      : 'no photographic image needs';
     manifest = {
       ...emptyManifest(needs.length === 0 ? 'empty' : 'failed-open',
-        needs.length === 0 ? ['no photographic image needs'] : ['sourcing endpoint unavailable']),
+        needs.length === 0 ? [emptyReason] : ['sourcing endpoint unavailable']),
       imageIntelligence: {
         ...intelBase, candidatesReceived: 0, keptAssets: 0, malformedRejected: 0, placeholderOrLogoRejected: 0,
         exactUrlDuplicatesPrevented: 0, normalizedUrlDuplicatesPrevented: 0, providerIdDuplicatesPrevented: 0,
@@ -809,24 +909,38 @@ export async function sourceStockImagesForPayload(
     const imageIntelligence: ImageSourcingIntelligenceDiagnostics = {
       ...intelBase, ...refined.diagnostics, elapsedMs: res.elapsedMs ?? 0,
     };
-    const baseManifest: ImageAssetManifest = {
+    manifest = {
       status: (res.status as ImageAssetManifest['status']) || (sourcedAssets.length ? 'ok' : 'no-results'),
       assets: sourcedAssets,
       providers: { pexels: res.providers?.pexels || 'unknown', unsplash: res.providers?.unsplash || 'unknown' },
       warnings: Array.isArray(res.warnings) ? res.warnings.slice(0, 8) : [],
+      // `requested` / `sourced` keep their exact STOCK meaning (the coverage diagnostics and the
+      // `stock-partial` reason are computed from them); the generated route reports its own counts.
       requested: res.requested ?? needs.length,
       sourced: sourcedAssets.length,
       elapsedMs: res.elapsedMs ?? 0,
       imageIntelligence,
     };
-    if (sourcedAssets.length === 0) {
-      manifest = baseManifest;
-    } else {
-      const { spec: es, assets: ea } = enrichSpecWithSourcedImages(specForSourcing, sourcedAssets);
-      enrichedSpec = es;
-      manifest = { ...baseManifest, assets: ea };
+  }
+
+  /* ── ONE enrichment pass over stock + generated assets, so every image — whatever its source —
+   *    reaches the builder through the SAME slot contract (url + alt + stable data-korvix ids)
+   *    and the same dedup/domId numbering. A generated asset carries `imageSource: 'generated'`
+   *    and its honesty label instead of a provider/photographer. ── */
+  const placedAssets = [...manifest.assets, ...generatedAssets];
+  if (placedAssets.length > 0) {
+    const { spec: es, assets: ea } = enrichSpecWithSourcedImages(specForSourcing, placedAssets);
+    enrichedSpec = es;
+    manifest = { ...manifest, assets: ea };
+    // A build whose imagery came only from the generated arm still HAS imagery: reporting the
+    // stock arm's `empty`/`no-results` as the manifest status would be untrue.
+    if (generatedAssets.length > 0 && (manifest.status === 'empty' || manifest.status === 'no-results')) {
+      manifest = { ...manifest, status: 'ok' };
     }
   }
+  if (generatedDiagnostics) manifest = { ...manifest, generatedImagery: generatedDiagnostics };
+  const routingDiagnostics = buildImageSourceStrategyDiagnostics(routing);
+  if (routingDiagnostics) manifest = { ...manifest, sourceStrategy: routingDiagnostics };
 
   // ── Coverage finalize — mark required targets sourced/uncovered, plan the bounded, stock-first,
   //    non-persistable-safe AI fallback, and persist coverage state + bounded diagnostics. ──
@@ -835,10 +949,12 @@ export async function sourceStockImagesForPayload(
       const fin = finalizeCoverage({
         coverage: cov, targets: built.targets, enrichedSpec, strategy, manifest,
         fallbackUsed: built.fallbackUsed, reasons: built.reasons,
-        // Capability probe (no network, no provider call). Every provider's automatic result is a
-        // session-only data URL today → classified non-persistable; enabled/authorized are set to
-        // the best case so the recorded reason is the true root cause (persistence, not gating).
-        aiCtx: { provider: 'openai', enabled: true, authorized: true } satisfies AiFallbackContext,
+        // The MEASURED capability of this build's generated route, not an assumption: `persistable`
+        // is true only when the route actually produced a durably-stored asset in THIS build. When
+        // it did not, the recorded reason stays the true root cause (persistence / availability).
+        aiCtx: {
+          provider: 'openai', enabled: true, authorized: true, persistable: generatedPersistable,
+        } satisfies AiFallbackContext,
       });
       enrichedSpec = { ...enrichedSpec, imageCoverage: fin.coverage };
       manifest = { ...manifest, coverage: fin.diagnostics };

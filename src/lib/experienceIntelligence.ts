@@ -322,8 +322,13 @@ function leadFor(input: ExperienceIntelligenceInput, ev: MediaEvidence): Experie
   const archetype = input.designIntelligence?.archetype;
   const coverage = input.imageCoverage?.mode;
   // An editorial publication is carried by its writing unless a hard media floor says otherwise
-  // (a photo-essay-led request reaches that floor through the binding/coverage authorities).
-  if (archetype === 'editorial-media' && coverage !== 'image-led') return 'editorial-led';
+  // (a photo-essay-led request reaches that floor through the binding/coverage authorities) — or
+  // unless the request itself repeatedly describes a working INTERFACE. The archetype lexicon
+  // matches ordinary operations vocabulary ("reporting") as journalism, so an internal dashboard
+  // product could resolve to `editorial-media` and then be typed as a publication before the
+  // interface evidence below was ever read. The archetype verdict still wins; it just no longer
+  // wins against a request that says "dashboard, admin panel, filters, queries" in its own words.
+  if (archetype === 'editorial-media' && coverage !== 'image-led' && ev.interfaceHits < 2) return 'editorial-led';
   if (coverage === 'image-led' || coverage === 'required' || role === 'central') return 'image-led';
   if (ev.reading >= 3) return 'editorial-led';
   if (archetype === 'ecommerce-brand' || archetype === 'marketplace') return 'catalogue-led';
@@ -1371,13 +1376,22 @@ export interface OptimizationGuardPolicy {
 export function buildOptimizationGuardPolicy(
   contract: ExperienceIntelligenceContract | undefined,
   firstViewportPath?: string,
+  /**
+   * Media ids that were actually PLACED in this build (slot ids + their stable data-korvix ids).
+   * The contract is derived at PLANNING time, before any image is resolved, so its own
+   * `protectedMediaSlotIds` can only name planned targets. Without this the optimizer could
+   * propose lazy-loading the very lead image the design requires, purely because the id it now
+   * carries did not exist when the direction was derived. Supplied by the caller because only it
+   * sees the enriched specification. Absent ⇒ exactly the previous behaviour.
+   */
+  placedMediaIds?: string[],
 ): OptimizationGuardPolicy | undefined {
   if (!contract) return undefined;
   const o = contract.optimization;
   return {
     ...(firstViewportPath ? { firstViewportPath } : {}),
     protectedFiles: o.protectedFiles.slice(0, 24),
-    protectedMediaSlotIds: o.protectedMediaSlotIds.slice(0, 10),
+    protectedMediaSlotIds: boundedList([...o.protectedMediaSlotIds, ...(placedMediaIds || [])], 16, 120),
     leadVisualRequired: contract.media.leadVisual === 'required',
     maxSimultaneousAnimations: o.motion.maxSimultaneousAnimations,
     maxAboveFoldMedia: o.aboveFold.maxMediaAssets,

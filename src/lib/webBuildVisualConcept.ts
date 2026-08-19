@@ -403,7 +403,11 @@ const UNIVERSAL_EXCLUSIONS = [
 const KEYWORD_CATEGORY: Array<{ re: RegExp; cat: VisualCategory }> = [
   { re: /\b(cyber\s?security|infosec|threat|malware|firewall|zero[-\s]?trust|siem|endpoint protection|penetration test|soc\b)/i, cat: 'security' },
   { re: /\b(developer|dev\s?tool|api\b|sdk\b|cli\b|open\s?source|framework|library|compiler|database|devops|terminal|code editor)/i, cat: 'developer-tool' },
-  { re: /\b(bank|banking|invest|investment|fintech|portfolio|wealth|trading|budget|loan|mortgage|insurance|payment|personal finance|accounting|tax)/i, cat: 'finance' },
+  // `portfolio` alone is NOT a finance signal: it is the single most common word in a creative
+  // portfolio brief, and matching it here (above `portfolio-creative`) classified every
+  // photographer/designer/illustrator site as finance — which handed the whole site
+  // data-visualization art direction. Only the finance senses of the word match.
+  { re: /\b(bank|banking|invest|investment|fintech|(?:investment|asset|client|stock)\s+portfolio|portfolio\s+(?:management|manager|performance|allocation)|wealth|trading|budget|loan|mortgage|insurance|payment|personal finance|accounting|tax)/i, cat: 'finance' },
   { re: /\b(fashion|apparel|clothing|jewel|jewellery|jewelry|cosmetic|beauty|online shop|online store|ecommerce|e-commerce|catalog|retail)/i, cat: 'ecommerce-fashion' },
   { re: /\b(architect|architecture|interior design|studio|built environment|structural|urban design)/i, cat: 'architecture' },
   { re: /\b(hotel|resort|hospitality|spa\b|luxury|villa|boutique hotel|travel|tourism|getaway|retreat|vineyard)/i, cat: 'hospitality-luxury' },
@@ -603,14 +607,27 @@ function deriveImageRoles(input: VisualConceptInput, cat: VisualCategory, dna: C
     usedRoles.add(role);
     const ar = ROLE_ASPECT[role];
     const orientation = (s.orientation === 'portrait' || s.orientation === 'square' || s.orientation === 'landscape') ? s.orientation : ar.orientation;
-    // Authenticity: proof-heavy / low-risk trust imagery must be authentic; illustrative concepts may be generated.
+    /* ── Medium, then authenticity — in that order, because authenticity is a property OF the
+     *    medium. The signature hero used to be typed 'photography' for every non-photo-first
+     *    category, so a software product's hero was described as a photograph even though its own
+     *    category DNA lists product UI, diagrams and generative media and never photography. It
+     *    then inherited "an authentic photograph is required", which is not a statement anyone can
+     *    satisfy about a product-UI composition — and downstream that read as "source a real photo
+     *    of this software", which is how interface-led products ended up with office stock. The
+     *    hero medium now comes from the category's OWN media DNA (photo-first categories still get
+     *    photography), and only a genuinely photographic medium can demand an authentic photo. ── */
+    const medium: VisualMedium = role === 'hero-signature'
+      ? (photoFirst ? 'photography' : (dna.media[0] || ROLE_MEDIUM[role]))
+      : ROLE_MEDIUM[role];
+    const photographicMedium = medium === 'photography' || medium === 'environmental-lifestyle';
+    // Authenticity: proof-heavy real-world imagery must be authentic; illustrative/interface
+    // concepts may be generated.
     const proofy = role === 'social-proof-portrait' || role === 'trust-lifestyle' || role === 'hero-signature';
     const authenticity: ImageRoleDirection['authenticity'] = s.manualRequired
       ? 'authentic-photo-required'
-      : (proofy && !graphicFirst && s.authenticityRisk !== 'low' ? 'authentic-photo-required' : (s.aiAllowed === false ? 'illustrative-ok' : 'generatable'));
-    const medium: VisualMedium = role === 'hero-signature'
-      ? (photoFirst ? 'photography' : ROLE_MEDIUM[role])
-      : ROLE_MEDIUM[role];
+      : (proofy && !graphicFirst && photographicMedium && s.authenticityRisk !== 'low'
+        ? 'authentic-photo-required'
+        : (s.aiAllowed === false ? 'illustrative-ok' : 'generatable'));
     const peoplePresent: ImageRoleDirection['peoplePresent'] = role === 'social-proof-portrait'
       ? 'required'
       : (role === 'trust-lifestyle' ? 'optional' : (graphicFirst || role === 'data-diagram' || role === 'security-technical' || role === 'decorative-texture' ? 'avoid' : 'optional'));

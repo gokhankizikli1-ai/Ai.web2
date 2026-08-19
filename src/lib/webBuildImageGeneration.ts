@@ -21,6 +21,8 @@ import { useSyncExternalStore } from 'react';
 import type { ImageAssetSlot } from '@/lib/webBuildAgents';
 
 const BUNDLED_BACKEND = 'https://worker-production-1345.up.railway.app';
+/** Hard client timeout for ONE generation call. A provider that hangs must never hang a build. */
+export const IMAGE_GEN_TIMEOUT_MS = 90_000;
 
 function apiBase(): string {
   const envBase = (import.meta.env.VITE_API_URL as string | undefined)?.trim();
@@ -70,6 +72,14 @@ export interface ImageGenerationRequest {
   };
   honestyLabel: string;
   provider?: ImageGenerationProvider;
+  /** Ask the backend to PERSIST the result through the existing asset system and return a
+   *  durable delivery URL. Required for any image written into generated project source — a
+   *  session-only data: URL must never be persisted into a build. */
+  persist?: boolean;
+  /** Optional project association for the persisted asset (existing asset-system field). */
+  projectId?: string;
+  /** Web Build correlation id so a generated image's cost rolls up under its own build. */
+  buildId?: string;
 }
 
 export interface GeneratedImageAsset {
@@ -84,6 +94,11 @@ export interface GeneratedImageAsset {
   promptSummary: string;
   /** Non-sensitive explanation for disabled/failed states (never a key). */
   reason?: string;
+  /** Present when the backend PERSISTED the image through the asset system. */
+  assetId?: string;
+  persisted?: boolean;
+  width?: number;
+  height?: number;
 }
 
 export interface ImageGenHealth {
@@ -98,14 +113,17 @@ export interface ImageGenHealth {
 /* ── Safety gate (mirrors backend generation_allowed byte-for-byte in intent) ─
  * Proof-heavy slots are NEVER generated — they require a real manual upload.
  * Only illustrative / abstract / ambient slots are generatable. */
-const ALWAYS_MANUAL_KINDS = new Set([
+export const ALWAYS_MANUAL_IMAGE_KINDS: ReadonlySet<string> = new Set([
   'project-photo', 'gallery-photo', 'before-after-pair', 'restaurant-space',
   'product-listing-image', 'archive-scan', 'portfolio-work-image', 'team-or-studio-photo',
 ]);
-const ILLUSTRATIVE_KINDS = new Set([
+export const ILLUSTRATIVE_IMAGE_KINDS: ReadonlySet<string> = new Set([
   'abstract-brand-image', 'illustrative-product-scene', 'hero-background',
   'catalog-cover', 'food-photo', 'hero-image',
 ]);
+/** Back-compat local aliases (the sets are now exported as the single kind-safety authority). */
+const ALWAYS_MANUAL_KINDS = ALWAYS_MANUAL_IMAGE_KINDS;
+const ILLUSTRATIVE_KINDS = ILLUSTRATIVE_IMAGE_KINDS;
 
 export interface GenerationGate { allowed: boolean; reason: string }
 
@@ -173,20 +191,50 @@ export async function fetchImageGenHealth(): Promise<ImageGenHealth | null> {
 export async function generateImageForSlot(slot: ImageAssetSlot): Promise<GeneratedImageAsset> {
   const gate = shouldAllowGeneration(slot);
   if (!gate.allowed) return disabledAsset(slot, gate.reason);
+  return generateImageFromRequest(imageGenRequestFromSlot(slot));
+}
 
+/**
+ * The SINGLE HTTP client for `/v2/web-build/images/generate`. Every generated image in the
+ * product — the manual per-slot Preview action and the automatic Web Build routing — goes
+ * through this one function, so there is exactly one provider surface, one auth path and one
+ * failure vocabulary. NEVER throws: every failure resolves to an honest disabled/failed asset.
+ */
+export async function generateImageFromRequest(
+  req: ImageGenerationRequest, opts?: { signal?: AbortSignal; timeoutMs?: number },
+): Promise<GeneratedImageAsset> {
+  const fallback = (reason: string, status: GeneratedImageStatus = 'disabled'): GeneratedImageAsset => ({
+    slotId: req.slotId,
+    status,
+    provider: 'disabled',
+    honestyLabel: req.honestyLabel || 'AI-generated illustrative image',
+    promptSummary: (req.prompt?.positive || '').slice(0, 140),
+    reason,
+  });
+
+  const ctrl = new AbortController();
+  const onAbort = () => ctrl.abort();
+  opts?.signal?.addEventListener('abort', onAbort);
+  const timer = setTimeout(() => ctrl.abort(), Math.max(1000, opts?.timeoutMs ?? IMAGE_GEN_TIMEOUT_MS));
   let resp: Response;
   try {
     resp = await fetch(`${apiBase()}/v2/web-build/images/generate`, {
       method: 'POST',
       headers: authHeaders(),
-      body: JSON.stringify(imageGenRequestFromSlot(slot)),
+      body: JSON.stringify(req),
+      signal: ctrl.signal,
     });
   } catch {
-    return disabledAsset(slot, 'backend unreachable — image generation unavailable', 'failed');
+    return fallback('backend unreachable — image generation unavailable', 'failed');
+  } finally {
+    clearTimeout(timer);
+    opts?.signal?.removeEventListener('abort', onAbort);
   }
-  if (resp.status === 404) return disabledAsset(slot, 'image generation endpoint not deployed');
-  if (resp.status === 503) return disabledAsset(slot, 'image generation is disabled on this deployment');
-  if (!resp.ok) return disabledAsset(slot, 'image generation failed on the server', 'failed');
+  if (resp.status === 404) return fallback('image generation endpoint not deployed');
+  if (resp.status === 503) return fallback('image generation is disabled on this deployment');
+  if (resp.status === 402 || resp.status === 403) return fallback('image generation is not available for this account');
+  if (resp.status === 429) return fallback('image generation quota reached');
+  if (!resp.ok) return fallback('image generation failed on the server', 'failed');
 
   try {
     const asset = (await resp.json()) as GeneratedImageAsset;
@@ -194,11 +242,11 @@ export async function generateImageForSlot(slot: ImageAssetSlot): Promise<Genera
     // then default the two fields so keys are never specified twice.
     return {
       ...asset,
-      honestyLabel: asset.honestyLabel || slot.honestyLabel,
+      honestyLabel: asset.honestyLabel || req.honestyLabel,
       promptSummary: asset.promptSummary || '',
     };
   } catch {
-    return disabledAsset(slot, 'invalid response from server', 'failed');
+    return fallback('invalid response from server', 'failed');
   }
 }
 

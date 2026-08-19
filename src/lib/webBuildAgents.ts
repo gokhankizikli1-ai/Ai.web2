@@ -1118,8 +1118,9 @@ export interface ImagePipelineArtifact {
  */
 export interface SourcedImageAsset {
   slotId: string;
-  /** Phase 14K.6 — where the ACTIVE image comes from. Absent ⇒ legacy stock. */
-  source?: 'stock' | 'user-upload';
+  /** Where the ACTIVE image comes from. Absent ⇒ legacy stock. `generated` is an
+   *  AI-generated illustrative visual routed by the image source strategy (WEB only). */
+  source?: 'stock' | 'user-upload' | 'generated';
   /** Stock only — provider + attribution. Cleared when a user image replaces it. */
   provider?: 'pexels' | 'unsplash';
   providerImageId?: string;
@@ -1141,6 +1142,11 @@ export interface SourcedImageAsset {
   assetId?: string;
   mimeType?: string;
   uploadedAt?: string;
+  /* ── Generated-imagery fields (present when source === 'generated') ────────── */
+  /** The honest, user-visible statement that this visual is AI-generated artwork. */
+  honestyLabel?: string;
+  /** The server-side provider that produced it (never a key, never a model secret). */
+  generatedProvider?: string;
 }
 
 /** The persisted manifest of generation-time sourced stock images (Phase 14K.4). */
@@ -1160,6 +1166,10 @@ export interface ImageAssetManifest {
    *  orientation/resolution notes, provider distribution, honest metadata limitations, new-call count =
    *  0). Counts only; never URLs, keys or secrets. Additive/optional; absent on old builds. */
   imageIntelligence?: import('@/lib/webBuildImageSourcing').ImageSourcingIntelligenceDiagnostics;
+  /** The stock/generated/none routing verdict for this build (counts + reason codes only). */
+  sourceStrategy?: import('@/lib/webBuildImageSourceStrategy').ImageSourceStrategyDiagnostics;
+  /** The generated route's bounded outcome (call counts + statuses only; never a prompt/URL). */
+  generatedImagery?: import('@/lib/webBuildGeneratedImagery').GeneratedImageryDiagnostics;
 }
 
 export type AgentId = 'research' | 'ui_art_director' | 'strategy' | 'vertical_intelligence' | 'layout_architect' | 'component_engineer' | 'reviewer' | 'quality_director' | 'asset_director' | 'motion_composer' | 'image_pipeline' | 'fixer';
@@ -1513,6 +1523,11 @@ export interface FrontendSpecImageSlot {
   providerPageUrl?: string;
   /** Stable Visual-Select id for the generated <img> (data-korvix-id). */
   domId?: string;
+  /* ── Image source strategy (web-build-image-intelligence-v1) — how this slot's image was
+   *    resolved. Absent ⇒ legacy stock behaviour. `generated` images are AI-generated
+   *    illustrative artwork and carry an honest label the builder must respect. ── */
+  imageSource?: 'stock' | 'generated' | 'user-upload';
+  honestyLabel?: string;
 }
 
 export interface FrontendSpecMotionLayer {
@@ -2069,6 +2084,10 @@ export interface FrontendBuildSpecification {
    *  (no coverage-driven sourcing fallback, no image-coverage acceptance). Derived deterministically
    *  from binding media, sector/vertical, image-led direction and explicit no-photo instructions. */
   imageCoverage?: import('@/lib/webBuildImageCoverage').ImageCoverageRequirement;
+  /** WEB ONLY (web-build-image-intelligence-v1) — the per-slot stock/generated/none routing
+   *  contract, derived deterministically from imageCoverage + visualConcept + experience
+   *  intelligence + designIntelligence. Never derived for an app build. Additive/optional. */
+  imageSourceStrategy?: import('@/lib/webBuildImageSourceStrategy').ImageSourceStrategyContract;
 
   /** Phase (research-grounded direction) — the authoritative research/sector-evidence direction +
    *  premium art-direction / anti-template contract. OPTIONAL and additive: present only on fresh
