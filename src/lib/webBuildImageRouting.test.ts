@@ -1,10 +1,16 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { sourceStockImagesForPayload, routeImageNeeds, type ImageNeed } from '@/lib/webBuildImageSourcing';
 import { deriveImageSourceStrategyForSpec } from '@/lib/webBuildImageSourceStrategy';
+import { deriveDesignIntelligence } from '@/lib/webBuildDesignIntelligence';
 import { analyzeBindingAcceptance } from '@/lib/webBuildRequirementAnalysis';
 import { buildOptimizationGuardPolicy } from '@/lib/experienceIntelligence';
 import { analyzeOptimization } from '@/lib/webBuildOptimizationPass';
-import { buildFrontendBuilderRequest, buildFrontendBuilderRevisionRequest } from '@/lib/webBuildApi';
+import { placedMediaIdsForSpec } from '@/lib/webBuildFrontendQuality';
+import {
+  buildFrontendBuilderRequest, buildFrontendBuilderRevisionRequest,
+  buildFrontendBuilderReviewRequest, buildFrontendBuilderRepairRequest,
+  SAFE_FRONTEND_BUILDER_REQUEST_CHARS,
+} from '@/lib/webBuildApi';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { WebBuildPayload } from '@/lib/webBuildPayload';
@@ -357,5 +363,151 @@ describe('image routing — persistence, revision and architecture invariants', 
     const files = fs.readdirSync(path.resolve('src/lib')).filter((f) => f.endsWith('.ts') && !f.endsWith('.test.ts'));
     const callers = files.filter((f) => /runGeneratedImagery\(/.test(fs.readFileSync(path.resolve('src/lib', f), 'utf8')));
     expect(callers.sort()).toEqual(['webBuildGeneratedImagery.ts', 'webBuildImageSourcing.ts']);
+  });
+});
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * ADVERSARIAL RE-REVIEW regressions.
+ * ──────────────────────────────────────────────────────────────────────────── */
+describe('image routing — adversarial regressions', () => {
+  it('the routing contract never rides a review or repair model call', async () => {
+    // Defect: `specForQualityTask` stripped designIntelligence + experienceIntelligence but not
+    // the routing contract, so ~1.5–4k chars were resent on EVERY review and repair call and the
+    // reviewer was invited to judge against a contract Quality V2 does not own.
+    mockBackend({ health: HEALTH_OK, generate: GENERATED_OK });
+    const p = payloadWith({ imageSourceStrategy: GEN_HERO_STRATEGY }, [slot('hero', 'hero-image')]);
+    const { payload } = await sourceStockImagesForPayload(p);
+    const spec = payload.artifacts!.frontendBuildSpec!;
+    expect(spec.imageSourceStrategy).toBeTruthy();     // still persisted on the spec
+
+    const files = [{ path: 'src/App.tsx', content: 'export default function App(){return <div/>;}' }] as never;
+    const review = buildFrontendBuilderReviewRequest(spec, files, 'initial' as never);
+    const repair = buildFrontendBuilderRepairRequest(
+      spec, files, { issues: [], strengths: [] } as never,
+    );
+    for (const req of [review, repair]) {
+      expect(req).not.toMatch(/imageSourceStrategy/);
+      expect(req).not.toMatch(/image-source-strategy-v1/);
+      expect(req).not.toMatch(/brand-defining-concept/);
+    }
+    // …but the BUILDER request still carries what the model must honour: the slot url + source.
+    const builder = buildFrontendBuilderRequest(spec);
+    expect(builder).toMatch(/gen-hero\.png/);
+    expect(builder).toMatch(/AI-GENERATED/);
+  });
+
+  it('a required target covered by a GENERATED image is not reported as unrendered', () => {
+    // Defect: coverage acceptance matched a required target to a rendered image by token overlap
+    // only. A generated visual's honest alt ("Illustrative brand artwork…") shares no words with
+    // the target's query, so a correctly rendered required image produced a blocking finding.
+    const coverage = {
+      version: 'image-coverage-v1' as const, mode: 'image-led' as const, minRequired: 1,
+      heroRequired: true, stockAllowed: true, stockPreferred: true, aiAllowed: true,
+      manualRequired: false, explicitNoPhoto: false, reasons: [],
+      targets: [{
+        id: 'korvix-coverage-hero', purpose: 'hero' as const, label: 'Hero photography',
+        aliases: ['restaurant', 'dining'], required: true, hero: true,
+        orientation: 'landscape' as const, query: 'italian restaurant dining room',
+        altText: 'Hero photography for an italian restaurant website',
+        stockAllowed: true, aiAllowed: true, manualRequired: false,
+        authenticityRisk: 'low' as const, slotId: 'hero', matchStatus: 'sourced' as const,
+      }],
+    };
+    const rendered = [{
+      path: 'src/components/Hero.tsx',
+      language: 'tsx',
+      content: '<img src="https://cdn.example.com/gen-hero.png" alt="Illustrative brand artwork" data-korvix-image-slot="hero" data-korvix-id="home.hero.image" />',
+    }] as never;
+    const res = analyzeBindingAcceptance(rendered, undefined, undefined, coverage);
+    expect(res.issues.filter((i) => i.code.startsWith('required-image-'))).toHaveLength(0);
+    expect(res.renderedRequiredImageCount).toBe(1);
+    expect(res.imageCoverageStatus).toBe('pass');
+  });
+
+  it('still fails a required target whose approved asset is NOT rendered', () => {
+    const coverage = {
+      version: 'image-coverage-v1' as const, mode: 'image-led' as const, minRequired: 1,
+      heroRequired: true, stockAllowed: true, stockPreferred: true, aiAllowed: true,
+      manualRequired: false, explicitNoPhoto: false, reasons: [],
+      targets: [{
+        id: 'korvix-coverage-hero', purpose: 'hero' as const, label: 'Hero photography',
+        aliases: ['restaurant', 'dining'], required: true, hero: true,
+        orientation: 'landscape' as const, query: 'italian restaurant dining room',
+        altText: 'Hero photography', stockAllowed: true, aiAllowed: true, manualRequired: false,
+        authenticityRisk: 'low' as const, slotId: 'hero', matchStatus: 'sourced' as const,
+      }],
+    };
+    // The url is parked in a constant; no rendered <img> consumes the approved slot.
+    const notRendered = [{
+      path: 'src/data.ts', language: 'ts',
+      content: 'export const HERO = { slot: "hero", url: "https://cdn.example.com/gen-hero.png" };',
+    }] as never;
+    const res = analyzeBindingAcceptance(notRendered, undefined, undefined, coverage);
+    expect(res.issues.some((i) => i.code.startsWith('required-image-'))).toBe(true);
+    expect(res.imageCoverageStatus).toBe('fail');
+  });
+
+  it('APP BUILD: the optimizer guard is byte-for-byte its previous behaviour', () => {
+    // Defect: the "media this build actually placed" guard was computed for every build type,
+    // which could change an app build's optimizer findings. It is a web-only fix.
+    const appSpec = {
+      buildType: 'app',
+      assets: { imageSlots: [{ ...slot('hero', 'hero-image'), url: 'https://cdn.example.com/a.png', domId: 'home.hero.image' }] },
+      imageCoverage: { targets: [{ id: 't1', required: true, slotId: 'hero' }] },
+    } as unknown as FrontendBuildSpecification;
+    const webSpec = { ...appSpec, buildType: 'web' } as unknown as FrontendBuildSpecification;
+    expect(placedMediaIdsForSpec(appSpec)).toEqual([]);
+    expect(placedMediaIdsForSpec(webSpec)).toEqual(['hero', 'home.hero.image']);
+  });
+});
+
+describe('image routing — the image contract survives priority shedding', () => {
+  it('an OVERSIZED request still carries the sourced-image block and its honesty clause', async () => {
+    mockBackend({ health: HEALTH_OK, generate: GENERATED_OK });
+    const p = payloadWith({ imageSourceStrategy: GEN_HERO_STRATEGY }, [slot('hero', 'hero-image')]);
+    const { payload } = await sourceStockImagesForPayload(p);
+    const spec = payload.artifacts!.frontendBuildSpec!;
+
+    // A real Design Intelligence contract gives the request genuine P2/P3/P4 tiers to shed, and a
+    // very large section set pushes it far past the safe budget so shedding definitely runs.
+    const designIntelligence = deriveDesignIntelligence({
+      prompt: 'A SaaS landing page for a team analytics platform with pricing and integrations',
+      identity: spec.identity, sections: [], briefText: '',
+    });
+    const filler = 'x'.repeat(900);
+    const bloated = {
+      ...spec,
+      designIntelligence,
+      architecture: {
+        ...spec.architecture,
+        sections: Array.from({ length: 40 }, (_, i) => ({
+          id: `s${i}`, name: `Section ${i}`, order: i, bullets: [filler, filler, filler, filler],
+          headline: filler, subheadline: filler, purpose: filler, componentHint: filler,
+        })),
+      },
+    } as unknown as FrontendBuildSpecification;
+
+    const unshed = buildFrontendBuilderRequest({ ...bloated, architecture: spec.architecture } as FrontendBuildSpecification);
+    const req = buildFrontendBuilderRequest(bloated);
+    expect(req.length).toBeGreaterThan(SAFE_FRONTEND_BUILDER_REQUEST_CHARS);   // shedding ran
+
+    // The P4 tier (the generic fingerprint ban) is dropped first…
+    expect(unshed).toMatch(/AI-WEBSITE FINGERPRINTS|FORBIDDEN FINGERPRINTS|fingerprint/i);
+    expect(req).not.toMatch(/AI-WEBSITE FINGERPRINTS|FORBIDDEN FINGERPRINTS/i);
+    // …while the P1 image contract survives every cut.
+    expect(req).toMatch(/REAL SOURCED IMAGES:/);
+    expect(req).toMatch(/AI-GENERATED/);
+    expect(req).toMatch(/gen-hero\.png/);
+  });
+
+  it('the routing verdict itself is never sent to the builder (it is materialized on the slots)', async () => {
+    mockBackend({ health: HEALTH_OK, generate: GENERATED_OK });
+    const p = payloadWith({ imageSourceStrategy: GEN_HERO_STRATEGY }, [slot('hero', 'hero-image')]);
+    const { payload } = await sourceStockImagesForPayload(p);
+    const req = buildFrontendBuilderRequest(payload.artifacts!.frontendBuildSpec!);
+    expect(req).not.toMatch(/imageSourceStrategy/);
+    expect(req).not.toMatch(/image-source-strategy-v1/);
+    // What the model actually needs IS there, on the slot.
+    expect(req).toMatch(/"imageSource":"generated"/);
   });
 });

@@ -45,6 +45,13 @@ const MAX_NEGATIVE_CHARS = 600;
 const MAX_STYLE_CHARS = 400;
 const MAX_FIELD = 160;
 const MAX_LIST = 6;
+/**
+ * Hard wall-clock bound on the ENTIRE generated route, across every attempt. Each call already
+ * has its own client timeout, but two sequential timeouts would add minutes to a build before the
+ * coding model even starts. Once this deadline passes the remaining decisions fall back instead
+ * of waiting. Deliberately smaller than `budget × IMAGE_GEN_TIMEOUT_MS`.
+ */
+export const GENERATED_IMAGERY_TOTAL_BUDGET_MS = 120_000;
 /** The honest, user-visible label every generated visual carries. */
 export const GENERATED_HONESTY_LABEL = 'AI-generated illustrative artwork (not a photograph of a real place, product or person)';
 
@@ -238,7 +245,7 @@ export function buildGeneratedImagePrompt(ad: GeneratedArtDirection): GeneratedI
 /* ── The generated route ────────────────────────────────────────────────────── */
 export type GeneratedImageryStatus =
   | 'ready' | 'app-build-excluded' | 'provider-unavailable' | 'unsafe-slot'
-  | 'failed' | 'not-persistable' | 'over-budget';
+  | 'failed' | 'not-persistable' | 'over-budget' | 'timed-out' | 'duplicate';
 
 export interface GeneratedImageryOutcome {
   slotId: string;
@@ -260,7 +267,18 @@ export interface GeneratedImageryDiagnostics {
   healthCalls: number;
   notPersistable: number;
   failed: number;
+  /**
+   * Byte size of the heaviest generated image placed in this build. A provider PNG is materially
+   * heavier than a stock CDN image with sizing parameters, and the optimizer's oversized-image
+   * detector reads dimension QUERY PARAMS, which a stored asset URL does not carry — so the
+   * weight is recorded here explicitly rather than being invisible. 0 when nothing was produced.
+   */
+  heaviestBytes: number;
   unsafeRefused: number;
+  /** Attempts skipped because the route's total wall-clock budget was already spent. */
+  timedOut: number;
+  /** Generated results dropped because an identical URL had already filled another slot. */
+  duplicatesPrevented: number;
   statuses: string[];
 }
 
@@ -274,7 +292,8 @@ const EMPTY_DIAG = (requested: number, budget: number, providerAvailable: boolea
   version: 'generated-imagery-v1',
   requested, attempted: 0, produced: 0, budget, ceiling: MAX_GENERATED_IMAGES_PER_BUILD,
   providerAvailable, providerCalls: 0, healthCalls,
-  notPersistable: 0, failed: 0, unsafeRefused: 0, statuses: [],
+  notPersistable: 0, failed: 0, unsafeRefused: 0, timedOut: 0, duplicatesPrevented: 0,
+  heaviestBytes: 0, statuses: [],
 });
 
 /** The image-pipeline kind a generated visual is requested as. Always inside the EXISTING
@@ -287,10 +306,20 @@ export function generationKindFor(decision: ImageSourceDecision): string {
   return 'abstract-brand-image';
 }
 
-/** A durable, renderable HTTPS/asset URL — never a data: URL. */
-function durableUrl(asset: GeneratedImageAsset): string {
-  const raw = (asset.url || '').trim();
+/**
+ * A durable, renderable URL for generated project source — never a `data:` URL.
+ *
+ * An ABSOLUTE url from the provider must be `https:`: a plain-http image is blocked as mixed
+ * content on an https site, so it would render as a broken image in the delivered product (the
+ * same https-only rule the user-image replacement path already enforces). A RELATIVE url is our
+ * own asset route and is resolved against the configured API base, whatever scheme that base
+ * uses — so local development keeps working.
+ */
+export function durableUrl(asset: Pick<GeneratedImageAsset, 'url'>): string {
+  const raw = (asset?.url || '').trim();
   if (!raw || /^data:/i.test(raw)) return '';
+  const absolute = /^[a-z][a-z0-9+.-]*:/i.test(raw) || raw.startsWith('//');
+  if (absolute) return /^https:\/\//i.test(raw) ? raw : '';
   const resolved = resolveAssetUrl(raw);
   return /^https?:\/\//i.test(resolved) ? resolved : '';
 }
@@ -300,6 +329,10 @@ export interface RunGeneratedImageryContext {
   budget: number;
   buildId?: string;
   projectId?: string;
+  /** Injectable clock (tests + determinism). Defaults to `Date.now`. */
+  now?: () => number;
+  /** Override the total wall-clock bound (tests). Defaults to the constant above. */
+  totalBudgetMs?: number;
 }
 
 /**
@@ -351,6 +384,9 @@ export async function runGeneratedImagery(
     return { outcomes, assets, diagnostics };
   }
 
+  const now = ctx.now || (() => Date.now());
+  const deadline = now() + Math.max(1000, ctx.totalBudgetMs ?? GENERATED_IMAGERY_TOTAL_BUDGET_MS);
+  const seenUrls = new Set<string>();
   let spent = 0;
   for (const d of wanted) {
     if (opts?.signal?.aborted) {
@@ -359,6 +395,13 @@ export async function runGeneratedImagery(
     }
     if (spent >= budget) {
       outcomes.push({ slotId: d.slotId, status: 'over-budget', reason: 'per-build generated-image budget already spent' });
+      continue;
+    }
+    // The whole route is wall-clock bounded, not just each call: a build must never wait out two
+    // consecutive provider timeouts before the coding model starts.
+    if (now() >= deadline) {
+      diagnostics.timedOut += 1;
+      outcomes.push({ slotId: d.slotId, status: 'timed-out', reason: 'the generated-imagery time budget for this build was already spent' });
       continue;
     }
     // Proof-heavy slots are never fabricated — the same rule the backend enforces.
@@ -399,7 +442,19 @@ export async function runGeneratedImagery(
       outcomes.push({ slotId: d.slotId, status: 'not-persistable', reason: 'the generated image could not be stored durably, so it was not used' });
       continue;
     }
+    // One image may never fill two roles. A provider that returns a cached/identical asset for
+    // two prompts would otherwise place the same picture in two sections — the exact duplication
+    // the stock path already refuses.
+    if (seenUrls.has(url)) {
+      diagnostics.duplicatesPrevented += 1;
+      outcomes.push({ slotId: d.slotId, status: 'duplicate', reason: 'the provider returned an image already used by another slot' });
+      continue;
+    }
+    seenUrls.add(url);
     diagnostics.produced += 1;
+    if (typeof result.bytes === 'number' && result.bytes > diagnostics.heaviestBytes) {
+      diagnostics.heaviestBytes = result.bytes;
+    }
     assets.push({
       slotId: d.slotId,
       source: 'generated',

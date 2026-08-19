@@ -185,3 +185,24 @@ def test_attach_never_raises(monkeypatch):
     monkeypatch.setattr(persistence, "assets_client", Boom())
     out = persistence.attach_persistence({"slotId": "h", "status": "ready", "dataUrl": _data_url(_png())}, user_id="u1")
     assert out["persisted"] is False
+
+
+# ── Aspect-ratio mapping (adversarial regression) ─────────────────────────────
+
+def test_portrait_aspect_ratios_resolve_to_a_portrait_size():
+    """A request for a vertical composition must not come back landscape.
+
+    Only the literal "9:16" used to be recognised, so 4:5 / 2:3 / 3:4 fell through to the
+    landscape default — the prompt asked for a vertical image and the file was wide, which the
+    layout box then cropped badly."""
+    from backend.services import web_build_images as img
+    for ratio in ("9:16", "4:5", "2:3", "3:4", "10:16"):
+        assert img._openai_size(ratio) == "1024x1792", ratio
+
+
+def test_landscape_and_square_aspect_ratios_are_unchanged():
+    from backend.services import web_build_images as img
+    for ratio in ("16:9", "21:9", "3:2", "4:3", "", "nonsense", "0:0", "16:0"):
+        assert img._openai_size(ratio) == "1792x1024", ratio
+    for ratio in ("1:1", "5:5"):
+        assert img._openai_size(ratio) == "1024x1024", ratio

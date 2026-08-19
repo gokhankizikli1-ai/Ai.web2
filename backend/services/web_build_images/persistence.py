@@ -146,7 +146,7 @@ def attach_persistence(
         if stored is None:
             return {**asset, "persisted": False}
         out = {**asset, "url": stored.url, "assetId": stored.asset_id, "persisted": True,
-               "width": stored.width, "height": stored.height}
+               "width": stored.width, "height": stored.height, "bytes": stored.size_bytes}
         # The base64 payload is dropped once a durable URL exists: it must never reach a
         # persisted build payload, and it would only duplicate the stored bytes on the wire.
         out.pop("dataUrl", None)

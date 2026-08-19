@@ -41,7 +41,7 @@ import type { FrontendBuildSpecification, FrontendSpecImageSlot } from '@/lib/we
 import type {
   ImageCoverageRequirement, ImageCoverageTarget,
 } from '@/lib/webBuildImageCoverage';
-import { MAX_AI_FALLBACK_ATTEMPTS } from '@/lib/webBuildImageCoverage';
+import { MAX_AI_FALLBACK_ATTEMPTS, findSpecSlotForTarget } from '@/lib/webBuildImageCoverage';
 import type {
   VisualConceptContract, ImageRoleDirection, ImageRole, VisualMedium, PhotographyPosture,
 } from '@/lib/webBuildVisualConcept';
@@ -256,21 +256,32 @@ function collectCandidates(
   visualConcept: VisualConceptContract | undefined,
 ): Candidate[] {
   const out: Candidate[] = [];
-  const seen = new Set<string>();
   const requiredTargets = (coverage?.targets || []).filter((t) => t && t.required);
-  const claimed = new Set<string>();
 
+  /* Which slot satisfies which REQUIRED coverage target is NOT decided here — that pairing
+   * authority already exists and the sourcing pipeline uses it. We call the SAME function, in
+   * the SAME target-first order, so the `required` flag on a decision can never disagree with
+   * the slot the coverage pipeline will actually assign. (An earlier revision re-implemented the
+   * pairing slot-first with a hero/non-hero heuristic; two orderings of the same assignment are
+   * exactly the kind of duplicate authority that drifts.) */
+  const specLike = { assets: { imageSlots: slots } } as unknown as FrontendBuildSpecification;
+  const usedSlots = new Set<string>();
+  const targetBySlotId = new Map<string, ImageCoverageTarget>();
+  const unpairedTargets: ImageCoverageTarget[] = [];
+  for (const t of requiredTargets) {
+    const paired = findSpecSlotForTarget(specLike, t, usedSlots);
+    if (paired?.id) { usedSlots.add(paired.id); targetBySlotId.set(paired.id, t); }
+    else unpairedTargets.push(t);
+  }
+
+  const seen = new Set<string>();
   for (const s of slots.slice(0, MAX_DECISIONS)) {
     if (!s || !s.id || seen.has(s.id)) continue;
     seen.add(s.id);
     const kind = clip(s.kind, 60);
     const purpose = clip(s.purpose, 40) || (HERO_KINDS.has(kind) ? 'hero' : '');
     const hero = HERO_KINDS.has(kind) || /hero/i.test(`${kind} ${purpose} ${s.target || ''}`);
-    // The required coverage target this slot would satisfy (the SAME hero-first pairing the
-    // sourcing pipeline performs) — so a required floor is visible on the decision.
-    const target = requiredTargets.find((t) => !claimed.has(t.id)
-      && (normId(t.slotId) === normId(s.id) || (t.hero && hero) || (!t.hero && !hero)));
-    if (target) claimed.add(target.id);
+    const target = targetBySlotId.get(s.id);
     out.push({
       slotId: s.id,
       sectionId: sectionIdOfTarget(s.target),
@@ -283,11 +294,10 @@ function collectCandidates(
     });
   }
 
-  // A REQUIRED coverage target with no spec slot is still a real image the pipeline will
-  // synthesize a slot for — it must carry a route, or the floor would be routed by nothing.
-  for (const t of requiredTargets) {
-    if (claimed.has(t.id) || out.length >= MAX_DECISIONS) continue;
-    claimed.add(t.id);
+  // A REQUIRED coverage target the pairing authority could not place on an existing slot is
+  // still a real image — the pipeline synthesizes a slot for it, so it must carry a route.
+  for (const t of unpairedTargets) {
+    if (out.length >= MAX_DECISIONS) break;
     out.push({
       slotId: t.id,
       sectionId: t.sectionId,
@@ -439,9 +449,18 @@ function decide(c: Candidate, ctx: RouteContext): ImageSourceDecision {
         : `the archetype rates imagery ${ctx.imageryRole}`);
       return none('interface-native-visual');
     }
-    // Imagery still helps this product, but a photograph of it would be a photograph of nothing:
-    // a bespoke brand visual is the honest answer, never generic office/people stock.
-    if (generatable) {
+    /* Imagery still helps this product, but a photograph of it would be a photograph of nothing:
+     * a bespoke brand visual is the honest answer, never generic office/people stock.
+     *
+     * This is the only branch that SPENDS money on a slot the product could simply do without,
+     * so it demands POSITIVE evidence that imagery earns its place here — either the media
+     * authority actually ran and rated imagery required/beneficial, or the archetype rates it
+     * central/supporting, or the coverage floor requires it. With no verdict at all (a
+     * failed-open spec) the honest answer is no image, not a paid guess. */
+    const imageryEarnsItsPlace = c.required
+      || media?.necessity === 'required' || media?.necessity === 'beneficial'
+      || ctx.imageryRole === 'central' || ctx.imageryRole === 'supporting';
+    if (generatable && imageryEarnsItsPlace) {
       add('art-direction', 'a bespoke brand visual, not a photograph of a real scene');
       return generated('brand-defining-concept');
     }
@@ -467,13 +486,23 @@ function decide(c: Candidate, ctx: RouteContext): ImageSourceDecision {
     return stock('real-world-subject');
   }
 
-  /* ── 5. BESPOKE / CONCEPTUAL — stock would be generic here, and nothing factual is claimed. ── */
-  if (generatable) {
+  /* ── 5. BESPOKE / CONCEPTUAL — stock would be generic here, and nothing factual is claimed.
+   *      A product whose medium the classification owner resolved to real-world photography (a
+   *      restaurant, a shop, a venue) only reaches a bespoke route through its OWN art direction
+   *      naming a non-photographic medium — never through a category-level posture, which would
+   *      otherwise let a synthetic "photo" stand in for a real place. ── */
+  // The same "imagery must earn its place" bar as rule 3: a bespoke visual is a PAID slot, so a
+  // spec with no media verdict and no archetype imagery role never buys one.
+  const earnsItsPlace = c.required
+    || media?.necessity === 'required' || media?.necessity === 'beneficial'
+    || ctx.imageryRole === 'central' || ctx.imageryRole === 'supporting';
+  if (generatable && earnsItsPlace) {
     if (c.art && GENERATIVE_MEDIA.has(c.art.medium)) {
       add('art-direction', `the visual is ${c.art.medium} — a bespoke, non-factual composition`);
       return generated(c.art.medium === 'illustration' ? 'illustrative-medium' : 'conceptual-abstract-visual');
     }
-    if (c.hero && (ctx.posture === 'graphic-first' || ctx.posture === 'none')) {
+    const realWorldProduct = !!media && REAL_WORLD_KINDS.has(media.primaryKind);
+    if (c.hero && !realWorldProduct && (ctx.posture === 'graphic-first' || ctx.posture === 'none')) {
       add('art-direction', 'the visual concept is graphic-first: a stock photograph would read as generic');
       return generated('brand-defining-concept');
     }

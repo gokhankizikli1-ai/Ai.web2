@@ -79,6 +79,24 @@ team, its premises, its products or its customers, and never attributed to a pho
 Proof-heavy slots (project, gallery, product listing, portfolio work, team, premises, archive,
 before/after) are **never** generated — the same kind sets the backend gate already enforces.
 
+## Bounds on the generated route
+
+Beyond the per-build image budget, the route is bounded on three more axes so a provider can
+never hold a build hostage or pollute it:
+
+* **Wall clock** — `GENERATED_IMAGERY_TOTAL_BUDGET_MS` (120 s) caps the WHOLE route, not just each
+  call. Once spent, the remaining decisions fall back instead of waiting out a second timeout.
+* **Uniqueness** — a generated image that repeats a URL already placed in this build is dropped;
+  one image may never fill two roles.
+* **Transport** — an absolute provider URL must be `https:` (a plain-http image renders as broken
+  mixed content in the delivered site). A relative URL is our own asset route and is resolved
+  against the API base, so local development is unaffected.
+
+The stored byte size of the heaviest generated image is recorded in the manifest diagnostics and
+shown on the build timeline: a provider PNG is materially heavier than a stock CDN image with
+sizing parameters, and the optimizer's oversized-image detector reads dimension *query params*,
+which a stored asset URL does not carry.
+
 ## Durability
 
 A provider returns a session-only `data:` URL, which would not survive save → reopen → revision
@@ -104,6 +122,14 @@ a failed build.
 * Acceptance receives no routing contract for an app build, so App Build Quality V2 is unchanged.
 * Regression-tested in `src/lib/webBuildImageRouting.test.ts` and
   `src/lib/webBuildImageSourceStrategy.test.ts`.
+
+## What the model is (and is not) told
+
+The routing contract is **not** sent to any model. What the builder must honour is materialized on
+the image slots themselves (`url`, `imageSource`, `honestyLabel`) plus the P1 image block, which
+survives every level of request priority shedding. Review and repair calls do not receive the
+contract at all — it has no model-facing acceptance surface, and the deterministic analyzer reads
+it locally from the spec.
 
 ## Quality V2 + optimizer
 

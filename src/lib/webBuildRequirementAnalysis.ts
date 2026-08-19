@@ -158,6 +158,9 @@ interface ControlSlot {
 interface ImageInfo {
   tokens: string[];            // alt text / src filename / image-slot name / nearby caption+heading
   decorative: boolean;         // empty alt, role=presentation, or logo/icon/avatar/favicon/decoration
+  /** The exact `data-korvix-image-slot` value, when the rendered image carries one. This is the
+   *  APPROVED asset's own identity — stronger evidence than token overlap. */
+  slotId?: string;
   content: boolean;            // a real content image (has src / slot / picture), not a pure shape
 }
 interface DerivedVar {
@@ -281,11 +284,11 @@ function extractControls(content: string): { controls: ControlSlot[]; drivenStat
 function extractImages(content: string): ImageInfo[] {
   const out: ImageInfo[] = [];
   const decoRe = /logo|favicon|avatar|\bicon\b|sprite|badge|decorat|pattern|texture|placeholder|blur|noise/i;
-  const pushImg = (tokensStr: string[], src: string, alt: string | null, decorativeAttr: boolean, content = true) => {
+  const pushImg = (tokensStr: string[], src: string, alt: string | null, decorativeAttr: boolean, content = true, slotId = '') => {
     const tokens = new Set<string>();
     tokensStr.forEach((s) => tokenize(s).forEach((t) => tokens.add(t)));
     const decorative = decorativeAttr || alt === '' || decoRe.test(src) || (alt != null && decoRe.test(alt)) || tokensStr.some((s) => decoRe.test(s));
-    out.push({ tokens: [...tokens].filter((t) => !STOP.has(t)), decorative, content });
+    out.push({ tokens: [...tokens].filter((t) => !STOP.has(t)), decorative, content, ...(slotId ? { slotId } : {}) });
   };
   for (const m of content.matchAll(/<img\b([^>]*)>/gi)) {
     if (out.length >= MAX_SLOTS_PER_FILE) break;
@@ -298,11 +301,11 @@ function extractImages(content: string): ImageInfo[] {
     const near = content.slice(idx, Math.min(content.length, idx + 300));
     const cap2 = [...near.matchAll(/<figcaption\b[^>]*>([\s\S]{0,120}?)<\/figcaption>/gi)].map((x) => x[1].replace(/<[^>]*>/g, ' '));
     const srcName = (src.split(/[\\/]/).pop() || '').replace(/\.[a-z0-9]+$/i, '').replace(/[-_]+/g, ' ');
-    pushImg([alt || '', srcName, slot, ...cap2], src, alt, role, true);
+    pushImg([alt || '', srcName, slot, ...cap2], src, alt, role, true, slot);
   }
   for (const m of content.matchAll(/data-korvix-image-slot=["']([^"']+)["']/gi)) {
     if (out.length >= MAX_SLOTS_PER_FILE) break;
-    pushImg([m[1].replace(/[-_]+/g, ' ')], '', null, false, true);
+    pushImg([m[1].replace(/[-_]+/g, ' ')], '', null, false, true, m[1]);
   }
   for (const m of content.matchAll(/background-image\s*:\s*url\(([^)]+)\)/gi)) {
     if (out.length >= MAX_SLOTS_PER_FILE) break;
@@ -548,7 +551,17 @@ function analyzeImageCoverage(
     // Purpose/section words help match a relevant image; drop generic stop tokens.
     [...exp].filter((x) => STOP.has(x)).forEach((x) => exp.delete(x));
 
-    const hit = pool.find((p) => !p.used && p.im.tokens.some((tok) => exp.has(tok)));
+    /* STRONGEST evidence first: the approved asset the pipeline assigned to THIS target was
+     * actually rendered, identified by its own `data-korvix-image-slot`. Token overlap is a
+     * proxy for that, and it fails whenever the image's alt honestly describes something the
+     * target's query words do not contain — which is exactly the case for an AI-generated
+     * illustrative visual ("Illustrative brand artwork…") covering a required lead slot. Falling
+     * back to tokens keeps every existing match working; nothing is loosened, because a slot id
+     * is assigned by the sourcing pipeline and cannot be claimed by an unrelated image. */
+    const byApprovedSlot = t.slotId
+      ? pool.find((p) => !p.used && !!p.im.slotId && p.im.slotId === t.slotId)
+      : undefined;
+    const hit = byApprovedSlot || pool.find((p) => !p.used && p.im.tokens.some((tok) => exp.has(tok)));
     if (hit) { hit.used = true; rendered += 1; continue; }
 
     uncovered += 1;

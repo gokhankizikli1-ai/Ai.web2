@@ -323,12 +323,16 @@ function leadFor(input: ExperienceIntelligenceInput, ev: MediaEvidence): Experie
   const coverage = input.imageCoverage?.mode;
   // An editorial publication is carried by its writing unless a hard media floor says otherwise
   // (a photo-essay-led request reaches that floor through the binding/coverage authorities) — or
-  // unless the request itself repeatedly describes a working INTERFACE. The archetype lexicon
-  // matches ordinary operations vocabulary ("reporting") as journalism, so an internal dashboard
-  // product could resolve to `editorial-media` and then be typed as a publication before the
-  // interface evidence below was ever read. The archetype verdict still wins; it just no longer
-  // wins against a request that says "dashboard, admin panel, filters, queries" in its own words.
-  if (archetype === 'editorial-media' && coverage !== 'image-led' && ev.interfaceHits < 2) return 'editorial-led';
+  // unless the request itself repeatedly describes a working INTERFACE **that is operated**. The
+  // archetype lexicon matches ordinary operations vocabulary ("reporting") as journalism, so an
+  // internal dashboard product could resolve to `editorial-media` and then be typed as a
+  // publication before the interface evidence below was ever read. Interface hits ALONE are not
+  // enough to overturn the archetype: a magazine that mentions its API and its automation would
+  // clear that bar without being a tool. The override therefore also requires OPERATIONAL
+  // evidence (manage / track / filter / records / approve …) — something a publication does not
+  // say about itself. The archetype verdict still wins everywhere else.
+  const operatedInterface = ev.interfaceHits >= 2 && ev.operational >= 1;
+  if (archetype === 'editorial-media' && coverage !== 'image-led' && !operatedInterface) return 'editorial-led';
   if (coverage === 'image-led' || coverage === 'required' || role === 'central') return 'image-led';
   if (ev.reading >= 3) return 'editorial-led';
   if (archetype === 'ecommerce-brand' || archetype === 'marketplace') return 'catalogue-led';

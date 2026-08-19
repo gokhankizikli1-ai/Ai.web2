@@ -9,6 +9,7 @@ import {
   resolveImageRoleForSlot, MAX_GENERATED_IMAGES_PER_BUILD,
   type ImageSourceDecision, type ImageSourceStrategy,
 } from '@/lib/webBuildImageSourceStrategy';
+import { findSpecSlotForTarget, type ImageCoverageTarget } from '@/lib/webBuildImageCoverage';
 import type {
   FrontendBuildSpecification, FrontendSpecImageSlot, FrontendSpecSection,
 } from '@/lib/webBuildAgents';
@@ -359,5 +360,96 @@ describe('image source strategy — contract hygiene', () => {
         if (d.required) expect(d.strategy).not.toBe('none');
       }
     }
+  });
+});
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * ADVERSARIAL RE-REVIEW regressions. Each test below pins a defect found by
+ * attacking the first implementation of this contract.
+ * ──────────────────────────────────────────────────────────────────────────── */
+describe('image source strategy — adversarial regressions', () => {
+  it('pairs a required coverage target to a slot through the EXISTING pairing authority', () => {
+    // Defect: the router re-implemented the pairing slot-first with a hero/non-hero heuristic,
+    // while the sourcing pipeline pairs target-first via findSpecSlotForTarget. Two orderings of
+    // the same assignment drift. Pin that both now agree, slot for slot.
+    const spec = buildFixtureSpec(MATRIX[0]);
+    const contract = deriveImageSourceStrategyForSpec(spec);
+    const used = new Set<string>();
+    const expected = new Map<string, string>();   // slotId → targetId, per the AUTHORITY
+    for (const t of (spec.imageCoverage?.targets || []).filter((x) => x.required)) {
+      const paired = findSpecSlotForTarget(spec, t as ImageCoverageTarget, used);
+      if (paired?.id) { used.add(paired.id); expected.set(paired.id, t.id); }
+    }
+    expect(expected.size).toBeGreaterThan(0);
+    for (const d of contract!.decisions) {
+      expect(`${d.slotId}:${d.required}`).toBe(`${d.slotId}:${expected.has(d.slotId)}`);
+    }
+  });
+
+  it('never buys a bespoke visual without positive evidence that imagery earns its place', () => {
+    // Defect: with NO media verdict and NO archetype imagery role (a failed-open spec), a
+    // UI-native / generative-medium slot still routed to `generated` — paying for a guess.
+    const bare = {
+      buildType: 'web',
+      assets: { imageSlots: [slot('hero', 'hero-image', 'section:hero', 'hero')] },
+      visualConcept: {
+        realImageStrategy: { posture: 'graphic-first' },
+        imageRoles: [{
+          slotId: 'hero', sectionId: 'hero', role: 'hero-signature', required: false,
+          narrativePurpose: 'lead', subject: 'an abstract field', medium: 'abstract-generative',
+          orientation: 'landscape', aspectRatio: '16:9', crop: 'wide', focalPoint: 'upper third',
+          placement: 'first viewport', mobileCrop: 'tighter', lighting: 'cool', tone: 'precise',
+          peoplePresent: 'avoid', devicesUseful: false, authenticity: 'generatable',
+          remoteAllowed: true, fallbackAllowed: true, loadingPriority: 'eager',
+          altIntent: 'abstract', noRepeat: true, expectedContribution: 'signature',
+        }],
+      },
+    } as unknown as FrontendBuildSpecification;
+    expect(decisionForSlot(deriveImageSourceStrategyForSpec(bare), 'hero')?.strategy).not.toBe('generated');
+
+    // …but the SAME slot on a spec whose archetype rates imagery supporting DOES generate.
+    const withRole = { ...bare, designIntelligence: { image: { role: 'supporting' } } } as unknown as FrontendBuildSpecification;
+    expect(decisionForSlot(deriveImageSourceStrategyForSpec(withRole), 'hero')?.strategy).toBe('generated');
+  });
+
+  it('an editorial publication is NOT reclassified as a tool by incidental interface words', () => {
+    // Defect: the interface-evidence override of the editorial archetype fired on interface hits
+    // alone, so a magazine that mentions its API and its automation would have been typed as an
+    // interface-led product and lost its photographic medium. The override now also requires
+    // OPERATIONAL evidence — something a publication does not say about itself.
+    const magazine = buildFixtureSpec({
+      label: 'magazine with an api',
+      prompt: 'An online magazine with articles, columns and contributors; we also offer an API and newsletter automation for syndication partners',
+      sector: 'media', subsector: 'online magazine',
+      sectionNames: ['Hero', 'Articles', 'Contributors'],
+      slots: [HERO],
+    });
+    expect(magazine.designIntelligence?.archetype).toBe('editorial-media');
+    expect(magazine.experienceIntelligence?.experience.lead).toBe('editorial-led');
+    expect(decisionForSlot(deriveImageSourceStrategyForSpec(magazine), 'hero')?.strategy).toBe('stock');
+
+    // …while a request that both describes AND operates an interface still overrides it.
+    const tool = buildFixtureSpec({
+      label: 'dashboard misread as editorial',
+      prompt: 'A web dashboard for internal teams to manage records, monitor pipelines, filter tickets, run queries and see reporting — an admin panel, not a marketing site',
+      sector: 'ai-saas', subsector: 'internal admin dashboard',
+      sectionNames: ['Hero', 'Dashboard', 'Reporting', 'Pricing'],
+      slots: [HERO],
+    });
+    expect(tool.experienceIntelligence?.experience.lead).toBe('interface-led');
+    expect(decisionForSlot(deriveImageSourceStrategyForSpec(tool), 'hero')?.strategy).toBe('none');
+  });
+
+  it('a real-world product medium is never turned synthetic by a category-level posture', () => {
+    // Defect: `posture: graphic-first` alone could route the hero of a product whose medium the
+    // classification owner resolved to real-world photography (a restaurant, a shop) to a
+    // generated image — a synthetic stand-in for a real place.
+    const spec = buildFixtureSpec(MATRIX[0]);
+    const forced = {
+      ...spec,
+      visualConcept: { ...spec.visualConcept!, realImageStrategy: { ...spec.visualConcept!.realImageStrategy, posture: 'graphic-first' } },
+    } as unknown as FrontendBuildSpecification;
+    expect(forced.experienceIntelligence?.media.primaryKind).toBe('place-photography');
+    expect(decisionForSlot(deriveImageSourceStrategyForSpec(forced), 'hero')?.strategy).toBe('stock');
   });
 });

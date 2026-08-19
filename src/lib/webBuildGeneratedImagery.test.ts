@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   buildGeneratedArtDirection, buildGeneratedImagePrompt, runGeneratedImagery,
-  generationKindFor, GENERATED_HONESTY_LABEL,
+  generationKindFor, durableUrl, GENERATED_HONESTY_LABEL,
 } from '@/lib/webBuildGeneratedImagery';
 import { MAX_GENERATED_IMAGES_PER_BUILD, type ImageSourceDecision } from '@/lib/webBuildImageSourceStrategy';
 import type { FrontendBuildSpecification } from '@/lib/webBuildAgents';
@@ -12,6 +12,7 @@ interface Call { url: string; body?: Record<string, unknown> }
 function mockBackend(script: { health?: unknown; generate?: unknown | unknown[]; healthStatus?: number }) {
   const calls: Call[] = [];
   const gens = Array.isArray(script.generate) ? [...script.generate] : (script.generate ? [script.generate] : []);
+  let lastGen: unknown;
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: { body?: string }) => {
     const body = init?.body ? JSON.parse(init.body) : undefined;
     calls.push({ url: String(url), body });
@@ -19,8 +20,10 @@ function mockBackend(script: { health?: unknown; generate?: unknown | unknown[];
       if (script.healthStatus && script.healthStatus >= 400) return { ok: false, status: script.healthStatus } as never;
       return { ok: true, status: 200, json: async () => script.health } as never;
     }
-    const next = gens.shift() ?? gens[gens.length - 1];
-    return { ok: true, status: 200, json: async () => next } as never;
+    // Repeat the LAST scripted response for every further call (an empty queue used to yield
+    // `undefined`, which silently turned a second attempt into a 'failed' outcome).
+    if (gens.length) lastGen = gens.shift();
+    return { ok: true, status: 200, json: async () => lastGen } as never;
   }));
   return calls;
 }
@@ -219,5 +222,57 @@ describe('generated imagery — the route', () => {
     const res = await runGeneratedImagery([decision()], { spec: spec(), budget: 1 });
     expect(res.assets).toHaveLength(0);
     expect(res.outcomes[0].status).toBe('failed');
+  });
+});
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * ADVERSARIAL RE-REVIEW regressions.
+ * ──────────────────────────────────────────────────────────────────────────── */
+describe('generated imagery — adversarial regressions', () => {
+  it('refuses a non-https ABSOLUTE url (mixed content would render as a broken image)', () => {
+    expect(durableUrl({ url: 'http://cdn.example.com/a.png' })).toBe('');
+    expect(durableUrl({ url: '//cdn.example.com/a.png' })).toBe('');
+    expect(durableUrl({ url: 'data:image/png;base64,AAA' })).toBe('');
+    expect(durableUrl({ url: 'javascript:alert(1)' })).toBe('');
+    expect(durableUrl({ url: 'https://cdn.example.com/a.png' })).toBe('https://cdn.example.com/a.png');
+    // A RELATIVE asset-route url is ours and is resolved against the API base.
+    expect(durableUrl({ url: '/v2/assets/blob/abc.png' })).toMatch(/^https?:\/\/.+\/v2\/assets\/blob\/abc\.png$/);
+  });
+
+  it('drops the whole result when a provider returns a plain-http image', async () => {
+    mockBackend({ health: HEALTH_OK, generate: { slotId: 'hero', status: 'ready', url: 'http://cdn.example.com/a.png', honestyLabel: '', promptSummary: '' } });
+    const res = await runGeneratedImagery([decision()], { spec: spec(), budget: 1 });
+    expect(res.assets).toHaveLength(0);
+    expect(res.outcomes[0].status).toBe('not-persistable');
+  });
+
+  it('never lets ONE image fill two slots, even if the provider returns an identical url', async () => {
+    const calls = mockBackend({
+      health: HEALTH_OK,
+      generate: { slotId: 'x', status: 'ready', url: 'https://cdn.example.com/same.png', honestyLabel: '', promptSummary: '' },
+    });
+    const res = await runGeneratedImagery(
+      [decision({ slotId: 'a' }), decision({ slotId: 'b' })], { spec: spec(), budget: 2 },
+    );
+    expect(calls.filter((c) => c.url.endsWith('/images/generate'))).toHaveLength(2);
+    expect(res.assets).toHaveLength(1);                       // the duplicate never becomes an asset
+    expect(res.diagnostics.duplicatesPrevented).toBe(1);
+    expect(res.outcomes.map((o) => o.status)).toEqual(['ready', 'duplicate']);
+  });
+
+  it('stops attempting once the route TOTAL wall-clock budget is spent', async () => {
+    const calls = mockBackend({
+      health: HEALTH_OK,
+      generate: { slotId: 'x', status: 'ready', url: 'https://cdn.example.com/a.png', honestyLabel: '', promptSummary: '' },
+    });
+    // A clock that jumps past the deadline after the first attempt.
+    let t = 0;
+    const res = await runGeneratedImagery(
+      [decision({ slotId: 'a' }), decision({ slotId: 'b' })],
+      { spec: spec(), budget: 2, totalBudgetMs: 5000, now: () => { t += 4000; return t; } },
+    );
+    expect(calls.filter((c) => c.url.endsWith('/images/generate'))).toHaveLength(1);
+    expect(res.diagnostics.timedOut).toBe(1);
+    expect(res.outcomes.map((o) => o.status)).toEqual(['ready', 'timed-out']);
   });
 });

@@ -2375,9 +2375,18 @@ function builderProjection(spec: FrontendBuildSpecification): Record<string, unk
  * unchanged by identity, so those requests are byte-for-byte what they were before.
  */
 function specForQualityTask(spec: FrontendBuildSpecification): FrontendBuildSpecification {
-  if (!spec || (!spec.designIntelligence && !spec.experienceIntelligence)) return spec;
+  if (!spec || (!spec.designIntelligence && !spec.experienceIntelligence && !spec.imageSourceStrategy)) return spec;
   const rest = { ...(spec as unknown as Record<string, unknown>) };
   delete rest.designIntelligence;
+  // The image SOURCE-STRATEGY routing contract is dropped for the same reason: it is a
+  // FIRST-GENERATION routing decision with no model-facing acceptance surface. Nothing the
+  // reviewer or repairer can do is improved by knowing WHERE an image came from — what they must
+  // honour is already materialized on the image slots themselves (url + imageSource +
+  // honestyLabel) and stated in the request's image block. Sending it would pay ~1.5–4k chars on
+  // EVERY review and repair call and invite the reviewer to judge against a contract Quality V2
+  // does not own. The deterministic acceptance analyzer reads it locally from the spec, never
+  // from the request, so this removal costs no enforcement.
+  delete rest.imageSourceStrategy;
   // Experience Intelligence is a FIRST-GENERATION direction authority for the same reason: no
   // analyzer scores it and no acceptance gate reads it, so sending the full contract on every
   // review/repair call would pay for a contract Quality V2 does not own. What a repair must not

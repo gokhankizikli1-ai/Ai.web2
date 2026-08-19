@@ -99,6 +99,8 @@ export interface GeneratedImageAsset {
   persisted?: boolean;
   width?: number;
   height?: number;
+  /** Stored byte size of the generated image (weight visibility for Quality V2 diagnostics). */
+  bytes?: number;
 }
 
 export interface ImageGenHealth {
