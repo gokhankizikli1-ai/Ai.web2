@@ -45,21 +45,32 @@
 # public domain, and its `/health` healthcheck.
 
 [build]
-# Same builder as the web service. Both processes run from the
-# same Python image; Nixpacks already resolves Celery + Redis +
-# all task deps via `pip install -r requirements.txt`. Forcing
-# Nixpacks back from the Railpack/mise default — see commit
-# 7383beb (fix(build): force Nixpacks builder + remove runtime.txt).
-builder = "NIXPACKS"
+# Same builder as the web service — both services build the SAME
+# `Dockerfile` from this repo and differ only in start command. The
+# image already carries Celery + Redis + every task dep, because it
+# runs the same `pip install -r requirements.txt`.
+#
+# This must stay in lockstep with `railway.toml`: the worker was
+# hitting the identical Railpack/mise failure
+# ("No GitHub artifact attestations found for python@3.11.9"), so
+# fixing only the web service would have left the worker broken.
+# See the Dockerfile header for the full root cause.
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
 
 [deploy]
 # `startCommand` is the SOURCE OF TRUTH for the worker.
 #
 # Without this field, Railway falls back to (in order):
 #   1. Dashboard "Custom Start Command" (if set on the service)
-#   2. Procfile process matching the service name
-#   3. Nixpacks auto-detection (which picks `python -m uvicorn ...`
-#      because the project also exposes a FastAPI app)
+#   2. The image's CMD — which under the Dockerfile builder is the
+#      WEB fallback (`uvicorn api:app`), i.e. this worker would boot
+#      a duplicate FastAPI app and never consume a queue.
+#
+# That makes this field MORE load-bearing than it was under Nixpacks,
+# not less: the Dockerfile builder does NOT read the Procfile, so the
+# old "Procfile `worker:` line" safety net is gone. `startCommand`
+# below is now the only thing that makes this service a Celery worker.
 #
 # Real-world failure mode this guards against (Production 2026-06-25):
 # the worker service had a stale dashboard-set Custom Start Command —
@@ -75,8 +86,9 @@ builder = "NIXPACKS"
 # dashboard's Custom Start Command (see header) — otherwise the two
 # fields fight on every redeploy.
 #
-# Mirrors Procfile `worker:` verbatim — keep in sync if Procfile
-# changes. Tested against:
+# Mirrors Procfile `worker:` verbatim. The Procfile is no longer read
+# by the builder, but keep the two in sync so the repo has one honest
+# statement of how the worker starts. Tested against:
 #   * backend/jobs/celery_app.py — exports module-level `app`
 #   * backend/jobs/tasks.py      — registers `korvix.jobs.dispatch`
 #   * backend/jobs/celery_app.py:73-92 — defines the 6 queues below
