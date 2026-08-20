@@ -141,7 +141,7 @@ mistake this module exists to stop.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Sequence, Set
 
 logger = logging.getLogger(__name__)
 
@@ -472,7 +472,54 @@ def _state_evidence_refs(state: dict) -> List[dict]:
     return refs
 
 
-def _reconcile(project_id: str, *, membership: Dict[str, dict],
+def _open_proposals(project_id: str) -> List[dict]:
+    """The project's PROPOSED candidates — read once, used twice.
+
+    Both questions this module asks about an existing proposal need the same
+    rows: "does an open proposal already speak for this observation?" (before
+    the legacy path runs) and "has this proposal's problem gone away?" (after).
+    One bounded query answers both; two would be the same query twice."""
+    from backend.services.orchestrator import candidate_actions_store as cas
+    try:
+        return cas.list_candidate_actions(str(project_id),
+                                          status=cas.STATUS_PROPOSED,
+                                          limit=_MAX_CANDIDATES_RECONCILED)
+    except Exception:      # pragma: no cover — never block the synthesis
+        return []
+
+
+def _already_proposed(rows: Sequence[dict]) -> Set[str]:
+    """Observation ids an OPEN proposal already cites as its evidence.
+
+    AUDIT FINDING, fixed here. Suppression asked exactly one question — "is
+    this row a member of a correlated subject in the CURRENT projection?" — and
+    the projection is computed from a bounded read. A busy project pushes an
+    older story's rows past that bound, the subject stops forming, its
+    surviving row looks uncorrelated, and the legacy path proposes "Act on:
+    Production deployment FAILED" beside the evidence-backed proposal that is
+    still open about the very same failure. One problem, two recommendations —
+    the failure mode this module exists to prevent, re-entering through the
+    window rather than through the state machine.
+
+    An open proposal citing a row is another true answer to the module's own
+    question, "has this row already been accounted for?". Membership answers it
+    for what is in the window; this answers it for what an earlier window
+    already accounted for, and neither needs an unbounded read to do so."""
+    out: Set[str] = set()
+    for row in rows or []:
+        for ref in (row.get("evidence_refs") or []):
+            if not isinstance(ref, dict):
+                continue
+            if str(ref.get("type") or "") != "observation":
+                continue
+            ref_id = str(ref.get("ref") or "")
+            if ref_id:
+                out.add(ref_id)
+    return out
+
+
+def _reconcile(project_id: str, *, rows: Sequence[dict],
+               membership: Dict[str, dict],
                promoted_keys: Dict[str, str], written_keys: Set[str],
                visible_observations: Set[str]) -> List[str]:
     """Retire PROPOSED candidates whose problem the live evidence says is over.
@@ -500,13 +547,6 @@ def _reconcile(project_id: str, *, membership: Dict[str, dict],
     from backend.services.orchestrator import candidate_actions_store as cas
 
     retired: List[str] = []
-    try:
-        rows = cas.list_candidate_actions(str(project_id),
-                                          status=cas.STATUS_PROPOSED,
-                                          limit=_MAX_CANDIDATES_RECONCILED)
-    except Exception:      # pragma: no cover — never block the synthesis
-        return retired
-
     for row in rows:
         dedup_key = str(row.get("dedup_key") or "")
         if dedup_key and dedup_key in written_keys:
@@ -649,6 +689,12 @@ def synthesize_candidates(
         except Exception:  # pragma: no cover — never block on a projection
             decision_contexts = {}
 
+    # The project's existing PROPOSALS, read once. They answer "has this row
+    # already been accounted for?" for evidence that an earlier, wider window
+    # correlated and this one cannot see — see `_already_proposed`.
+    open_proposals = _open_proposals(str(project_id))
+    accounted_elsewhere = _already_proposed(open_proposals)
+
     #: subject id → the dedup key written for it in THIS pass, and every
     #: dedup key written at all (metric and legacy rows included). The first
     #: answers "does this subject still propose work?", the second answers
@@ -669,33 +715,36 @@ def synthesize_candidates(
         if not state_id:
             continue
         context = (decision_contexts or {}).get(state_id) or {}
-        # Goal alignment now needs a REASON (see `decision_context`), so an
-        # unrelated goal no longer stamps every candidate and "aligned" once
-        # again discriminates between candidates instead of being universal.
-        goal_id = (context.get("goal_alignment") or {}).get("goal_id") or None
-        confidence = (state.get("confidence") or {}).get("score")
+        # DERIVED, not declared, and derived in ONE place. Production evidence,
+        # corroboration across independent humans, a dated commitment and the
+        # recurrence of a failure decide these — see `decision_context`, which
+        # also hands the SAME dimensions to the page when it orders subjects
+        # without a candidate to rank. Two derivations would be two answers.
+        #
+        # Goal alignment now needs a REASON, so an unrelated goal no longer
+        # stamps every candidate and "aligned" once again discriminates between
+        # candidates instead of being universal.
+        #
+        # `confidence` is the correlation's OWN evidence-derived score, passed
+        # in rather than taken from the context so the stored number is the
+        # authority's verbatim; where it came from stays inspectable in the
+        # state's breakdown.
+        raw_confidence = (state.get("confidence") or {}).get("score")
+        dimensions = dc.as_dimensions(
+            context,
+            confidence=(float(raw_confidence)
+                        if isinstance(raw_confidence, (int, float)) else 0.5))
         dedup_key = dc.candidate_key(state_id)
         cid = cas.record_candidate_action(
             project_id=str(project_id), user_id=str(user_id),
             title=_state_title(state),
             detail=_state_detail(state, context),
-            goal_id=goal_id,
             source="OBSERVATION",
             evidence_refs=_state_evidence_refs(state),
-            recommended_capability="research",   # investigate — cheap/AUTO
-            # DERIVED, not declared: production evidence, corroboration across
-            # independent humans, a dated commitment and the recurrence of a
-            # failure decide these — see `decision_context`.
-            impact=str(context.get("impact") or "medium"),
-            # The correlation's OWN evidence-derived score, not a constant.
-            # Where it came from is inspectable in the state's breakdown.
-            confidence=(float(confidence) if isinstance(confidence, (int, float))
-                        else 0.5),
-            cost="low", risk=str(context.get("risk") or "low"),
-            urgency=str(context.get("urgency") or "medium"),
             # Dedup converges on the SUBJECT, so re-running after three more
             # deploy failures updates one candidate instead of adding three.
-            dedup_key=dedup_key)
+            dedup_key=dedup_key,
+            **dimensions)
         if cid:
             out.append(cid)
             promoted_keys[state_id] = dedup_key
@@ -747,6 +796,13 @@ def synthesize_candidates(
             # alongside the correlated candidate. Understanding the project has
             # to mean the older path stops acting as if it does not exist.
             continue
+        if oid and str(oid) in accounted_elsewhere:
+            # No subject speaks for this row in the CURRENT window, but an open
+            # proposal already does — it was correlated when the window still
+            # reached the rest of its story. Proposing it again would put two
+            # recommendations on one problem, which is exactly what correlating
+            # was for. See `_already_proposed`.
+            continue
         ext = o.get("external_id") if isinstance(o, dict) else None
         aligned = _primary_goal(goals)
         summary = _line(o.get("summary") or o.get("kind") or "signal", 120)
@@ -777,7 +833,7 @@ def synthesize_candidates(
     # from being mistaken for proof of resolution.
     visible = {str(o.get("id")) for o in (observations or [])
                if isinstance(o, dict) and o.get("id")}
-    _reconcile(str(project_id), membership=membership,
+    _reconcile(str(project_id), rows=open_proposals, membership=membership,
                promoted_keys=promoted_keys, written_keys=written_keys,
                visible_observations=visible)
 

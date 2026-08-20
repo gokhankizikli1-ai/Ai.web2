@@ -118,6 +118,20 @@ TIER_CODE = {
 #: evidenced one on tier alone.
 DEFAULT_TIER = TIER_ROUTINE
 
+#: The basis for a stored proposal whose subject is NOT in the current
+#: projection — because the observation read is bounded and a busy project can
+#: push an older story's rows out of the window.
+#:
+#: It is NOT `routine`. `routine` is a positive claim ("we looked, this is not
+#: pressing") and this is the opposite one ("we cannot see the evidence, so we
+#: will not claim anything"). Printing the first when the second is true is how
+#: a verified outage came to be labelled unimportant by a commit burst.
+#:
+#: The TIER is still the bottom, and deliberately so: an operational reading
+#: may not outlive the evidence it was derived from, so a tier this projection
+#: cannot currently justify is not one it may keep asserting.
+BASIS_EVIDENCE_OUT_OF_WINDOW = "evidence_out_of_window"
+
 # ── Deadline pressure (STRUCTURAL — derived from time, never from wording) ───
 DEADLINE_NONE = "none"
 DEADLINE_APPROACHING = "approaching"
@@ -885,18 +899,90 @@ def project_contexts(
     return out
 
 
-def order_key(context: Dict[str, Any]) -> Tuple[int, float, int, str]:
+#: The capability a correlated subject's proposal recommends. Declared here
+#: because BOTH the writer (`candidate_synthesis`) and the page ordering below
+#: need the same answer, and two spellings of it would be two answers.
+PROPOSED_CAPABILITY = "research"
+
+
+def as_dimensions(context: Dict[str, Any], *,
+                  confidence: Optional[float] = None) -> Dict[str, Any]:
+    """A decision context → the candidate DIMENSIONS derived from it.
+
+    ONE derivation, used by the writer and by the page. `candidate_synthesis`
+    records exactly this onto the candidate row, and `order_key` scores exactly
+    this when the page has no candidate to score — so a subject and the
+    proposal about it can never carry different dimensions and therefore can
+    never sort differently.
+
+    `confidence` overrides the context's own score for the writer, which
+    records the CORRELATION's score verbatim; passing nothing uses the
+    context's copy of the same number."""
+    ctx = context if isinstance(context, dict) else {}
+    score = ctx.get("confidence") if confidence is None else confidence
+    try:
+        score = float(score)
+    except (TypeError, ValueError):
+        score = 0.5
+    return {
+        "goal_id": (ctx.get("goal_alignment") or {}).get("goal_id") or None,
+        "impact": _s(ctx.get("impact"), 16) or LEVEL_MEDIUM,
+        "urgency": _s(ctx.get("urgency"), 16) or LEVEL_MEDIUM,
+        "cost": LEVEL_LOW,          # investigating is cheap; the policy agrees
+        "risk": _s(ctx.get("risk"), 16) or LEVEL_LOW,
+        "confidence": score,
+        "recommended_capability": PROPOSED_CAPABILITY,
+    }
+
+
+def _goal_priorities(context: Dict[str, Any]) -> Dict[str, int]:
+    """The `{goal_id: priority}` map for THIS context's own alignment.
+
+    The page has no goals list at scoring time — it has the alignment the
+    context already resolved — so the map is reconstructed from it. Same input
+    to the same scoring function as the Business Brain's, which is the point."""
+    alignment = context.get("goal_alignment") or {}
+    goal_id = _s(alignment.get("goal_id"), 64)
+    if not (goal_id and alignment.get("aligned")):
+        return {}
+    try:
+        return {goal_id: int(alignment.get("priority") or 2)}
+    except (TypeError, ValueError):
+        return {goal_id: 2}
+
+
+def order_key(context: Dict[str, Any]) -> Tuple[int, float, int, float, str]:
     """The deterministic ordering of decision contexts among themselves.
 
-    Used ONLY where there are no candidate actions to rank — the Project page,
-    which must not write and therefore cannot go through `candidate_synthesis`.
-    It is the same ladder `action_prioritizer` applies (tier, then evidence,
-    then a stable id), so the page and the Business Brain cannot disagree about
-    what matters most; it is not a second opinion, it is the same one reached
-    without writing a proposal first."""
-    return (int(context.get("priority_tier") or DEFAULT_TIER),
-            -float(context.get("confidence") or 0.0),
-            -int(context.get("corroboration_count") or 0),
+    Used where there are no candidate actions to rank — the Project page and
+    project chat, which must not write and therefore cannot go through
+    `candidate_synthesis` to find out what matters.
+
+    AUDIT FINDING, fixed here. This used to order by `(tier, confidence,
+    corroboration)` while `action_prioritizer` orders by `(tier, SCORE, ...)`,
+    and the two are not the same question. The score also weighs GOAL
+    ALIGNMENT, which is invisible to a confidence comparison — so inside one
+    tier a goal-aligned subject with slightly weaker evidence was #1 for the
+    Business Brain and #2 for the page, and the product contradicted itself
+    about its own top priority while both modules documented that it could not.
+
+    There is now ONE in-tier comparison: the identical `score_candidate` over
+    the identical dimensions (`as_dimensions`), reached through the identical
+    decision context. `action_prioritizer` is imported lazily because it
+    imports THIS module at load time; the dependency runs one way at import
+    and the other way at call time, which is what keeps a single scoring
+    function from becoming a cycle."""
+    tier = int(context.get("priority_tier") or DEFAULT_TIER)
+    score = 0.0
+    try:
+        from backend.services.orchestrator import action_prioritizer as ap
+        score = float(ap.score_candidate(
+            as_dimensions(context), active_goal_priority=_goal_priorities(context),
+            context=context)["score"])
+        rank = ap.actionability_rank(context)
+    except Exception:      # pragma: no cover — never break a projection
+        rank = 1
+    return (tier, -score, rank, -float(context.get("confidence") or 0.0),
             _s(context.get("subject_id"), 64))
 
 
@@ -1050,7 +1136,8 @@ __all__ = [
     "WHY_RECURRING_FAILURE",
     "CAVEAT_DECISION_RECORDED", "CAVEAT_RELATED_SUBJECT",
     "MAX_WHY_NOW", "MAX_CAVEATS", "MAX_COMMITMENTS", "MAX_FOCUS_NEXT",
-    "CANDIDATE_KEY_PREFIX", "candidate_key",
+    "CANDIDATE_KEY_PREFIX", "candidate_key", "PROPOSED_CAPABILITY",
+    "as_dimensions",
     "commitments", "nearest_commitment", "for_subject", "project_contexts",
     "project_focus", "order_key", "build",
 ]

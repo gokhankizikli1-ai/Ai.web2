@@ -145,6 +145,20 @@ _ACTIONABILITY_RANK = {
 }
 
 
+def actionability_rank(carrier: Optional[Dict[str, Any]]) -> int:
+    """The in-tier tie-break rank for who can finish the work (smaller wins).
+
+    Takes anything carrying an `actionability` block — a decision context or a
+    `priority_explanation` — because both hold the same one. Exported so the
+    page's context ordering and this module's candidate ordering apply the
+    identical rule instead of two copies that could drift.
+
+    Never a tier input: an outage nobody can automate still leads the queue."""
+    resolution = str(((carrier or {}).get("actionability") or {})
+                     .get("resolution") or "")
+    return _ACTIONABILITY_RANK.get(resolution, 1)
+
+
 def _num(x: Any, default: float = 0.0) -> float:
     try:
         v = float(x)
@@ -245,7 +259,8 @@ def score_candidate(
     }
 
 
-def explain(context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def explain(context: Optional[Dict[str, Any]] = None, *,
+            subject_expected: bool = False) -> Dict[str, Any]:
     """The STRUCTURED "why this is #1" a surface can render.
 
     Reads ONLY the decision context. A candidate's own stored dimensions are
@@ -260,11 +275,25 @@ def explain(context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     user-facing sentence here, so every language is a translation rather than
     English leaking through a payload."""
     ctx = context if isinstance(context, dict) else {}
-    tier = int(ctx.get("priority_tier") or dc.DEFAULT_TIER)
+    # A proposal that NAMES a correlated subject but has no live context is not
+    # `routine`. `routine` asserts we looked and it is not pressing; the truth
+    # here is that this proposal's evidence is outside the bounded observation
+    # window, so nothing about its importance can be asserted either way.
+    # Saying the first when the second is true is how a commit burst relabelled
+    # a verified production outage as unimportant.
+    #
+    # `subject_expected` reads only the candidate's IDENTITY — whether it
+    # claims a subject at all — never its stored dimensions. Those were derived
+    # from a context that may no longer hold, and letting a stale row argue
+    # with live evidence is the thing this function must not do. A metric or
+    # lone-observation proposal never claimed a subject, so it is genuinely
+    # routine and says so.
+    basis = str(ctx.get("priority_basis") or dc.TIER_CODE[dc.DEFAULT_TIER])
+    if not ctx and subject_expected:
+        basis = dc.BASIS_EVIDENCE_OUT_OF_WINDOW
     return {
-        "tier": tier,
-        "basis": str(ctx.get("priority_basis")
-                     or dc.TIER_CODE[dc.DEFAULT_TIER]),
+        "tier": int(ctx.get("priority_tier") or dc.DEFAULT_TIER),
+        "basis": basis,
         "why_now": list(ctx.get("why_now") or []),
         "caveats": list(ctx.get("caveats") or []),
         "actionability": dict(ctx.get("actionability") or {}),
@@ -290,12 +319,10 @@ def _sort_key(candidate: dict) -> Tuple[int, float, int, float, str, str]:
         5. created_at ASC        older proposal first — FIFO fairness
         6. id ASC                final stable tiebreak
     """
-    explanation = candidate.get("priority_explanation") or {}
-    resolution = str((explanation.get("actionability") or {}).get("resolution") or "")
     return (
         int(candidate.get("priority_tier") or dc.DEFAULT_TIER),
         -_num(candidate.get("priority_score")),
-        _ACTIONABILITY_RANK.get(resolution, 1),
+        actionability_rank(candidate.get("priority_explanation")),
         -_num(candidate.get("confidence")),
         str(candidate.get("created_at") or ""),
         str(candidate.get("id") or ""),
@@ -318,6 +345,8 @@ def rank_candidates(
     about this parameter."""
     gp: Dict[str, int] = {}
     for g in (active_goals or []):
+        if not isinstance(g, dict):
+            continue
         gid = g.get("id")
         if gid:
             try:
@@ -327,6 +356,14 @@ def rank_candidates(
 
     scored: List[dict] = []
     for cand in candidates or []:
+        # TOTAL, like every other pure projection here: a malformed row is
+        # skipped, never fatal. It was not, and the consequence was not a
+        # crash — `project_supervisor` caught the exception and fell back to
+        # the store's own `created_at DESC` order, handing back a list that
+        # looked ranked, carried no `priority_*` fields, and answered "what
+        # matters most?" with "whatever was written last".
+        if not isinstance(cand, dict):
+            continue
         context = _context_for(cand, decision_contexts)
         s = score_candidate(cand, active_goal_priority=gp, context=context)
         item = dict(cand)
@@ -334,7 +371,10 @@ def rank_candidates(
         item["priority_breakdown"] = s["breakdown"]
         item["priority_tier"] = int(context.get("priority_tier")
                                     or dc.DEFAULT_TIER)
-        item["priority_explanation"] = explain(context)
+        item["priority_explanation"] = explain(
+            context,
+            subject_expected=str(cand.get("dedup_key") or "").startswith(
+                dc.CANDIDATE_KEY_PREFIX))
         scored.append(item)
 
     scored.sort(key=_sort_key)
@@ -357,4 +397,5 @@ __all__ = [
     "W_PRODUCTION", "W_DEADLINE", "W_CUSTOMER",
     "P_STALE", "P_AGING", "P_CONTRADICTION", "P_NOT_ACTIONABLE",
     "score_candidate", "rank_candidates", "top_candidate", "explain",
+    "actionability_rank",
 ]

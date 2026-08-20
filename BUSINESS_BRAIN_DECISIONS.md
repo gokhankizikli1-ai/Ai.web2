@@ -145,6 +145,20 @@ So for a connector-observed problem there are two different answers:
   capability and the existing `execution_policy` tier;
 * **who resolves it** — a person, in `vercel` / `github`.
 
+Both halves are stated on every row that carries either. `autonomy` answers
+"may the orchestrator run the recommended *capability* unattended?" and
+`resolution` answers "will running it make the *problem* go away?" — a
+`research` recommendation about a broken production deploy is legitimately
+AUTONOMOUS while the outage is not something Korvix can end, and a consumer
+reading only the first field was being told Korvix had it covered.
+
+`autonomy_for_capability` also consults `capability_registry`, not only
+`execution_policy`. The registry declares `qa`, `launch` and `growth` as
+`available=False` with no route; none of them is paid, external or denied, so
+all three used to report AUTONOMOUS — as did a typo. Unknown or unavailable now
+reads REVIEW. DENIED is still checked first, so a destructive capability cannot
+be softened by a registry that deliberately does not list it.
+
 An outage nobody can automate is still the most important thing in the project,
 so actionability does **not** demote it down the ladder — hiding the truth to
 flatter the tool would be worse than the tool being limited. It is a tie-break
@@ -171,6 +185,47 @@ The guard matters as much as the rule: a candidate **none** of whose evidence
 is visible is left strictly alone. The observation read is bounded, so *"I
 cannot see it"* and *"it is resolved"* are different sentences, and inferring
 the second from the first would close live work the moment a project got busy.
+
+## The bounded window — the exact invariant
+
+The observation read is bounded (60 rows, newest first). A busy project can
+therefore push an older story's rows out of view, and when that happens the
+subject stops forming: correlation sees one surviving deploy where it used to
+see a merged PR, a Slack thread and that deploy.
+
+Two things follow, and both are now stated rather than assumed.
+
+**A proposal already open about that story is not re-proposed.** Suppression
+used to ask one question — *is this row a member of a subject in the current
+projection?* — so the surviving row looked uncorrelated and the legacy path
+proposed "Act on: Production deployment FAILED" beside the evidence-backed
+proposal still open about that very failure. One problem, two recommendations.
+`_already_proposed` closes it: an open proposal citing a row is another true
+answer to *has this row already been accounted for?* — membership answers it
+for what is in the window, an open proposal answers it for what an earlier,
+wider window already accounted for. Neither needs an unbounded read.
+
+**A proposal whose evidence is out of view says so.** Its basis is
+`evidence_out_of_window`, never `routine`. `routine` is a positive claim — *we
+looked, this is not pressing* — and printing it for a verified outage that a
+commit burst pushed out of sight is a statement the layer has no basis to make.
+
+Its **tier** is still the bottom, and deliberately:
+
+> an operational reading may not outlive the evidence it was derived from.
+
+Trusting a tier computed from evidence the system can no longer see is exactly
+the "confidently telling you about a world that has moved on" failure this
+whole layer exists to avoid. So the proposal stays open (it is not retired —
+`_reconcile` cannot judge what it cannot see), it keeps its stored dimensions
+and therefore still outranks genuine routine noise on score, and it stops
+asserting a severity it can no longer justify.
+
+The remaining, accepted consequence: while a story is out of the window, an
+in-window `blocked` subject outranks it. That is what the visible evidence
+says, and the alternative is persisting a perishable inference. Pinned by
+`test_a_commit_burst_cannot_re_propose_a_story_already_open` and
+`test_an_out_of_window_proposal_says_so_instead_of_claiming_it_is_routine`.
 
 ## One answer, three surfaces
 

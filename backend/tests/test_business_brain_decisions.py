@@ -1010,3 +1010,213 @@ def test_ranking_without_any_decision_context_is_exactly_what_it_was(env):
     expected = (env["ap"].W_IMPACT * 3.0 + env["ap"].W_CONFIDENCE * 0.6
                 + env["ap"].W_URGENCY * 2.0)
     assert scored["score"] == pytest.approx(expected)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# RE-REVIEW REGRESSIONS — four defects found by attacking the merged shape
+# ══════════════════════════════════════════════════════════════════════════
+
+def _synthetic_context(name, *, tier, confidence, aligned, goal_priority=4):
+    """A decision context shaped exactly as `for_subject` returns one.
+
+    Synthetic on purpose: the divergence below is about the ORDERING keys, and
+    building it from real evidence would mean fighting the correlator into an
+    arrangement that proves nothing extra about the comparison itself."""
+    return {
+        "subject_id": name, "subject": name, "priority_tier": tier,
+        "priority_basis": dc.TIER_CODE[tier], "confidence": confidence,
+        "confidence_level": "high", "corroboration_count": 2,
+        "unresolved": True, "impact": dc.LEVEL_MEDIUM, "urgency": dc.LEVEL_MEDIUM,
+        "risk": dc.LEVEL_LOW, "production_impact": dc.PRODUCTION_UNKNOWN,
+        "customer_impact": dc.CUSTOMER_NONE, "deadline_pressure": dc.DEADLINE_NONE,
+        "freshness": "recent", "contradictory_evidence": False,
+        "why_now": [], "caveats": [], "blocker_state": dc.BLOCKER_BLOCKED,
+        "evidence_strength": dc.EVIDENCE_STRONG,
+        "actionability": {"korvix": dc.KORVIX_INVESTIGATE, "capability": "research",
+                          "autonomy": "AUTONOMOUS",
+                          "resolution": dc.RESOLUTION_HUMAN_EXTERNAL,
+                          "external_providers": ["github"]},
+        "goal_alignment": {"goal_id": "g1" if aligned else "", "aligned": aligned,
+                           "priority": goal_priority, "title": "",
+                           "basis": "topical" if aligned else "none", "shared": []},
+    }
+
+
+def _commit_burst(env, *, newer=5, between=60):
+    """Commits that evict a story's older rows from the bounded read: `newer`
+    of them after the failed deploy, `between` of them between the deploy and
+    the merged PR."""
+    for i in range(newer):
+        _record(env, source="github", kind="github.commit.pushed",
+                summary=f"New commit {i}",
+                payload={"repo": "acme/site", "sha": f"{i:040x}"},
+                ext=f"new-{i}", at=NOW - timedelta(minutes=i))
+    for i in range(between):
+        _record(env, source="github", kind="github.commit.pushed",
+                summary=f"Mid commit {i}",
+                payload={"repo": "acme/site", "sha": f"{i + 100:040x}"},
+                ext=f"mid-{i}", at=NOW - timedelta(minutes=65 + i))
+
+
+def test_a_commit_burst_cannot_re_propose_a_story_already_open(env):
+    """FINDING 1a. Suppression asked only "is this row in a subject in the
+    CURRENT projection?", and the projection is a bounded read. A commit burst
+    evicted the story's other rows, its surviving deploy looked uncorrelated,
+    and the legacy path proposed "Act on: Production deployment FAILED" beside
+    the evidence-backed proposal still open about that very failure."""
+    _payment_webhook_story(env)
+    env["synth"].synthesize_candidates("pA", "uA")
+    assert len(_open_candidates(env)) == 1
+
+    _commit_burst(env)
+    rows = env["obs"].list_observations("pA", user_id="uA", limit=60)
+    seen = {r["external_id"] for r in rows}
+    assert "pA-v1" in seen and "pA-g1" not in seen and "pA-s1" not in seen, (
+        "the fixture must evict the story's partners but keep the deploy")
+
+    env["synth"].synthesize_candidates("pA", "uA")
+    assert len(_open_candidates(env)) == 1, _titles(env)
+    assert not any(t.startswith("Act on:") for t in _titles(env)), _titles(env)
+
+
+def test_an_out_of_window_proposal_says_so_instead_of_claiming_it_is_routine(env):
+    """FINDING 1b. `routine` asserts "we looked, this is not pressing". For a
+    proposal whose evidence has left the window the true statement is the
+    opposite one, and printing the first relabelled a verified production
+    outage as unimportant."""
+    _payment_webhook_story(env)
+    top, _, _ = _top(env)
+    assert top["priority_explanation"]["basis"] == dc.TIER_CODE[dc.TIER_PRODUCTION_BROKEN]
+
+    _commit_burst(env)
+    top, ranked, bundle = _top(env)
+    # The story's SUBJECT no longer forms — only its surviving deploy row is in
+    # the window, and one row is not a correlation — so the open proposal has
+    # no live context to be judged by.
+    assert top["dedup_key"] not in bundle["by_dedup_key"]
+    assert top["priority_explanation"]["basis"] == dc.BASIS_EVIDENCE_OUT_OF_WINDOW
+    # Bottom tier, because an operational reading may not outlive its evidence…
+    assert top["priority_tier"] == dc.DEFAULT_TIER
+    # …but it is NOT retired, because we cannot see the evidence to judge it.
+    assert top["id"] in {c["id"] for c in _open_candidates(env)}
+
+
+def test_a_proposal_with_no_subject_is_still_honestly_routine(env):
+    """The other half of the same rule: a metric or lone-observation proposal
+    never claimed a subject, so it genuinely IS routine and must say so."""
+    _record(env, source="vercel", kind="vercel.deployment.error",
+            summary="Production deployment FAILED for korvix", ext="lone",
+            payload={"vercel_project_id": "prj_1", "target": "production"},
+            importance="high", at=NOW)
+    top, _, _ = _top(env)
+    assert top["title"].startswith("Act on:")
+    assert top["priority_explanation"]["basis"] == dc.TIER_CODE[dc.TIER_ROUTINE]
+
+
+def test_the_page_and_the_business_brain_never_name_different_top_priorities(env):
+    """FINDING 2. The page ordered contexts by `(tier, confidence)` while the
+    Brain ordered candidates by `(tier, SCORE)`, and the score also weighs GOAL
+    ALIGNMENT — invisible to a confidence comparison. Inside one tier a
+    goal-aligned subject with slightly weaker evidence was #1 for the Brain and
+    #2 for the page, and the product contradicted itself about its own top
+    priority."""
+    a = dict(_synthetic_context("A", tier=dc.TIER_BLOCKED, confidence=0.70,
+                                aligned=True))
+    b = dict(_synthetic_context("B", tier=dc.TIER_BLOCKED, confidence=0.90,
+                                aligned=False))
+    contexts = {c["subject_id"]: c for c in (a, b)}
+    page = [c["subject_id"] for c in sorted(contexts.values(), key=dc.order_key)]
+
+    candidates = [
+        {"id": "cA", "dedup_key": dc.candidate_key("A"), "goal_id": "g1",
+         "created_at": "2026-01-01T00:00:00Z", **dc.as_dimensions(a)},
+        {"id": "cB", "dedup_key": dc.candidate_key("B"), "goal_id": None,
+         "created_at": "2026-01-01T00:00:00Z", **dc.as_dimensions(b)},
+    ]
+    ranked = env["ap"].rank_candidates(
+        candidates, active_goals=[{"id": "g1", "priority": 4}],
+        decision_contexts={dc.candidate_key(k): v for k, v in contexts.items()})
+    brain = [(c["priority_explanation"] or {}).get("subject_id") for c in ranked]
+    assert page == brain, f"page {page} != brain {brain}"
+
+
+def test_the_two_surfaces_agree_on_real_evidence_too(env):
+    """The same guarantee end to end, through the real authorities."""
+    _two_equal_problems(env)
+    env["goals"].create_goal(project_id="pA", user_id="uA",
+                             title="Improve checkout button conversion",
+                             priority=env["goals"].PRIORITY_CRITICAL)
+    goals = env["goals"].active_goals("pA")
+    top, ranked, bundle = _top(env, goals=goals)
+    assert bundle["focus"]["top"]["subject_id"] == \
+        top["priority_explanation"]["subject_id"]
+
+
+def test_a_capability_korvix_cannot_run_is_never_called_autonomous(env):
+    """FINDING 4. `autonomy_for_capability` consulted the execution POLICY
+    ("may this run unattended?") and never the capability REGISTRY ("can this
+    run at all?"). `qa`, `launch` and `growth` are declared `available=False`
+    with no route, and none of them is paid, external or denied — so all three
+    came back AUTONOMOUS. So did a typo."""
+    sup = env["sup"]
+    from backend.services.orchestrator import capability_registry as registry
+
+    for capability in ("qa", "launch", "growth"):
+        assert registry.is_available(capability) is False, capability
+        assert sup.autonomy_for_capability(capability) == sup.AUTONOMY_REVIEW
+
+    assert sup.autonomy_for_capability("reserch") == sup.AUTONOMY_REVIEW  # typo
+    assert sup.autonomy_for_capability("") == sup.AUTONOMY_REVIEW
+    # …and the answers that were already right are unmoved.
+    assert sup.autonomy_for_capability("research") == sup.AUTONOMY_AUTONOMOUS
+    assert sup.autonomy_for_capability("web_build") == sup.AUTONOMY_REVIEW
+    # DENIED still wins over the registry: `delete_project` is deliberately
+    # absent from it, and a registry check ordered first would SOFTEN a
+    # destructive capability from RESTRICTED to REVIEW.
+    assert sup.autonomy_for_capability("delete_project") == sup.AUTONOMY_RESTRICTED
+
+
+def test_the_recommendation_states_who_finishes_it_not_just_who_may_run_it(env):
+    """FINDING 3. `recommendation.autonomy` is the policy tier of the
+    recommended CAPABILITY, so "research about a broken production deploy" is
+    legitimately AUTONOMOUS while the OUTAGE is not something Korvix can end.
+    Read alone the field said Korvix had it covered, and a `needs_human` plan
+    row carrying a bare `autonomy: AUTONOMOUS` read as a contradiction."""
+    _payment_webhook_story(env)
+    env["synth"].synthesize_candidates("pA", "uA")
+    assessment = env["sup"].assess_business_brain(None, project_id="pA",
+                                                  user_id="uA")
+    recommendation = assessment["recommendation"]
+    assert recommendation["autonomy"] == env["sup"].AUTONOMY_AUTONOMOUS
+    assert recommendation["resolution_owner"] == dc.RESOLUTION_HUMAN_EXTERNAL
+
+    human = assessment["plan"]["needs_human"]
+    assert human, assessment["plan"]
+    for row in human:
+        assert row["resolution"] == dc.RESOLUTION_HUMAN_EXTERNAL
+        assert "external_providers" in row
+    for row in assessment["plan"]["korvix_can_do"]:
+        assert row["resolution"] != dc.RESOLUTION_HUMAN_EXTERNAL
+
+
+def test_the_ranking_is_total_and_never_degrades_into_store_order(env):
+    """FINDING 5. `rank_candidates` was not total — one malformed row raised —
+    and `assess_business_brain` caught that and returned
+    `list(candidate_actions)`: the store's own `created_at DESC`. The rows came
+    back looking ranked, carried no `priority_*` field to say otherwise, and
+    answered "what matters most?" with "whatever was written last"."""
+    ranked = env["ap"].rank_candidates(
+        [None, "nonsense", {"id": "ok", "impact": None, "dedup_key": 3}],
+        active_goals=[None, {"id": "g", "priority": "not-a-number"}],
+        decision_contexts={"intel:x": "not-a-dict"})
+    assert [c.get("id") for c in ranked] == ["ok"]
+    assert ranked[0]["priority_tier"] == dc.DEFAULT_TIER
+
+    # And every row the supervisor hands back is one the authority ordered.
+    _payment_webhook_story(env)
+    env["synth"].synthesize_candidates("pA", "uA")
+    assessment = env["sup"].assess_business_brain(None, project_id="pA",
+                                                  user_id="uA")
+    assert assessment["candidate_actions"]
+    for row in assessment["candidate_actions"]:
+        assert "priority_score" in row and "priority_tier" in row

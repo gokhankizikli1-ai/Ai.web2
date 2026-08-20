@@ -34,18 +34,39 @@ AUTONOMY_RESTRICTED = "RESTRICTED"   # policy DENIED — user must explicitly in
 
 
 def autonomy_for_capability(capability: Optional[str]) -> str:
-    """Map a capability onto its autonomy level via the EXISTING execution
-    policy. Unknown/empty capability → REVIEW (conservative: never assume a
-    recommended action is safe to auto-run)."""
+    """Map a capability onto its autonomy level via the EXISTING authorities.
+
+    Two of them, and BOTH are necessary — which is the bug this used to have.
+    `execution_policy` answers "may the orchestrator run this WITHOUT asking?"
+    and `capability_registry` answers "can this run AT ALL?", and only the
+    policy was consulted. The registry deliberately declares `qa`, `launch` and
+    `growth` as `available=False, route=ROUTE_NONE` — real concepts a planner
+    may reference and nothing can execute — and none of them is paid, external
+    or denied, so all three came back AUTONOMOUS. So did a typo: an
+    unrecognised capability is not in `_PAID`/`_EXTERNAL`/`_DENIED` either, and
+    fell through to AUTO.
+
+    "Korvix will do this by itself" was therefore printed for work Korvix has
+    no route to run. Unknown or unavailable now reads REVIEW — the same
+    conservative answer an empty capability already gave, for the same reason:
+    never assume a recommended action is safe to auto-run.
+
+    DENIED is checked FIRST and still wins. `delete_project` is deliberately
+    absent from the registry (nothing may route to it), so a registry check
+    ordered ahead of the policy would soften a destructive capability from
+    RESTRICTED to REVIEW — the one direction this function must never move."""
     if not capability:
         return AUTONOMY_REVIEW
     try:
+        from backend.services.orchestrator import capability_registry as registry
         from backend.services.orchestrator import execution_policy as ep
         tier = ep.classify_capability(str(capability))
-        if tier == ep.POLICY_AUTO:
-            return AUTONOMY_AUTONOMOUS
         if tier == ep.POLICY_DENIED:
             return AUTONOMY_RESTRICTED
+        if not registry.is_available(str(capability)):
+            return AUTONOMY_REVIEW      # unknown, or declared not-executable
+        if tier == ep.POLICY_AUTO:
+            return AUTONOMY_AUTONOMOUS
         return AUTONOMY_REVIEW
     except Exception:  # pragma: no cover — fail conservative
         return AUTONOMY_REVIEW
@@ -223,11 +244,16 @@ def _plan_from(ranked: List[dict]) -> Dict[str, Any]:
         actionability = explanation.get("actionability") or {}
         capability = cand.get("recommended_capability")
         row = {"candidate_id": cand.get("id"), "capability": capability,
-               "autonomy": autonomy_for_capability(capability)}
-        # The RESOLUTION question comes first: an action Korvix may run
-        # automatically that cannot actually finish the job belongs on the
-        # human list, or the split would flatter the tool.
-        if str(actionability.get("resolution") or "") == "human_external":
+               "autonomy": autonomy_for_capability(capability),
+               # BOTH answers, on every row. `autonomy` is about the recommended
+               # CAPABILITY ("may the orchestrator run `research` unattended?" —
+               # yes); `resolution` is about the PROBLEM ("will running it make
+               # the outage go away?" — no). A row in `needs_human` carrying a
+               # bare `autonomy: AUTONOMOUS` reads as a contradiction, and a
+               # consumer that saw only that field was being told Korvix had it
+               # covered.
+               "resolution": str(actionability.get("resolution") or "unknown")}
+        if row["resolution"] == "human_external":
             row["external_providers"] = list(actionability.get("external_providers") or [])
             human.append(row)
         elif row["autonomy"] == AUTONOMY_AUTONOMOUS:
@@ -352,14 +378,26 @@ def assess_business_brain(
     # ── Prioritize candidate actions deterministically ──────────────────
     ranked: List[dict] = []
     top: Optional[dict] = None
+    # DEGRADE THROUGH THE AUTHORITY, NEVER AROUND IT. This used to fall back
+    # to `list(candidate_actions)` — the store's own `created_at DESC` — which
+    # is a second answer to "what matters most?" reached by a path nothing
+    # documents: the rows came back looking ranked, carried no `priority_*`
+    # field to say otherwise, and put whatever was written last at the top.
+    # If the decision contexts are unusable the ranking still runs WITHOUT
+    # them (the documented, tested no-context behaviour); if the authority
+    # itself is unavailable there is no ordering to offer and none is claimed.
     try:
         from backend.services.orchestrator import action_prioritizer as ap
-        ranked = ap.rank_candidates(
-            candidate_actions, active_goals=goals,
-            decision_contexts=decision_bundle.get("by_dedup_key") or {})
+    except Exception:  # pragma: no cover — defensive
+        ap = None
+    if ap is not None:
+        try:
+            ranked = ap.rank_candidates(
+                candidate_actions, active_goals=goals,
+                decision_contexts=decision_bundle.get("by_dedup_key") or {})
+        except Exception:  # pragma: no cover — defensive
+            ranked = ap.rank_candidates(candidate_actions, active_goals=goals)
         top = ranked[0] if ranked else None
-    except Exception:  # pragma: no cover
-        ranked = list(candidate_actions)
 
     # ── Recommended next action — operational blockers ALWAYS win ────────
     op_na = operational.get("recommended_next_action")
@@ -401,6 +439,15 @@ def assess_business_brain(
             # do in a system Korvix cannot write to.
             "priority_tier": top.get("priority_tier"),
             "priority_explanation": top.get("priority_explanation") or {},
+            # WHO FINISHES IT. `autonomy` above answers a narrower question
+            # than its name suggests at this level — it is the policy tier of
+            # the recommended capability, so a "research" recommendation about
+            # a broken production deploy is legitimately AUTONOMOUS while the
+            # OUTAGE is not something Korvix can end. Both are stated here so
+            # neither can be read alone and believed.
+            "resolution_owner": str(
+                ((top.get("priority_explanation") or {}).get("actionability") or {})
+                .get("resolution") or "unknown"),
         }
     elif op_na == NA_UPDATE_STALE:
         next_action = NA_UPDATE_STALE
