@@ -7,7 +7,9 @@
             ↓
     PROJECT INTELLIGENCE  ← this package
       entity resolution · event understanding · cross-source correlation
-      evidence aggregation · state inference · confidence
+      evidence aggregation · state inference · confidence      (`correlation`)
+      affected area · change kind · implications · uncertainty  (`interpretation`)
+      the project as one picture                                (`synthesis`)
             ↓
     Business Brain / candidate / priority authorities   ← unchanged deciders
             ↓
@@ -15,9 +17,20 @@
 
 WHAT IT OWNS
 ------------
-Facts and relationships: whether two observations are about the same real-world
-thing, what the accumulated evidence says about that thing's state, and how
-much that reading can be trusted. That is all.
+Facts, relationships and the reading of them: whether two observations are
+about the same real-world thing, what the accumulated evidence says about that
+thing's state, how much that reading can be trusted, which part of the project
+it touches, what it IMPLIES, and what is still unknown. That is all.
+
+AN IMPLICATION IS NOT AN ACTION
+-------------------------------
+    "the merged change is not proven live: its production deploy failed"   ✓
+    "redeploy production"                                                  ✗
+
+The first is a consequence of evidence and belongs here. The second is a
+proposal of work and belongs to `candidate_synthesis`, ranked by
+`action_prioritizer`, gated by `execution_policy`. This package hands richer
+structure to those authorities; it never becomes one.
 
 WHAT IT DOES NOT OWN
 --------------------
@@ -49,23 +62,34 @@ learnings. Promotion across that boundary is a deliberate, explicit act by a
 user or by an authority that already owns it — never a side effect of a
 correlation happening to look confident. Nothing in this package writes.
 
+NO HEALTH SCORE, NO SECOND RANKING
+----------------------------------
+There is no project health number anywhere in this package, and there will not
+be: a fabricated aggregate ("72/100") is exactly the confident nonsense this
+layer exists to avoid. The project-level lists are SLICES of the order
+`correlation` already produced — `attention` remains the sole authority on what
+a human should look at now.
+
 COST: pure computation over rows another authority already read. ZERO provider
 calls, ZERO model tokens, ZERO writes, ZERO new tables.
 """
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Sequence
 
 from backend.services.project_intelligence.correlation import (
     CONFIDENCE_HIGH, CONFIDENCE_LOW, CONFIDENCE_MEDIUM,
     CORRELATION_WINDOW_DAYS, ENTITY_CHANGE, ENTITY_CI, ENTITY_DEPLOYMENT,
     ENTITY_ISSUE, ENTITY_MEETING, ENTITY_PULL_REQUEST, ENTITY_TOPIC,
-    MAX_EVIDENCE, MAX_EVIDENCE_IDS, MAX_OBSERVATIONS, MAX_STATES,
+    MAX_EVIDENCE, MAX_EVIDENCE_IDS, MAX_FACETS, MAX_OBSERVATIONS, MAX_STATES,
     MIN_CORROBORATED_EVIDENCE, MIN_SUBJECT_MEMBERS,
     STATE_CONFLICTING, STATE_IN_PROGRESS, STATE_LIKELY_RESOLVED,
     STATE_OBSERVED, STATE_UNRESOLVED, correlate, correlate_with_membership,
+)
+from backend.services.project_intelligence.synthesis import (
+    STATE_NO_EVIDENCE, synthesize,
 )
 
 logger = logging.getLogger(__name__)
@@ -142,6 +166,56 @@ def for_project(
     return project_states(rows, now=now, limit=limit)
 
 
+def understand(
+    observations: Sequence[Dict[str, Any]],
+    *,
+    now: Optional[datetime] = None,
+    limit: int = MAX_STATES,
+) -> Dict[str, Any]:
+    """PURE: already-read, already-scoped observations → the full project
+    understanding — the interpreted subjects AND what they add up to.
+
+    This is the entry point a SURFACE should use (the workspace read model, the
+    chat prompt assembler), because it guarantees the two halves were computed
+    from the same rows in the same instant: a page that reported "3 open
+    subjects" beside a synthesis derived from a second read could disagree with
+    itself, and this makes that impossible.
+
+    Returns `{"subjects": [...], "synthesis": {...}}`. An empty project yields
+    an empty subject list and an HONEST empty synthesis (state `no_evidence`),
+    never an absent key the caller has to null-check."""
+    when = (now or datetime.now(timezone.utc))
+    subjects = project_states(observations, now=when, limit=limit)
+    try:
+        overall = synthesize(subjects, observations=observations, now=when)
+    except Exception as exc:      # pragma: no cover — never break a caller
+        logger.debug("project_intelligence.understand synthesis failed: %s", exc)
+        overall = synthesize([], observations=(), now=when)
+    return {"subjects": subjects, "synthesis": overall}
+
+
+def understand_with_membership(
+    observations: Sequence[Dict[str, Any]],
+    *,
+    now: Optional[datetime] = None,
+    limit: int = MAX_STATES,
+) -> "tuple[List[Dict[str, Any]], Dict[str, Any], Dict[str, Dict[str, Any]]]":
+    """`(subjects, synthesis, membership)` — `understand` for a backend
+    consumer that must also know which stored rows a subject already speaks
+    for. See `correlation.correlate_with_membership` for why the membership
+    index is not the states' capped public id list."""
+    when = (now or datetime.now(timezone.utc))
+    subjects, membership = project_states_with_membership(
+        observations, now=when, limit=limit)
+    try:
+        overall = synthesize(subjects, observations=observations, now=when)
+    except Exception as exc:      # pragma: no cover — never break a caller
+        logger.debug("project_intelligence.understand_with_membership "
+                     "synthesis failed: %s", exc)
+        overall = synthesize([], observations=(), now=when)
+    return subjects, overall, membership
+
+
 def open_states(states: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """The subset describing a live problem (unresolved / conflicting)."""
     return [s for s in states or [] if str(s.get("state")) in OPEN_STATES]
@@ -153,9 +227,11 @@ __all__ = [
     "CONFIDENCE_HIGH", "CONFIDENCE_MEDIUM", "CONFIDENCE_LOW",
     "ENTITY_TOPIC", "ENTITY_PULL_REQUEST", "ENTITY_ISSUE", "ENTITY_CHANGE",
     "ENTITY_DEPLOYMENT", "ENTITY_CI", "ENTITY_MEETING",
-    "MAX_STATES", "MAX_EVIDENCE", "MAX_EVIDENCE_IDS", "MAX_OBSERVATIONS",
+    "MAX_STATES", "MAX_EVIDENCE", "MAX_EVIDENCE_IDS", "MAX_FACETS",
+    "MAX_OBSERVATIONS",
     "CORRELATION_WINDOW_DAYS", "MIN_CORROBORATED_EVIDENCE",
-    "MIN_SUBJECT_MEMBERS",
+    "MIN_SUBJECT_MEMBERS", "STATE_NO_EVIDENCE",
     "project_states", "project_states_with_membership", "for_project",
+    "understand", "understand_with_membership", "synthesize",
     "open_states", "correlate", "correlate_with_membership",
 ]

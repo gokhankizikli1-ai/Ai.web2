@@ -391,10 +391,17 @@ def test_a_project_with_no_connectors_renders_truthfully(env):
     # Nothing observed ⇒ nothing to correlate. A project with no evidence gets
     # NO inferred state, rather than an empty-but-confident-looking one.
     assert snap["project_state"] == []
+    # …and the project-level reading says exactly that, rather than being
+    # absent (which the page would have to null-check) or optimistic.
+    understanding = snap["project_understanding"]
+    assert understanding["state"] == "no_evidence"
+    assert understanding["coverage"]["observations"] == 0
+    assert understanding["open"] == [] and understanding["blockers"] == []
+    assert [g["code"] for g in understanding["gaps"]] == ["no_evidence"]
     assert snap["counts"] == {"attention": 0, "activity": 0, "goals": 0,
                               "products": 0, "chats": 0, "connectors": 0,
                               "tasks": 0, "knowledge": 0, "changes": 0,
-                              "project_state": 0}
+                              "project_state": 0, "project_state_open": 0}
 
 
 def test_a_project_whose_connectors_are_disabled_on_the_deployment_still_renders(env,

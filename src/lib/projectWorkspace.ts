@@ -205,12 +205,174 @@ export interface WorkspaceChanges {
   truncated: boolean;
 }
 
+/* ── Project understanding (backend `project_intelligence`) ────────────────
+ *
+ * Korvix's reading of what the connected tools ADD UP TO. Everything here is
+ * a stable CODE from a closed backend vocabulary, rendered through the locale
+ * dictionaries — the API never sends a user-facing sentence for any of it, so
+ * every language gets the same reading rather than an English one.
+ *
+ * Nothing in this block is a score. There is no project health number, no
+ * percentage and no ranking: `open`/`uncertain`/`resolvedRecently` are slices
+ * of the order the backend already produced, and "what deserves attention" is
+ * still `attention`'s answer alone.
+ */
+
+/** The inferred state of one subject. Same vocabulary at project level, plus
+ *  `no_evidence` for a project nothing has been observed about. */
+export type SubjectState =
+  | 'unresolved' | 'conflicting' | 'in_progress' | 'likely_resolved' | 'observed';
+export type ProjectState = SubjectState | 'no_evidence';
+
+/** Which part of the project a subject touches. `basis` says whether the
+ *  backend derived it from a recorded fact (a deployment IS a deployment) or
+ *  from wording — the page shows the distinction rather than hiding it. */
+export interface AffectedArea {
+  area: string;
+  basis: 'structural' | 'textual' | 'none';
+}
+
+export interface ChangeKind {
+  kind: string;
+  basis: 'structural' | 'textual' | 'none';
+}
+
+/** A code + whatever bounded params the backend attached to it. */
+export interface UnderstandingCode {
+  code: string;
+}
+
+/** A concrete negative reading standing between a subject and "done" — always
+ *  a real observation, never a sentence Korvix composed. */
+export interface SubjectBlocker {
+  code: string;
+  facet: string;
+  environment: string;
+  source: string;
+  title: string;
+  observation_id: string;
+  observed_at: string;
+  regressed: boolean;
+  /** Present on the project-level list; absent on a subject's own. */
+  subject?: string;
+  subject_id?: string;
+}
+
+export interface MeaningfulChange {
+  at: string;
+  code: string;
+  facet: string;
+  environment: string;
+  source: string;
+  title: string;
+  observation_id: string;
+  subject?: string;
+  subject_id?: string;
+}
+
+/** The interpretation attached to one correlated subject. */
+export interface SubjectUnderstanding {
+  id: string;
+  areas: AffectedArea[];
+  change_kind: ChangeKind;
+  environments: string[];
+  /** What the evidence MEANS. Never an action — proposing work is the
+   *  Business Brain's job and this page never does it. */
+  implications: UnderstandingCode[];
+  /** What is still NOT known. Empty means the evidence really is unambiguous. */
+  uncertainty: UnderstandingCode[];
+  blockers: SubjectBlocker[];
+  last_meaningful_change: MeaningfulChange | null;
+}
+
+export interface EvidenceRef {
+  observation_id: string;
+  source: string;
+  kind: string;
+  semantic_type: string;
+  title: string;
+  observed_at: string;
+}
+
+/** One correlated subject: what Korvix thinks is going on, and why. */
+export interface ProjectStateItem {
+  id: string;
+  subject: string;
+  entity_type: string;
+  state: SubjectState;
+  confidence: { score: number | null; level: string };
+  sources: string[];
+  evidence_count: number;
+  member_count: number;
+  corroborated: boolean;
+  supporting: EvidenceRef[];
+  contradicting: EvidenceRef[];
+  context: EvidenceRef[];
+  first_seen: string;
+  last_seen: string;
+  understanding: SubjectUnderstanding | null;
+}
+
+/** What the reading is BASED on. The page shows this whenever it is thin,
+ *  because "one tool, three events" and "four tools, sixty events" support
+ *  very different sentences. */
+export interface UnderstandingCoverage {
+  observations: number;
+  sources: string[];
+  source_count: number;
+  subjects: number;
+  single_source: boolean;
+  oldest_observed_at: string;
+  newest_observed_at: string;
+  recent: boolean;
+  window_days: number;
+}
+
+export interface SubjectRef {
+  id: string;
+  subject: string;
+  state: SubjectState;
+  entity_type: string;
+  confidence: string;
+  areas: string[];
+  change_kind: string;
+  sources: string[];
+  last_seen: string;
+  last_change_at: string;
+}
+
+export interface SubjectRelationship {
+  kind: string;
+  a_id: string;
+  a_subject: string;
+  b_id: string;
+  b_subject: string;
+  shared_evidence: number;
+}
+
+export interface ProjectUnderstanding {
+  generated_at: string;
+  window_days: number;
+  state: ProjectState;
+  coverage: UnderstandingCoverage;
+  open: SubjectRef[];
+  resolved_recently: SubjectRef[];
+  uncertain: SubjectRef[];
+  blockers: SubjectBlocker[];
+  meaningful_changes: MeaningfulChange[];
+  gaps: UnderstandingCode[];
+  relationships: SubjectRelationship[];
+  counts: Record<string, number>;
+}
+
 export interface ProjectWorkspace {
   project: WorkspaceProject;
   summary: { text: string; source: string };
   today: WorkspaceToday;
   goals: WorkspaceGoal[];
   attention: AttentionItem[];
+  projectState: ProjectStateItem[];
+  understanding: ProjectUnderstanding | null;
   activity: ActivityItem[];
   changes: WorkspaceChanges;
   tasks: WorkspaceTasks;
@@ -365,6 +527,194 @@ function normalizeChanges(value: unknown): WorkspaceChanges {
   };
 }
 
+/* ── Project understanding normalization ──────────────────────────────────── */
+
+const SUBJECT_STATES: SubjectState[] =
+  ['unresolved', 'conflicting', 'in_progress', 'likely_resolved', 'observed'];
+const BASES = ['structural', 'textual', 'none'];
+
+function normalizeCodes(value: unknown): UnderstandingCode[] {
+  return arr(value)
+    .map((raw) => ({ ...obj(raw), code: str(obj(raw).code) }))
+    .filter((c): c is UnderstandingCode => !!c.code) as UnderstandingCode[];
+}
+
+function normalizeBlocker(value: unknown): SubjectBlocker | null {
+  const o = obj(value);
+  const code = str(o.code);
+  if (!code) return null;
+  return {
+    code,
+    facet: str(o.facet),
+    environment: str(o.environment),
+    source: str(o.source),
+    title: str(o.title),
+    observation_id: str(o.observation_id),
+    observed_at: str(o.observed_at),
+    regressed: o.regressed === true,
+    subject: str(o.subject) || undefined,
+    subject_id: str(o.subject_id) || undefined,
+  };
+}
+
+function normalizeChange(value: unknown): MeaningfulChange | null {
+  const o = obj(value);
+  const at = str(o.at);
+  if (!at) return null;
+  return {
+    at,
+    code: str(o.code),
+    facet: str(o.facet),
+    environment: str(o.environment),
+    source: str(o.source),
+    title: str(o.title),
+    observation_id: str(o.observation_id),
+    subject: str(o.subject) || undefined,
+    subject_id: str(o.subject_id) || undefined,
+  };
+}
+
+function normalizeUnderstanding(value: unknown): SubjectUnderstanding | null {
+  const o = obj(value);
+  if (!Object.keys(o).length) return null;
+  const kind = obj(o.change_kind);
+  const kindBasis = str(kind.basis, 'none');
+  return {
+    id: str(o.id),
+    areas: arr(o.areas).map((raw) => {
+      const a = obj(raw);
+      const basis = str(a.basis, 'none');
+      return {
+        area: str(a.area),
+        basis: (BASES.includes(basis) ? basis : 'none') as AffectedArea['basis'],
+      };
+    }).filter((a) => !!a.area),
+    change_kind: {
+      kind: str(kind.kind),
+      basis: (BASES.includes(kindBasis) ? kindBasis : 'none') as ChangeKind['basis'],
+    },
+    environments: arr(o.environments).map((e) => str(e)).filter(Boolean),
+    implications: normalizeCodes(o.implications),
+    uncertainty: normalizeCodes(o.uncertainty),
+    blockers: arr(o.blockers).map(normalizeBlocker)
+      .filter((b): b is SubjectBlocker => b !== null),
+    last_meaningful_change: normalizeChange(o.last_meaningful_change),
+  };
+}
+
+function normalizeEvidence(value: unknown): EvidenceRef[] {
+  return arr(value).map((raw) => {
+    const o = obj(raw);
+    return {
+      observation_id: str(o.observation_id),
+      source: str(o.source),
+      kind: str(o.kind),
+      semantic_type: str(o.semantic_type),
+      title: str(o.title),
+      observed_at: str(o.observed_at),
+    };
+  });
+}
+
+/** A subject with no id or no state this bundle knows is DROPPED. Rendering a
+ *  story under a state we cannot name would be worse than not rendering it. */
+export function normalizeProjectStateItem(value: unknown): ProjectStateItem | null {
+  const o = obj(value);
+  const id = str(o.id);
+  const state = str(o.state) as SubjectState;
+  if (!id || !SUBJECT_STATES.includes(state)) return null;
+  const confidence = obj(o.confidence);
+  return {
+    id,
+    subject: str(o.subject),
+    entity_type: str(o.entity_type),
+    state,
+    confidence: { score: num(confidence.score), level: str(confidence.level) },
+    sources: arr(o.sources).map((x) => str(x)).filter(Boolean),
+    evidence_count: num(o.evidence_count) ?? 0,
+    member_count: num(o.member_count) ?? 0,
+    corroborated: o.corroborated === true,
+    supporting: normalizeEvidence(o.supporting),
+    contradicting: normalizeEvidence(o.contradicting),
+    context: normalizeEvidence(o.context),
+    first_seen: str(o.first_seen),
+    last_seen: str(o.last_seen),
+    understanding: normalizeUnderstanding(o.understanding),
+  };
+}
+
+function normalizeSubjectRef(value: unknown): SubjectRef | null {
+  const o = obj(value);
+  const id = str(o.id);
+  if (!id) return null;
+  const state = str(o.state) as SubjectState;
+  return {
+    id,
+    subject: str(o.subject),
+    state: SUBJECT_STATES.includes(state) ? state : 'observed',
+    entity_type: str(o.entity_type),
+    confidence: str(o.confidence),
+    areas: arr(o.areas).map((a) => str(a)).filter(Boolean),
+    change_kind: str(o.change_kind),
+    sources: arr(o.sources).map((x) => str(x)).filter(Boolean),
+    last_seen: str(o.last_seen),
+    last_change_at: str(o.last_change_at),
+  };
+}
+
+/**
+ * The project-level reading, or null when the backend sent none.
+ *
+ * An unrecognised project state degrades to `no_evidence` — the WEAKEST claim
+ * — for the same reason the change block defaults to "recent": if the payload
+ * cannot prove a reading, the page must not print a stronger one.
+ */
+export function normalizeProjectUnderstanding(value: unknown): ProjectUnderstanding | null {
+  const o = obj(value);
+  if (!Object.keys(o).length) return null;
+  const rawState = str(o.state) as ProjectState;
+  const coverage = obj(o.coverage);
+  const refs = (key: unknown) => arr(key).map(normalizeSubjectRef)
+    .filter((r): r is SubjectRef => r !== null);
+  return {
+    generated_at: str(o.generated_at),
+    window_days: num(o.window_days) ?? 0,
+    state: ([...SUBJECT_STATES, 'no_evidence'] as string[]).includes(rawState)
+      ? rawState : 'no_evidence',
+    coverage: {
+      observations: num(coverage.observations) ?? 0,
+      sources: arr(coverage.sources).map((x) => str(x)).filter(Boolean),
+      source_count: num(coverage.source_count) ?? 0,
+      subjects: num(coverage.subjects) ?? 0,
+      single_source: coverage.single_source === true,
+      oldest_observed_at: str(coverage.oldest_observed_at),
+      newest_observed_at: str(coverage.newest_observed_at),
+      recent: coverage.recent === true,
+      window_days: num(coverage.window_days) ?? 0,
+    },
+    open: refs(o.open),
+    resolved_recently: refs(o.resolved_recently),
+    uncertain: refs(o.uncertain),
+    blockers: arr(o.blockers).map(normalizeBlocker)
+      .filter((b): b is SubjectBlocker => b !== null),
+    meaningful_changes: arr(o.meaningful_changes).map(normalizeChange)
+      .filter((c): c is MeaningfulChange => c !== null),
+    gaps: normalizeCodes(o.gaps),
+    relationships: arr(o.relationships).map((raw) => {
+      const r = obj(raw);
+      return {
+        kind: str(r.kind),
+        a_id: str(r.a_id),
+        a_subject: str(r.a_subject),
+        b_id: str(r.b_id),
+        b_subject: str(r.b_subject),
+        shared_evidence: num(r.shared_evidence) ?? 0,
+      };
+    }).filter((r) => !!r.a_id && !!r.b_id),
+    counts: counts(o.counts),
+  };
+}
+
 /**
  * Turn an untyped API payload into a fully-populated `ProjectWorkspace`, or
  * null when it is not a workspace at all. Every list defaults to empty and
@@ -404,6 +754,10 @@ export function normalizeWorkspace(raw: unknown): ProjectWorkspace | null {
     attention: arr(root.attention)
       .map(normalizeAttentionItem)
       .filter((a): a is AttentionItem => a !== null),
+    projectState: arr(root.project_state)
+      .map(normalizeProjectStateItem)
+      .filter((p): p is ProjectStateItem => p !== null),
+    understanding: normalizeProjectUnderstanding(root.project_understanding),
     activity: arr(root.activity).map((a) => {
       const o = obj(a);
       return {
@@ -790,6 +1144,197 @@ export function seenThrough(workspace: ProjectWorkspace | null): string | null {
   return generated ? generated : null;
 }
 
+/* ── Project understanding: presentation ──────────────────────────────────── */
+
+/**
+ * i18n key for a subject/project state code.
+ *
+ * The vocabulary is the backend's, and it is closed — an unrecognised code
+ * (a backend ahead of this bundle) falls back to a neutral key rather than
+ * printing `likely_resolved` at a person.
+ */
+const STATE_KEYS: Record<string, string> = {
+  unresolved: 'projectStateUnresolved',
+  conflicting: 'projectStateConflicting',
+  in_progress: 'projectStateInProgress',
+  likely_resolved: 'projectStateLikelyResolved',
+  observed: 'projectStateObserved',
+  no_evidence: 'projectStateNoEvidence',
+};
+
+export function stateKey(state: string): string {
+  return STATE_KEYS[state] || 'projectStateGeneric';
+}
+
+/** Tone for a state. Purely visual — no state is invented, and this is NOT a
+ *  severity: `attention` owns severity and this block never reorders it. */
+export function stateTone(state: string): 'critical' | 'warning' | 'positive' | 'info' {
+  if (state === 'unresolved' || state === 'conflicting') return 'critical';
+  if (state === 'in_progress') return 'warning';
+  if (state === 'likely_resolved') return 'positive';
+  return 'info';
+}
+
+const AREA_KEYS: Record<string, string> = {
+  frontend: 'projectAreaFrontend',
+  backend: 'projectAreaBackend',
+  deployment: 'projectAreaDeployment',
+  auth: 'projectAreaAuth',
+  billing: 'projectAreaBilling',
+  database: 'projectAreaDatabase',
+  connector: 'projectAreaConnector',
+  product: 'projectAreaProduct',
+  infrastructure: 'projectAreaInfrastructure',
+  content: 'projectAreaContent',
+  unknown: 'projectAreaUnknown',
+};
+
+export function areaKey(area: string): string | null {
+  return AREA_KEYS[area] || null;
+}
+
+const SUBJECT_CHANGE_KIND_KEYS: Record<string, string> = {
+  feature: 'projectChangeKindFeature',
+  bug: 'projectChangeKindBug',
+  regression: 'projectChangeKindRegression',
+  deployment: 'projectChangeKindDeployment',
+  configuration: 'projectChangeKindConfiguration',
+  dependency: 'projectChangeKindDependency',
+  security: 'projectChangeKindSecurity',
+  operational: 'projectChangeKindOperational',
+  communication: 'projectChangeKindCommunication',
+};
+
+/** `null` for `unknown` (and for anything unrecognised): the page shows no
+ *  kind rather than a chip that says "unknown", which tells a user nothing. */
+export function changeKindKeyOf(kind: string): string | null {
+  return SUBJECT_CHANGE_KIND_KEYS[kind] || null;
+}
+
+const IMPLICATION_KEYS: Record<string, string> = {
+  production_broken: 'projectImplicationProductionBroken',
+  recurrence: 'projectImplicationRecurrence',
+  fix_not_proven_live: 'projectImplicationFixNotProvenLive',
+  blocked_by_ci: 'projectImplicationBlockedByCi',
+  issue_open: 'projectImplicationIssueOpen',
+  preview_only_verified: 'projectImplicationPreviewOnly',
+  work_in_flight: 'projectImplicationWorkInFlight',
+  reported_but_unconfirmed: 'projectImplicationReportedOnly',
+  verified_live: 'projectImplicationVerifiedLive',
+};
+
+export function implicationKey(code: string): string | null {
+  return IMPLICATION_KEYS[code] || null;
+}
+
+const UNCERTAINTY_KEYS: Record<string, string> = {
+  conflicting_evidence: 'projectUncertaintyConflicting',
+  production_unverified: 'projectUncertaintyProductionUnverified',
+  deploy_outcome_unknown: 'projectUncertaintyDeployUnknown',
+  stale_evidence: 'projectUncertaintyStale',
+  single_source: 'projectUncertaintySingleSource',
+  topical_link_only: 'projectUncertaintyTopicalLink',
+  thin_evidence: 'projectUncertaintyThin',
+  no_decisive_evidence: 'projectUncertaintyNoDecisive',
+  undated_evidence: 'projectUncertaintyUndated',
+  unknown_affected_scope: 'projectUncertaintyUnknownScope',
+};
+
+export function uncertaintyKey(code: string): string | null {
+  return UNCERTAINTY_KEYS[code] || null;
+}
+
+const GAP_KEYS: Record<string, string> = {
+  no_evidence: 'projectGapNoEvidence',
+  no_recent_evidence: 'projectGapNoRecentEvidence',
+  single_source_project: 'projectGapSingleSource',
+  no_deployment_evidence: 'projectGapNoDeployEvidence',
+  production_unverified: 'projectGapProductionUnverified',
+  unknown_affected_scope: 'projectGapUnknownScope',
+};
+
+export function gapKey(code: string): string | null {
+  return GAP_KEYS[code] || null;
+}
+
+/**
+ * The codes a subject can actually render, in backend order, already filtered
+ * to what this bundle has a translation for. A code we cannot name is dropped
+ * — a bullet reading `deploy_outcome_unknown` is worse than one less bullet.
+ */
+export function renderableCodes(
+  codes: readonly UnderstandingCode[] | null | undefined,
+  resolve: (code: string) => string | null,
+  limit = 3,
+): { code: string; key: string }[] {
+  const out: { code: string; key: string }[] = [];
+  for (const entry of codes || []) {
+    const key = resolve(entry.code);
+    if (key) out.push({ code: entry.code, key });
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+/**
+ * "Why Korvix thinks this" — the grouping rationale, as translatable parts.
+ *
+ * This is the honesty surface: it names how many separate pieces of evidence
+ * from how many tools were joined, and whether they were joined by a SHARED
+ * RESOURCE (a commit, a PR, a deployment) or merely by wording. A user who
+ * disagrees with a grouping should be able to see, in one line, why it
+ * happened. Returns null when the subject carries nothing to justify.
+ */
+export interface GroupingRationale {
+  evidenceCount: number;
+  sourceCount: number;
+  sources: string[];
+  /** True when the backend flagged the join as topical rather than structural. */
+  wordingOnly: boolean;
+}
+
+export function groupingRationale(item: ProjectStateItem): GroupingRationale | null {
+  if (!item.evidence_count && !item.sources.length) return null;
+  const wordingOnly = (item.understanding?.uncertainty || [])
+    .some((u) => u.code === 'topical_link_only');
+  return {
+    evidenceCount: item.evidence_count,
+    sourceCount: item.sources.length,
+    sources: item.sources,
+    wordingOnly,
+  };
+}
+
+/**
+ * Should the "Current state" section be rendered at all?
+ *
+ * Only when there is a real reading to show. A project with no observations
+ * gets NOTHING here rather than an empty panel captioned with a state code —
+ * the page already says "connect a tool" in the places that own that message,
+ * and a second empty box is clutter, not information.
+ */
+export function hasUnderstanding(workspace: ProjectWorkspace | null): boolean {
+  if (!workspace) return false;
+  if (workspace.projectState.length > 0) return true;
+  const coverage = workspace.understanding?.coverage;
+  return !!coverage && coverage.observations > 0;
+}
+
+/**
+ * The honest caveat line for the whole section, as an i18n key, or null.
+ *
+ * At most ONE is shown, strongest first: a page that lists four caveats reads
+ * as noise and gets ignored, which defeats the point of being honest.
+ */
+export function coverageCaveatKey(understanding: ProjectUnderstanding | null): string | null {
+  if (!understanding) return null;
+  const codes = new Set(understanding.gaps.map((g) => g.code));
+  if (codes.has('no_recent_evidence')) return 'projectUnderstandingCaveatStale';
+  if (codes.has('single_source_project')) return 'projectUnderstandingCaveatSingleSource';
+  if (codes.has('no_deployment_evidence')) return 'projectUnderstandingCaveatNoDeploy';
+  return null;
+}
+
 /* ── "Ask Korvix" suggestions ─────────────────────────────────────────────── */
 
 /**
@@ -824,6 +1369,21 @@ export function askSuggestions(workspace: ProjectWorkspace | null): AskSuggestio
       id: 'changed',
       labelKey: 'projectAskChangedLabel',
       promptKey: 'projectAskChangedPrompt',
+    });
+  }
+  if (workspace.projectState.length > 0) {
+    out.push({
+      id: 'state',
+      labelKey: 'projectAskStateLabel',
+      promptKey: 'projectAskStatePrompt',
+    });
+  }
+  if ((workspace.understanding?.uncertain.length || 0) > 0
+      || (workspace.understanding?.gaps.length || 0) > 0) {
+    out.push({
+      id: 'uncertain',
+      labelKey: 'projectAskUncertainLabel',
+      promptKey: 'projectAskUncertainPrompt',
     });
   }
   if (workspace.goals.length > 0) {
