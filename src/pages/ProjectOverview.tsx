@@ -1349,7 +1349,7 @@ function CustomizeFeedPanel({
               <li key={source}
                 className="flex flex-wrap items-center gap-2 rounded-lg px-1.5 py-1.5 hover:bg-white/[0.02]">
                 <SourceIcon source={source} className="h-3.5 w-3.5 shrink-0 text-white/35" />
-                <span className="min-w-0 flex-1 text-[12.5px] text-white/70 truncate">
+                <span className="min-w-0 flex-1 basis-24 text-[12.5px] text-white/70 truncate">
                   <SourceName source={source} t={t} />
                 </span>
                 <div role="radiogroup" aria-label={source}
@@ -1357,17 +1357,25 @@ function CustomizeFeedPanel({
                   {FEED_PREFERENCES.map((pref) => {
                     const Icon = PREF_ICON[pref];
                     const active = current === pref;
+                    const label = t(feedPreferenceKey(pref));
                     return (
+                      /* The label is ALWAYS rendered. Hiding it on narrow
+                         screens left three near-identical glyphs — a star, a
+                         dot and a crossed-out eye — as the only control this
+                         whole feature has, on the viewport most people use it
+                         from. The row wraps instead: two short lines beat one
+                         unreadable one. `aria-label` carries the name
+                         regardless, for screen readers and for tests. */
                       <button key={pref} role="radio" aria-checked={active}
+                        aria-label={label} title={label}
                         onClick={() => onChange(source, pref)}
-                        title={t(feedPreferenceKey(pref))}
-                        className={`inline-flex items-center gap-1 rounded-md px-2 h-6 text-[11px] transition-all ${
+                        className={`inline-flex items-center gap-1 rounded-md px-2 h-7 text-[11px] transition-all ${
                           active
                             ? 'text-white bg-white/[0.09]'
                             : 'text-white/40 hover:text-white/80 hover:bg-white/[0.05]'
                         }`}>
                         <Icon className="h-3 w-3 shrink-0" />
-                        <span className="hidden sm:inline">{t(feedPreferenceKey(pref))}</span>
+                        {label}
                       </button>
                     );
                   })}

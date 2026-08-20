@@ -71,10 +71,30 @@ CREATE TABLE IF NOT EXISTS workflow_step_claims (
 
 
 def _ttl_seconds() -> int:
+    """The DEFAULT claim lifetime: the shared `AI_OPERATION_LOCK_TTL_SECONDS`
+    (1800s), chosen for workflow-step dispatch where a duplicate is expensive
+    and waiting is cheap. Deliberately still zero-argument — it is a patch point
+    in the existing claim tests."""
     try:
         return max(30, int(os.getenv("AI_OPERATION_LOCK_TTL_SECONDS", "1800") or 1800))
     except Exception:
         return 1800
+
+
+def _resolve_ttl(override: Optional[int]) -> int:
+    """The claim lifetime for one call.
+
+    A caller whose work has a different shape than a workflow step may pass its
+    own. The Project Workspace's connector refresh does: it is a bounded read
+    behind a five-minute freshness TTL, so honouring a dead claim for half an
+    hour would leave a connector un-refreshable for far longer than the
+    staleness the feature exists to fix. Clamped to >= 30s either way."""
+    if override is not None:
+        try:
+            return max(30, int(override))
+        except Exception:
+            pass
+    return _ttl_seconds()
 
 
 def _use_postgres() -> bool:
@@ -121,6 +141,18 @@ def _pg_release(key: str) -> None:
             conn.commit()
 
 
+def _pg_claimed_keys(keys: list, stale_before: float) -> set:
+    from backend.services.db import engine
+    with engine.acquire_sync() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT key FROM workflow_step_claims "
+                "WHERE key = ANY(%s) AND claimed_at>=%s",
+                (list(keys), stale_before),
+            )
+            return {str(r[0]) for r in cur.fetchall()}
+
+
 def _pg_is_claimed(key: str, stale_before: float) -> bool:
     from backend.services.db import engine
     with engine.acquire_sync() as conn:
@@ -164,6 +196,25 @@ def _sqlite_release(key: str) -> None:
         pass
 
 
+def _sqlite_claimed_keys(keys: list, stale_before: float) -> set:
+    placeholders = ",".join("?" for _ in keys)
+    try:
+        # Bring the schema up like every WRITE path here does. Without it the
+        # first read in a fresh database fails on "no such table" and silently
+        # reports nothing claimed — harmless, but it means the caller's one
+        # batched question is answered by an error rather than by the data.
+        _sqlite_init()
+        with _sqlite.connection(DB_PATH) as c:
+            rows = c.execute(
+                f"SELECT key FROM workflow_step_claims "
+                f"WHERE key IN ({placeholders}) AND claimed_at>=?",
+                (*keys, stale_before),
+            ).fetchall()
+        return {str(r["key"]) for r in rows}
+    except Exception:
+        return set()
+
+
 def _sqlite_is_claimed(key: str, stale_before: float) -> bool:
     try:
         with _sqlite.connection(DB_PATH) as c:
@@ -177,18 +228,25 @@ def _sqlite_is_claimed(key: str, stale_before: float) -> bool:
 
 # ── Public surface ───────────────────────────────────────────────────────
 
-def try_claim(key: str, *, owner: str = "", workflow_id: Optional[str] = None) -> bool:
+def try_claim(key: str, *, owner: str = "", workflow_id: Optional[str] = None,
+              ttl_seconds: Optional[int] = None) -> bool:
     """Atomically acquire the shared dispatch claim for `key`.
 
     Returns True if THIS caller now owns the claim (proceed to dispatch),
     False if a fresh claim is held by another owner (do not double-dispatch).
     A claim older than the TTL is reclaimable. Fail-open on backend error
     (returns True) — a claim-store outage must not block execution; the jobs
-    idempotency index still guards duplicate creates within a shared store."""
+    idempotency index still guards duplicate creates within a shared store.
+
+    `ttl_seconds` overrides how long a claim is honoured for THIS key (see
+    `_ttl_seconds`). Callers that fail-open is wrong for must put their own
+    fail-closed gate in front of this — see `connectors.refresh`, whose attempt
+    cooldown bounds how often a provider can be called even if every claim
+    returns True."""
     if not key:
         return True
     now = time.time()
-    stale_before = now - _ttl_seconds()
+    stale_before = now - _resolve_ttl(ttl_seconds)
     try:
         if _use_postgres():
             return _pg_try_claim(key, owner or "", workflow_id, now, stale_before)
@@ -212,11 +270,12 @@ def release(key: str) -> None:
         pass
 
 
-def is_claimed(key: str) -> bool:
-    """True if a FRESH (non-stale) claim exists for key."""
+def is_claimed(key: str, *, ttl_seconds: Optional[int] = None) -> bool:
+    """True if a FRESH (non-stale) claim exists for key. `ttl_seconds` must
+    match what the claimer used, or a live claim may read as stale."""
     if not key:
         return False
-    stale_before = time.time() - _ttl_seconds()
+    stale_before = time.time() - _resolve_ttl(ttl_seconds)
     if _use_postgres():
         try:
             return _pg_is_claimed(key, stale_before)
@@ -225,8 +284,27 @@ def is_claimed(key: str) -> bool:
     return _sqlite_is_claimed(key, stale_before)
 
 
+def claimed_keys(keys, *, ttl_seconds: Optional[int] = None) -> set:
+    """Which of `keys` currently hold a FRESH claim — ONE round trip.
+
+    `is_claimed` in a loop is a round trip per key, which turns "is any of this
+    project's five connectors refreshing?" into five queries. Callers that ask
+    about a bounded SET of keys should ask once. Empty set on any error, which
+    matches `is_claimed`'s own read-only failure mode."""
+    wanted = [str(k) for k in (keys or []) if str(k or "").strip()]
+    if not wanted:
+        return set()
+    stale_before = time.time() - _resolve_ttl(ttl_seconds)
+    try:
+        if _use_postgres():
+            return _pg_claimed_keys(wanted, stale_before)
+        return _sqlite_claimed_keys(wanted, stale_before)
+    except Exception:  # pragma: no cover — read-only, never blocks
+        return set()
+
+
 def backend() -> str:
     return "postgres" if _use_postgres() else "sqlite"
 
 
-__all__ = ["try_claim", "release", "is_claimed", "backend"]
+__all__ = ["try_claim", "release", "is_claimed", "claimed_keys", "backend"]

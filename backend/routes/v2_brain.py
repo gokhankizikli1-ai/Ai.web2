@@ -114,13 +114,10 @@ def _schedule_stale_refresh(background: BackgroundTasks, user_id: str,
         from backend.services.connectors import refresh as refresh_mod
         plan = refresh_mod.plan(user_id, project_id)
         eligible = list(plan.get("eligible") or [])
-        # {provider: lease token}. The tokens never leave the server — they are
-        # how the background run releases exactly the lease it took.
-        claims = refresh_mod.claim_eligible(user_id, project_id, eligible)
-        started = list(claims)
-        if claims:
+        started = refresh_mod.claim_eligible(user_id, project_id, eligible)
+        if started:
             background.add_task(refresh_mod.run_claimed, user_id, project_id,
-                                claims)
+                                started)
         in_flight = list(plan.get("in_flight") or [])
         # A provider we could not claim is being refreshed by somebody else —
         # report it as in-flight rather than pretending it will not update.

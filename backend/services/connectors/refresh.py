@@ -33,18 +33,30 @@ is rate-limited, timing out, or holding a dead credential never advances it.
 With only that field, a broken connector would be re-attempted on EVERY page
 open, forever — a storm aimed at the one provider least able to take it.
 
-Two facts are therefore needed that no existing authority records:
+Two facts are needed. Only ONE of them lacks an owner.
 
-    started_at    a refresh is running RIGHT NOW (so two tabs, a double-mount,
-                  or a rapid navigate-away-and-back collapse to ONE call)
-    finished_at   an attempt ENDED, whether or not it succeeded (so a failing
-                  connector backs off instead of being hammered)
+    "a refresh is running RIGHT NOW"   →  `orchestrator.step_claim`, REUSED.
+        The codebase already has a shared, atomic, TTL-expiring claim
+        authority — the one the workflow runner uses so two replicas cannot
+        both dispatch a step. It is keyed by an arbitrary string, and it has a
+        Postgres backend that is genuinely shared across replicas when
+        `ENABLE_POSTGRES_BACKEND` is on. Writing a second in-flight lease here
+        would have duplicated it AND been permanently single-node; delegating
+        means connector refresh inherits the cross-replica path for free the
+        day that flag is flipped.
 
-`connectors.store` is the authority for what a project is bound to and when it
-last succeeded; the in-process TTL cache is per-worker and cannot dedupe across
-two gunicorn workers; Memory Plane preferences are semantic user memory, not
-coordination state. So this adds ONE table — attempt bookkeeping and nothing
-else — in the SAME `projects.db` every other project-scoped store already uses,
+    "an attempt ENDED, and when"       →  nothing records this. Hence the one
+        small table below.
+
+`step_claim` deliberately DELETES its row on release, so it cannot remember
+that an attempt happened — which is exactly the fact a failing connector needs
+somebody to remember. `connectors.store` owns what a project is bound to and
+when it last SUCCEEDED. An in-process TTL cache is per-worker and cannot dedupe
+across two gunicorn workers. Memory Plane preferences are semantic user memory,
+not coordination state.
+
+So this adds ONE table — when an attempt ended and how it went, nothing else —
+in the SAME `projects.db` every other project-scoped store already uses,
 following `projects.views_store` exactly.
 
 WHAT THIS IS NOT
@@ -55,18 +67,35 @@ WHAT THIS IS NOT
     connector gets retried a bit more eagerly for one TTL window.
   * NOT a second sync path. It calls `connectors.sync.sync_binding`, which is
     what the explicit `POST /v2/connectors/{p}/sync` route calls too.
+  * NOT a second claim/lease authority. The in-flight guard IS
+    `orchestrator.step_claim` — see above.
   * NOT execution. A refresh ingests observations through the one canonical
     store. It creates no candidate action, no task, no run, no approval, and
     spends no model token. Opening a project page still cannot start anything.
   * NOT a ranking or a projection. It never touches what the page SHOWS.
 
-THE LEASE, AND WHY IT EXPIRES
------------------------------
-`started_at` is a LEASE, not a lock: a worker that dies mid-refresh would
-otherwise wedge that (project, provider) forever. A claim older than
-`LEASE_SECONDS` is treated as dead and may be re-claimed, so the worst case of
-a crash is one extra refresh after the lease window, never a permanently stuck
-connector.
+TWO GUARDS, AND WHY BOTH
+------------------------
+    the CLAIM     (`step_claim`, TTL `LEASE_SECONDS`) is the fast path: it
+                  collapses two tabs, a React double-mount and a rapid
+                  away-and-back into one provider call. It expires, so a
+                  worker that dies mid-refresh cannot wedge a connector
+                  forever. It is fail-OPEN by design (a claim-store outage
+                  must not block workflow execution).
+
+    the COOLDOWN  (this table, `ATTEMPT_COOLDOWN_SECONDS`) is the backstop, and
+                  it is checked FIRST and fails CLOSED. It is what makes a
+                  broken connector cheap, and it is also what makes the claim's
+                  fail-open safe here: even if every claim returned True, a
+                  provider could still only be called once per cooldown window.
+
+The ordering matters in one more place. A refresh that outlives its claim TTL
+has already had a later page open take a fresh claim, and `step_claim.release`
+deletes by key — so the slow holder's release removes the live holder's claim.
+That would be a small sync storm from the very mechanism meant to prevent one,
+except that the cooldown is written BEFORE the claim is released. A third page
+open arriving in that window is refused by the cooldown regardless of who owns
+the claim.
 
 ISOLATION
 ---------
@@ -168,7 +197,6 @@ CREATE TABLE IF NOT EXISTS connector_refresh_attempts (
     project_id     TEXT NOT NULL,
     provider       TEXT NOT NULL,
     owner_user_id  TEXT NOT NULL,
-    started_at     TEXT NOT NULL DEFAULT '',   -- lease: a refresh is running
     finished_at    TEXT NOT NULL DEFAULT '',   -- last attempt END (any outcome)
     last_outcome   TEXT NOT NULL DEFAULT '',   -- stable code from connectors.sync
     updated_at     TEXT NOT NULL,
@@ -218,14 +246,33 @@ def _parse_iso(value: str):
         return None
 
 
+#: How far into the future a stamp may sit and still be believed. Providers and
+#: servers disagree about the time by seconds, not by hours.
+_CLOCK_SKEW_TOLERANCE_SECONDS = 300
+
+
 def _age_seconds(stamp: str, now: datetime) -> Optional[float]:
-    """Seconds since `stamp`, or None when it is missing/unparseable. A FUTURE
-    timestamp (provider clock skew) reads as age 0, never as a negative age
-    that would make something look infinitely fresh."""
+    """Seconds since `stamp`; None when it is missing, unparseable, or
+    implausible.
+
+    A slightly-future stamp (ordinary clock skew between a provider and this
+    server) reads as age 0 — never as a negative age that would make something
+    look infinitely fresh.
+
+    A stamp further into the future than `_CLOCK_SKEW_TOLERANCE_SECONDS` is
+    NONSENSE and is treated as absent. That distinction is load-bearing rather
+    than pedantic: this function decides whether a cooldown has elapsed, and a
+    row stamped an hour ahead (a server clock that jumped backwards, a database
+    restored from a machine with a fast clock, a hand-edited row) would
+    otherwise read as age 0 forever and permanently block that connector from
+    ever refreshing again. Returning None means "no usable stamp", which every
+    caller already treats as "nothing is stopping you"."""
     parsed = _parse_iso(str(stamp or "").strip())
     if parsed is None:
         return None
     delta = (now - parsed).total_seconds()
+    if delta < -_CLOCK_SKEW_TOLERANCE_SECONDS:
+        return None
     return max(0.0, delta)
 
 
@@ -236,120 +283,157 @@ def ttl_seconds(provider: str) -> int:
 
 # ── attempt bookkeeping ──────────────────────────────────────────────────────
 
+#: The distinguished value `_rows` returns when the cooldown table could not be
+#: read at all. It is NOT `{}`: an empty table means "nothing has been attempted,
+#: go ahead", while an unreadable one must mean "we cannot prove it is safe to
+#: call a provider, so do not" — the fail-CLOSED half of the two guards.
+_UNREADABLE: Dict[str, Dict[str, str]] = {"__unreadable__": {}}
+
+
 def _rows(project_id: str) -> Dict[str, Dict[str, str]]:
-    """The attempt rows for one project, keyed by provider. ONE statement."""
+    """The attempt rows for one project, keyed by provider, or `_UNREADABLE`.
+    ONE statement."""
     init_refresh_table()
     try:
         from backend.services.orchestrator import _sqlite
         with _sqlite.connection(_db()) as c:
             found = c.execute(
-                "SELECT provider, started_at, finished_at, last_outcome "
+                "SELECT provider, finished_at, last_outcome "
                 "FROM connector_refresh_attempts WHERE project_id=?",
                 (str(project_id),),
             ).fetchall()
         return {str(r["provider"]): {
-            "started_at":   str(r["started_at"] or ""),
             "finished_at":  str(r["finished_at"] or ""),
             "last_outcome": str(r["last_outcome"] or ""),
         } for r in found}
     except Exception as exc:
         logger.debug("connectors.refresh: attempt read failed: %s", exc)
-        return {}
+        return _UNREADABLE
+
+
+def _claim_key(project_id: str, provider: str) -> str:
+    """The shared-claim key for one (project, provider). Namespaced so it can
+    never collide with a workflow step's key in the same table."""
+    return f"connector-refresh:{project_id}:{provider}"
+
+
+def _cooling(project_id: str, provider: str, *, now: datetime) -> bool:
+    """Whether this (project, provider) was attempted too recently to try again.
+
+    Fails CLOSED: an unreadable cooldown table returns True. This is the guard
+    that makes `step_claim`'s fail-open safe here — see the module docstring."""
+    rows = _rows(project_id)
+    if rows is _UNREADABLE:
+        return True
+    settled = _age_seconds((rows.get(provider) or {}).get("finished_at", ""), now)
+    return settled is not None and settled < ATTEMPT_COOLDOWN_SECONDS
 
 
 def claim(project_id: str, provider: str, owner_user_id: str, *,
-          now: Optional[datetime] = None) -> str:
-    """Take the refresh lease for one (project, provider).
+          now: Optional[datetime] = None) -> bool:
+    """Take the refresh claim for one (project, provider). True ⇒ THIS caller
+    owns the refresh and must call `release`.
 
-    Returns a LEASE TOKEN (the instant the claim was written) when this caller
-    now owns the refresh and must call `release` with that token; "" when
-    somebody else is already refreshing it, or it is still cooling down after a
-    recent attempt.
+    Two gates, in this order and for this reason:
 
-    The whole check-and-set runs inside `BEGIN IMMEDIATE`, so two tabs arriving
-    in the same instant cannot both win: the second one reads the first one's
-    `started_at` and backs off. This is the dedup guarantee the page relies on
-    to make repeated opens free."""
+      1. the COOLDOWN, read here and failing closed, so a provider that was
+         just attempted (successfully or not) is left alone;
+      2. the shared atomic CLAIM (`orchestrator.step_claim`), so two tabs
+         arriving in the same instant cannot both win — and, when Postgres is
+         configured, so two REPLICAS cannot either.
+
+    Never raises."""
     project_id = str(project_id or "").strip()
     provider = str(provider or "").strip().lower()
     if not (project_id and provider and owner_user_id):
-        return ""
-    init_refresh_table()
+        return False
     when = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
-    stamp = _iso(when)
     try:
-        from backend.services.orchestrator import _sqlite
-        with _sqlite.writer_tx(_db()) as c:
-            row = c.execute(
-                "SELECT started_at, finished_at FROM connector_refresh_attempts "
-                "WHERE project_id=? AND provider=?",
-                (project_id, provider),
-            ).fetchone()
-            if row is not None:
-                running = _age_seconds(str(row["started_at"] or ""), when)
-                if running is not None and running < LEASE_SECONDS:
-                    return ""               # already refreshing (live lease)
-                cooling = _age_seconds(str(row["finished_at"] or ""), when)
-                if cooling is not None and cooling < ATTEMPT_COOLDOWN_SECONDS:
-                    return ""               # attempted very recently — back off
-            c.execute(
-                """INSERT INTO connector_refresh_attempts
-                       (project_id, provider, owner_user_id, started_at,
-                        finished_at, last_outcome, updated_at)
-                   VALUES (?, ?, ?, ?, '', '', ?)
-                   ON CONFLICT(project_id, provider) DO UPDATE SET
-                       owner_user_id=excluded.owner_user_id,
-                       started_at=excluded.started_at,
-                       updated_at=excluded.updated_at""",
-                (project_id, provider, str(owner_user_id), stamp, stamp),
-            )
-        return stamp
+        if _cooling(project_id, provider, now=when):
+            return False
+        from backend.services.orchestrator import step_claim
+        return bool(step_claim.try_claim(
+            _claim_key(project_id, provider),
+            owner=str(owner_user_id),
+            ttl_seconds=LEASE_SECONDS,
+        ))
     except Exception as exc:
-        # Fail CLOSED: if the coordinator cannot guarantee dedup, it must not
-        # authorise a provider call. A missed refresh costs one stale page;
-        # an unguarded one costs a storm.
+        # Fail CLOSED: if we cannot establish that a refresh is safe to start,
+        # we do not start one. A missed refresh costs one stale page; an
+        # unguarded one costs a storm.
         logger.warning("connectors.refresh: claim failed for %s/%s: %s",
                        project_id, provider, exc)
-        return ""
+        return False
+
+
+def is_refreshing(project_id: str, provider: str) -> bool:
+    """Whether a refresh for this (project, provider) is running right now, per
+    the shared claim authority. Read-only; False on any error."""
+    return bool(refreshing_providers(project_id, [provider]))
+
+
+def refreshing_providers(project_id: str, providers: List[str]) -> set:
+    """Which of `providers` are being refreshed right now — ONE round trip.
+
+    `plan` asks about every stale provider at once. Asking per provider turned
+    a five-connector project into five extra queries per page open: not growth
+    with the size of the PROJECT, but growth with the number of connectors,
+    which is the same shape of mistake one level down. Read-only; empty on any
+    error, so a claim-store problem can only make a refresh look NOT running
+    (and the cooldown, which fails closed, still bounds what that costs)."""
+    wanted = [p for p in (providers or []) if p]
+    if not wanted:
+        return set()
+    try:
+        from backend.services.orchestrator import step_claim
+        keys = {_claim_key(str(project_id), p): p for p in wanted}
+        held = step_claim.claimed_keys(list(keys), ttl_seconds=LEASE_SECONDS)
+        return {keys[k] for k in held if k in keys}
+    except Exception:  # pragma: no cover — defensive
+        return set()
 
 
 def release(project_id: str, provider: str, outcome: str, *,
-            token: str = "", now: Optional[datetime] = None) -> None:
-    """End the attempt: clear the lease and stamp the cooldown. Called in a
-    `finally`, so a raising refresh can never leave a lease behind for the whole
-    lease window. Best-effort — an unwritten release simply expires as a dead
-    lease, which is the exact case the lease exists for.
+            now: Optional[datetime] = None) -> None:
+    """End the attempt: record the cooldown, THEN drop the shared claim.
 
-    `token` is the value `claim` returned, and the release is SCOPED to it. That
-    matters for one specific race: a refresh that outlives its lease window (a
-    provider crawling slowly) has already had its lease expire, and a later page
-    open may legitimately have taken a NEW one. Without the token, the slow
-    holder's release would wipe that new lease and let a third page open start
-    yet another concurrent read of the same provider — a small sync storm, from
-    the very mechanism meant to prevent one. With it, a stale holder's release
-    matches no row and changes nothing; the live holder finishes normally.
+    The order is the whole point. `step_claim.release` deletes by key, so a
+    refresh that outlived its claim TTL would otherwise delete the claim a
+    later page open legitimately took, and a third open could start yet another
+    concurrent read. Writing the cooldown first means that third open is
+    refused regardless of who owns the claim — the backstop is in place before
+    the fast path is handed back.
 
-    An empty token releases unconditionally (for callers that never held a real
-    lease, and for tests)."""
+    Best-effort in both halves: an unwritten cooldown costs one extra attempt
+    after the claim expires, and an unreleased claim expires on its own."""
     project_id = str(project_id or "").strip()
     provider = str(provider or "").strip().lower()
     if not (project_id and provider):
         return
     when = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     stamp = _iso(when)
-    sql = ("UPDATE connector_refresh_attempts "
-           "SET started_at='', finished_at=?, last_outcome=?, updated_at=? "
-           "WHERE project_id=? AND provider=?")
-    params = [stamp, str(outcome or "")[:40], stamp, project_id, provider]
-    if token:
-        sql += " AND started_at=?"
-        params.append(str(token))
+    init_refresh_table()
     try:
         from backend.services.orchestrator import _sqlite
         with _sqlite.connection(_db()) as c:
-            c.execute(sql, tuple(params))
+            c.execute(
+                """INSERT INTO connector_refresh_attempts
+                       (project_id, provider, owner_user_id, finished_at,
+                        last_outcome, updated_at)
+                   VALUES (?, ?, '', ?, ?, ?)
+                   ON CONFLICT(project_id, provider) DO UPDATE SET
+                       finished_at=excluded.finished_at,
+                       last_outcome=excluded.last_outcome,
+                       updated_at=excluded.updated_at""",
+                (project_id, provider, stamp, str(outcome or "")[:40], stamp),
+            )
     except Exception as exc:  # pragma: no cover — defensive
-        logger.debug("connectors.refresh: release failed: %s", exc)
+        logger.debug("connectors.refresh: cooldown write failed: %s", exc)
+    try:
+        from backend.services.orchestrator import step_claim
+        step_claim.release(_claim_key(project_id, provider))
+    except Exception as exc:  # pragma: no cover — defensive
+        logger.debug("connectors.refresh: claim release failed: %s", exc)
 
 
 def forget_project(project_id: str) -> int:
@@ -438,11 +522,13 @@ def plan(user_id: str, project_id: str, *,
     if not last_sync:
         return empty                       # no live bindings ⇒ nothing to do
 
+    # ONE read of the cooldown table for the whole project. An UNREADABLE table
+    # means every stale provider is treated as cooling — fail closed, so a
+    # storage problem can never authorise a provider call.
     attempts = _rows(project_id)
+    unreadable = attempts is _UNREADABLE
 
     stale: List[str] = []
-    in_flight: List[str] = []
-    cooling: List[str] = []
     for provider in registry.PROVIDER_ORDER:
         if provider not in last_sync:
             continue
@@ -452,12 +538,23 @@ def plan(user_id: str, project_id: str, *,
         if age is not None and age < ttl_seconds(provider):
             continue                       # FRESH — zero provider calls
         stale.append(provider)
-        row = attempts.get(provider) or {}
-        running = _age_seconds(row.get("started_at", ""), when)
-        if running is not None and running < LEASE_SECONDS:
+
+    # Running RIGHT NOW, per the shared claim authority — which is also what
+    # sees a claim taken by another REPLICA when Postgres is configured. ONE
+    # round trip for the whole (bounded) set, not one per provider.
+    running = refreshing_providers(project_id, stale)
+
+    in_flight: List[str] = []
+    cooling: List[str] = []
+    for provider in stale:
+        if provider in running:
             in_flight.append(provider)
             continue
-        settled = _age_seconds(row.get("finished_at", ""), when)
+        if unreadable:
+            cooling.append(provider)
+            continue
+        settled = _age_seconds(
+            (attempts.get(provider) or {}).get("finished_at", ""), when)
         if settled is not None and settled < ATTEMPT_COOLDOWN_SECONDS:
             cooling.append(provider)
 
@@ -477,26 +574,25 @@ def plan(user_id: str, project_id: str, *,
 # ── claiming + running ───────────────────────────────────────────────────────
 
 def claim_eligible(user_id: str, project_id: str, providers: List[str], *,
-                   now: Optional[datetime] = None) -> Dict[str, str]:
-    """Take the lease for each provider that is still free, and return
-    {provider: lease token} for the ones actually claimed.
+                   now: Optional[datetime] = None) -> List[str]:
+    """Claim each provider that is still free, and return the ones actually
+    claimed.
 
     Called SYNCHRONOUSLY by the workspace route so the response can say
     truthfully which refreshes it started and which were already running — and
     so two simultaneous tabs are serialised HERE, before either could reach a
     provider."""
-    claimed: Dict[str, str] = {}
+    claimed: List[str] = []
     for provider in providers or []:
-        token = claim(project_id, provider, user_id, now=now)
-        if token:
-            claimed[provider] = token
+        if claim(project_id, provider, user_id, now=now):
+            claimed.append(provider)
     return claimed
 
 
 def run_claimed(user_id: str, project_id: str,
-                claims: Dict[str, str]) -> List[Dict[str, Any]]:
-    """Run the provider reads for leases this caller ALREADY holds, then release
-    each one against the token it was claimed with.
+                providers: List[str]) -> List[Dict[str, Any]]:
+    """Run the provider reads for claims this caller ALREADY holds, then release
+    each one (recording its cooldown first — see `release`).
 
     This is what the route hands to `BackgroundTasks`: it executes after the
     response has been sent, so the workspace read's latency is untouched. Each
@@ -506,7 +602,7 @@ def run_claimed(user_id: str, project_id: str,
 
     Never raises."""
     results: List[Dict[str, Any]] = []
-    for provider, token in (claims or {}).items():
+    for provider in providers or []:
         outcome = connector_sync.OUTCOME_FAILED
         try:
             result = connector_sync.sync_binding(user_id, project_id, provider)
@@ -520,7 +616,7 @@ def run_claimed(user_id: str, project_id: str,
             results.append({"project_id": project_id, "provider": provider,
                             "ok": False, "reason": connector_sync.OUTCOME_FAILED})
         finally:
-            release(project_id, provider, outcome, token=token)
+            release(project_id, provider, outcome)
     return results
 
 
@@ -537,5 +633,6 @@ def _reset_for_tests() -> None:
 __all__ = [
     "is_enabled", "init_refresh_table", "plan", "claim", "claim_eligible",
     "release", "run_claimed", "forget_project", "ttl_seconds",
+    "is_refreshing", "refreshing_providers",
     "MAX_PER_OPEN", "LEASE_SECONDS", "ATTEMPT_COOLDOWN_SECONDS", "RECHECK_IN_MS",
 ]

@@ -71,6 +71,7 @@ def env(tmp_path, monkeypatch, app):
         runs_store,
     )
     from backend.services.orchestrator import tasks_store as orch_tasks
+    from backend.services.orchestrator import step_claim
     from backend.services.connectors import store as shared
     from backend.services.connectors import refresh as refresh_mod
 
@@ -78,7 +79,12 @@ def env(tmp_path, monkeypatch, app):
     # `refresh` resolve theirs per call from PROJECTS_DB_PATH, so the env var
     # above is enough for them.
     for mod in (projects_store, tasks_store, views_store, obs, cas, dls,
-                goals_store, decisions_store, runs_store, orch_tasks):
+                goals_store, decisions_store, runs_store, orch_tasks,
+                # The SHARED claim authority the refresh coordinator delegates
+                # its in-flight guard to. It captures its path at import, so an
+                # un-repointed test would take claims in the REAL projects.db
+                # and leak them into every later test.
+                step_claim):
         monkeypatch.setattr(mod, "DB_PATH", projects_db, raising=False)
 
     projects_store._reset_for_tests()
@@ -284,35 +290,59 @@ def test_a_finished_refresh_is_not_immediately_repeated(env, calls, client):
     assert len(calls["seen"]) == 1, calls["seen"]
 
 
-def test_only_one_of_two_racing_claims_wins(env):
+def test_only_one_of_five_racing_claims_wins(env):
     """The coordinator's own guarantee, without HTTP in the way."""
     from backend.services.connectors import refresh as refresh_mod
-    now = datetime.now(timezone.utc)
-    won = [refresh_mod.claim("pA", "github", "uA", now=now) for _ in range(5)]
-    assert bool(won[0]) is True
-    assert won[1:] == ["", "", "", ""]
+    won = [refresh_mod.claim("pA", "github", "uA") for _ in range(5)]
+    assert won == [True, False, False, False, False]
 
 
-def test_a_slow_holder_cannot_release_a_newer_holders_lease(env):
-    """The lease-STEAL race. A refresh that outlives its lease window has
-    already had a later page open take a fresh lease. If the slow holder's
-    release wiped that, a third open could start yet another concurrent read of
-    the same provider — a sync storm produced by the very mechanism meant to
-    prevent one. The release is token-scoped, so it cannot."""
+def test_the_in_flight_guard_is_the_shared_claim_authority(env):
+    """Not a second lease: the in-flight guard IS `orchestrator.step_claim`,
+    under a namespaced key that cannot collide with a workflow step's.
+
+    This is what makes connector refresh inherit the cross-replica Postgres
+    path the day `ENABLE_POSTGRES_BACKEND` is switched on, instead of being
+    permanently single-node."""
     from backend.services.connectors import refresh as refresh_mod
-    now = datetime.now(timezone.utc)
-    stale_token = refresh_mod.claim("pA", "github", "uA", now=now)
-    later = now + timedelta(seconds=refresh_mod.LEASE_SECONDS + 1)
-    live_token = refresh_mod.claim("pA", "github", "uA", now=later)
-    assert live_token and live_token != stale_token
+    from backend.services.orchestrator import step_claim
 
-    # The slow, superseded holder finally finishes and releases.
-    refresh_mod.release("pA", "github", "synced", token=stale_token,
-                        now=later + timedelta(seconds=1))
+    assert refresh_mod.claim("pA", "github", "uA") is True
+    key = refresh_mod._claim_key("pA", "github")
+    assert key.startswith("connector-refresh:")
+    assert step_claim.is_claimed(key, ttl_seconds=refresh_mod.LEASE_SECONDS)
 
-    # The live holder still holds its lease, so nobody else may start.
-    assert refresh_mod.claim("pA", "github", "uA",
-                             now=later + timedelta(seconds=2)) == ""
+    refresh_mod.release("pA", "github", "synced")
+    assert not step_claim.is_claimed(key, ttl_seconds=refresh_mod.LEASE_SECONDS)
+
+
+def test_a_slow_holder_releasing_late_cannot_cause_a_third_refresh(env):
+    """The claim-STEAL race, and why the ORDER inside `release` matters.
+
+    A refresh that outlives its claim TTL has already had a later page open
+    take a fresh claim, and `step_claim.release` deletes by key — so the slow
+    holder's release removes the live holder's claim. What stops a third page
+    open from starting yet another concurrent read is that `release` writes the
+    COOLDOWN before dropping the claim."""
+    from backend.services.connectors import refresh as refresh_mod
+    from backend.services.orchestrator import step_claim
+
+    assert refresh_mod.claim("pA", "github", "uA") is True     # slow holder
+    monkeypatch_ttl = lambda _o: 0
+    # The slow holder's claim expires; a later open takes a fresh one.
+    original = step_claim._resolve_ttl
+    step_claim._resolve_ttl = monkeypatch_ttl
+    try:
+        assert refresh_mod.claim("pA", "github", "uA") is True   # live holder
+    finally:
+        step_claim._resolve_ttl = original
+
+    # The slow, superseded holder finally finishes: cooldown first, then the
+    # (now someone else's) claim is dropped.
+    refresh_mod.release("pA", "github", "synced")
+
+    # A third open is refused — by the cooldown, regardless of the claim.
+    assert refresh_mod.claim("pA", "github", "uA") is False
 
 
 def test_repeated_mounts_do_not_storm_the_provider(env, calls, client):
@@ -322,18 +352,78 @@ def test_repeated_mounts_do_not_storm_the_provider(env, calls, client):
     assert len(calls["seen"]) == 1, calls["seen"]
 
 
-def test_a_dead_lease_can_be_reclaimed(env, calls):
-    """A worker that died mid-refresh must not wedge a connector forever."""
+def test_a_dead_claim_can_be_reclaimed(env, calls, monkeypatch):
+    """A worker that died mid-refresh must not wedge a connector forever. The
+    expiry is the SHARED claim authority's, which the coordinator asks for at
+    `LEASE_SECONDS` rather than the workflow default."""
     from backend.services.connectors import refresh as refresh_mod
-    now = datetime.now(timezone.utc)
-    first = refresh_mod.claim("pA", "github", "uA", now=now)
-    assert first, "the first caller takes the lease"
-    assert refresh_mod.claim("pA", "github", "uA", now=now) == ""
-    later = now + timedelta(seconds=refresh_mod.LEASE_SECONDS + 1)
-    # The cooldown only applies to a FINISHED attempt; this lease never
-    # finished, so the expiry is the only thing standing in the way.
-    second = refresh_mod.claim("pA", "github", "uA", now=later)
-    assert second and second != first, "a new holder gets a new token"
+    from backend.services.orchestrator import step_claim
+    assert refresh_mod.claim("pA", "github", "uA") is True
+    assert refresh_mod.claim("pA", "github", "uA") is False
+    assert refresh_mod.is_refreshing("pA", "github") is True
+
+    # Age the claim past its TTL without waiting three minutes.
+    monkeypatch.setattr(step_claim, "_resolve_ttl", lambda _o: 0)
+    assert refresh_mod.claim("pA", "github", "uA") is True
+
+
+def test_a_future_timestamp_cannot_wedge_a_connector_forever(env):
+    """CLOCK SKEW. A cooldown stamped in the future — a server clock that jumped
+    backwards, a database restored from a machine with a fast clock, a
+    hand-edited row — must not read as "attempted 0 seconds ago" for ever and
+    permanently disable refresh for that connector.
+
+    Small skew is still believed (and blocks, correctly); nonsense is not."""
+    from backend.services.connectors import refresh as refresh_mod
+    from backend.services.orchestrator import _sqlite
+
+    def _stamp(seconds_ahead: int) -> None:
+        when = datetime.now(timezone.utc) + timedelta(seconds=seconds_ahead)
+        refresh_mod.init_refresh_table()
+        with _sqlite.connection(env["db"]) as c:
+            c.execute(
+                "INSERT INTO connector_refresh_attempts "
+                "(project_id, provider, owner_user_id, finished_at, "
+                " last_outcome, updated_at) VALUES ('pA','github','uA',?,'','') "
+                "ON CONFLICT(project_id, provider) DO UPDATE SET "
+                "finished_at=excluded.finished_at",
+                (_iso(when),))
+
+    # A few seconds of skew is ordinary and is honoured as a live cooldown.
+    _stamp(30)
+    assert refresh_mod.claim("pA", "github", "uA") is False
+
+    # A stamp a day ahead is not skew, it is a broken clock. Treated as absent.
+    _stamp(86_400)
+    assert refresh_mod.claim("pA", "github", "uA") is True
+
+
+def test_an_unreadable_cooldown_table_refuses_to_call_a_provider(env, calls,
+                                                                 client,
+                                                                 monkeypatch):
+    """FAIL CLOSED. `step_claim` is fail-OPEN by design (a claim-store outage
+    must not block workflow execution). That is only safe here because the
+    cooldown is checked first and fails CLOSED — otherwise a storage problem
+    would turn every page open into a provider call."""
+    from backend.services.connectors import refresh as refresh_mod
+    monkeypatch.setattr(refresh_mod, "_rows",
+                        lambda _pid: refresh_mod._UNREADABLE)
+    _bind(env, "github", last_sync="")
+
+    body = client.get("/v2/projects/pA/workspace").json()["data"]["refresh"]
+    assert body["stale"] == ["github"], "it is still reported as stale"
+    assert body["started"] == []
+    assert calls["seen"] == [], "but nothing is called"
+
+
+def test_an_empty_cooldown_table_is_not_mistaken_for_an_unreadable_one(env, calls,
+                                                                       client):
+    """The distinction the sentinel exists for: a project nobody has refreshed
+    yet must refresh, while a table we could not read must not."""
+    _bind(env, "github", last_sync="")
+    body = client.get("/v2/projects/pA/workspace").json()["data"]["refresh"]
+    assert body["started"] == ["github"]
+    assert calls["seen"] == [("uA", "pA", "github")]
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -353,22 +443,24 @@ def test_a_failing_connector_backs_off_instead_of_being_hammered(env, calls, cli
     assert len(calls["seen"]) == 1, calls["seen"]
 
 
-def test_a_provider_that_raises_still_releases_its_lease(env, calls, client):
-    """A refresh that explodes must not leave the lease held for the whole lease
-    window — the next attempt should be blocked by the COOLDOWN (a finished
-    attempt), not by a phantom in-flight refresh."""
+def test_a_provider_that_raises_still_releases_its_claim(env, calls, client):
+    """A refresh that explodes must not leave the claim held for the whole TTL —
+    the next attempt should be blocked by the COOLDOWN (a finished attempt),
+    not by a phantom in-flight refresh."""
     calls["behaviour"]["mode"] = "raise"
     _bind(env, "vercel", last_sync=_iso(datetime.now(timezone.utc) - timedelta(days=1)))
     client.get("/v2/projects/pA/workspace")
 
     from backend.services.connectors import refresh as refresh_mod
     from backend.services.orchestrator import _sqlite
+    assert refresh_mod.is_refreshing("pA", "vercel") is False, \
+        "the claim must be released"
     with _sqlite.connection(env["db"]) as c:
         row = c.execute(
-            "SELECT started_at, finished_at FROM connector_refresh_attempts "
+            "SELECT finished_at, last_outcome FROM connector_refresh_attempts "
             "WHERE project_id='pA' AND provider='vercel'").fetchone()
-    assert str(row["started_at"]) == "", "the lease must be released"
     assert str(row["finished_at"]) != "", "the attempt must be recorded"
+    assert str(row["last_outcome"]) == "failed"
 
 
 def test_the_page_still_loads_when_a_connector_is_broken(env, calls, client):
