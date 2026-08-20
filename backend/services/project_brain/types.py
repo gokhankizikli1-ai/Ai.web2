@@ -41,6 +41,14 @@ class ProjectBrain:
     # instead of the model inventing an order. Read-only passthrough — nothing
     # here re-ranks it.
     attention:          list[dict] = field(default_factory=list)   # [{id, severity, reason, source, kind, title, context, observed_at}]
+    # WHY IT MATTERS NOW — `orchestrator.decision_context` applied to the same
+    # subjects as `intelligence`: the single leading concern, its evidence-
+    # backed reasons, what would make the reading wrong, and whether resolving
+    # it is Korvix's to do or a person's. It is NOT a second ranking: it is the
+    # identical tier ladder `action_prioritizer` uses on the Business Brain's
+    # candidates, so chat and the Business Brain give one answer. Derived,
+    # bounded, never persisted; `{}` when there is nothing pressing.
+    focus:              dict       = field(default_factory=dict)
     # Typed BUSINESS KNOWLEDGE from the existing Memory Plane adapter
     # (`orchestrator.business_knowledge`) — durable, provenance-tagged,
     # TTL-aware facts and learnings. Read-only here; the brain has never been

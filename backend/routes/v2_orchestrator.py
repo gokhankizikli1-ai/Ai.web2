@@ -323,15 +323,54 @@ def project_assessment_route(
         return _err(404, "project_not_found", "Project not found.", endpoint)
 
     from backend.services.orchestrator import (
-        candidate_synthesis, project_supervisor,
+        candidate_synthesis, decision_context, decisions_store, goals_store,
+        observations_store, project_supervisor,
     )
+
+    # ── Read the shared slices ONCE, then correlate ONCE ─────────────────
+    # Both steps below need the same observations, goals and decisions, and
+    # both need the same correlation over them. Reading them here means one
+    # bounded query each instead of one per step, and — more importantly than
+    # the cost — it means the writer and the ranker cannot disagree: they are
+    # handed the SAME projection object, computed at one instant, rather than
+    # two projections of a store that may have moved between them.
+    #
+    # Owner-scoped at the source: the store filters by BOTH project_id and
+    # user_id, on top of the ownership gate above.
+    observations: list = []
+    goals: list = []
+    decisions: list = []
+    bundle: dict = {}
+    try:
+        observations = observations_store.list_observations(
+            project_id, user_id=str(user.id),
+            limit=candidate_synthesis.MAX_OBSERVATIONS_READ)
+        goals = goals_store.active_goals(project_id, limit=10)
+        decisions = decisions_store.active_decisions(
+            project_id, limit=decision_context.MAX_DECISIONS_SCANNED)
+        bundle = decision_context.build(
+            [o for o in observations
+             if str(o.get("source") or "").strip().lower()
+             in observations_store.CONNECTOR_SOURCES],
+            goals=goals, decisions=decisions,
+            limit=candidate_synthesis.MAX_CANDIDATES)
+    except Exception as exc:  # pragma: no cover — never block the assessment
+        logger.warning("business brain context failed for %s: %s", project_id, exc)
+
     try:
         # OBSERVE → PRIORITIZE promotion (inputs only; never executes).
-        candidate_synthesis.synthesize_candidates(project_id, str(user.id))
+        candidate_synthesis.synthesize_candidates(
+            project_id, str(user.id), observations=observations, goals=goals,
+            decisions=decisions,
+            intelligence=bundle.get("subjects") if bundle else None,
+            membership=bundle.get("membership") if bundle else None,
+            decision_contexts=bundle.get("contexts") if bundle else None)
     except Exception as exc:  # pragma: no cover — never block the assessment
         logger.warning("business brain synthesis failed for %s: %s", project_id, exc)
     assessment = project_supervisor.assess_business_brain(
         None, project_id=project_id, user_id=str(user.id),
+        observations=observations, goals=goals, decisions=decisions,
+        decision_bundle=bundle or None,
     )
     return envelope_ok(data=assessment, endpoint=endpoint, user_id=user.id)
 

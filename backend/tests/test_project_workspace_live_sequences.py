@@ -401,7 +401,8 @@ def test_a_project_with_no_connectors_renders_truthfully(env):
     assert snap["counts"] == {"attention": 0, "activity": 0, "goals": 0,
                               "products": 0, "chats": 0, "connectors": 0,
                               "tasks": 0, "knowledge": 0, "changes": 0,
-                              "project_state": 0, "project_state_open": 0}
+                              "project_state": 0, "project_state_open": 0,
+                              "focus_next": 0}
 
 
 def test_a_project_whose_connectors_are_disabled_on_the_deployment_still_renders(env,

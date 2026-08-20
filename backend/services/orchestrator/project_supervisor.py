@@ -169,6 +169,72 @@ def _significant_metric_changes(project_id: str) -> List[dict]:
     return out
 
 
+#: Observations READ for the assessment. The correlation that produces the
+#: decision context has to SEE the related rows to relate them, so the read is
+#: the same bounded slice `candidate_synthesis` and the workspace use. What is
+#: RETURNED to the caller stays at the original small slice — this is one
+#: query either way, and the payload does not grow six-fold to feed a
+#: projection that consumes the rows in-process.
+_MAX_OBSERVATIONS_READ = 60
+_MAX_OBSERVATIONS_RETURNED = 10
+#: Subjects named in the assessment's own focus block.
+_MAX_FOCUS_SUBJECTS = 3
+
+
+def _is_connector_row(row: Any) -> bool:
+    """Whether an observation came from a CONNECTOR.
+
+    The observation store is deliberately connector-neutral and other
+    subsystems record rows in it, so the correlation slice is filtered to the
+    canonical `CONNECTOR_SOURCES` registry — the same filter the workspace and
+    the Project Brain apply. Filtered IN MEMORY, out of the rows this
+    assessment already read, so honouring it costs no second query and the
+    non-connector rows this function returns to the caller are unaffected."""
+    if not isinstance(row, dict):
+        return False
+    try:
+        from backend.services.orchestrator.observations_store import CONNECTOR_SOURCES
+    except Exception:  # pragma: no cover — defensive
+        return True
+    return str(row.get("source") or "").strip().lower() in CONNECTOR_SOURCES
+
+
+def _plan_from(ranked: List[dict]) -> Dict[str, Any]:
+    """WHAT KORVIX CAN DO ITSELF vs WHAT NEEDS A PERSON — the split the Brain
+    was never able to state.
+
+    Every ranked candidate already carries its capability (hence its EXISTING
+    execution-policy tier) and, when it came from correlated evidence, whether
+    resolving the underlying problem needs a change in a system Korvix reads
+    but cannot write. Both are reported as bounded lists of ids so a surface
+    can say "Korvix will investigate; the deploy itself is yours" instead of
+    implying the whole thing is automatic.
+
+    This decides NOTHING and starts NOTHING. It is a projection of the ranking
+    the one prioritization authority already produced."""
+    automatic: List[dict] = []
+    approval: List[dict] = []
+    human: List[dict] = []
+    for cand in ranked[:_MAX_FOCUS_SUBJECTS * 2]:
+        explanation = cand.get("priority_explanation") or {}
+        actionability = explanation.get("actionability") or {}
+        row = {"candidate_id": cand.get("id"),
+               "capability": cand.get("recommended_capability"),
+               "autonomy": autonomy_for_capability(cand.get("recommended_capability"))}
+        # The RESOLUTION question comes first: an action Korvix may run
+        # automatically that cannot actually finish the job belongs on the
+        # human list, or the split would flatter the tool.
+        if str(actionability.get("resolution") or "") == "human_external":
+            row["external_providers"] = list(actionability.get("external_providers") or [])
+            human.append(row)
+        elif row["autonomy"] == AUTONOMY_AUTONOMOUS:
+            automatic.append(row)
+        else:
+            approval.append(row)
+    return {"korvix_can_do": automatic, "needs_approval": approval,
+            "needs_human": human}
+
+
 def assess_business_brain(
     snapshot: Optional[dict], *,
     project_id: Optional[str] = None,
@@ -179,6 +245,7 @@ def assess_business_brain(
     observations: Optional[List[dict]] = None,
     metric_changes: Optional[List[dict]] = None,
     learnings: Optional[List[dict]] = None,
+    decision_bundle: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """The Business Brain assessment — answers "WHAT MATTERS NOW?".
 
@@ -192,7 +259,21 @@ def assess_business_brain(
     action. Business recommendations slot in AFTER those blockers and BEFORE
     stale-artifact / review. It is fully DETERMINISTIC — no model call, no
     supervisor↔agent loop. Injectable inputs support tests; by default every
-    slice is read from its own authority, scoped to (user, project)."""
+    slice is read from its own authority, scoped to (user, project).
+
+    ONE RANKING AUTHORITY, BETTER FED
+    ---------------------------------
+    The Brain does NOT rank. It never did, and it still does not: ordering is
+    `action_prioritizer`'s, verbatim, and `top_candidate` is `ranked[0]`. What
+    changed is what that authority is given — the project's DECISION CONTEXT
+    (`decision_context.build`), computed once here from observations this
+    assessment already reads, so the ranking can finally see production
+    evidence, corroboration across independent humans, a launch tomorrow and
+    whether Korvix can actually resolve the thing.
+
+    `decision_bundle` lets a caller that already built that projection hand it
+    over (see the assessment route) rather than paying for a second
+    correlation of the same rows inside one request."""
     # Resolve scope from the snapshot when not passed explicitly.
     run = (snapshot or {}).get("run") or {}
     if project_id is None:
@@ -222,7 +303,8 @@ def assess_business_brain(
             # one that did not keep that promise, so a row recorded against this
             # project by a previous/other owner could surface. Defense in depth:
             # the route's ownership gate still runs first.
-            observations = obs.recent_observations(pid, user_id=uid, limit=10)                 if uid else []
+            observations = obs.recent_observations(
+                pid, user_id=uid, limit=_MAX_OBSERVATIONS_READ) if uid else []
         if metric_changes is None and pid:
             metric_changes = _significant_metric_changes(pid)
         if learnings is None and pid and uid:
@@ -243,12 +325,29 @@ def assess_business_brain(
     decisions = decisions or []
     learnings = learnings or []
 
+    # ── The project's DECISION CONTEXT — computed ONCE, here ─────────────
+    # Pure projection over the observations just read: no query, no provider
+    # call, no model call, no write. It is what lets the ONE ranking authority
+    # below see evidence instead of constants. Fail-soft: without it the
+    # ranking degrades to exactly its previous behaviour.
+    if decision_bundle is None:
+        try:
+            from backend.services.orchestrator import decision_context as dc
+            decision_bundle = dc.build(
+                [o for o in observations if _is_connector_row(o)],
+                goals=goals, decisions=decisions)
+        except Exception:  # pragma: no cover — never block the assessment
+            decision_bundle = {}
+    decision_bundle = decision_bundle or {}
+
     # ── Prioritize candidate actions deterministically ──────────────────
     ranked: List[dict] = []
     top: Optional[dict] = None
     try:
         from backend.services.orchestrator import action_prioritizer as ap
-        ranked = ap.rank_candidates(candidate_actions, active_goals=goals)
+        ranked = ap.rank_candidates(
+            candidate_actions, active_goals=goals,
+            decision_contexts=decision_bundle.get("by_dedup_key") or {})
         top = ranked[0] if ranked else None
     except Exception:  # pragma: no cover
         ranked = list(candidate_actions)
@@ -286,19 +385,30 @@ def assess_business_brain(
             "priority_breakdown": top.get("priority_breakdown"),
             "evidence_refs": top.get("evidence_refs") or [],
             "confidence": top.get("confidence"),
+            # WHY this one, in stable codes — the ranking authority's own
+            # explanation, passed through rather than re-derived. It carries
+            # the tier basis, the why-now reasons, the caveats, and the
+            # honest split between what Korvix can do and what a person must
+            # do in a system Korvix cannot write to.
+            "priority_tier": top.get("priority_tier"),
+            "priority_explanation": top.get("priority_explanation") or {},
         }
     elif op_na == NA_UPDATE_STALE:
         next_action = NA_UPDATE_STALE
     else:
         next_action = op_na  # review / review_cancelled / wait
 
+    synthesis = decision_bundle.get("synthesis") or {}
+    focus = decision_bundle.get("focus") or {}
     return {
         "status": operational.get("status"),
         "operational": operational,
         "recommended_next_action": next_action,
         "recommendation": recommendation,
         "goals": goals,
-        "observations": observations,
+        # The bounded slice a caller renders. The wider list above was read
+        # for the correlation and consumed in-process.
+        "observations": observations[:_MAX_OBSERVATIONS_RETURNED],
         "metric_changes": metric_changes,
         "candidate_actions": ranked,
         "top_candidate": top,
@@ -306,6 +416,16 @@ def assess_business_brain(
         "learnings": learnings,
         "pending_approvals": operational.get("awaiting_approval") or [],
         "stale_artifacts": operational.get("stale_artifacts") or [],
+        # ── OBSERVE → PRIORITIZE → PLAN, as three distinguishable answers ──
+        # `project_understanding` is what happened and what is unresolved
+        # (`project_intelligence`'s synthesis, passed through); `focus` is why
+        # it matters now (`decision_context`); `plan` is who can act
+        # (`execution_policy`, through the ranking). Not one of them is
+        # computed here — this is the Brain CONSUMING its authorities, which
+        # is the only job the audit left it.
+        "project_understanding": synthesis,
+        "focus": focus,
+        "plan": _plan_from(ranked),
     }
 
 
