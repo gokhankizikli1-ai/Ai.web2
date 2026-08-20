@@ -9,6 +9,12 @@ import {
   changesTitleKey,
   connectorSummary,
   coverageCaveatKey,
+  focusBasisKey,
+  focusCaveatKey,
+  focusOwnerKey,
+  focusReasonKeys,
+  focusTone,
+  focusWhyKey,
   freshnessKey,
   freshnessRelative,
   gapKey,
@@ -17,6 +23,7 @@ import {
   implicationKey,
   knowledgeKindKey,
   newProjectChatUrl,
+  normalizeFocus,
   normalizeKnowledgeItem,
   normalizeProjectStateItem,
   normalizeProjectUnderstanding,
@@ -990,5 +997,193 @@ describe('project understanding — every code ships in every language', () => {
     for (const locale of Object.keys(LOCALES) as (keyof typeof LOCALES)[]) {
       expect(LOCALES[locale][key]).toBeTruthy();
     }
+  });
+});
+
+
+/* ══════════════════════════════════════════════════════════════════════════
+   FOCUS — "why is this first, and who has to act?"
+
+   The backend decides the order; this layer decides the WORDS, and the rule
+   it must never break is that a person only ever sees a translated code. A
+   tier integer, a score or a percentage reaching the page would be exactly
+   the unearned precision the surface refuses to print.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+const FOCUS_PAYLOAD = {
+  top: {
+    subject_id: 's1',
+    subject: 'payment webhook',
+    project_state: 'conflicting',
+    unresolved: true,
+    areas: ['deployment', 'backend'],
+    priority_basis: 'deadline_risk',
+    why_now: ['deadline_imminent', 'production_broken',
+              'customer_impact_corroborated'],
+    caveats: ['conflicting_evidence'],
+    actionability: {
+      korvix: 'investigate', capability: 'research', autonomy: 'AUTONOMOUS',
+      resolution: 'human_external', external_providers: ['vercel', 'github'],
+    },
+    deadline_pressure: 'imminent',
+    production_impact: 'broken',
+    customer_impact: 'corroborated',
+    evidence_strength: 'strong',
+    blocker_state: 'blocked',
+    confidence_level: 'high',
+  },
+  next: [{ subject_id: 's2', subject: 'checkout button',
+           priority_basis: 'blocked', why_now: [], caveats: [],
+           actionability: {} }],
+  commitment: { event_key: 'abc123', title: 'Public launch',
+                at: '2026-06-02T09:00:00Z', hours_until: 20,
+                pressure: 'imminent', kind: 'milestone', kind_basis: 'textual' },
+  blocked: true,
+  waiting_on: 'human_external',
+  counts: { subjects: 2, open: 2, blocked: 1 },
+};
+
+describe('normalizeFocus', () => {
+  it('maps a complete payload field for field', () => {
+    const focus = normalizeFocus(FOCUS_PAYLOAD)!;
+    expect(focus.top!.subject).toBe('payment webhook');
+    expect(focus.top!.priority_basis).toBe('deadline_risk');
+    expect(focus.top!.why_now).toEqual(['deadline_imminent', 'production_broken',
+                                        'customer_impact_corroborated']);
+    expect(focus.top!.actionability.external_providers).toEqual(['vercel', 'github']);
+    expect(focus.next).toHaveLength(1);
+    expect(focus.commitment!.pressure).toBe('imminent');
+    expect(focus.waiting_on).toBe('human_external');
+    expect(focus.blocked).toBe(true);
+  });
+
+  it('is null for a project with nothing pressing, and never invents a top', () => {
+    expect(normalizeFocus(null)).toBeNull();
+    expect(normalizeFocus({})).toBeNull();
+    expect(normalizeFocus({ top: null, next: [], commitment: null })).toBeNull();
+    const w = normalizeWorkspace({ project: { id: 'p1' } })!;
+    expect(w.focus).toBeNull();
+  });
+
+  it('drops a row with no subject id rather than rendering an anonymous one', () => {
+    const focus = normalizeFocus({ ...FOCUS_PAYLOAD, next: [{ subject: 'x' }] })!;
+    expect(focus.next).toEqual([]);
+  });
+
+  it('rejects a resolution the bundle does not know instead of printing it', () => {
+    const focus = normalizeFocus({
+      ...FOCUS_PAYLOAD, waiting_on: 'a_future_owner',
+      top: { ...FOCUS_PAYLOAD.top,
+             actionability: { ...FOCUS_PAYLOAD.top.actionability,
+                              resolution: 'a_future_owner' } },
+    })!;
+    expect(focus.waiting_on).toBe('');
+    expect(focus.top!.actionability.resolution).toBe('');
+    expect(focusOwnerKey(focus.top)).toBeNull();
+  });
+
+  it('an undated commitment exerts no pressure and is dropped', () => {
+    const focus = normalizeFocus({ ...FOCUS_PAYLOAD, commitment: { title: 'x' } })!;
+    expect(focus.commitment).toBeNull();
+  });
+
+  it('reaches the workspace through the read model', () => {
+    const w = normalizeWorkspace({ project: { id: 'p1' }, focus: FOCUS_PAYLOAD })!;
+    expect(w.focus!.top!.subject_id).toBe('s1');
+  });
+});
+
+describe('focus — labels', () => {
+  it('every tier basis resolves in every shipped locale', () => {
+    const bases = ['deadline_risk', 'production_broken', 'customer_impact',
+                   'blocked', 'unverified', 'time_sensitive', 'routine'];
+    for (const basis of bases) {
+      const key = focusBasisKey(basis)!;
+      expect(key, basis).toBeTruthy();
+      for (const locale of Object.keys(LOCALES) as (keyof typeof LOCALES)[]) {
+        expect(LOCALES[locale][key], `${locale}:${key}`).toBeTruthy();
+      }
+    }
+  });
+
+  it('every why-now code resolves in every shipped locale', () => {
+    const codes = ['deadline_imminent', 'deadline_approaching',
+                   'customer_impact_corroborated', 'customer_impact_reported',
+                   'goal_aligned', 'recurring_failure', 'production_broken',
+                   'recurrence', 'fix_not_proven_live', 'blocked_by_ci',
+                   'issue_open'];
+    for (const code of codes) {
+      const key = focusWhyKey(code);
+      expect(key, code).toBeTruthy();
+      for (const locale of Object.keys(LOCALES) as (keyof typeof LOCALES)[]) {
+        expect(LOCALES[locale][key as string], `${locale}:${key}`).toBeTruthy();
+      }
+    }
+  });
+
+  it('every caveat code resolves, reusing the uncertainty vocabulary', () => {
+    const codes = ['decision_recorded_after_evidence', 'part_of_related_story',
+                   'conflicting_evidence', 'production_unverified',
+                   'single_source', 'stale_evidence'];
+    for (const code of codes) {
+      const key = focusCaveatKey(code)!;
+      expect(key, code).toBeTruthy();
+      for (const locale of Object.keys(LOCALES) as (keyof typeof LOCALES)[]) {
+        expect(LOCALES[locale][key], `${locale}:${key}`).toBeTruthy();
+      }
+    }
+  });
+
+  it('a code from a newer backend is dropped, never printed raw', () => {
+    expect(focusBasisKey('a_future_tier')).toBeNull();
+    expect(focusCaveatKey('a_future_caveat')).toBeNull();
+    const focus = normalizeFocus({
+      ...FOCUS_PAYLOAD,
+      top: { ...FOCUS_PAYLOAD.top, why_now: ['a_future_reason'] },
+    })!;
+    expect(focusReasonKeys(focus.top)).toEqual([]);
+  });
+
+  it('prints at most two reasons — a list of four reads as noise', () => {
+    const focus = normalizeFocus(FOCUS_PAYLOAD)!;
+    expect(focusReasonKeys(focus.top)).toHaveLength(2);
+    expect(focusReasonKeys(focus.top, 5)).toHaveLength(3);
+  });
+
+  it('says who has to act, and says nothing when the evidence does not', () => {
+    const focus = normalizeFocus(FOCUS_PAYLOAD)!;
+    expect(focusOwnerKey(focus.top)).toBe('projectFocusOwnerHuman');
+    for (const locale of Object.keys(LOCALES) as (keyof typeof LOCALES)[]) {
+      expect(LOCALES[locale].projectFocusOwnerHuman).toContain('{providers}');
+      expect(LOCALES[locale].projectFocusOwnerKorvix).toBeTruthy();
+    }
+    expect(focusOwnerKey(null)).toBeNull();
+  });
+
+  it('tone is coarser than the ladder — three buckets, not seven', () => {
+    expect(focusTone('deadline_risk')).toBe('critical');
+    expect(focusTone('production_broken')).toBe('critical');
+    expect(focusTone('customer_impact')).toBe('critical');
+    expect(focusTone('blocked')).toBe('warning');
+    expect(focusTone('time_sensitive')).toBe('warning');
+    expect(focusTone('routine')).toBe('info');
+    expect(focusTone('a_future_tier')).toBe('info');
+  });
+
+  it('every focus section string ships in every locale', () => {
+    const keys = ['projectFocusLabel', 'projectFocusNextLabel',
+                  'projectFocusCommitment'];
+    for (const locale of Object.keys(LOCALES) as (keyof typeof LOCALES)[]) {
+      for (const key of keys) {
+        expect(LOCALES[locale][key], `${locale}:${key}`).toBeTruthy();
+      }
+    }
+  });
+
+  it('no number from the ranking layer is part of the rendered contract', () => {
+    const focus = normalizeFocus(FOCUS_PAYLOAD)!;
+    expect(focus.top).not.toHaveProperty('priority_tier');
+    expect(focus.top).not.toHaveProperty('priority_score');
+    expect(focus.top).not.toHaveProperty('confidence');
   });
 });

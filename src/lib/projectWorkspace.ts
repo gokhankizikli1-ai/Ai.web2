@@ -365,6 +365,75 @@ export interface ProjectUnderstanding {
   counts: Record<string, number>;
 }
 
+/* ── Focus (backend `orchestrator.decision_context`) ───────────────────────
+ *
+ * WHY the leading concern leads, in the same closed-code style as everything
+ * above: a tier BASIS, the reasons it matters now, what would make the reading
+ * wrong, and who has to act. There is no score here and no percentage — the
+ * backend's tier integer is deliberately not part of this contract, because a
+ * number rendered at a person is exactly the unearned precision this surface
+ * refuses to ship.
+ *
+ * It is NOT a second ranking. The backend computes it with the identical
+ * function and the identical ladder that orders the Business Brain's
+ * candidates, so the page and the Brain give one answer to "what matters most".
+ */
+
+/** Who has to act for the problem to go away. */
+export type FocusResolution = 'korvix' | 'human_external' | 'unknown' | '';
+
+export interface FocusActionability {
+  /** What Korvix can do on its own (`investigate` today, or nothing). */
+  korvix: string;
+  capability: string;
+  /** The EXISTING execution-policy tier, product-named. */
+  autonomy: string;
+  resolution: FocusResolution;
+  /** Providers whose systems a fix would have to change. Names only. */
+  external_providers: string[];
+}
+
+export interface FocusCommitment {
+  /** Opaque digest — never the provider's calendar event id. */
+  event_key: string;
+  title: string;
+  at: string;
+  hours_until: number | null;
+  pressure: 'none' | 'approaching' | 'imminent' | string;
+  kind: string;
+  kind_basis: string;
+}
+
+export interface FocusItem {
+  subject_id: string;
+  subject: string;
+  project_state: SubjectState | string;
+  unresolved: boolean;
+  areas: string[];
+  /** Stable tier code — `deadline_risk`, `production_broken`, … */
+  priority_basis: string;
+  /** Why it matters now. Stable codes, most load-bearing first. */
+  why_now: string[];
+  /** What would make this reading wrong. Stable codes. */
+  caveats: string[];
+  actionability: FocusActionability;
+  deadline_pressure: string;
+  production_impact: string;
+  customer_impact: string;
+  evidence_strength: string;
+  blocker_state: string;
+  confidence_level: string;
+}
+
+export interface ProjectFocus {
+  top: FocusItem | null;
+  next: FocusItem[];
+  commitment: FocusCommitment | null;
+  blocked: boolean;
+  waiting_on: FocusResolution;
+  counts: Record<string, number>;
+}
+
 export interface ProjectWorkspace {
   project: WorkspaceProject;
   summary: { text: string; source: string };
@@ -373,6 +442,8 @@ export interface ProjectWorkspace {
   attention: AttentionItem[];
   projectState: ProjectStateItem[];
   understanding: ProjectUnderstanding | null;
+  /** null on a project with nothing pressing — the truthful state, not a gap. */
+  focus: ProjectFocus | null;
   activity: ActivityItem[];
   changes: WorkspaceChanges;
   tasks: WorkspaceTasks;
@@ -715,6 +786,85 @@ export function normalizeProjectUnderstanding(value: unknown): ProjectUnderstand
   };
 }
 
+const RESOLUTIONS: FocusResolution[] = ['korvix', 'human_external', 'unknown'];
+
+function normalizeFocusItem(value: unknown): FocusItem | null {
+  const o = obj(value);
+  const subjectId = str(o.subject_id);
+  if (!subjectId) return null;
+  const actionability = obj(o.actionability);
+  const resolution = str(actionability.resolution);
+  return {
+    subject_id: subjectId,
+    subject: str(o.subject),
+    project_state: str(o.project_state),
+    unresolved: o.unresolved === true,
+    areas: arr(o.areas).map((a) => str(a)).filter(Boolean),
+    priority_basis: str(o.priority_basis),
+    why_now: arr(o.why_now).map((c) => str(c)).filter(Boolean),
+    caveats: arr(o.caveats).map((c) => str(c)).filter(Boolean),
+    actionability: {
+      korvix: str(actionability.korvix),
+      capability: str(actionability.capability),
+      autonomy: str(actionability.autonomy),
+      resolution: (RESOLUTIONS.includes(resolution as FocusResolution)
+        ? resolution : '') as FocusResolution,
+      external_providers: arr(actionability.external_providers)
+        .map((p) => str(p)).filter(Boolean),
+    },
+    deadline_pressure: str(o.deadline_pressure),
+    production_impact: str(o.production_impact),
+    customer_impact: str(o.customer_impact),
+    evidence_strength: str(o.evidence_strength),
+    blocker_state: str(o.blocker_state),
+    confidence_level: str(o.confidence_level),
+  };
+}
+
+function normalizeCommitment(value: unknown): FocusCommitment | null {
+  const o = obj(value);
+  if (!Object.keys(o).length) return null;
+  const at = str(o.at);
+  if (!at) return null;   // an undated commitment exerts no pressure anywhere
+  return {
+    event_key: str(o.event_key),
+    title: str(o.title),
+    at,
+    hours_until: num(o.hours_until),
+    pressure: str(o.pressure, 'none'),
+    kind: str(o.kind),
+    kind_basis: str(o.kind_basis),
+  };
+}
+
+/**
+ * The focus block, or null.
+ *
+ * Null when the backend degraded the slice OR when nothing rose above
+ * `routine` — the page then simply says nothing extra, which is the truthful
+ * result for a project with no pressing concern rather than a promotion of its
+ * calmest subject.
+ */
+export function normalizeFocus(value: unknown): ProjectFocus | null {
+  const o = obj(value);
+  if (!Object.keys(o).length) return null;
+  const top = normalizeFocusItem(o.top);
+  const next = arr(o.next).map(normalizeFocusItem)
+    .filter((f): f is FocusItem => f !== null);
+  const commitment = normalizeCommitment(o.commitment);
+  if (!top && !next.length && !commitment) return null;
+  const waiting = str(o.waiting_on);
+  return {
+    top,
+    next,
+    commitment,
+    blocked: o.blocked === true,
+    waiting_on: (RESOLUTIONS.includes(waiting as FocusResolution)
+      ? waiting : '') as FocusResolution,
+    counts: counts(o.counts),
+  };
+}
+
 /**
  * Turn an untyped API payload into a fully-populated `ProjectWorkspace`, or
  * null when it is not a workspace at all. Every list defaults to empty and
@@ -758,6 +908,7 @@ export function normalizeWorkspace(raw: unknown): ProjectWorkspace | null {
       .map(normalizeProjectStateItem)
       .filter((p): p is ProjectStateItem => p !== null),
     understanding: normalizeProjectUnderstanding(root.project_understanding),
+    focus: normalizeFocus(root.focus),
     activity: arr(root.activity).map((a) => {
       const o = obj(a);
       return {
@@ -1333,6 +1484,104 @@ export function coverageCaveatKey(understanding: ProjectUnderstanding | null): s
   if (codes.has('single_source_project')) return 'projectUnderstandingCaveatSingleSource';
   if (codes.has('no_deployment_evidence')) return 'projectUnderstandingCaveatNoDeploy';
   return null;
+}
+
+/* ── Focus: presentation ──────────────────────────────────────────────────── */
+
+/**
+ * i18n key for a tier basis — the ONE line that answers "why is this #1?".
+ *
+ * The backend's tier INTEGER is deliberately never rendered. A person reading
+ * "production is broken" learns something; a person reading "tier 2" learns
+ * that a machine has opinions.
+ */
+const FOCUS_BASIS_KEYS: Record<string, string> = {
+  deadline_risk: 'projectFocusBasisDeadlineRisk',
+  production_broken: 'projectFocusBasisProductionBroken',
+  customer_impact: 'projectFocusBasisCustomerImpact',
+  blocked: 'projectFocusBasisBlocked',
+  unverified: 'projectFocusBasisUnverified',
+  time_sensitive: 'projectFocusBasisTimeSensitive',
+  routine: 'projectFocusBasisRoutine',
+};
+
+export function focusBasisKey(basis: string): string | null {
+  return FOCUS_BASIS_KEYS[basis] || null;
+}
+
+/** Tone for a basis. Purely visual, and deliberately coarser than the ladder:
+ *  the page shows "this is bad" / "this is timing" / "this is open", never a
+ *  seven-step colour scale a reader would have to decode. */
+export function focusTone(basis: string): 'critical' | 'warning' | 'info' {
+  if (basis === 'deadline_risk' || basis === 'production_broken'
+      || basis === 'customer_impact') return 'critical';
+  if (basis === 'blocked' || basis === 'time_sensitive') return 'warning';
+  return 'info';
+}
+
+/**
+ * i18n keys for the "why now" codes.
+ *
+ * The vocabulary spans two backend authorities on purpose: the implication
+ * codes are `project_intelligence`'s and already have translated strings, so
+ * they are REUSED rather than duplicated under a second set of keys — one
+ * concept, one sentence, in every language.
+ */
+const FOCUS_WHY_KEYS: Record<string, string> = {
+  deadline_imminent: 'projectFocusWhyDeadlineImminent',
+  deadline_approaching: 'projectFocusWhyDeadlineApproaching',
+  customer_impact_corroborated: 'projectFocusWhyCustomerCorroborated',
+  customer_impact_reported: 'projectFocusWhyCustomerReported',
+  goal_aligned: 'projectFocusWhyGoalAligned',
+  recurring_failure: 'projectFocusWhyRecurring',
+  production_broken: 'projectImplicationProductionBroken',
+  recurrence: 'projectImplicationRecurrence',
+  fix_not_proven_live: 'projectImplicationFixNotProvenLive',
+  blocked_by_ci: 'projectImplicationBlockedByCi',
+  issue_open: 'projectImplicationIssueOpen',
+};
+
+export function focusWhyKey(code: string): string | null {
+  return FOCUS_WHY_KEYS[code] || null;
+}
+
+/** i18n keys for the caveats. The uncertainty vocabulary is reused verbatim;
+ *  only what the decision layer adds needs its own string. */
+const FOCUS_CAVEAT_KEYS: Record<string, string> = {
+  decision_recorded_after_evidence: 'projectFocusCaveatDecided',
+  part_of_related_story: 'projectFocusCaveatRelated',
+};
+
+export function focusCaveatKey(code: string): string | null {
+  return FOCUS_CAVEAT_KEYS[code] || uncertaintyKey(code);
+}
+
+/**
+ * The "who has to act" line, as an i18n key, or null.
+ *
+ * This is the distinction the surface exists to make honest: an alarm that
+ * implies Korvix will handle a production deployment is worse than no alarm.
+ */
+export function focusOwnerKey(item: FocusItem | null): string | null {
+  if (!item) return null;
+  if (item.actionability.resolution === 'human_external') {
+    return 'projectFocusOwnerHuman';
+  }
+  if (item.actionability.resolution === 'korvix') return 'projectFocusOwnerKorvix';
+  return null;
+}
+
+/** The bounded reasons a row should print. At most two: a list of four reads
+ *  as noise and gets skipped, which defeats the point of explaining. */
+export function focusReasonKeys(item: FocusItem | null, limit = 2): string[] {
+  if (!item) return [];
+  const out: string[] = [];
+  for (const code of item.why_now) {
+    const key = focusWhyKey(code);
+    if (key && !out.includes(key)) out.push(key);
+    if (out.length >= limit) break;
+  }
+  return out;
 }
 
 /* ── "Ask Korvix" suggestions ─────────────────────────────────────────────── */

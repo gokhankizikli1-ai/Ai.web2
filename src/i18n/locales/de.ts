@@ -1442,6 +1442,34 @@ export const de: Record<string, string> = {
   projectGapProductionUnverified: 'Mindestens eine gelandete Änderung hat keinen Produktionsnachweis.',
   projectGapUnknownScope: 'Bei einem Teil davon ist unklar, welcher Projektbereich betroffen ist.',
 
+  /* ── Fokus (Backend `decision_context`): warum das Wichtigste das Wichtigste
+     ist. Dieselbe Regel wie oben — die API sendet stabile Codes, die Worte
+     entscheidet diese Datei. Bewusst ohne Punktzahl, ohne Stufennummer und
+     ohne Prozentwert. ──────────────────────────────────────────────────────── */
+  projectFocusLabel: 'Warum das zuerst',
+  projectFocusBasisDeadlineRisk: 'Ein Termin ist in Gefahr',
+  projectFocusBasisProductionBroken: 'Die Produktion ist kaputt',
+  projectFocusBasisCustomerImpact: 'Menschen melden Auswirkungen',
+  projectFocusBasisBlocked: 'Etwas Konkretes blockiert es',
+  projectFocusBasisUnverified: 'Offen, und nichts ist belegt',
+  projectFocusBasisTimeSensitive: 'Ein Termin steht bevor',
+  projectFocusBasisRoutine: 'Gut zu wissen, nicht dringend',
+
+  projectFocusWhyDeadlineImminent: 'Ein Termin ist in weniger als 48 Stunden.',
+  projectFocusWhyDeadlineApproaching: 'Ein Termin liegt innerhalb der nächsten Woche.',
+  projectFocusWhyCustomerCorroborated: 'Zwei unabhängige Personen haben es gemeldet — ein Gespräch und eine E-Mail.',
+  projectFocusWhyCustomerReported: 'Jemand hat es außerhalb der Tools gemeldet.',
+  projectFocusWhyGoalAligned: 'Es betrifft eines deiner aktiven Ziele.',
+  projectFocusWhyRecurring: 'Dasselbe Ziel hat das wiederholt gemeldet.',
+
+  projectFocusCaveatDecided: 'Du hast nach diesem Beleg eine Entscheidung festgehalten — vielleicht ist es bereits geklärt.',
+  projectFocusCaveatRelated: 'Das teilt Belege mit einem anderen offenen Punkt und könnte ein einziges Problem sein.',
+
+  projectFocusOwnerKorvix: 'Korvix kann das übernehmen',
+  projectFocusOwnerHuman: 'Liegt bei dir — Korvix kann nachsehen, die Behebung muss aber in {providers} passieren.',
+  projectFocusNextLabel: 'Danach',
+  projectFocusCommitment: '{title} · {when}',
+
   projectAskStateLabel: 'Was passiert gerade?',
   projectAskStatePrompt: 'Wie ist der aktuelle Stand dieses Projekts und was zeigen die Belege tatsächlich?',
   projectAskUncertainLabel: 'Was ist noch unklar?',

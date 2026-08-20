@@ -75,6 +75,7 @@ import {
 import {
   areaKey, askSuggestions, attentionReasonKey, changeKindKey, changeKindKeyOf,
   changesCountKey, changesTitleKey, connectorSummary, coverageCaveatKey,
+  focusBasisKey, focusCaveatKey, focusOwnerKey, focusReasonKeys, focusTone,
   freshnessKey, freshnessRelative, gapKey, groupingRationale, hasUnderstanding,
   implicationKey, knowledgeKindKey, newProjectChatUrl, openProjectChatUrl,
   openTasks, productBuildType, productOpenTarget, productStatusKey,
@@ -84,7 +85,8 @@ import {
   toggledTaskStatus, uncertaintyKey,
   KNOWLEDGE_KIND_ORDER, TASK_STATUS_ORDER,
   type AttentionItem, type KnowledgeItem, type KnowledgeKind,
-  type ProjectStateItem, type ProjectTask, type ProjectUnderstanding,
+  type ProjectFocus, type ProjectStateItem, type ProjectTask,
+  type ProjectUnderstanding,
   type ProjectWorkspace, type TaskStatus,
   type TodayRecommendation, type WorkspaceChanges, type WorkspaceChat,
   type WorkspaceConnector, type WorkspaceProduct,
@@ -528,12 +530,83 @@ function CurrentStateSection({ items, understanding, onAsk, t }: {
    says so plainly. Every button here corresponds to an affordance that exists;
    an action code this bundle does not know is dropped rather than rendered.
    ══════════════════════════════════════════════════════════════════════════ */
+/**
+ * WHY THIS IS FIRST — the decision layer's one explanation, rendered.
+ *
+ * Three lines at most, and every one of them is a translated backend CODE:
+ * what makes it the top concern, the couple of reasons behind that, and — the
+ * line this block exists for — whether the ball is with Korvix or with the
+ * person reading. An alarm that implies Korvix will redeploy production is
+ * worse than no alarm.
+ *
+ * Nothing here is a score, a tier number or a percentage, and nothing here is
+ * a second ranking: the backend picked this row with the same function that
+ * orders the Business Brain's candidates.
+ */
+function FocusRationale({ focus, t }: { focus: ProjectFocus | null; t: T }) {
+  if (!focus?.top) return null;
+  const top = focus.top;
+  const basisKey = focusBasisKey(top.priority_basis);
+  const reasons = focusReasonKeys(top);
+  const ownerKey = focusOwnerKey(top);
+  const caveatKey = top.caveats.length ? focusCaveatKey(top.caveats[0]) : null;
+  if (!basisKey && !reasons.length && !ownerKey) return null;
+  const tone = TONE_STYLE[focusTone(top.priority_basis)];
+  const providers = top.actionability.external_providers.join(', ');
+
+  return (
+    <div className="mt-3 rounded-xl border border-white/[0.06] bg-white/[0.02] p-3">
+      {/* The SUBJECT is named here on purpose. The alarm above is one event;
+          this is the story it belongs to, and the two are different
+          granularities — a rationale floating over an unnamed subject would
+          read as an explanation of the alarm, which it is not. */}
+      <div className="text-[10.5px] uppercase tracking-[0.06em] text-white/30 mb-1.5 break-words">
+        {t('projectFocusLabel')}
+        {top.subject && <span className="normal-case tracking-normal text-white/40"> · {top.subject}</span>}
+      </div>
+      {basisKey && (
+        <div className="flex items-center gap-2 text-[12.5px] font-medium leading-snug break-words"
+          style={{ color: tone.text }}>
+          <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: tone.dot }} />
+          {t(basisKey)}
+        </div>
+      )}
+      {reasons.length > 0 && (
+        <ul className="mt-1.5 space-y-0.5">
+          {reasons.map((key) => (
+            <li key={key} className="text-[12px] leading-snug text-white/55 break-words">
+              {t(key)}
+            </li>
+          ))}
+        </ul>
+      )}
+      {ownerKey && (
+        <div className="mt-1.5 text-[12px] leading-snug text-white/70 break-words">
+          {t(ownerKey, { providers })}
+        </div>
+      )}
+      {caveatKey && (
+        <div className="mt-1.5 text-[11.5px] leading-snug text-white/40 break-words">
+          {t(caveatKey)}
+        </div>
+      )}
+      {focus.next.length > 0 && (
+        <div className="mt-2 pt-2 border-t border-white/[0.05] text-[11.5px] text-white/40 break-words">
+          {t('projectFocusNextLabel')}:{' '}
+          {focus.next.map((row) => row.subject).filter(Boolean).join(' · ')}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TodaySection({
-  attention, recommendation, changes, onAsk, onCreateTask, onOpenTasks,
+  attention, recommendation, focus, changes, onAsk, onCreateTask, onOpenTasks,
   onOpenActivity, t,
 }: {
   attention: AttentionItem | null;
   recommendation: TodayRecommendation | null;
+  focus: ProjectFocus | null;
   changes: WorkspaceChanges | null;
   onAsk: (prompt: string) => void;
   onCreateTask: (prefill: string) => void;
@@ -562,7 +635,7 @@ function TodaySection({
         {t('projectSectionToday')}
       </div>
 
-      {!attention && !recommendation ? (
+      {!attention && !recommendation && !focus?.top ? (
         <p className={EMPTY_TEXT}>{t('projectTodayEmpty')}</p>
       ) : (
         <div className="space-y-3.5">
@@ -595,6 +668,11 @@ function TodaySection({
               </div>
             </div>
           )}
+
+          {/* The rationale sits under the alarm rather than beside it: the
+              alarm says WHAT, this says why it beat everything else and who
+              has to act. */}
+          <FocusRationale focus={focus} t={t} />
 
           {recommendation && (
             <div className={attention ? 'pt-3.5 border-t border-white/[0.05]' : undefined}>
@@ -1433,6 +1511,7 @@ function ProjectWorkspaceView({ projectId }: { projectId: string }) {
               <TodaySection
                 attention={workspace.today.attention}
                 recommendation={workspace.today.recommendation}
+                focus={workspace.focus}
                 changes={arrival}
                 onAsk={(prompt) => newProjectChat(prompt)}
                 onCreateTask={startTaskFromRecommendation}
