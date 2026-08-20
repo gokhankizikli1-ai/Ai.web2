@@ -349,12 +349,14 @@ def update_project(
 def delete_project(project_id: str) -> bool:
     """Hard delete — cascades to memory/agents/threads/files via FK.
 
-    `project_tasks` and `project_views` live in the same file but deliberately
-    carry no FK (they self-initialize on access, so they cannot depend on the
-    projects table existing first). They are therefore purged explicitly here:
-    a deleted project must not leave the user's tasks, or their last-visit
-    metadata, behind. Best-effort — a purge failure never turns a successful
-    project delete into a reported failure."""
+    `project_tasks`, `project_views`, `project_feed_preferences` and
+    `connector_refresh_attempts` live in the same file but deliberately carry no
+    FK (they self-initialize on access, so they cannot depend on the projects
+    table existing first). They are therefore purged explicitly here: a deleted
+    project must not leave the user's tasks, their last-visit metadata, their
+    feed presentation choices, or connector refresh bookkeeping behind.
+    Best-effort — a purge failure never turns a successful project delete into a
+    reported failure."""
     with _conn() as c:
         cur = c.execute("DELETE FROM projects WHERE id = ?", (project_id,))
         deleted = cur.rowcount > 0
@@ -362,8 +364,12 @@ def delete_project(project_id: str) -> bool:
         _bump("projects_deleted")
         try:
             from backend.services.projects import tasks_store, views_store
+            from backend.services.projects import feed_prefs_store
+            from backend.services.connectors import refresh as connector_refresh
             tasks_store.purge_project(project_id)
             views_store.forget_project(project_id)
+            feed_prefs_store.forget_project(project_id)
+            connector_refresh.forget_project(project_id)
         except Exception as exc:   # pragma: no cover — defensive
             logger.warning("projects.delete: workspace purge failed: %s", exc)
     return deleted

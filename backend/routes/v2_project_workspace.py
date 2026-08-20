@@ -10,6 +10,8 @@ mutating counterpart, and nothing else:
     tasks       GET / POST / PATCH / DELETE   the user's own project tasks
     knowledge   GET / POST / DELETE           durable decisions + knowledge
     seen        POST                          "I have looked at this project"
+    feed prefs  GET / PUT                     how THIS user wants THIS project's
+                                              activity feed presented
 
 The two GETs exist only for the dedicated Tasks and Knowledge views, which the
 user opens deliberately; the Overview still mounts with a single request and
@@ -46,12 +48,13 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, constr
 
 from backend.core.deps import current_user
 from backend.core.responses import ok as envelope_ok
 from backend.services.auth.identity import User
 from backend.services.project_brain import workspace as project_workspace
+from backend.services.projects import feed_prefs_store
 from backend.services.projects import knowledge as knowledge_mod
 from backend.services.projects import tasks_store, views_store
 
@@ -313,6 +316,90 @@ def mark_workspace_seen(
     return envelope_ok(
         data={"last_viewed_at": marker},
         endpoint=f"/v2/projects/{project_id}/workspace/seen", user_id=user.id,
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Feed presentation preferences
+#
+# PRESENTATION ONLY. These two routes read and write ONE thing: which sources
+# this user wants prominent, ordinary or absent in THIS project's activity feed.
+#
+# They cannot delete an observation, change what a connector ingests, or reach
+# Project Intelligence, candidate synthesis, the action prioritizer, the
+# Business Brain, execution policy, approvals or durable memory — none of which
+# read the preference store at all (see its module docstring). A user who hides
+# Vercel and then has a production outage still sees that outage in Needs
+# Attention, and the Brain still prioritizes it, because the ranking is computed
+# from the observations and never from this.
+# ══════════════════════════════════════════════════════════════════════════
+
+class FeedPreferencesBody(BaseModel):
+    """The WHOLE map, replaced atomically. A partial patch would let two
+    Customize panels open in two tabs interleave into a state neither user
+    chose; a replace makes the last Save the answer, and makes pressing Save
+    twice a no-op.
+
+    Unknown sources are dropped and unknown values read as `normal`, so a stale
+    client cannot blank somebody's feed with a typo.
+
+    Both the KEY and the VALUE are length-bounded here, and the store refuses to
+    walk more than `MAX_INPUT_ENTRIES` of them, so a request that is cheap to
+    send stays cheap to process."""
+    preferences: Dict[
+        constr(max_length=feed_prefs_store.MAX_SOURCE),
+        constr(max_length=32),
+    ] = Field(default_factory=dict,
+              max_length=feed_prefs_store.MAX_INPUT_ENTRIES)
+
+
+def _feed_prefs_payload(user: User, project_id: str,
+                        preferences: Dict[str, str]) -> Dict[str, Any]:
+    """What both routes return: the stored choices, plus the vocabulary and the
+    source list the panel renders from — so the frontend never hardcodes a
+    provider list that would go stale the day a sixth connector ships."""
+    return {
+        "preferences": preferences,
+        "sources":     list(feed_prefs_store.known_sources()),
+        "values":      list(feed_prefs_store.PREFERENCES),
+        "default":     feed_prefs_store.PREF_NORMAL,
+    }
+
+
+@router.get("/{project_id}/feed-preferences")
+def get_feed_preferences(
+    project_id: str = Path(..., max_length=64),
+    user: User = Depends(current_user),
+) -> Dict[str, Any]:
+    """This user's feed preferences for this project. A user who has never
+    customised anything gets an empty map — the truthful "everything is on the
+    default" state, not a fabricated row per source."""
+    _gate(user, project_id)
+    return envelope_ok(
+        data=_feed_prefs_payload(
+            user, project_id,
+            feed_prefs_store.get_preferences(str(user.id), str(project_id))),
+        endpoint=f"/v2/projects/{project_id}/feed-preferences", user_id=user.id,
+    )
+
+
+@router.put("/{project_id}/feed-preferences")
+def set_feed_preferences(
+    project_id: str = Path(..., max_length=64),
+    body: FeedPreferencesBody = ...,
+    user: User = Depends(current_user),
+) -> Dict[str, Any]:
+    """Replace this user's feed preferences for this project.
+
+    The owner is server auth, always: a `user_id` in the body is neither read
+    nor trusted, so one account can never write another's view preference even
+    for a project they both somehow named."""
+    _gate(user, project_id)
+    stored = feed_prefs_store.set_preferences(str(user.id), str(project_id),
+                                              body.preferences or {})
+    return envelope_ok(
+        data=_feed_prefs_payload(user, project_id, stored),
+        endpoint=f"/v2/projects/{project_id}/feed-preferences", user_id=user.id,
     )
 
 

@@ -16,9 +16,10 @@ import { serverChatEnabled, syncSession, listUserThreads } from '@/lib/sessionsS
 import { getProjects } from '@/stores/projectStore';
 import { resolveBuildType, type BuildType } from '@/lib/buildType';
 import {
-  normalizeKnowledgeItem, normalizeTask, normalizeWorkspace,
-  type KnowledgeItem, type KnowledgeKind, type ProjectTask,
-  type ProjectWorkspace, type TaskStatus,
+  normalizeFeedPreferences, normalizeKnowledgeItem, normalizeTask,
+  normalizeWorkspace,
+  type FeedPreferences, type KnowledgeItem, type KnowledgeKind,
+  type ProjectTask, type ProjectWorkspace, type TaskStatus,
 } from '@/lib/projectWorkspace';
 
 export interface BindingResult {
@@ -185,11 +186,15 @@ export interface ProjectChat {
   title: string;
   mode: string | null;
   updated_at: string | null;
+  /** Whatever the creator stored on the thread. Used to RECOGNISE a
+   *  conversation later (e.g. the one the Workspace's inline Ask created), so
+   *  no second index of "which chat is which" has to exist. */
+  metadata: Record<string, unknown>;
 }
 
 /** Chats filed under a project (server truth). [] on failure / unavailable. */
 export async function listProjectChats(projectId: string): Promise<ProjectChat[]> {
-  const data = await apiCall<{ threads?: ProjectChat[] }>(
+  const data = await apiCall<{ threads?: (ProjectChat & { metadata?: unknown })[] }>(
     'GET',
     `/v2/sessions/projects/${encodeURIComponent(projectId)}/threads`,
   );
@@ -198,6 +203,9 @@ export async function listProjectChats(projectId: string): Promise<ProjectChat[]
     title: t.title || 'Chat',
     mode: t.mode ?? null,
     updated_at: t.updated_at ?? null,
+    metadata: (t.metadata && typeof t.metadata === 'object' && !Array.isArray(t.metadata))
+      ? (t.metadata as Record<string, unknown>)
+      : {},
   }));
 }
 
@@ -535,4 +543,60 @@ export async function markProjectWorkspaceSeen(
     { seen_through: seenThrough },
   );
   return { ok: res.ok, lastViewedAt: res.data?.last_viewed_at ?? '' };
+}
+
+/* ── Feed presentation preferences ───────────────────────────────────────────
+ *
+ * PRESENTATION ONLY, and the routes enforce it: they read and write one narrow
+ * per-user, per-project table that nothing in the intelligence or execution
+ * chain consumes. Hiding a source changes what YOU see on the Workspace feed —
+ * never what Korvix ingested, ranked or decided.
+ *
+ * Both calls go through the SAME ownership gate the workspace read uses, so a
+ * project the caller does not own answers the same 404 a missing one does.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+export interface FeedPreferencesResult {
+  ok: boolean;
+  /** Explicit choices only — `{}` means everything is on the default. */
+  preferences: FeedPreferences;
+  /** The backend's own source vocabulary, in its canonical display order. */
+  sources: string[];
+}
+
+function toFeedPreferencesResult(
+  res: { ok: boolean; data: { preferences?: unknown; sources?: unknown } | null },
+): FeedPreferencesResult {
+  return {
+    ok: res.ok,
+    preferences: normalizeFeedPreferences(res.data?.preferences),
+    sources: Array.isArray(res.data?.sources)
+      ? (res.data!.sources as unknown[]).map((s) => String(s)).filter(Boolean)
+      : [],
+  };
+}
+
+export async function getProjectFeedPreferences(
+  projectId: string,
+): Promise<FeedPreferencesResult> {
+  return toFeedPreferencesResult(await apiCallDetailed(
+    'GET', `/v2/projects/${encodeURIComponent(projectId)}/feed-preferences`));
+}
+
+/**
+ * Replace this user's preferences for this project.
+ *
+ * A whole-map replace, matching the route: the panel edits every source at
+ * once, so one idempotent write cannot leave a half-applied state and pressing
+ * Save twice is a no-op. The RESULT is what is stored — the caller renders that
+ * rather than its optimistic copy, so a refused source (unknown, or a value the
+ * backend does not accept) is visible rather than silently assumed.
+ */
+export async function setProjectFeedPreferences(
+  projectId: string,
+  preferences: FeedPreferences,
+): Promise<FeedPreferencesResult> {
+  return toFeedPreferencesResult(await apiCallDetailed(
+    'PUT', `/v2/projects/${encodeURIComponent(projectId)}/feed-preferences`,
+    { preferences }));
 }

@@ -6,7 +6,7 @@ import logging
 import os
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Path
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Path
 from pydantic import BaseModel, Field
 
 from backend.core.deps import current_user
@@ -37,6 +37,7 @@ def _ensure_enabled() -> None:
 
 @router.get("/{project_id}/workspace")
 def get_workspace(
+    background: BackgroundTasks,
     project_id: str = Path(..., max_length=64),
     user: User = Depends(current_user),
 ) -> Dict[str, Any]:
@@ -51,19 +52,91 @@ def get_workspace(
     memory-plane goals are omitted — instead of the whole page 503-ing.
 
     Ownership is enforced through the canonical `projects` record: a project the
-    caller does not own is 404, existence-hidden. The read performs no provider
-    API call, no model call, and no write of any kind."""
+    caller does not own is 404, existence-hidden. Building the snapshot performs
+    no provider API call, no model call, and no write of any kind — that is
+    still `project_workspace.build`'s whole contract.
+
+    SMART REFRESH (stale-while-revalidate)
+    --------------------------------------
+    The snapshot in the response is the PERSISTED one, computed and returned
+    before any refresh is even considered — the response body and its latency
+    are identical to before. Only after it is assembled does this route ask the
+    connector refresh coordinator which of the project's BOUND connectors are
+    past their freshness TTL, take the lease for at most `MAX_PER_OPEN` of them,
+    and hand the actual provider reads to `BackgroundTasks`, which runs AFTER
+    the response has been sent.
+
+    So, per page open:
+      * every connector fresh (the common case) → ZERO provider calls, and the
+        only added cost is one bounded read of the attempt table;
+      * a stale connector → ONE bounded refresh, through the same
+        `connectors.sync.sync_binding` the explicit Sync button uses;
+      * a second tab, a React double-mount, or a rapid navigate-away-and-back →
+        ZERO extra calls: the lease is taken synchronously here, so the second
+        arrival sees the first one's claim and reports it as `in_flight`.
+
+    Nothing about this can start a run, write a candidate action, request an
+    approval or spend a model token: a refresh ingests observations through the
+    one canonical store and stops there. The `refresh` block it adds to the
+    payload is coordination metadata for the page, never project state."""
     snapshot = project_workspace.build(str(user.id), project_id)
     if snapshot is None:
         raise HTTPException(
             status_code=404,
             detail={"code": "PROJECT_NOT_FOUND", "message": "Project not found."},
         )
+    snapshot["refresh"] = _schedule_stale_refresh(background, str(user.id),
+                                                  str(project_id))
     return envelope_ok(
         data=snapshot,
         endpoint=f"/v2/projects/{project_id}/workspace",
         user_id=user.id,
     )
+
+
+def _schedule_stale_refresh(background: BackgroundTasks, user_id: str,
+                            project_id: str) -> Dict[str, Any]:
+    """Plan, claim and schedule the background refresh; return what the page is
+    told about it.
+
+    Reached only AFTER the ownership gate above, so a foreign or nonexistent
+    project never gets here. Fail-soft by construction: any error in the
+    coordinator degrades to "nothing is refreshing", which is exactly the
+    pre-existing behaviour of this endpoint.
+
+    `started`   leases this request took — a provider read WILL run
+    `in_flight` already being refreshed by another tab / a previous open
+    `stale`     everything past its TTL, whether or not it is being acted on
+    `recheck_in_ms` how long the page should wait before ONE re-read; 0 means
+                there is nothing coming and the page must not re-read at all."""
+    quiet = {"started": [], "in_flight": [], "stale": [], "recheck_in_ms": 0}
+    try:
+        from backend.services.connectors import refresh as refresh_mod
+        plan = refresh_mod.plan(user_id, project_id)
+        eligible = list(plan.get("eligible") or [])
+        # {provider: lease token}. The tokens never leave the server — they are
+        # how the background run releases exactly the lease it took.
+        claims = refresh_mod.claim_eligible(user_id, project_id, eligible)
+        started = list(claims)
+        if claims:
+            background.add_task(refresh_mod.run_claimed, user_id, project_id,
+                                claims)
+        in_flight = list(plan.get("in_flight") or [])
+        # A provider we could not claim is being refreshed by somebody else —
+        # report it as in-flight rather than pretending it will not update.
+        for provider in eligible:
+            if provider not in started and provider not in in_flight:
+                in_flight.append(provider)
+        pending = bool(started or in_flight)
+        return {
+            "started":       started,
+            "in_flight":     in_flight,
+            "stale":         list(plan.get("stale") or []),
+            "recheck_in_ms": refresh_mod.RECHECK_IN_MS if pending else 0,
+        }
+    except Exception as exc:
+        logger.warning("project_workspace: refresh planning failed: %s", exc)
+        return quiet
 
 
 # ── Brain snapshot ───────────────────────────────────────────────────────────

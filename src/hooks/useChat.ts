@@ -2,6 +2,13 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import type { ChatSession, Message, AIMode, WorkspaceTab, ChatFolder, AttachedAsset } from '@/types';
 import { deriveSessionTitle } from '@/lib/chatTitles';
 import { getRequestLocale } from '@/lib/locale';
+// The SSE reader, the internal-marker scrub and the endpoint URL live in the
+// shared chat-stream client: the Project Workspace's inline "Ask Korvix" hits
+// the SAME `/v2/chat/stream` and must handle the wire identically. One
+// implementation, so a fix to either can never land in only one of them.
+import {
+  chatStreamUrl, readSSEFrames, stripInternalMarkers,
+} from '@/lib/chatStream';
 import { useLanguageStore } from '@/stores/languageStore';
 import { listWebBuildSessions, type WebBuildSessionMeta } from '@/lib/webBuildSession';
 import { currentStorageScope } from '@/lib/storageScope';
@@ -16,23 +23,6 @@ import { resolveOpenTarget } from '@/lib/chatSessionResolve';
 import { resolveSendProjectId as resolveSendProjectIdPure } from '@/lib/projectSendResolve';
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
-
-/**
- * Phase 14G — defence-in-depth scrub of internal orchestration markers from
- * assistant text. The real fix is server-side (the injected tool-context blocks
- * no longer carry these markers, and the stream boundary strips them); this is
- * the last line so an internal label can never render in the chat even if a
- * marker were split across SSE deltas. Operates on the ACCUMULATED text so
- * cross-delta splits are caught. Never alters ordinary answer prose.
- */
-const _INTERNAL_MARKER_RE =
-  /(?:═+|\[?INTERNAL (?:LIVE-SEARCH RESULTS|CAPABILITIES NOTE|NOTE —)[^\n]*|KORVIX (?:WEB SEARCH|TOOLS|BROWSER|GITHUB)[^\n]*|TOOL OUTPUT|TOOL_RESULT|FUNCTION RESULT|SEARCH CONTEXT|DO NOT REFUSE|TOOL ATTEMPTED, NO RESULTS|\[TOOL:[^\]]*\]?)/g;
-function stripInternalMarkers(text: string): string {
-  if (!text || (!text.includes('═') && !/KORVIX|TOOL OUTPUT|TOOL_RESULT|INTERNAL (?:LIVE-SEARCH|CAPABILITIES|NOTE —)|SEARCH CONTEXT|FUNCTION RESULT/.test(text))) {
-    return text;
-  }
-  return text.replace(_INTERNAL_MARKER_RE, '');
-}
 
 /**
  * Chat backend endpoint.
@@ -120,72 +110,10 @@ const STREAMING_ENABLED: boolean = (() => {
   return raw === 'true' || raw === '1' || raw === 'yes';
 })();
 
-const STREAM_URL: string = (() => {
-  const envBase = (import.meta.env.VITE_API_URL as string | undefined)?.trim();
-  const base = envBase ? envBase.replace(/\/+$/, '') : BUNDLED_BACKEND;
-  return `${base}/v2/chat/stream`;
-})();
-
-/**
- * Parse a fetch() response body as a stream of SSE frames.
- *
- * Robust to:
- *   - UTF-8 characters split across chunk boundaries (TextDecoder streaming)
- *   - Partial frames arriving in pieces (buffer until \n\n or \r\n\r\n)
- *   - CRLF or LF line endings
- *   - Multi-line `data:` (joined with \n per the SSE spec)
- *   - Comment lines starting with `:`
- *
- * Yields one {event, data} object per terminated SSE frame. Generator
- * completes when the upstream stream closes; the caller decides what to
- * do if a terminal `done` or `error` frame wasn't observed.
- */
-async function* readSSEFrames(
-  body: ReadableStream<Uint8Array>,
-): AsyncGenerator<{ event: string; data: string }> {
-  const reader = body.getReader();
-  const decoder = new TextDecoder('utf-8');
-  let buffer = '';
-
-  const parseFrame = (raw: string): { event: string; data: string } | null => {
-    let event = 'message';
-    let data = '';
-    for (const line of raw.split(/\r?\n/)) {
-      if (!line || line.startsWith(':')) continue;
-      if (line.startsWith('event:')) {
-        event = line.slice(6).trim();
-      } else if (line.startsWith('data:')) {
-        const part = line.slice(5).replace(/^ /, '');
-        data = data ? `${data}\n${part}` : part;
-      }
-    }
-    if (!data && event === 'message') return null;
-    return { event, data };
-  };
-
-  try {
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      let sep: RegExpMatchArray | null;
-      while ((sep = buffer.match(/\r?\n\r?\n/))) {
-        const idx = sep.index!;
-        const frame = buffer.slice(0, idx);
-        buffer = buffer.slice(idx + sep[0].length);
-        const parsed = parseFrame(frame);
-        if (parsed) yield parsed;
-      }
-    }
-    buffer += decoder.decode();
-    if (buffer.trim()) {
-      const parsed = parseFrame(buffer);
-      if (parsed) yield parsed;
-    }
-  } finally {
-    try { reader.releaseLock(); } catch { /* ignore */ }
-  }
-}
+/** The streaming endpoint, resolved through the SHARED chat-stream client so
+ *  Chat and the Project Workspace's inline Ask can never diverge on which URL
+ *  (or which API base) the authoritative AI path lives at. */
+const STREAM_URL: string = chatStreamUrl();
 
 /**
  * Local placeholder reply used when the chat backend is unreachable or
