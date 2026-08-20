@@ -197,11 +197,26 @@ def _coverage(observations: Sequence[Dict[str, Any]],
     }
 
 
-def _project_state(states: Sequence[Dict[str, Any]]) -> str:
+def _project_state(states: Sequence[Dict[str, Any]],
+                   coverage: Dict[str, Any]) -> str:
     """The project reading. First subject state present, in the documented
     order — so a project with one conflicting subject reads as conflicting
-    rather than being averaged into something calmer."""
-    if not states:
+    rather than being averaged into something calmer.
+
+    AUDIT FINDING, fixed here. This used to return `no_evidence` whenever there
+    were no SUBJECTS, which is a different question from whether there is any
+    EVIDENCE. A project whose only connector is one Korvix does not yet
+    understand — or whose activity is real but too thin to correlate — has
+    observations and no subjects, and the highest-priority line of the chat
+    prompt read:
+
+        "overall: nothing observed yet (from 2 observation(s) across 1 tool(s))"
+
+    which contradicts itself inside a single sentence. `no_evidence` now means
+    exactly what it says. "We saw activity and none of it settles anything" is
+    already a code in `correlation`'s vocabulary — `observed` — so this reuses
+    it rather than inventing a seventh state for the case."""
+    if not int(coverage.get("observations") or 0):
         return STATE_NO_EVIDENCE
     present = {_s(s.get("state"), 40) for s in states if isinstance(s, dict)}
     for code in _PROJECT_STATE_ORDER:
@@ -369,7 +384,7 @@ def synthesize(states: Sequence[Dict[str, Any]],
     return {
         "generated_at": _iso(when),
         "window_days": corr.CORRELATION_WINDOW_DAYS,
-        "state": _project_state(rows),
+        "state": _project_state(rows, coverage),
         "coverage": coverage,
         "open": [_reference(s) for s in open_rows[:MAX_OPEN]],
         "resolved_recently": [_reference(s) for s in resolved_rows[:MAX_RESOLVED]],

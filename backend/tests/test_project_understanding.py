@@ -638,3 +638,354 @@ def test_every_backend_code_is_translatable_in_every_shipped_language(
         keys = _locale_keys(language)
         absent = [mapping[code] for code in expected if mapping[code] not in keys]
         assert absent == [], f"{language} is missing: {absent}"
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# ADVERSARIAL REVIEW (pre-merge) — five defects, each reproduced before it
+# was fixed. Every test below FAILED on the first version of this layer.
+# ══════════════════════════════════════════════════════════════════════════
+
+def test_a_failed_deployment_does_not_relabel_a_feature_as_a_bug_fix():
+    """DEFECT 1. The change-kind classifier read the titles of DEPLOY and CI
+    events too, and those titles carry outcome words ("Production deployment
+    FAILED" contributes `fail`). A pull request titled "Add team invitations"
+    whose deployment failed was therefore classified as a BUG FIX: a textual
+    signal from one facet overwriting the structured identity of another.
+
+    Structure must win. The PR is a feature; the deployment failing is a fact
+    about the deployment."""
+    states = pi.project_states([
+        _slack("o1", "team invites rollout going out today",
+               at=NOW - timedelta(hours=5)),
+        _pr("o2", 900, "Add team invitations", head_ref="feat/team-invites",
+            at=NOW - timedelta(hours=3)),
+        _deploy("o3", "error", ref="feat/team-invites", at=NOW - timedelta(hours=1)),
+    ], now=NOW)
+    story = _by_subject(states)["team invite"]
+
+    assert _u(story)["change_kind"] == {"kind": interp.KIND_FEATURE,
+                                        "basis": "structural"}
+    # …and the deployment failure is still fully reported, as a deployment.
+    assert interp.IMP_PRODUCTION_BROKEN in _codes(_u(story)["implications"])
+
+    # The narrowed vocabulary is exactly the words attached to the CHANGE.
+    facets = story["facets"]
+    assert "fail" in interp._subject_tokens(story, facets)      # the wide set
+    assert "fail" not in interp._change_tokens(story, facets)   # the narrow one
+
+
+def test_a_genuine_fix_is_still_read_as_a_fix():
+    """The narrowing must not blind the classifier: a PR that says "Fix" is
+    still a bug fix, decided from the change's own words."""
+    states = pi.project_states([
+        _slack("o1", "payment webhook broken", at=NOW - timedelta(hours=5)),
+        _pr("o2", 712, "Fix payment webhook retry", at=NOW - timedelta(hours=3)),
+        _deploy("o3", "error", at=NOW - timedelta(hours=1)),
+    ], now=NOW)
+    assert _u(_by_subject(states)["payment webhook"])["change_kind"]["kind"] == \
+        interp.KIND_BUG
+
+
+def test_a_production_deploy_older_than_the_change_never_proves_it_live():
+    """DEFECT 2. A production deployment that succeeded EIGHT HOURS BEFORE the
+    merge cannot have shipped it, yet the reading said "the change landed and a
+    production deployment of it succeeded". Time is part of the proof."""
+    states = pi.project_states([
+        _slack("o0", "payment webhook broken", at=NOW - timedelta(hours=11)),
+        _deploy("o1", "ready", at=NOW - timedelta(hours=9)),      # BEFORE
+        _pr("o2", 712, "Fix payment webhook retry", at=NOW - timedelta(hours=1)),
+    ], now=NOW)
+    understanding = _u(_by_subject(states)["payment webhook"])
+    assert interp.IMP_VERIFIED_LIVE not in _codes(understanding["implications"])
+    assert interp.IMP_FIX_NOT_PROVEN_LIVE in _codes(understanding["implications"])
+    assert interp.UNC_PRODUCTION_UNVERIFIED in _codes(understanding["uncertainty"])
+
+
+def test_a_production_deploy_after_the_change_does_prove_it_live():
+    """The other side of DEFECT 2 — the guard must not make the layer mute."""
+    states = pi.project_states([
+        _slack("o0", "payment webhook broken", at=NOW - timedelta(hours=9)),
+        _pr("o1", 712, "Fix payment webhook retry", at=NOW - timedelta(hours=4)),
+        _deploy("o2", "ready", at=NOW - timedelta(hours=1)),      # AFTER
+    ], now=NOW)
+    understanding = _u(_by_subject(states)["payment webhook"])
+    assert interp.IMP_VERIFIED_LIVE in _codes(understanding["implications"])
+    assert interp.IMP_FIX_NOT_PROVEN_LIVE not in _codes(understanding["implications"])
+    assert interp.UNC_PRODUCTION_UNVERIFIED not in _codes(understanding["uncertainty"])
+
+
+def test_a_deployment_with_no_environment_is_unknown_and_never_called_a_preview():
+    """DEFECT 3. A GitHub deployment whose `environment` the provider left
+    empty was counted as non-production and reported as "the only successful
+    deployment was to a preview". We do not know that. It may have BEEN
+    production. Unknown is its own answer."""
+    states = pi.project_states([
+        _slack("o0", "payment webhook broken", at=NOW - timedelta(hours=5)),
+        _pr("o1", 712, "Fix payment webhook retry", at=NOW - timedelta(hours=3)),
+        _obs("o2", "github", "github.deployment_status.success",
+             "Deployment success",
+             {"repo": "acme/site", "environment": "", "state": "success",
+              "ref": "fix/payment-webhook"}, at=NOW - timedelta(hours=1)),
+    ], now=NOW)
+    understanding = _u(_by_subject(states)["payment webhook"])
+    assert interp.IMP_PREVIEW_ONLY_VERIFIED not in _codes(understanding["implications"])
+    assert interp.IMP_VERIFIED_LIVE not in _codes(understanding["implications"])
+    assert interp.UNC_PRODUCTION_UNVERIFIED in _codes(understanding["uncertainty"])
+    assert understanding["environments"] == []
+
+
+def test_a_real_preview_success_is_still_reported_as_preview_only():
+    """The other side of DEFECT 3: a NAMED non-production target still earns
+    the claim, so the narrowing did not cost a true statement."""
+    states = pi.project_states([
+        _slack("o0", "payment webhook broken", at=NOW - timedelta(hours=5)),
+        _pr("o1", 712, "Fix payment webhook retry", at=NOW - timedelta(hours=3)),
+        _deploy("o2", "ready", target="preview", at=NOW - timedelta(hours=1)),
+    ], now=NOW)
+    understanding = _u(_by_subject(states)["payment webhook"])
+    assert interp.IMP_PREVIEW_ONLY_VERIFIED in _codes(understanding["implications"])
+    assert interp.UNC_PRODUCTION_UNVERIFIED in _codes(understanding["uncertainty"])
+
+
+def test_two_providers_disagreeing_about_production_never_read_as_verified():
+    """DEFECT 4. GitHub reported a production deployment succeeded; Vercel
+    reported a later production deployment failed. They are different targets
+    to the supersession rule, so BOTH survived — and the reading emitted
+    `production_broken` and `verified_live` side by side, contradicting itself
+    inside one list. Disagreement proves nothing; it is a conflict."""
+    states = pi.project_states([
+        _slack("o0", "payment webhook broken", at=NOW - timedelta(hours=7)),
+        _pr("o1", 712, "Fix payment webhook retry", at=NOW - timedelta(hours=5)),
+        _obs("o2", "github", "github.deployment_status.success",
+             "Deployment success for production",
+             {"repo": "acme/site", "environment": "production",
+              "state": "success", "ref": "fix/payment-webhook"},
+             at=NOW - timedelta(hours=3)),
+        _deploy("o3", "error", at=NOW - timedelta(hours=1)),
+    ], now=NOW)
+    understanding = _u(_by_subject(states)["payment webhook"])
+    codes = _codes(understanding["implications"])
+    assert interp.IMP_PRODUCTION_BROKEN in codes
+    assert interp.IMP_FIX_NOT_PROVEN_LIVE in codes
+    assert interp.IMP_VERIFIED_LIVE not in codes
+
+
+def test_a_green_preview_beside_a_green_production_still_reads_as_live():
+    """Guard against over-correcting DEFECT 4: a FAILED PREVIEW must not
+    suppress a genuine production success. Preview says nothing about
+    production, in either direction."""
+    states = pi.project_states([
+        _slack("o0", "payment webhook broken", at=NOW - timedelta(hours=7)),
+        _pr("o1", 712, "Fix payment webhook retry", at=NOW - timedelta(hours=5)),
+        _deploy("o2", "error", target="preview", at=NOW - timedelta(hours=3)),
+        _deploy("o3", "ready", target="production", at=NOW - timedelta(hours=1)),
+    ], now=NOW)
+    understanding = _u(_by_subject(states)["payment webhook"])
+    assert interp.IMP_VERIFIED_LIVE in _codes(understanding["implications"])
+    assert interp.IMP_PRODUCTION_BROKEN not in _codes(understanding["implications"])
+    # The failed preview is still visible as what it is.
+    assert [b["environment"] for b in understanding["blockers"]] == [pev.ENV_PREVIEW]
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# The property that must hold for EVERY combination: an implication explains
+# the state, it never contradicts or redefines it.
+# ══════════════════════════════════════════════════════════════════════════
+
+#: (state, implication) pairs that would mean the interpretation layer had
+#: started running a second, disagreeing state machine.
+_FORBIDDEN = {
+    (corr.STATE_LIKELY_RESOLVED, interp.IMP_PRODUCTION_BROKEN),
+    (corr.STATE_LIKELY_RESOLVED, interp.IMP_BLOCKED_BY_CI),
+    (corr.STATE_LIKELY_RESOLVED, interp.IMP_ISSUE_OPEN),
+    (corr.STATE_UNRESOLVED, interp.IMP_VERIFIED_LIVE),
+    (corr.STATE_OBSERVED, interp.IMP_VERIFIED_LIVE),
+    (corr.STATE_OBSERVED, interp.IMP_PRODUCTION_BROKEN),
+    (corr.STATE_IN_PROGRESS, interp.IMP_VERIFIED_LIVE),
+    (corr.STATE_IN_PROGRESS, interp.IMP_PRODUCTION_BROKEN),
+}
+
+
+def _combinations():
+    """A deterministic sweep over the technical evidence shapes a project can
+    actually produce: code (none / open / merged) × production deploy (none /
+    ok-before / ok-after / failed) × preview (none / ok / failed) × CI (none /
+    pass / fail) × issue (none / open / closed)."""
+    code = {
+        "none": [],
+        "open": [_pr("c1", 1, "Fix payment webhook retry", "opened",
+                     at=NOW - timedelta(hours=6))],
+        "merged": [_pr("c1", 1, "Fix payment webhook retry", "merged",
+                       at=NOW - timedelta(hours=4))],
+    }
+    prod = {
+        "none": [],
+        "ok_before": [_deploy("d1", "ready", at=NOW - timedelta(hours=9))],
+        "ok_after": [_deploy("d1", "ready", at=NOW - timedelta(hours=1))],
+        "failed": [_deploy("d1", "error", at=NOW - timedelta(hours=1))],
+    }
+    preview = {
+        "none": [],
+        "ok": [_deploy("d2", "ready", target="preview", at=NOW - timedelta(hours=2))],
+        "failed": [_deploy("d2", "error", target="preview", at=NOW - timedelta(hours=2))],
+    }
+    ci = {
+        "none": [],
+        "pass": [_check("k1", "succeeded", at=NOW - timedelta(hours=3))],
+        "fail": [_check("k1", "failed", at=NOW - timedelta(hours=3))],
+    }
+    for a in code.values():
+        for b in prod.values():
+            for c in preview.values():
+                for d in ci.values():
+                    yield ([_slack("s1", "payment webhook broken",
+                                   at=NOW - timedelta(hours=11))]
+                           + a + b + c + d)
+
+
+def test_no_implication_ever_contradicts_the_state_correlation_decided():
+    """State is `correlation`'s answer and stays `correlation`'s answer.
+    Interpretation may EXPLAIN it; it may never quietly say something the
+    state denies. Swept over every evidence shape, not argued about."""
+    seen_pairs = set()
+    for rows in _combinations():
+        for state in pi.project_states(rows, now=NOW):
+            state_code = state["state"]
+            for code in _codes(_u(state)["implications"]):
+                seen_pairs.add((state_code, code))
+                assert (state_code, code) not in _FORBIDDEN, (
+                    f"{code} was emitted for state {state_code}")
+    # The sweep must genuinely have exercised the interesting readings, or the
+    # assertion above proves nothing.
+    assert (corr.STATE_LIKELY_RESOLVED, interp.IMP_VERIFIED_LIVE) in seen_pairs
+    assert (corr.STATE_CONFLICTING, interp.IMP_PRODUCTION_BROKEN) in seen_pairs
+    assert (corr.STATE_UNRESOLVED, interp.IMP_PRODUCTION_BROKEN) in seen_pairs
+
+
+def test_verified_live_is_only_ever_claimed_on_dated_unopposed_later_evidence():
+    """The full sweep, checked against the three conditions directly: a
+    production success, no production failure, and a timestamp at or after the
+    change. If any implementation ever satisfies `verified_live` without all
+    three, this fails."""
+    for rows in _combinations():
+        for state in pi.project_states(rows, now=NOW):
+            if interp.IMP_VERIFIED_LIVE not in _codes(_u(state)["implications"]):
+                continue
+            deploys = [f for f in state["facets"]
+                       if f["facet"] == pev.FACET_DEPLOY
+                       and f["environment"] == pev.ENV_PRODUCTION]
+            positives = [f for f in deploys if f["polarity"] == pev.POLARITY_POSITIVE]
+            assert positives, "verified_live with no production success"
+            assert not [f for f in deploys
+                        if f["polarity"] == pev.POLARITY_NEGATIVE], \
+                "verified_live despite a production failure"
+            landed = [f for f in state["facets"]
+                      if f["semantic_type"] == pev.SEM_CHANGE_LANDED]
+            assert landed, "verified_live with no landed change"
+            assert max(f["observed_at"] for f in positives) >= \
+                max(f["observed_at"] for f in landed), \
+                "verified_live on a deployment older than the change"
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# FALSE CORRELATION — a coherent story is not a reason to invent one
+# ══════════════════════════════════════════════════════════════════════════
+
+def _release_notes_vs_release_deploy():
+    return [
+        _slack("o1", "release notes draft is ready for review",
+               at=NOW - timedelta(hours=4)),
+        _deploy("o2", "error", ref="release/2.0", at=NOW - timedelta(hours=1)),
+    ]
+
+
+def _auth_email_vs_auth_middleware():
+    return [
+        _gmail("o1", "auth code for your login", at=NOW - timedelta(hours=4)),
+        _pr("o2", 5, "Rewrite auth middleware", head_ref="feat/auth-middleware",
+            at=NOW - timedelta(hours=1)),
+    ]
+
+
+def _checkout_copy_vs_checkout_api():
+    return [
+        _slack("o1", "checkout copy needs a rewrite", at=NOW - timedelta(hours=4)),
+        _pr("o2", 6, "Fix checkout API timeout", head_ref="fix/checkout-api",
+            at=NOW - timedelta(hours=1)),
+    ]
+
+
+def _migration_docs_vs_database_outage():
+    return [
+        _slack("o1", "database migration docs updated", at=NOW - timedelta(hours=4)),
+        _obs("o2", "github", "github.issue.opened",
+             "Issue #9 opened: database outage in eu-west",
+             {"repo": "acme/site", "number": 9, "title": "database outage in eu-west"},
+             at=NOW - timedelta(hours=1)),
+    ]
+
+
+@pytest.mark.parametrize("build,first,second", [
+    (_release_notes_vs_release_deploy, "o1", "o2"),
+    (_auth_email_vs_auth_middleware, "o1", "o2"),
+    (_checkout_copy_vs_checkout_api, "o1", "o2"),
+    (_migration_docs_vs_database_outage, "o1", "o2"),
+])
+def test_a_shared_generic_word_never_collapses_two_unrelated_things(
+        build, first, second):
+    """Scenario 3, widened. "release notes" and "release deployment", "auth
+    email" and "auth middleware", "checkout copy" and "checkout API",
+    "migration docs" and "database outage" — each pair shares a word and
+    nothing else.
+
+    The interpretation layer WANTS a coherent story, which is exactly why it
+    must not be allowed to produce one: a reader told that the checkout copy
+    rewrite is why the checkout API is timing out has been actively misled.
+    No subject may hold both observations."""
+    rows = build()
+    for state in pi.project_states(rows, now=NOW):
+        members = set(state["evidence_observation_ids"])
+        assert not {first, second} <= members, (
+            f"{state['subject']!r} collapsed two unrelated observations")
+        # …and no blocker on one story cites the other's row.
+        for blocker in _u(state)["blockers"]:
+            assert blocker["observation_id"] in members or not blocker["observation_id"]
+
+
+def test_no_evidence_means_no_evidence_and_never_contradicts_the_coverage():
+    """DEFECT 6, reproduced and fixed. The project state answered "are there
+    SUBJECTS?" while claiming to answer "is there EVIDENCE?". A project whose
+    only connector Korvix does not yet understand has real observations and no
+    subjects, and the highest-priority line of the chat prompt read:
+
+        "overall: nothing observed yet (from 2 observation(s) across 1 tool(s))"
+
+    — a sentence that contradicts itself. `observed` already means "we saw
+    things and none of them settle anything"; that is this case."""
+    rows = [
+        _obs("o1", "quantumdesk", "quantumdesk.ticket.opened", "Ticket 5 opened",
+             {"ticket": 5}, at=NOW - timedelta(hours=3)),
+        _obs("o2", "quantumdesk", "quantumdesk.ticket.closed", "Ticket 5 closed",
+             {"ticket": 5}, at=NOW - timedelta(hours=1)),
+    ]
+    understanding = pi.understand(rows, now=NOW)["synthesis"]
+    assert understanding["coverage"]["observations"] == 2
+    assert understanding["state"] == corr.STATE_OBSERVED
+    assert understanding["state"] != syn.STATE_NO_EVIDENCE
+
+    # …and the truly empty project is unchanged.
+    empty = pi.understand([], now=NOW)["synthesis"]
+    assert empty["state"] == syn.STATE_NO_EVIDENCE
+    assert empty["coverage"]["observations"] == 0
+
+
+def test_the_project_state_never_disagrees_with_its_own_coverage_block():
+    """The general form of DEFECT 6, swept: `no_evidence` may be reported if
+    and only if the coverage it is printed beside reports nothing."""
+    for rows in list(_combinations()) + [[], [None], ["nonsense"]]:
+        understanding = pi.understand(rows, now=NOW)["synthesis"]
+        observed = understanding["coverage"]["observations"]
+        if understanding["state"] == syn.STATE_NO_EVIDENCE:
+            assert observed == 0, "claimed no evidence beside a non-zero count"
+        else:
+            assert observed > 0, "claimed a reading with no evidence at all"

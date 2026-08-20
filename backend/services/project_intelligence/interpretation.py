@@ -61,7 +61,7 @@ tokens, ZERO provider calls, ZERO writes.
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Sequence, Set
 
 from backend.services.project_brain.attention import parse_iso
@@ -296,6 +296,42 @@ def _subject_tokens(state: Dict[str, Any], facets: Sequence[Dict[str, Any]]) -> 
     return tokens
 
 
+def _change_tokens(state: Dict[str, Any],
+                   facets: Sequence[Dict[str, Any]]) -> Set[str]:
+    """The vocabulary that describes THE CHANGE ITSELF — never its outcome.
+
+    AUDIT FINDING, fixed here. `_change_kind` used to read the same wide token
+    set `_areas` does, which includes the titles of DEPLOY and CI events. Those
+    titles are outcome reports, and they carry outcome words: "Production
+    deployment FAILED for korvix" contributes `fail`. So a pull request titled
+    "Add team invitations" whose deployment failed was classified as a BUG FIX
+    — a textual signal from one facet overwriting the structured identity of
+    another, which is precisely the inversion this layer must not make.
+
+    The words that describe a change are the ones attached to the change: the
+    correlated subject label (which, for a topic, two different sources had to
+    agree on before it existed at all) and the titles of the CODE / ISSUE
+    facets. A deploy failing says something about the deployment, not about
+    whether the work was a feature or a fix.
+
+    `_areas` deliberately keeps the WIDER set. An area is an additive label —
+    several can be true at once, and a deploy title naming a service is real
+    evidence about which surface is involved. A change kind is a single
+    exclusive verdict, so a wrong word there produces a wrong statement rather
+    than an extra true one."""
+    texts: List[str] = [_s(state.get("subject"), 200)]
+    for row in facets:
+        if len(texts) > MAX_TEXT_SOURCES:
+            break
+        if _s(row.get("facet"), 24) in (ev.FACET_CODE, ev.FACET_ISSUE):
+            texts.append(_s(row.get("title"), 200))
+    tokens: Set[str] = set()
+    for text in texts:
+        if text:
+            tokens.update(k.tokenize(text))
+    return tokens
+
+
 def _areas(state: Dict[str, Any], facets: Sequence[Dict[str, Any]],
            tokens: Set[str]) -> List[Dict[str, str]]:
     """The project surfaces this subject touches, structural evidence first.
@@ -374,19 +410,31 @@ def _change_kind(state: Dict[str, Any], facets: Sequence[Dict[str, Any]],
 # ── the deployment reading (the flagship distinction) ────────────────────────
 
 class _Deployment:
-    """What the deploy facets actually prove, per environment.
+    """What the deploy facets actually prove, per environment AND per instant.
 
-    The whole point of keeping `environment` on an event: a green PREVIEW is
-    not evidence about PRODUCTION, and an unlabelled deploy is not evidence
-    about production either."""
+    Three distinctions this class exists to keep, each of which was found to be
+    collapsible without it:
 
-    __slots__ = ("production_ok", "production_failed", "other_ok",
+    ENVIRONMENT. A green PREVIEW is not evidence about PRODUCTION.
+
+    UNKNOWN IS NOT PREVIEW. A deployment whose environment the provider did not
+    report (a GitHub deployment with an empty `environment`) proves nothing
+    about production — but it is equally not proof of a PREVIEW. It is tracked
+    separately so it can support neither claim, rather than being counted as
+    non-production and reported as "only a preview succeeded".
+
+    TIME. A production deployment that happened BEFORE the change landed cannot
+    have shipped that change. Treating it as proof produced "the change landed
+    and a production deployment of it succeeded" for a deploy eight hours older
+    than the merge."""
+
+    __slots__ = ("production_ok_at", "production_failed", "known_other_ok",
                  "pending", "any_deploy", "environments")
 
     def __init__(self, facets: Sequence[Dict[str, Any]]) -> None:
-        self.production_ok = False
+        self.production_ok_at: Optional[datetime] = None
         self.production_failed = False
-        self.other_ok = False
+        self.known_other_ok = False
         self.pending = False
         self.any_deploy = False
         self.environments: List[str] = []
@@ -401,9 +449,22 @@ class _Deployment:
             production = environment == ev.ENV_PRODUCTION
             if polarity == ev.POLARITY_POSITIVE:
                 if production:
-                    self.production_ok = True
-                else:
-                    self.other_ok = True
+                    when = parse_iso(row.get("observed_at"))
+                    if when is not None and (self.production_ok_at is None
+                                             or when > self.production_ok_at):
+                        self.production_ok_at = when
+                    elif when is None and self.production_ok_at is None:
+                        # Undated but real. Recorded as production evidence so
+                        # `production_unknown` is honest, and it can never
+                        # satisfy the ordering test below.
+                        self.production_ok_at = _UNDATED
+                elif environment:
+                    self.known_other_ok = True
+                # A success on an UNNAMED environment sets nothing on purpose.
+                # It leaves `production_unknown` true (it may have been
+                # production) and `known_other_ok` false (it may not have
+                # been), so it can support neither claim. `any_deploy` still
+                # records that a deployment happened at all.
             elif polarity == ev.POLARITY_NEGATIVE and production:
                 self.production_failed = True
                 # A FAILED non-production deploy is deliberately not tracked
@@ -414,11 +475,53 @@ class _Deployment:
                 self.pending = True
 
     @property
+    def production_ok(self) -> bool:
+        return self.production_ok_at is not None
+
+    @property
     def production_unknown(self) -> bool:
+        """No production word at all, in either direction."""
         return not (self.production_ok or self.production_failed)
+
+    def proves_live(self, code_landed_at: Optional[datetime]) -> bool:
+        """Does the evidence prove THIS change reached production?
+
+        Three conditions, all required: a production deploy succeeded, no
+        production deploy reads negative (providers that disagree about
+        production prove nothing — they conflict), and the success is not older
+        than the change it is supposed to have shipped."""
+        if not self.production_ok or self.production_failed:
+            return False
+        if self.production_ok_at is _UNDATED:
+            return False
+        if code_landed_at is None:
+            return True          # nothing to be older than
+        return self.production_ok_at >= code_landed_at
+
+
+#: Sentinel for "a real production success we cannot date". It is production
+#: evidence (so the state is not "unknown") but it can never satisfy an
+#: ordering test, so it can never be mistaken for proof.
+_UNDATED = datetime.min.replace(tzinfo=timezone.utc)
 
 
 # ── implications, uncertainty, blockers ──────────────────────────────────────
+
+def _code_landed_at(facets: Sequence[Dict[str, Any]]) -> "tuple[bool, Optional[datetime]]":
+    """`(a change landed, when the newest one landed)`. The timestamp may be
+    None for a landed change we cannot date — which makes the ordering test
+    below unenforceable, so it is skipped rather than guessed."""
+    landed = False
+    when: Optional[datetime] = None
+    for row in facets:
+        if _s(row.get("semantic_type"), 40) != ev.SEM_CHANGE_LANDED:
+            continue
+        landed = True
+        stamp = parse_iso(row.get("observed_at"))
+        if stamp is not None and (when is None or stamp > when):
+            when = stamp
+    return landed, when
+
 
 def _implications(state: Dict[str, Any], facets: Sequence[Dict[str, Any]],
                   deployment: _Deployment) -> List[Dict[str, Any]]:
@@ -428,8 +531,8 @@ def _implications(state: Dict[str, Any], facets: Sequence[Dict[str, Any]],
     def add(code: str, **params: Any) -> None:
         found.setdefault(code, {"code": code, **params})
 
-    code_landed = any(_s(r.get("semantic_type"), 40) == ev.SEM_CHANGE_LANDED
-                      for r in facets)
+    code_landed, landed_at = _code_landed_at(facets)
+    proven_live = deployment.proves_live(landed_at)
     code_pending = any(_s(r.get("facet"), 24) == ev.FACET_CODE
                        and _s(r.get("polarity"), 16) == ev.POLARITY_PENDING
                        for r in facets)
@@ -447,12 +550,15 @@ def _implications(state: Dict[str, Any], facets: Sequence[Dict[str, Any]],
         add(IMP_RECURRENCE)
     if deployment.production_failed:
         add(IMP_PRODUCTION_BROKEN)
-    if code_landed and (deployment.production_failed or deployment.production_unknown):
-        # The change exists. Nothing proves it reached production.
+    if code_landed and not proven_live:
+        # The change exists. Nothing proves it reached production — because
+        # production failed, because production said nothing, because the two
+        # providers disagree, or because the success predates the change.
         add(IMP_FIX_NOT_PROVEN_LIVE)
-    if code_landed and deployment.production_ok:
+    if code_landed and proven_live:
         add(IMP_VERIFIED_LIVE)
-    if deployment.other_ok and deployment.production_unknown:
+    if deployment.known_other_ok and deployment.production_unknown:
+        # Only claimable when a NON-production environment was actually named.
         add(IMP_PREVIEW_ONLY_VERIFIED,
             environments=[e for e in deployment.environments
                           if e != ev.ENV_PRODUCTION][:2])
@@ -484,9 +590,14 @@ def _uncertainty(state: Dict[str, Any], facets: Sequence[Dict[str, Any]],
     if _s(state.get("state"), 40) == corr.STATE_CONFLICTING:
         add(UNC_CONFLICTING_EVIDENCE)
 
-    code_landed = any(_s(r.get("semantic_type"), 40) == ev.SEM_CHANGE_LANDED
-                      for r in facets)
-    if code_landed and deployment.production_unknown:
+    code_landed, landed_at = _code_landed_at(facets)
+    # Not merely "production said nothing": also a production success that
+    # cannot have carried this change (it predates it), and one contradicted by
+    # a failure. When production is outright RED, `production_broken` already
+    # states it and this code — whose phrase is "no production evidence either
+    # way" — would be the wrong sentence.
+    if (code_landed and not deployment.production_failed
+            and not deployment.proves_live(landed_at)):
         add(UNC_PRODUCTION_UNVERIFIED,
             deploy_evidence=bool(deployment.any_deploy))
     if deployment.pending and deployment.production_unknown:
@@ -591,7 +702,10 @@ def interpret(state: Dict[str, Any]) -> Dict[str, Any]:
         # The canonical identity is the correlation's, never a second one.
         "id": _s(state.get("id"), 64),
         "areas": areas,
-        "change_kind": _change_kind(state, facets, tokens),
+        # NOTE the DIFFERENT token set — see `_change_tokens`. An area may be
+        # revealed by any evidence title; a change kind may only be decided by
+        # the words attached to the change itself.
+        "change_kind": _change_kind(state, facets, _change_tokens(state, facets)),
         "environments": deployment.environments[:3],
         "implications": _implications(state, facets, deployment),
         "uncertainty": _uncertainty(state, facets, deployment, areas),
