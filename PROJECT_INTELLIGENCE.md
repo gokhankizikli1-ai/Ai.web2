@@ -77,6 +77,21 @@ ASCII, so `webhook'a bakıyor` tokenizes correctly), and passed through a small
 manufactures false matches, which is the one failure mode this layer cannot
 have.
 
+### Turkish agglutinative spellings
+
+Turkish glues case/possessive/plural endings onto the noun, and the apostrophe
+that would separate them is only *required* for proper nouns. So the same
+webhook is written `webhook'a`, `webhookta`, `webhooku`, `webhooklarda` — and
+only the apostrophe forms split correctly on punctuation alone.
+
+Blind suffix stripping is not an option: `update`, `site` and `release` all end
+in `-e`. So a suffix comes off **only when the stem is independently attested in
+the same project's own text** — `webhookta` folds onto `webhook` only because
+some other observation actually wrote `webhook`. Over-collapse is therefore
+structurally impossible rather than merely unlikely: a fold cannot invent a stem
+the project never used. This is a lookup against observed vocabulary, not a
+stemmer, and it raises recall without lowering the two-source corroboration bar.
+
 Resolution is a union-find over a bounded key set. There is no pairwise pass:
 cost is `O(events × keys-per-event)`, and keys-per-event is capped.
 
@@ -164,7 +179,8 @@ Slack channel id).
 | correlation window | 14 days (matches `attention.MAX_AGE_DAYS`) |
 | states returned | 8 (workspace shows 5, brain 4) |
 | evidence rows per list | 4 |
-| evidence ids per state | 12 |
+| evidence ids per state (public payload) | 12 |
+| membership index (backend-only) | the projection's observation cap |
 | text scanned per observation | 400 chars |
 | topic keys per observation | 4 |
 
@@ -181,11 +197,30 @@ queries — it correlates rows the page had already read.
   never reached project chat.
 - **`candidate_synthesis`** — a correlated state produces one evidence-backed
   candidate ("Investigate payment webhook — conflicting evidence") whose
-  confidence is the correlation's own score rather than a hardcoded `0.5`, and
-  every raw observation already evidencing it is suppressed so dedup converges
-  on the subject. Promotion still requires `unresolved`/`conflicting` **and**
-  corroboration — noise stays noise, and a lone signal falls through to the
-  unchanged path.
+  confidence is the correlation's own score rather than a hardcoded `0.5`.
+
+  Two separate questions govern it, and conflating them leaked stale work:
+
+  | question | answered by |
+  |---|---|
+  | has this row already been accounted for? | subject **membership** |
+  | is there anything to do about it? | the subject's **current state** |
+
+  Once a row is a member of a real subject, the legacy per-observation path does
+  not run for it *whatever that subject's state turns out to be*. The subject
+  then speaks for all its members: `unresolved`/`conflicting` yields **one**
+  candidate, `likely_resolved`/`in_progress`/`observed` yields **none**. That is
+  what stops a deploy failure proposing work hours after a later deploy to the
+  same target went green, and what stops six failures of one target proposing
+  six investigations.
+
+  Membership comes from the authority's **complete** index
+  (`project_states_with_membership`), never from a state's capped public
+  `evidence_observation_ids` — members past that cap would look
+  unaccounted-for and be handled twice. A subject must group at least
+  `MIN_SUBJECT_MEMBERS` distinct observations to claim membership, so a thin
+  reading can never silence the row it was built from and a genuinely
+  uncorrelated signal still reaches the legacy path.
 - **Workspace** — adds `project_state` and lets each Needs-Attention row name
   the story it belongs to. It is **not** a second ranking system: order,
   membership and severity are untouched.

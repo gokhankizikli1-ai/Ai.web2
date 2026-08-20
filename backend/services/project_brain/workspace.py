@@ -514,7 +514,7 @@ def _build_activity(observations: List[dict], chats: List[dict],
 
 
 def _link_attention_to_state(attention: List[dict],
-                             states: List[dict]) -> None:
+                             membership: Dict[str, dict]) -> None:
     """Tell each Needs-Attention row which correlated story it belongs to.
 
     ENRICHMENT ONLY — in place, and deliberately nothing else. The list keeps
@@ -524,15 +524,16 @@ def _link_attention_to_state(attention: List[dict],
     evidence, 3 sources)" instead of an alarm with no story around it.
 
     Matching is by the observation id each side already carries, so it is exact
-    and costs no re-classification."""
-    if not (attention and states):
+    and costs no re-classification.
+
+    `membership` is the correlation authority's COMPLETE member index, not a
+    state's public `evidence_observation_ids` — that list is capped for payload
+    size, so an alarm whose row happened to sort past the cap would silently
+    render with no story attached even though the layer had understood it."""
+    if not (attention and membership):
         return
-    by_observation: Dict[str, dict] = {}
-    for state in states:
-        for observation_id in state.get("evidence_observation_ids") or []:
-            by_observation.setdefault(str(observation_id), state)
     for item in attention:
-        state = by_observation.get(_s(item.get("observation_id"), 64))
+        state = membership.get(_s(item.get("observation_id"), 64))
         if not state:
             continue
         item["state_id"] = _s(state.get("id"), 64)
@@ -607,13 +608,14 @@ def build(user_id: str, project_id: str, *,
     # understands the project without issuing a single extra query, calling a
     # provider, or spending a token. Pure and fail-soft like every other slice.
     project_state: List[dict] = []
+    state_membership: Dict[str, dict] = {}
     try:
         from backend.services import project_intelligence as pi
-        project_state = pi.project_states(observations, now=when,
-                                          limit=_MAX_PROJECT_STATE)
+        project_state, state_membership = pi.project_states_with_membership(
+            observations, now=when, limit=_MAX_PROJECT_STATE)
     except Exception as exc:
         logger.debug("project_workspace: project intelligence unavailable: %s", exc)
-    _link_attention_to_state(attention, project_state)
+    _link_attention_to_state(attention, state_membership)
 
     activity = _build_activity(observations, chats, products, tasks, knowledge)
 

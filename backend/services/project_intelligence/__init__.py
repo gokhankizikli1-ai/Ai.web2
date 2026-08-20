@@ -63,9 +63,9 @@ from backend.services.project_intelligence.correlation import (
     CORRELATION_WINDOW_DAYS, ENTITY_CHANGE, ENTITY_CI, ENTITY_DEPLOYMENT,
     ENTITY_ISSUE, ENTITY_MEETING, ENTITY_PULL_REQUEST, ENTITY_TOPIC,
     MAX_EVIDENCE, MAX_EVIDENCE_IDS, MAX_OBSERVATIONS, MAX_STATES,
-    MIN_CORROBORATED_EVIDENCE,
+    MIN_CORROBORATED_EVIDENCE, MIN_SUBJECT_MEMBERS,
     STATE_CONFLICTING, STATE_IN_PROGRESS, STATE_LIKELY_RESOLVED,
-    STATE_OBSERVED, STATE_UNRESOLVED, correlate,
+    STATE_OBSERVED, STATE_UNRESOLVED, correlate, correlate_with_membership,
 )
 
 logger = logging.getLogger(__name__)
@@ -88,6 +88,27 @@ def project_states(
     except Exception as exc:      # pragma: no cover — never break a caller
         logger.debug("project_intelligence.project_states failed: %s", exc)
         return []
+
+
+def project_states_with_membership(
+    observations: Sequence[Dict[str, Any]],
+    *,
+    now: Optional[datetime] = None,
+    limit: int = MAX_STATES,
+) -> "tuple[List[Dict[str, Any]], Dict[str, Dict[str, Any]]]":
+    """`(states, membership)` for a backend consumer that must know which rows a
+    subject already speaks for — see `correlation.correlate_with_membership`.
+
+    Use this instead of `project_states` wherever an OLDER path would otherwise
+    act on a raw observation as though this layer did not exist. Fail-soft:
+    any problem yields `([], {})`, which degrades to the legacy behaviour rather
+    than silently swallowing signals."""
+    try:
+        return correlate_with_membership(observations, now=now, limit=limit)
+    except Exception as exc:      # pragma: no cover — never break a caller
+        logger.debug("project_intelligence.project_states_with_membership "
+                     "failed: %s", exc)
+        return [], {}
 
 
 def for_project(
@@ -134,5 +155,7 @@ __all__ = [
     "ENTITY_DEPLOYMENT", "ENTITY_CI", "ENTITY_MEETING",
     "MAX_STATES", "MAX_EVIDENCE", "MAX_EVIDENCE_IDS", "MAX_OBSERVATIONS",
     "CORRELATION_WINDOW_DAYS", "MIN_CORROBORATED_EVIDENCE",
-    "project_states", "for_project", "open_states", "correlate",
+    "MIN_SUBJECT_MEMBERS",
+    "project_states", "project_states_with_membership", "for_project",
+    "open_states", "correlate", "correlate_with_membership",
 ]

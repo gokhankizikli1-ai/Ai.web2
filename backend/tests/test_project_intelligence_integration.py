@@ -499,3 +499,196 @@ def test_the_workspace_pays_nothing_extra_for_understanding(env, monkeypatch):
 
     assert with_states == without_states, (
         f"correlating cost {with_states - without_states} extra statements")
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# STALE-CANDIDATE LEAK — the legacy path must respect the CURRENT state
+# ══════════════════════════════════════════════════════════════════════════
+#
+# These pin the rule that the older per-observation path may not act as though
+# the correlation layer does not exist. Each case below produced a wrong
+# candidate before the membership/promotion split.
+
+def _prod_deploy(env, verb, ext, at, importance, ref="fix/checkout-flow",
+                 target="production"):
+    label = "Production" if target == "production" else "Preview"
+    word = "FAILED" if verb == "error" else "succeeded"
+    return _record(
+        env, source="vercel", kind=f"vercel.deployment.{verb}",
+        summary=f"{label} deployment {word} for korvix ({ref})",
+        payload={"vercel_project_id": "prj_1", "project_name": "korvix",
+                 "target": target, "state": verb.upper(),
+                 "git": {"repo": "acme/site", "ref": ref}},
+        ext=ext, importance=importance, at=at)
+
+
+def _titles(env):
+    return [c["title"] for c in env["cas"].list_candidate_actions("pA")]
+
+
+def test_an_old_failed_deploy_proposes_nothing_after_a_newer_success(env):
+    """THE LEAK. The failure is HIGH importance and would previously have
+    produced "Act on: Production deployment FAILED" — hours after a later
+    deploy to the SAME production target went green."""
+    _prod_deploy(env, "error", "d1", NOW - timedelta(hours=5), "high")
+    _prod_deploy(env, "ready", "d2", NOW - timedelta(hours=1), "normal")
+
+    state = pi.for_project("uA", "pA", now=NOW)[0]
+    assert state["state"] == pi.STATE_LIKELY_RESOLVED
+
+    env["synth"].synthesize_candidates("pA", "uA")
+    assert _titles(env) == [], "stale work proposed for a resolved subject"
+
+
+def test_a_resolved_multi_source_subject_proposes_nothing_from_its_old_rows(env):
+    """Same rule with a corroborated, multi-source subject."""
+    _payment_webhook_story(env)                       # ends on a FAILED deploy
+    _record(env, source="vercel", kind="vercel.deployment.ready",
+            summary="Production deployment succeeded for korvix (fix/payment-webhook)",
+            payload={"vercel_project_id": "prj_1", "project_name": "korvix",
+                     "target": "production", "state": "READY",
+                     "git": {"repo": "acme/site", "ref": "fix/payment-webhook"}},
+            ext="green", at=NOW)
+
+    state = [s for s in pi.for_project("uA", "pA", now=NOW)
+             if s["subject"] == "payment webhook"][0]
+    assert state["state"] == pi.STATE_LIKELY_RESOLVED
+
+    env["synth"].synthesize_candidates("pA", "uA")
+    assert not any(t.startswith("Act on:") for t in _titles(env)), _titles(env)
+
+
+def test_an_unresolved_subject_yields_exactly_one_intelligence_candidate(env):
+    _payment_webhook_story(env, deploy_verb="error")
+    _record(env, source="github", kind="github.issue.opened",
+            summary="Issue #9 opened: payment webhook drops events",
+            payload={"repo": "acme/site", "number": 9,
+                     "title": "payment webhook drops events"},
+            ext="iss", at=NOW - timedelta(hours=2))
+    env["synth"].synthesize_candidates("pA", "uA")
+    titles = _titles(env)
+    assert len(titles) == 1, titles
+    assert titles[0].startswith("Investigate")
+
+
+def test_a_conflicting_subject_yields_exactly_one_intelligence_candidate(env):
+    _payment_webhook_story(env)          # merged PR + FAILED prod deploy
+    env["synth"].synthesize_candidates("pA", "uA")
+    titles = _titles(env)
+    assert len(titles) == 1, titles
+    assert "conflicting evidence" in titles[0]
+
+
+def test_one_target_failing_repeatedly_is_one_problem_not_many(env):
+    """Six failed deploys of a single production target are one recurring
+    problem. Previously this produced SIX "Act on:" candidates."""
+    for i in range(6):
+        _prod_deploy(env, "error", f"dep{i}", NOW - timedelta(hours=6 - i), "high")
+    env["synth"].synthesize_candidates("pA", "uA")
+    titles = _titles(env)
+    assert len(titles) == 1, titles
+    assert titles[0].startswith("Investigate")
+
+
+def test_a_promoted_subject_never_also_emits_a_legacy_candidate(env):
+    """Regression on the CAP: `evidence_observation_ids` is bounded, so a
+    subject with more members than the cap used to leak the overflow rows into
+    the legacy path — emitting the correlated candidate AND duplicates of it."""
+    _record(env, source="slack", kind="slack.message.created",
+            summary="#eng: payment webhook broken",
+            payload={"channel_id": "C1", "text": "payment webhook is broken",
+                     "ts": "1"}, ext="s0", at=NOW - timedelta(days=1))
+    for i in range(20):
+        _record(env, source="github", kind="github.commit.pushed",
+                summary=f"Commit {i}: payment webhook retry work",
+                payload={"repo": "acme/site", "sha": f"{i:040x}",
+                         "message": "payment webhook retry work"},
+                ext=f"c{i}", at=NOW - timedelta(hours=20 - i))
+    for i in range(6):
+        _prod_deploy(env, "error", f"vd{i}", NOW - timedelta(hours=6 - i), "high",
+                     ref="fix/payment-webhook")
+
+    state = [s for s in pi.for_project("uA", "pA", now=NOW)
+             if s["subject"] == "payment webhook"][0]
+    assert state["member_count"] > len(state["evidence_observation_ids"]), (
+        "this test is only meaningful when members exceed the public id cap")
+
+    env["synth"].synthesize_candidates("pA", "uA")
+    titles = _titles(env)
+    assert len(titles) == 1, titles
+    assert not any(t.startswith("Act on:") for t in titles)
+
+
+def test_a_lone_uncorrelated_high_importance_signal_still_uses_the_legacy_path(env):
+    """The other half of the rule: suppression requires REAL membership, so a
+    signal that correlates with nothing must still be proposed."""
+    _record(env, source="github", kind="github.check.failed",
+            summary="CI 'build-and-test' failed on main",
+            payload={"repo": "acme/site", "run_id": 900, "name": "build-and-test",
+                     "conclusion": "failure", "branch": "main"},
+            ext="ci1", importance="high", at=NOW - timedelta(hours=1))
+    created = env["synth"].synthesize_candidates("pA", "uA")
+    assert created
+    titles = _titles(env)
+    assert len(titles) == 1 and titles[0].startswith("Act on:"), titles
+
+
+def test_a_singleton_subject_never_silences_the_row_it_was_built_from(env):
+    """A subject that groups only ONE observation is not a correlation — it is
+    that observation restated. It must not be allowed to suppress it."""
+    _prod_deploy(env, "error", "solo", NOW - timedelta(hours=1), "high")
+    states = pi.for_project("uA", "pA", now=NOW)
+    assert states and states[0]["member_count"] == 1
+    env["synth"].synthesize_candidates("pA", "uA")
+    assert any(t.startswith("Act on:") for t in _titles(env)), _titles(env)
+
+
+def test_malformed_and_unattributable_rows_cause_no_accidental_suppression(env):
+    """A row from an unknown connector, or one with no usable content, cannot
+    join a subject — so it cannot be silenced by one, and a real
+    high-importance signal alongside it is still proposed."""
+    env["obs"].record_observation(
+        user_id="uA", project_id="pA", source="mystery",
+        kind="mystery.thing.happened", summary="", payload={},
+        external_id="m0", importance="high",
+        observed_at=_iso(NOW - timedelta(hours=2)))
+    _record(env, source="zapier", kind="zapier.zap.ran", summary="a zap ran",
+            ext="z1", importance="high", at=NOW)
+    _prod_deploy(env, "error", "solo", NOW - timedelta(hours=1), "high")
+    env["synth"].synthesize_candidates("pA", "uA")
+    # The zapier row, the mystery row and the deploy failure are each alone —
+    # none of them is a member of anything, so none of them is suppressed.
+    assert len([t for t in _titles(env) if t.startswith("Act on:")]) == 3
+
+
+def test_the_membership_index_is_complete_where_the_public_id_list_is_capped(env):
+    """The index the suppression decision uses must cover EVERY member, not the
+    bounded list that travels in payloads."""
+    _record(env, source="slack", kind="slack.message.created",
+            summary="#eng: payment webhook broken",
+            payload={"channel_id": "C1", "text": "payment webhook is broken",
+                     "ts": "1"}, ext="s0", at=NOW - timedelta(days=1))
+    for i in range(20):
+        _record(env, source="github", kind="github.commit.pushed",
+                summary=f"Commit {i}: payment webhook retry work",
+                payload={"repo": "acme/site", "sha": f"{i:040x}",
+                         "message": "payment webhook retry work"},
+                ext=f"c{i}", at=NOW - timedelta(hours=20 - i))
+
+    rows = env["obs"].list_observations("pA", user_id="uA")
+    states, membership = pi.project_states_with_membership(rows, now=NOW)
+    biggest = max(states, key=lambda s: s["member_count"])
+    assert len(biggest["evidence_observation_ids"]) <= pi.MAX_EVIDENCE_IDS
+    covered = [o for o in rows if o["id"] in membership]
+    assert len(covered) > pi.MAX_EVIDENCE_IDS, (
+        "membership must exceed the public cap, or it cannot fix the leak")
+
+
+def test_the_supervisor_reads_only_the_owners_observations(env):
+    """Same scoping class as candidate synthesis: the assessment RETURNS these
+    rows, so they must be owner-scoped."""
+    from backend.services.orchestrator import project_supervisor as sup
+    _payment_webhook_story(env, user="uB", project="pA")
+    assessment = sup.assess_business_brain(None, project_id="pA", user_id="uA",
+                                           learnings=[])
+    assert assessment["observations"] == []

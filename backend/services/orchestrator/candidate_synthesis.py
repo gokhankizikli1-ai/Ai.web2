@@ -49,10 +49,36 @@ WHAT DID NOT CHANGE — and must not
   * Still nothing is created at ingestion. `record_observation` does not call
     this, and this is still only reached when a caller explicitly asks.
   * Correlation is NOT promotion. A state is promoted only when it describes a
-    live problem (unresolved / conflicting) AND is corroborated by at least two
-    independent sources. A quiet or resolved subject produces no candidate, and
-    a lone uncorroborated signal falls through to the unchanged
+    live problem (unresolved / conflicting) AND the subject is substantiated —
+    either corroborated across sources, or grouping several observations of the
+    same recurring problem. A quiet or resolved subject produces no candidate,
+    and a lone uncorroborated signal falls through to the unchanged
     high-importance path — noise stays noise.
+
+MEMBERSHIP DECIDES SUPPRESSION; THE SUBJECT'S STATE DECIDES PROMOTION
+---------------------------------------------------------------------
+These are two different questions and conflating them leaked stale work:
+
+    "has this row already been accounted for?"   → subject MEMBERSHIP
+    "is there something to do about it?"         → the subject's CURRENT state
+
+Once a row is a member of a real correlated subject, the legacy per-observation
+path does not run for it — whatever that subject's state turns out to be. The
+subject then speaks for all of its members: `unresolved`/`conflicting` yields
+ONE evidence-backed candidate, while `likely_resolved`/`in_progress`/`observed`
+yields none.
+
+That is what stops a deploy failure from proposing work hours after a later
+deploy to the same target went green, and what stops six failures of one target
+from proposing six investigations of one problem.
+
+Membership comes from the correlation authority's own complete index
+(`project_intelligence.project_states_with_membership`) — never from a state's
+public, CAPPED `evidence_observation_ids`, whose members past the cap would
+look unaccounted-for and be handled twice. A subject must group at least
+`MIN_SUBJECT_MEMBERS` distinct observations to claim membership at all, so a
+thin or accidental reading can never silence the row it was built from, and a
+genuinely uncorrelated signal still reaches the legacy path.
 """
 from __future__ import annotations
 
@@ -101,6 +127,40 @@ def _impact_from_pct(pct: Optional[float]) -> str:
 #: Inferred states worth proposing work about. A resolved or merely observed
 #: subject is understanding, not a to-do.
 _PROMOTABLE_STATES = ("unresolved", "conflicting")
+
+
+def _member_count(state: dict) -> int:
+    """How many stored observations this subject speaks for. Falls back to the
+    public capped id list for an INJECTED state that predates the field."""
+    try:
+        count = int(state.get("member_count") or 0)
+    except (TypeError, ValueError):
+        count = 0
+    return count or len(state.get("evidence_observation_ids") or [])
+
+
+#: Mirrors `project_intelligence.MIN_SUBJECT_MEMBERS`. Read from the authority
+#: at call time so the two cannot drift, with a local fallback so this module
+#: stays fail-soft if the projection is unavailable (every other path here
+#: degrades rather than raising, and this one must too).
+_MIN_SUBJECT_MEMBERS_FALLBACK = 2
+
+
+def _min_subject_members() -> int:
+    try:
+        from backend.services.project_intelligence import MIN_SUBJECT_MEMBERS
+        return int(MIN_SUBJECT_MEMBERS)
+    except Exception:  # pragma: no cover — defensive
+        return _MIN_SUBJECT_MEMBERS_FALLBACK
+
+
+def _is_substantiated(state: dict) -> bool:
+    """A subject may propose work when it is corroborated across sources, OR
+    when it groups several observations of one recurring problem (six failed
+    deploys of a single target are one problem, not six, and are still worth
+    raising even though only one tool reported them)."""
+    return (bool(state.get("corroborated"))
+            or _member_count(state) >= _min_subject_members())
 
 #: Correlated states → the impact level of the candidate they justify. Coarse
 #: and honest, consistent with the rest of the candidate dimensions.
@@ -216,30 +276,35 @@ def synthesize_candidates(
 
     # ── Correlated project states → EVIDENCE-BACKED candidates ───────────
     # Derived from the observations already in hand. Pure computation.
+    # `membership` maps an observation id → the subject that speaks for it. It
+    # is the COMPLETE index over the states below, not a state's capped public
+    # id list — see the module docstring on why that distinction is the whole
+    # fix. An injected `intelligence` (tests) falls back to the public ids.
+    membership: Dict[str, dict] = {}
     if intelligence is None:
         try:
             from backend.services import project_intelligence as pi
-            intelligence = pi.project_states(observations or [])
+            intelligence, membership = pi.project_states_with_membership(
+                observations or [], limit=max_candidates)
         except Exception:  # pragma: no cover — never block on a projection
-            intelligence = []
-
-    # Observations already accounted for by a promoted state. Their raw
-    # "Act on:" candidates are suppressed below so one real-world problem
-    # yields ONE candidate rather than one per event that evidenced it.
-    covered_observations: set = set()
+            intelligence, membership = [], {}
+    else:
+        for state in intelligence or []:
+            if not isinstance(state, dict) or not _is_substantiated(state):
+                continue
+            for observation_id in state.get("evidence_observation_ids") or []:
+                membership.setdefault(str(observation_id), state)
 
     for state in (intelligence or [])[:max_candidates]:
         if not isinstance(state, dict):
             continue
         if str(state.get("state")) not in _PROMOTABLE_STATES:
             continue    # resolved / in-progress / merely observed proposes nothing
-        if not state.get("corroborated"):
+        if not _is_substantiated(state):
             continue    # a lone uncorroborated signal is not a finding
         state_id = str(state.get("id") or "")
         if not state_id:
             continue
-        covered_observations.update(
-            str(o) for o in (state.get("evidence_observation_ids") or []))
         aligned = _primary_goal(goals)
         confidence = (state.get("confidence") or {}).get("score")
         cid = cas.record_candidate_action(
@@ -296,11 +361,17 @@ def synthesize_candidates(
         if str(o.get("importance")) != "high":
             continue   # normal/low importance is retained, NOT promoted
         oid = o.get("id")
-        if oid and str(oid) in covered_observations:
-            # Already evidence for a correlated candidate above. Emitting
-            # "Act on: Deployment failed" alongside "Investigate payment
-            # webhook — conflicting evidence" would be the same problem twice,
-            # with the poorer of the two descriptions.
+        if oid and str(oid) in membership:
+            # This row is already a member of a correlated subject, and that
+            # subject has spoken for it above — by proposing ONE candidate, or
+            # by deliberately proposing none because its current state says the
+            # problem is resolved, in flight, or merely being discussed.
+            #
+            # Falling through here is what used to emit "Act on: Production
+            # deployment FAILED" hours after a later deploy to the same target
+            # went green, and what used to emit one of those per failure
+            # alongside the correlated candidate. Understanding the project has
+            # to mean the older path stops acting as if it does not exist.
             continue
         ext = o.get("external_id") if isinstance(o, dict) else None
         aligned = _primary_goal(goals)

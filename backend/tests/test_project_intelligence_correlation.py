@@ -444,3 +444,100 @@ def test_no_opaque_provider_identifier_or_payload_reaches_the_output():
         assert opaque not in blob, f"{opaque} leaked into the projection"
     for banned in ("access_token", "refresh_token", "credential", "payload"):
         assert banned not in blob.lower()
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 9. Turkish agglutinative spellings — false NEGATIVES
+# ══════════════════════════════════════════════════════════════════════════
+#
+# Turkish glues case/possessive/plural endings onto the noun, and the
+# apostrophe that would separate them is only REQUIRED for proper nouns. So the
+# same webhook gets written a different way every day, and a correlation layer
+# that only understands one spelling silently under-reports.
+#
+# The fold is guarded by ATTESTATION — a suffix comes off only when the stem was
+# independently written somewhere in the same project — so these tests come in
+# pairs: the variant must correlate, AND ordinary vocabulary must be untouched.
+
+TR_VARIANTS = [
+    "payment webhook",
+    "payment webhook'u",
+    "payment webhook'a bakıyor",
+    "payment webhookta hata var",
+    "payment webhook'taki sorun",
+    "payment webhooku kontrol ettim",
+    "payment webhooklarda hata",
+    "payment webhook’a bakıyorum",      # typographic apostrophe (U+2019)
+    "PAYMENT WEBHOOK'U",                # shouting
+]
+
+
+@pytest.mark.parametrize("text", TR_VARIANTS)
+def test_turkish_spellings_still_correlate_across_sources(text):
+    """Each of these must reach the SAME subject as the PR that fixes it."""
+    states = pi.project_states([
+        _slack("s1", text, at=NOW - timedelta(hours=3)),
+        _pr("p1", 712, "Fix payment webhook retry", at=NOW - timedelta(hours=1)),
+    ], now=NOW)
+    merged = [s for s in states if len(s["sources"]) == 2]
+    assert merged, f"{text!r} failed to correlate with the PR"
+    assert merged[0]["subject"] == "payment webhook"
+    assert merged[0]["sources"] == ["github", "slack"]
+
+
+def test_a_suffix_is_only_stripped_when_the_stem_is_ACTUALLY_used():
+    """The guard that makes this safe rather than a stemmer: no attested stem,
+    no fold. `webhookta` stays `webhookta` unless something wrote `webhook`."""
+    assert pk.suffix_alias_map(["webhookta"]) == {}
+    assert pk.suffix_alias_map(["webhookta", "webhook"]) == {"webhookta": "webhook"}
+
+
+@pytest.mark.parametrize("word", [
+    "update", "release", "service", "site", "issue", "feature", "message",
+    "deploy", "checkout", "webhook", "payment", "production",
+])
+def test_ordinary_vocabulary_is_never_treated_as_a_suffixed_form(word):
+    """"update" ends in -e and "site" ends in -e. A stemmer would eat them."""
+    assert pk.suffix_alias_map([word]) == {}
+
+
+def test_folding_cannot_invent_a_stem_the_project_never_wrote():
+    """Even with a plausible-looking ending, the stem must be attested — so the
+    fold can only ever collapse spellings the project itself produced."""
+    alias = pk.suffix_alias_map(["kontrol", "duzeltmek", "bakiyor", "sorunlar"])
+    assert alias == {}, alias
+    assert pk.suffix_alias_map(["sorunlar", "sorun"]) == {"sorunlar": "sorun"}
+
+
+def test_turkish_folding_does_not_make_unrelated_phrases_collapse():
+    """The whole point of the guard. Folding must not become a back door around
+    the bigram / distinctive-token / two-source rules."""
+    states = pi.project_states([
+        _slack("s1", "payment button color'u degistirelim", at=NOW),
+        _obs("g1", "github", "github.issue.opened",
+             "Issue #9 opened: payment webhook failure",
+             {"repo": "acme/site", "number": 9, "title": "payment webhook failure"},
+             at=NOW),
+    ], now=NOW)
+    assert not [s for s in states if len(s["sources"]) == 2], \
+        "a Turkish suffix must not merge 'payment button' with 'payment webhook'"
+
+
+def test_folding_never_produces_a_degenerate_repeated_word_topic():
+    """`webhook webhookta` must not fold into the meaningless `webhook webhook`."""
+    assert pk.apply_alias("topic:webhook webhookta",
+                          {"webhookta": "webhook"}) == "topic:webhook webhookta"
+
+
+def test_folding_leaves_non_topic_keys_alone():
+    for key in ("pr:acme/site#712", "branch:acme/site:fix/payment-webhook",
+                "deploy:vercel:prj_1:production"):
+        assert pk.apply_alias(key, {"webhookta": "webhook"}) == key
+
+
+def test_a_turkish_only_conversation_still_needs_two_sources():
+    """Folding raises recall; it does not lower the corroboration bar."""
+    assert pi.project_states([
+        _slack("s1", "payment webhookta hata var", at=NOW),
+        _slack("s2", "payment webhook'u duzelttim", at=NOW - timedelta(hours=1)),
+    ], now=NOW) == []

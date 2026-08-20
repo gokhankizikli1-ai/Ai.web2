@@ -140,6 +140,12 @@ FRESH_DAYS = 3
 MIN_TOPIC_SOURCES = 2
 #: Deduplicated evidence units an entity needs to be called corroborated.
 MIN_CORROBORATED_EVIDENCE = 2
+#: Distinct STORED OBSERVATIONS an entity must group before it counts as a real
+#: correlation — i.e. before it is allowed to speak on their behalf downstream.
+#: A singleton entity is not a correlation: it is one observation re-expressed,
+#: and letting it claim membership would let a weak reading silence the very
+#: row it was built from.
+MIN_SUBJECT_MEMBERS = 2
 #: States returned by one projection.
 MAX_STATES = 8
 #: Evidence rows carried per list, per state.
@@ -215,6 +221,35 @@ class _Union:
             # the same input always produces the same component ids.
             lo, hi = (ra, rb) if ra < rb else (rb, ra)
             self._parent[hi] = lo
+
+
+def _fold_suffix_variants(event_list: Sequence[ev.Event]) -> None:
+    """Fold Turkish suffixed spellings onto their stem, IN PLACE, across the
+    batch.
+
+    This has to happen here rather than in `keys.topic_keys`, because the guard
+    that makes it safe — "only fold onto a stem this project actually wrote" —
+    needs the whole batch's vocabulary, and a single observation does not have
+    it. `webhookta` becomes `webhook` only because another row said `webhook`.
+
+    Runs BEFORE `_strong_topics`, so a phrase split across two spellings is
+    counted as the one phrase it is, and the two-source corroboration rule sees
+    the truth instead of two singletons. Bounded: one pass over the already-
+    capped events, then one rewrite pass."""
+    vocabulary: Set[str] = set()
+    for event in event_list:
+        for key in event.topic_keys:
+            vocabulary.update(k.topic_label(key).split())
+    alias = k.suffix_alias_map(vocabulary)
+    if not alias:
+        return
+    for event in event_list:
+        folded: List[str] = []
+        for key in event.topic_keys:
+            rewritten = k.apply_alias(key, alias)
+            if rewritten not in folded:
+                folded.append(rewritten)
+        event.topic_keys = folded
 
 
 def _strong_topics(event_list: Sequence[ev.Event]) -> Set[str]:
@@ -477,7 +512,13 @@ def _build_state(component_keys: Sequence[str], members: Sequence[ev.Event],
             },
         },
         "sources": sorted(sources),
+        # `evidence_count` counts DEDUPLICATED units (what corroboration is
+        # measured on); `member_count` counts the distinct stored observations
+        # this subject speaks for. Six failed deploys of one target are one
+        # unit and six members — the difference is exactly what tells a
+        # consumer "this is one recurring problem, not six".
         "evidence_count": len(units),
+        "member_count": len({m.observation_id for m in members if m.observation_id}),
         "corroborated": (len(units) >= MIN_CORROBORATED_EVIDENCE
                          and len(sources) >= MIN_TOPIC_SOURCES),
         # Stable codes naming WHY the state reads as it does; the frontend
@@ -509,7 +550,7 @@ def _sort_key(row: Dict[str, Any]) -> Tuple[int, float, float, str]:
             str(row.get("subject") or ""))
 
 
-def correlate(
+def _correlate_rows(
     observations: Sequence[Dict[str, Any]],
     *,
     now: Optional[datetime] = None,
@@ -537,6 +578,8 @@ def correlate(
     if not live:
         return []
 
+    # One spelling of a phrase, not several. See `_fold_suffix_variants`.
+    _fold_suffix_variants(live)
     strong = _strong_topics(live)
 
     union = _Union()
@@ -598,9 +641,66 @@ def correlate(
         if len(kept) >= bound:
             break
 
-    for row in kept:
-        row.pop("_observation_ids", None)
     return kept
+
+
+def _public(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Strip the internal member index from the rows that leave this module."""
+    for row in rows:
+        row.pop("_observation_ids", None)
+    return rows
+
+
+def correlate(
+    observations: Sequence[Dict[str, Any]],
+    *,
+    now: Optional[datetime] = None,
+    limit: int = MAX_STATES,
+    max_observations: int = MAX_OBSERVATIONS,
+    window_days: int = CORRELATION_WINDOW_DAYS,
+) -> List[Dict[str, Any]]:
+    """The bounded, deterministic inferred-state list. See `_correlate_rows`."""
+    return _public(_correlate_rows(
+        observations, now=now, limit=limit, max_observations=max_observations,
+        window_days=window_days))
+
+
+def correlate_with_membership(
+    observations: Sequence[Dict[str, Any]],
+    *,
+    now: Optional[datetime] = None,
+    limit: int = MAX_STATES,
+    max_observations: int = MAX_OBSERVATIONS,
+    window_days: int = CORRELATION_WINDOW_DAYS,
+) -> Tuple[List[Dict[str, Any]], Dict[str, Dict[str, Any]]]:
+    """`(states, membership)` — where `membership` maps a stored observation id
+    to the subject that speaks for it.
+
+    WHY THIS EXISTS. The public `evidence_observation_ids` on a state is capped
+    (`MAX_EVIDENCE_IDS`) because it travels in payloads. A consumer that must
+    decide "has this row already been accounted for?" cannot use a capped list:
+    the members past the cap would look unaccounted-for and get handled twice.
+    `membership` is the COMPLETE index over the same states, bounded instead by
+    the projection's own observation cap, and it never leaves the backend.
+
+    Only subjects that genuinely group `MIN_SUBJECT_MEMBERS` distinct
+    observations appear. A singleton subject deliberately does not, so a thin
+    reading can never silence the one row it was derived from.
+
+    The index covers exactly the states RETURNED, so a consumer that suppresses
+    on membership and promotes from `states` can never suppress a row whose
+    subject it cannot also see."""
+    rows = _correlate_rows(
+        observations, now=now, limit=limit, max_observations=max_observations,
+        window_days=window_days)
+    membership: Dict[str, Dict[str, Any]] = {}
+    for row in rows:                       # already most-significant-first
+        ids = row.get("_observation_ids") or set()
+        if len(ids) < MIN_SUBJECT_MEMBERS:
+            continue
+        for observation_id in ids:
+            membership.setdefault(str(observation_id), row)
+    return _public(rows), membership
 
 
 __all__ = [
@@ -611,6 +711,7 @@ __all__ = [
     "ENTITY_DEPLOYMENT", "ENTITY_CI", "ENTITY_MEETING",
     "MAX_OBSERVATIONS", "MAX_STATES", "MAX_EVIDENCE", "MAX_EVIDENCE_IDS",
     "CORRELATION_WINDOW_DAYS",
-    "FRESH_DAYS", "MIN_TOPIC_SOURCES", "MIN_CORROBORATED_EVIDENCE", "MAX_SCORE",
-    "correlate",
+    "FRESH_DAYS", "MIN_TOPIC_SOURCES", "MIN_CORROBORATED_EVIDENCE",
+    "MIN_SUBJECT_MEMBERS", "MAX_SCORE",
+    "correlate", "correlate_with_membership",
 ]

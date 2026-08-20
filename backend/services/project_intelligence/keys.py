@@ -168,6 +168,87 @@ _SYNONYMS: Dict[str, str] = {
 #: Plurals we will not strip: a trailing "s" that is part of the word.
 _PLURAL_KEEP_SUFFIXES = ("ss", "us", "is", "as", "os")
 
+# ── Turkish agglutinative suffixes ───────────────────────────────────────────
+# Turkish glues case/possessive/plural endings straight onto the noun, and the
+# apostrophe that would separate them is only REQUIRED for proper nouns. So a
+# developer writes "payment webhook'a bakıyor" one day and "payment webhookta
+# hata var" the next, and only the first tokenizes back to `webhook`.
+#
+# Blind stripping is not an option: "update" ends in -e, "site" in -e, "release"
+# in -e. Strip those and English vocabulary dissolves.
+#
+# So a suffix is only ever removed when the STEM IS INDEPENDENTLY ATTESTED in
+# the same project's own text (see `suffix_alias_map`). `webhookta` folds onto
+# `webhook` only because some other observation actually said `webhook`. That
+# makes over-collapse structurally impossible rather than merely unlikely: a
+# fold cannot invent a stem the project never used, so this is a lookup against
+# observed vocabulary, not a stemmer.
+#
+# Longest-first, so `webhooklarda` loses `larda` rather than `da`.
+_TR_SUFFIXES = (
+    "larinda", "lerinde", "larindan", "lerinden",
+    "larda", "lerde", "lardan", "lerden", "larin", "lerin", "lari", "leri",
+    "daki", "deki", "taki", "teki",
+    "ndan", "nden", "nda", "nde",
+    "dan", "den", "tan", "ten",
+    "lar", "ler", "nin", "nun",
+    "da", "de", "ta", "te", "ya", "ye", "yi", "yu",
+    "in", "un", "im", "um",
+    "i", "u", "a", "e",
+)
+#: A stem shorter than this is too small to trust ("site" → "sit" is a mangling,
+#: not a fold).
+_MIN_STEM_CHARS = 4
+
+
+def _known_words() -> frozenset:
+    """Vocabulary we recognise as words in their own right and therefore never
+    treat as a suffixed form ("update", "release", "service", "site")."""
+    return frozenset(GENERIC_TOKENS) | frozenset(_SYNONYMS) | frozenset(_SYNONYMS.values())
+
+
+def suffix_alias_map(tokens: Iterable[str]) -> Dict[str, str]:
+    """`{suffixed_variant: stem}` over ONE project's observed vocabulary.
+
+    A variant folds only when every one of these holds:
+      * it is not itself a word we recognise (so `update` is never touched);
+      * it ends in an explicit Turkish suffix;
+      * the remaining stem is at least `_MIN_STEM_CHARS` long;
+      * **the stem was independently written by some observation in this same
+        batch** — the guard that makes this safe.
+
+    Pure, bounded by the caller's already-capped token set, and deterministic."""
+    attested = {str(t) for t in tokens if t}
+    known = _known_words()
+    alias: Dict[str, str] = {}
+    for token in sorted(attested):          # sorted ⇒ deterministic
+        if token in known or len(token) <= _MIN_STEM_CHARS:
+            continue
+        for suffix in _TR_SUFFIXES:
+            if not token.endswith(suffix):
+                continue
+            stem = token[: -len(suffix)]
+            if len(stem) < _MIN_STEM_CHARS or stem == token:
+                continue
+            if stem in attested:
+                alias[token] = stem
+                break
+    return alias
+
+
+def apply_alias(key: str, alias: Dict[str, str]) -> str:
+    """Rewrite a topic key's words through an alias map. Non-topic keys and
+    empty maps pass straight through."""
+    if not alias or not is_topic_key(key):
+        return key
+    words = topic_label(key).split()
+    folded = [alias.get(w, w) for w in words]
+    if folded == words:
+        return key
+    if len(folded) == 2 and folded[0] == folded[1]:
+        return key                      # folding must not create "x x"
+    return f"{KEY_TOPIC}:{' '.join(folded)}"
+
 
 #: Letters that NFKD does NOT decompose, so removing combining marks alone
 #: would leave them non-ASCII and the word splitter would tear the word in
@@ -383,6 +464,7 @@ __all__ = [
     "LINK_NAMESPACES", "GROUP_NAMESPACES", "GENERIC_TOKENS",
     "MAX_TEXT_CHARS", "MAX_TOPIC_KEYS", "MAX_LINK_KEYS",
     "normalize_token", "tokenize", "topic_keys", "topic_label",
+    "suffix_alias_map", "apply_alias",
     "namespace_of", "is_link_key", "is_group_key", "is_topic_key",
     "repo_key", "commit_key", "branch_key", "pr_key", "issue_key",
     "deploy_key", "ci_key", "meeting_key", "refs_from_text",

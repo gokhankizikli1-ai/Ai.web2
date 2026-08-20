@@ -215,7 +215,14 @@ def assess_business_brain(
             candidate_actions = cas.list_candidate_actions(pid, open_only=True, limit=50)
         if observations is None and pid:
             from backend.services.orchestrator import observations_store as obs
-            observations = obs.recent_observations(pid, limit=10)
+            # Owner-scoped, like the learnings read below and like every other
+            # (user, project) authority. This assessment RETURNS these rows to
+            # the caller, and the docstring above already promises (user,
+            # project) scoping — without `user_id` the observation slice was the
+            # one that did not keep that promise, so a row recorded against this
+            # project by a previous/other owner could surface. Defense in depth:
+            # the route's ownership gate still runs first.
+            observations = obs.recent_observations(pid, user_id=uid, limit=10)                 if uid else []
         if metric_changes is None and pid:
             metric_changes = _significant_metric_changes(pid)
         if learnings is None and pid and uid:
