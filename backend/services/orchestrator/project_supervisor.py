@@ -177,8 +177,10 @@ def _significant_metric_changes(project_id: str) -> List[dict]:
 #: projection that consumes the rows in-process.
 _MAX_OBSERVATIONS_READ = 60
 _MAX_OBSERVATIONS_RETURNED = 10
-#: Subjects named in the assessment's own focus block.
-_MAX_FOCUS_SUBJECTS = 3
+#: Ranked candidates the plan split reports on. A bounded HEAD of the ranking,
+#: not a summary of everything: the plan answers "who acts on what is being
+#: recommended", and what is being recommended is the top of the queue.
+_MAX_PLAN_ROWS = 8
 
 
 def _is_connector_row(row: Any) -> bool:
@@ -214,13 +216,14 @@ def _plan_from(ranked: List[dict]) -> Dict[str, Any]:
     the one prioritization authority already produced."""
     automatic: List[dict] = []
     approval: List[dict] = []
+    restricted: List[dict] = []
     human: List[dict] = []
-    for cand in ranked[:_MAX_FOCUS_SUBJECTS * 2]:
+    for cand in ranked[:_MAX_PLAN_ROWS]:
         explanation = cand.get("priority_explanation") or {}
         actionability = explanation.get("actionability") or {}
-        row = {"candidate_id": cand.get("id"),
-               "capability": cand.get("recommended_capability"),
-               "autonomy": autonomy_for_capability(cand.get("recommended_capability"))}
+        capability = cand.get("recommended_capability")
+        row = {"candidate_id": cand.get("id"), "capability": capability,
+               "autonomy": autonomy_for_capability(capability)}
         # The RESOLUTION question comes first: an action Korvix may run
         # automatically that cannot actually finish the job belongs on the
         # human list, or the split would flatter the tool.
@@ -229,10 +232,16 @@ def _plan_from(ranked: List[dict]) -> Dict[str, Any]:
             human.append(row)
         elif row["autonomy"] == AUTONOMY_AUTONOMOUS:
             automatic.append(row)
+        elif row["autonomy"] == AUTONOMY_RESTRICTED:
+            # DENIED is not "approve it and it runs". It is "the orchestrator
+            # will never start this; a person has to initiate it themselves",
+            # and filing it under approvals would misdescribe the gate.
+            restricted.append(row)
         else:
             approval.append(row)
     return {"korvix_can_do": automatic, "needs_approval": approval,
-            "needs_human": human}
+            "restricted": restricted, "needs_human": human,
+            "truncated": len(ranked) > _MAX_PLAN_ROWS}
 
 
 def assess_business_brain(

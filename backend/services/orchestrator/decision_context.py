@@ -339,18 +339,26 @@ def commitments(observations: Sequence[Dict[str, Any]], *,
     provider call. Only the event's own `start` decides pressure.
 
     Deliberately conservative:
-      * a cancelled event is not a commitment;
+      * a CANCELLED event is not a commitment, and cancellation wins over every
+        other row for that event. The connector writes one row per state change
+        and keeps them all, so the "upcoming" row for a launch that was called
+        off is still sitting in the store — treating it as pressure would put a
+        project at risk of a deadline that no longer exists;
       * an event that already started is history, not pressure;
       * an event with no parseable start exerts NO pressure (an undated
         obligation is not an urgent one, and guessing would manufacture alarm);
       * an event beyond `APPROACHING_WITHIN` is dropped entirely, so a date a
         month out cannot make anything urgent.
 
-    One row per calendar event id — the connector re-records an event on every
-    edit, and five edits of one launch are one commitment."""
+    One row per calendar event id, and it is the LATEST word about that event —
+    the same supersession rule `attention._latest_per_subject` applies. An
+    event moved from tomorrow to next month must read as next month, so
+    "soonest start wins" would be exactly the wrong tie-break."""
     when = _now(now)
-    best: Dict[str, Dict[str, Any]] = {}
-    for obs in observations or []:
+    rows: List[Tuple[Optional[datetime], int, str, Dict[str, Any]]] = []
+    cancelled: Set[str] = set()
+
+    for index, obs in enumerate(observations or []):
         if not isinstance(obs, dict):
             continue
         if _s(obs.get("source"), 40).strip().lower() != "calendar":
@@ -358,21 +366,20 @@ def commitments(observations: Sequence[Dict[str, Any]], *,
         kind = _s(obs.get("kind"), 120)
         if not kind.startswith("calendar.event."):
             continue
-        if kind.rsplit(".", 1)[-1] == "cancelled":
-            continue          # a commitment that disappeared exerts no pressure
         payload = obs.get("payload")
         payload = payload if isinstance(payload, dict) else {}
+        event_id = _s(payload.get("event_id"), 160) or _s(obs.get("id"), 64)
+        if kind.rsplit(".", 1)[-1] == "cancelled":
+            cancelled.add(event_id)
+            continue
         start = parse_iso(payload.get("start"))
-        if start is None or start < when:
+        if start is None:
             continue
         hours = (start - when).total_seconds() / 3600.0
         pressure = _pressure(hours)
-        if pressure == DEADLINE_NONE:
-            continue
         title = _clean(payload.get("title") or obs.get("summary"), 160)
         kind_code, kind_basis = _commitment_kind(title)
-        event_id = _s(payload.get("event_id"), 160) or _s(obs.get("id"), 64)
-        row = {
+        rows.append((parse_iso(obs.get("observed_at")), index, event_id, {
             # The provider's own event id never leaves: the digest travels, the
             # same rule `attention` applies to every subject-derived identity.
             "event_key": stable_id(f"calendar:event:{event_id}"),
@@ -383,12 +390,33 @@ def commitments(observations: Sequence[Dict[str, Any]], *,
             "kind": kind_code,
             "kind_basis": kind_basis,
             "observation_id": _s(obs.get("id"), 64),
-        }
+        }))
+
+    best: Dict[str, Tuple[Optional[datetime], int, Dict[str, Any]]] = {}
+    for observed_at, index, event_id, row in rows:
+        if event_id in cancelled:
+            continue
         current = best.get(event_id)
-        if current is None or row["hours_until"] < current["hours_until"]:
-            best[event_id] = row
-    rows = sorted(best.values(), key=lambda r: (r["hours_until"], r["event_key"]))
-    return rows[:MAX_COMMITMENTS]
+        if current is None:
+            best[event_id] = (observed_at, index, row)
+            continue
+        kept_at, kept_index, _ = current
+        # A dated row supersedes an undated one; among dated rows the newest
+        # wins; among undated ones input order decides. Identical tolerance to
+        # `attention`, so the two never disagree about "the latest word".
+        if observed_at is not None and (
+                kept_at is None or observed_at > kept_at
+                or (observed_at == kept_at and index < kept_index)):
+            best[event_id] = (observed_at, index, row)
+
+    # The horizon is applied AFTER supersession, never before. Filtering first
+    # would let a launch moved from tomorrow to next month keep exerting
+    # tomorrow's pressure, because the row that moved it would have been
+    # dropped for being too far away before it could supersede anything.
+    out = [row for _, _, row in best.values()
+           if row["hours_until"] >= 0 and row["pressure"] != DEADLINE_NONE]
+    out.sort(key=lambda r: (r["hours_until"], r["event_key"]))
+    return out[:MAX_COMMITMENTS]
 
 
 def nearest_commitment(observations: Sequence[Dict[str, Any]], *,
@@ -664,6 +692,12 @@ def _tier(*, open_subject: bool, production: str, customer: str,
         # The evidence is older than the correlation window itself. It may
         # still be true; it may equally have been fixed without telling us, so
         # it steps down one rung rather than commanding the queue.
+        #
+        # `correlate` filters those events out before they reach a subject, so
+        # in the default projection this band is not produced. It IS reachable
+        # — a caller may widen `window_days`, and `for_subject` is public and
+        # takes any state row — so the rule is stated and tested rather than
+        # left implicit for whoever widens that window next.
         tier = min(TIER_ROUTINE, tier + 1)
     return tier
 

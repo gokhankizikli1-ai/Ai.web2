@@ -245,8 +245,13 @@ def score_candidate(
     }
 
 
-def explain(candidate: dict, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def explain(context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """The STRUCTURED "why this is #1" a surface can render.
+
+    Reads ONLY the decision context. A candidate's own stored dimensions are
+    deliberately not consulted here: they were DERIVED from this context when
+    the candidate was written, so re-reading them would let a stale row argue
+    with the live evidence about why it matters.
 
     Codes only, never prose: the frontend renders them through the shipped
     locale dictionaries and `project_brain.client` composes English from them
@@ -329,7 +334,7 @@ def rank_candidates(
         item["priority_breakdown"] = s["breakdown"]
         item["priority_tier"] = int(context.get("priority_tier")
                                     or dc.DEFAULT_TIER)
-        item["priority_explanation"] = explain(cand, context)
+        item["priority_explanation"] = explain(context)
         scored.append(item)
 
     scored.sort(key=_sort_key)

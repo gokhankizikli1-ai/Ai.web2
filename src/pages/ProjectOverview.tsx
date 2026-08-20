@@ -533,11 +533,12 @@ function CurrentStateSection({ items, understanding, onAsk, t }: {
 /**
  * WHY THIS IS FIRST — the decision layer's one explanation, rendered.
  *
- * Three lines at most, and every one of them is a translated backend CODE:
- * what makes it the top concern, the couple of reasons behind that, and — the
- * line this block exists for — whether the ball is with Korvix or with the
- * person reading. An alarm that implies Korvix will redeploy production is
- * worse than no alarm.
+ * A handful of bounded lines, and every one of them is a translated backend
+ * CODE: what makes it the top concern, at most two reasons behind that, the
+ * dated commitment when one is driving it, the caveat that would make the
+ * reading wrong, and — the line this block exists for — whether the ball is
+ * with Korvix or with the person reading. An alarm that implies Korvix will
+ * redeploy production is worse than no alarm.
  *
  * Nothing here is a score, a tier number or a percentage, and nothing here is
  * a second ranking: the backend picked this row with the same function that
@@ -579,6 +580,18 @@ function FocusRationale({ focus, t }: { focus: ProjectFocus | null; t: T }) {
             </li>
           ))}
         </ul>
+      )}
+      {/* WHICH commitment. Only when one is actually driving the tier — a
+          project can have a meeting next week without that being the reason
+          anything is first. The date is printed as the backend's own
+          YYYY-MM-DD so no locale-dependent parsing happens on the page. */}
+      {focus.commitment && top.deadline_pressure !== 'none' && (
+        <div className="mt-1.5 text-[12px] leading-snug text-white/45 break-words">
+          {t('projectFocusCommitment', {
+            title: focus.commitment.title,
+            when: focus.commitment.at.slice(0, 10),
+          })}
+        </div>
       )}
       {ownerKey && (
         <div className="mt-1.5 text-[12px] leading-snug text-white/70 break-words">

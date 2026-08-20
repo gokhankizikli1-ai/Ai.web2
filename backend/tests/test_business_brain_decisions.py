@@ -624,11 +624,12 @@ def test_a_recommendation_that_needs_approval_stays_pending_and_never_runs(env):
     assessment = env["sup"].assess_business_brain(None, project_id="pA",
                                                   user_id="uA")
     plan = assessment["plan"]
-    assert {r["capability"] for r in plan["needs_approval"]} >= {"web_build"}
+    assert {r["capability"] for r in plan["needs_approval"]} == {"web_build"}
+    assert {r["capability"] for r in plan["restricted"]} == {"delete_project"}
     autonomies = {r["capability"]: r["autonomy"]
-                  for r in plan["needs_approval"] + plan["korvix_can_do"]}
-    assert autonomies.get("delete_project") == env["sup"].AUTONOMY_RESTRICTED
-    assert autonomies.get("web_build") == env["sup"].AUTONOMY_REVIEW
+                  for r in plan["needs_approval"] + plan["restricted"]}
+    assert autonomies["delete_project"] == env["sup"].AUTONOMY_RESTRICTED
+    assert autonomies["web_build"] == env["sup"].AUTONOMY_REVIEW
     # Nothing ran: no task, no run.
     assert env["tasks"].list_tasks_for_project("pA") == []
 
@@ -762,6 +763,43 @@ def test_an_empty_project_says_so_and_claims_nothing(env):
 # ══════════════════════════════════════════════════════════════════════════
 # ATTACKS — malformed, stale, ambiguous, multilingual
 # ══════════════════════════════════════════════════════════════════════════
+
+def test_a_cancelled_launch_stops_exerting_pressure(env):
+    """The connector keeps one row per state change, so the "upcoming" row for
+    a launch that was called off is still in the store. Reading it as pressure
+    would put a project at risk of a deadline that no longer exists."""
+    _payment_webhook_story(env)
+    _calendar(env, title="Public launch", starts_in=timedelta(hours=20))
+    assert _bundle(env)["commitment"] is not None
+
+    _record(env, source="calendar", kind="calendar.event.cancelled",
+            summary="Event cancelled: Public launch",
+            payload={"event_id": "evt_SECRET_1", "title": "Public launch",
+                     "start": _iso(NOW + timedelta(hours=20)),
+                     "status": "cancelled"},
+            ext="cal-cancel", importance="high", at=NOW - timedelta(minutes=10))
+
+    bundle = _bundle(env)
+    assert bundle["commitment"] is None
+    assert bundle["focus"]["top"]["priority_tier"] == dc.TIER_PRODUCTION_BROKEN
+
+
+def test_a_rescheduled_event_reads_as_its_LATEST_time_not_its_soonest(env):
+    """An event moved from tomorrow to next month must read as next month.
+    Keeping the soonest row would be exactly the wrong tie-break."""
+    _payment_webhook_story(env)
+    _calendar(env, title="Public launch", starts_in=timedelta(hours=20))
+    _record(env, source="calendar", kind="calendar.event.upcoming",
+            summary="Upcoming event: Public launch (moved)",
+            payload={"event_id": "evt_SECRET_1", "title": "Public launch",
+                     "start": _iso(NOW + timedelta(days=30)),
+                     "status": "confirmed"},
+            ext="cal-moved", at=NOW - timedelta(minutes=5))
+
+    bundle = _bundle(env)
+    assert bundle["commitment"] is None      # beyond the horizon entirely
+    assert bundle["focus"]["top"]["priority_tier"] == dc.TIER_PRODUCTION_BROKEN
+
 
 def test_evidence_older_than_the_correlation_window_exerts_no_pressure(env):
     _payment_webhook_story(env)
@@ -924,6 +962,36 @@ def test_the_project_chat_prompt_states_the_top_priority_and_its_reason(env,
     assert len(text) <= brain_module._CTX_BLOCK_CHAR_BUDGET
     for secret in ("evt_SECRET_1", "prj_1"):
         assert secret not in text, secret
+
+
+def test_stale_evidence_steps_down_a_rung_instead_of_commanding_the_queue(env):
+    """A subject whose newest evidence is older than the correlation window may
+    still be true — or may have been fixed without anyone telling us."""
+    def _state(band: str) -> dict:
+        return {
+            "id": f"s-{band}", "subject": "payment webhook", "state": "unresolved",
+            "sources": ["vercel"], "evidence_count": 2, "member_count": 2,
+            "last_seen": _iso(NOW - timedelta(hours=1)),
+            "confidence": {"score": 0.7, "level": "high",
+                           "breakdown": {"freshness_band": band,
+                                         "distinct_sources": 1,
+                                         "anchor_kind": "structural",
+                                         "decisive_facets": 1}},
+            "understanding": {
+                "implications": [{"code": "production_broken"}],
+                "uncertainty": [], "areas": [{"area": "deployment"}],
+                "blockers": [{"code": "deploy_failed", "source": "vercel",
+                              "title": "Production deployment FAILED",
+                              "environment": "production"}],
+            },
+        }
+
+    fresh = dc.for_subject(_state("recent"))
+    stale = dc.for_subject(_state("stale"))
+    assert fresh["priority_tier"] == dc.TIER_PRODUCTION_BROKEN
+    assert stale["priority_tier"] == dc.TIER_PRODUCTION_BROKEN + 1
+    # It is still described truthfully — demoted, never rewritten.
+    assert stale["production_impact"] == dc.PRODUCTION_BROKEN
 
 
 def test_ranking_without_any_decision_context_is_exactly_what_it_was(env):
