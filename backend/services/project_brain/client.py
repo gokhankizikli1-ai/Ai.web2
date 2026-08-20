@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Optional
+from typing import Any, Optional
 
 from backend.services.project_brain.types import ProjectBrain, ProjectContextBlock
 
