@@ -20,6 +20,7 @@ PROJECTION over authorities that already exist, assembled once per page load:
     attention               the deterministic ranking     (pure)
     today                   the deterministic Today block (pure)
     recent_changes          "since your last visit"       (pure)
+    project_intelligence    correlated PROJECT STATE      (pure)
 
 WHAT IT IS NOT
 --------------
@@ -40,6 +41,10 @@ WHAT IT IS NOT
   * NOT a second task, decision or memory system. Tasks come from the one
     canonical project-task authority; knowledge is a projection over the
     EXISTING decision and project-memory authorities.
+  * NOT a second RANKING system. `project_state` is a correlation of the SAME
+    observations `attention` already ranks — what they add up to, not a rival
+    opinion about what is urgent. It never reorders Needs Attention and never
+    feeds Today's ladder; it only lets a row say which story it belongs to.
 
 ISOLATION
 ---------
@@ -87,6 +92,7 @@ _MAX_TASKS = 6                # rows in the Overview's compact task block
 _MAX_KNOWLEDGE_READ = 100
 _MAX_KNOWLEDGE = 4            # rows in the Overview's compact knowledge block
 _MAX_CHANGES = changes_mod.MAX_CHANGES
+_MAX_PROJECT_STATE = 5        # correlated subjects shown in the Project State block
 
 #: Activity rows carry these non-connector sources so the frontend can label
 #: them without inventing a provider.
@@ -507,6 +513,42 @@ def _build_activity(observations: List[dict], chats: List[dict],
     return rows[:_MAX_ACTIVITY]
 
 
+def _link_attention_to_state(attention: List[dict],
+                             membership: Dict[str, dict]) -> None:
+    """Tell each Needs-Attention row which correlated story it belongs to.
+
+    ENRICHMENT ONLY — in place, and deliberately nothing else. The list keeps
+    `attention`'s order, its membership and its severity: a correlated state
+    can neither promote a row, demote one, nor add one. All this does is let
+    the page render "Deployment failed — part of: payment webhook (conflicting
+    evidence, 3 sources)" instead of an alarm with no story around it.
+
+    Matching is by the observation id each side already carries, so it is exact
+    and costs no re-classification.
+
+    `membership` is the correlation authority's COMPLETE member index, not a
+    state's public `evidence_observation_ids` — that list is capped for payload
+    size, so an alarm whose row happened to sort past the cap would silently
+    render with no story attached even though the layer had understood it."""
+    if not (attention and membership):
+        return
+    for item in attention:
+        state = membership.get(_s(item.get("observation_id"), 64))
+        if not state:
+            continue
+        item["state_id"] = _s(state.get("id"), 64)
+        item["state"] = _s(state.get("state"), 40)
+        item["state_subject"] = _s(state.get("subject"), 200)
+        item["state_evidence_count"] = int(state.get("evidence_count") or 0)
+        # The CONFIDENCE LEVEL is deliberately NOT copied here. Today renders
+        # the top attention row verbatim, and Today is contractually free of
+        # score/confidence/health vocabulary — a rule worth keeping for its own
+        # sake: a bare "high" floating on an alarm, separated from the
+        # breakdown that justifies it, is exactly the unearned precision this
+        # codebase refuses to ship. Confidence travels in `project_state`,
+        # where its full component breakdown travels with it.
+
+
 # ── the read model ───────────────────────────────────────────────────────────
 
 def build(user_id: str, project_id: str, *,
@@ -539,8 +581,17 @@ def build(user_id: str, project_id: str, *,
     # say nothing rather than inventing a description.
     summary_text, summary_source = "", ""
     try:
-        from backend.services.project_brain import client as brain_client
-        summary_text = _s(brain_client.client.summary_for(str(user_id), str(project_id)), 400)
+        # Import the SINGLETON by name, not the module. `project_brain/__init__`
+        # re-exports `client` (the ProjectBrainClient instance), which shadows
+        # the submodule of the same name on the package — so
+        # `from backend.services.project_brain import client` yields the
+        # INSTANCE. This used to read `brain_client.client.summary_for(...)`,
+        # which raised AttributeError on every call; the except below swallowed
+        # it, so the workspace silently fell back to the project description and
+        # the shared summary rule this module documents was never actually in
+        # effect. Importing the instance directly is unambiguous either way.
+        from backend.services.project_brain.client import client as brain_client
+        summary_text = _s(brain_client.summary_for(str(user_id), str(project_id)), 400)
         if summary_text:
             summary_source = "brain"
     except Exception as exc:
@@ -551,6 +602,21 @@ def build(user_id: str, project_id: str, *,
 
     attention = attention_mod.rank_attention(
         observations, products=products, now=when, limit=_MAX_ATTENTION)
+
+    # PROJECT STATE — what the connector observations ADD UP TO, correlated
+    # across sources. Computed from the rows ALREADY read above, so the page
+    # understands the project without issuing a single extra query, calling a
+    # provider, or spending a token. Pure and fail-soft like every other slice.
+    project_state: List[dict] = []
+    state_membership: Dict[str, dict] = {}
+    try:
+        from backend.services import project_intelligence as pi
+        project_state, state_membership = pi.project_states_with_membership(
+            observations, now=when, limit=_MAX_PROJECT_STATE)
+    except Exception as exc:
+        logger.debug("project_workspace: project intelligence unavailable: %s", exc)
+    _link_attention_to_state(attention, state_membership)
+
     activity = _build_activity(observations, chats, products, tasks, knowledge)
 
     # TODAY — pure choice over the ranking + the project's own tasks and goals.
@@ -585,6 +651,7 @@ def build(user_id: str, project_id: str, *,
         "today":      today,
         "goals":      goals,
         "attention":  attention,
+        "project_state": project_state,
         "activity":   activity,
         "changes":    changes,
         "tasks": {
@@ -612,6 +679,7 @@ def build(user_id: str, project_id: str, *,
         },
         "counts": {
             "attention":  len(attention),
+            "project_state": len(project_state),
             "activity":   len(activity),
             "goals":      len(goals),
             "products":   len(products),

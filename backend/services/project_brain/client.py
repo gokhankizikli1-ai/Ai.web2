@@ -27,6 +27,14 @@ _MAX_NOTES              = 4
 _MAX_ASSETS             = 6
 _MAX_WORKFLOWS          = 4
 _MAX_CONNECTOR_SIGNALS  = 6         # recent Gmail/GitHub observations surfaced
+# The correlation projection needs a wider slice of the SAME observations than
+# the six raw signals we surface. Both come from ONE read: we ask the store for
+# this many rows once and take the newest `_MAX_CONNECTOR_SIGNALS` of them for
+# the raw list, so understanding the project costs no additional query.
+_MAX_OBSERVATIONS_READ  = 60
+_MAX_INTELLIGENCE       = 4         # correlated project states surfaced
+_MAX_INTELLIGENCE_EVIDENCE = 2      # evidence lines rendered per state
+_MAX_BUSINESS_KNOWLEDGE = 6         # durable typed knowledge entries surfaced
 _MAX_PRODUCTS           = 6         # generated Web/App products surfaced
 _MAX_CHATS              = 5         # project-linked chats whose CONTENT is surfaced
 _MAX_CHAT_PREVIEW_CHARS = 160      # last-message preview per chat (bounded)
@@ -68,6 +76,61 @@ def _owns_project(user_id: str, project_id: str) -> bool:
     except Exception as e:  # pragma: no cover — defensive; never break aggregation
         logger.debug("project_brain: ownership check unavailable: %s", e)
         return False
+
+
+#: Inferred-state code → the English phrase used in the PROMPT. The backend
+#: still never ships prose to the FRONTEND for these — the workspace payload
+#: carries the stable codes and React renders them from its locale
+#: dictionaries. This table exists only because a system prompt is English by
+#: nature, and a model reading "state=likely_resolved" reasons worse than one
+#: reading "looks resolved".
+_STATE_PHRASE = {
+    "unresolved":      "still unresolved",
+    "conflicting":     "CONFLICTING evidence",
+    "in_progress":     "in progress",
+    "likely_resolved": "likely resolved",
+    "observed":        "being discussed",
+}
+
+
+def _intelligence_lines(states: list) -> list:
+    """The synthesized PROJECT STATE block.
+
+    Deliberately not a dump of observations: each line is one correlated
+    subject, what the evidence says it is, how confident that reading is and
+    which tools agree — followed by at most a couple of concrete evidence
+    references so the model can cite rather than guess. The raw connector list
+    still appears further down, bounded, as recent activity."""
+    lines: list[str] = []
+    for state in states[:_MAX_INTELLIGENCE]:
+        if not isinstance(state, dict):
+            continue
+        subject = str(state.get("subject") or "").strip()
+        if not subject:
+            continue
+        confidence = state.get("confidence") or {}
+        sources = [str(s) for s in (state.get("sources") or [])]
+        phrase = _STATE_PHRASE.get(str(state.get("state")), str(state.get("state")))
+        detail = [f"confidence {confidence.get('level', 'low')}"]
+        if sources:
+            detail.append(f"{len(sources)} source{'s' if len(sources) != 1 else ''}: "
+                          + ", ".join(sources))
+        evidence_count = state.get("evidence_count")
+        if evidence_count:
+            detail.append(f"{evidence_count} pieces of evidence")
+        last_seen = str(state.get("last_seen") or "")[:10]
+        if last_seen:
+            detail.append(f"latest {last_seen}")
+        lines.append(f"- {subject} — {phrase} ({'; '.join(detail)})")
+        for label, key in (("supported by", "supporting"),
+                           ("but contradicted by", "contradicting")):
+            for item in (state.get(key) or [])[:_MAX_INTELLIGENCE_EVIDENCE]:
+                if not isinstance(item, dict):
+                    continue
+                title = str(item.get("title") or item.get("kind") or "").strip()
+                if title:
+                    lines.append(f"    {label}: [{item.get('source', '?')}] {title}")
+    return lines
 
 
 class ProjectBrainClient:
@@ -197,11 +260,14 @@ class ProjectBrainClient:
         #    fetch can never surface another user's connector activity. These are
         #    INPUTS ONLY — read here for context/reasoning; they never create a
         #    task/decision/run (the Business Brain remains the sole prioritizer).
+        observations: list = []
         try:
             from backend.services.orchestrator import observations_store as obs
-            for o in obs.recent_observations(project_id, user_id=str(user_id),
-                                             sources=list(obs.CONNECTOR_SOURCES),
-                                             limit=_MAX_CONNECTOR_SIGNALS):
+            observations = obs.recent_observations(
+                project_id, user_id=str(user_id),
+                sources=list(obs.CONNECTOR_SOURCES),
+                limit=_MAX_OBSERVATIONS_READ)
+            for o in observations[:_MAX_CONNECTOR_SIGNALS]:
                 brain.connector_signals.append({
                     "source":      o.get("source"),
                     "kind":        o.get("kind"),
@@ -212,6 +278,35 @@ class ProjectBrainClient:
                 })
         except Exception as e:
             logger.debug("project_brain: observations unavailable: %s", e)
+
+        # ── Correlated project state — what those signals ADD UP TO.
+        #    A pure projection over the rows just read (no second query, no
+        #    provider call, no model call, no write). This is the synthesized
+        #    truth the prompt leads with; the raw signals above stay as bounded
+        #    evidence beneath it rather than being the whole story.
+        try:
+            from backend.services import project_intelligence as pi
+            brain.intelligence = pi.project_states(
+                observations, limit=_MAX_INTELLIGENCE)
+        except Exception as e:
+            logger.debug("project_brain: project intelligence unavailable: %s", e)
+
+        # ── Durable typed BUSINESS KNOWLEDGE (Business Brain Phase 3).
+        #    AUDIT FINDING: the brain collected goals, decisions, products,
+        #    chats and connector signals but never read the business-knowledge
+        #    authority at all, so a competitor price or a recorded learning
+        #    reached an agent run (through `orchestrator.project_intelligence`)
+        #    yet never reached project CHAT. Same adapter, same Memory Plane,
+        #    no new store — it just needed consuming. The Memory Plane scopes
+        #    every read by user_id AND project_id, so this is structurally
+        #    owner-isolated exactly like the memory slice above.
+        try:
+            from backend.services.orchestrator import business_knowledge as bk
+            brain.business_knowledge = bk.list_knowledge(
+                user_id=str(user_id), project_id=str(project_id),
+                limit=_MAX_BUSINESS_KNOWLEDGE)
+        except Exception as e:
+            logger.debug("project_brain: business knowledge unavailable: %s", e)
 
         # ── Project-scoped authorities (goals / decisions / products / chats).
         #    These stores are keyed by project_id ONLY, so they are pulled behind
@@ -326,6 +421,8 @@ class ProjectBrainClient:
             "active_workflows":len(brain.workflow_state),
             "agent_notes":     len(brain.agent_notes),
             "connector_signals": len(brain.connector_signals),
+            "intelligence":    len(brain.intelligence),
+            "business_knowledge": len(brain.business_knowledge),
             "products":        len(brain.products),
             "linked_chats":    len(brain.linked_chats),
         }
@@ -397,7 +494,29 @@ class ProjectBrainClient:
                     preview = ch.get("last_message")
                     if preview:
                         lines.append(f"  {preview}")
+        if brain.business_knowledge:
+            lines.append("Business knowledge & learnings (durable, provenance-tagged; "
+                         "external facts may be stale — weigh by recency):")
+            for entry in brain.business_knowledge[:_MAX_BUSINESS_KNOWLEDGE]:
+                domain = str(entry.get("domain") or "knowledge").upper()
+                source = str(entry.get("source") or "SYSTEM").upper()
+                observed = str(entry.get("observed_at") or "")[:10]
+                when = f" (observed {observed})" if observed else ""
+                lines.append(f"- [{domain} · {source}] "
+                             f"{str(entry.get('summary') or '')[:220]}{when}")
+        if brain.intelligence:
+            # The synthesized truth leads. It is placed ABOVE the raw activity
+            # deliberately: a model handed twenty loose events reasons about
+            # events, and a model handed "the payment webhook looks resolved,
+            # here is why" reasons about the project.
+            lines.append("Project state — what the evidence across the connected "
+                         "tools adds up to (correlated, not raw events):")
+            lines.extend(_intelligence_lines(brain.intelligence))
         if brain.connector_signals:
+            # Header text is pinned by tests and by the frontend's expectations;
+            # the "prefer the synthesis" instruction lives on the PROJECT STATE
+            # header above, which is where a model reading top-down meets it
+            # first anyway.
             lines.append("Recent connector activity:")
             for s in brain.connector_signals[:_MAX_CONNECTOR_SIGNALS]:
                 label = s.get("summary") or s.get("kind") or "activity"

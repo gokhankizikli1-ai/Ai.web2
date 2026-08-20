@@ -154,7 +154,7 @@ def _stable_id(subject: str) -> str:
 def _signal(
     *, subject: str, is_open: bool, severity: str, reason: str,
     source: str, kind: str, title: str, context: str, observed_at: str,
-    ref: str = "",
+    ref: str = "", observation_id: str = "",
 ) -> Dict[str, Any]:
     return {
         "subject":     subject,
@@ -167,6 +167,11 @@ def _signal(
         "context":     context,
         "observed_at": observed_at,
         "ref":         ref,
+        # WHICH stored row raised this. Carried so a consumer can trace an
+        # alarm back to its provenance — and so the workspace can say which
+        # correlated story an alarm belongs to — without re-deriving the
+        # classification. Empty for a product signal (it has no observation).
+        "observation_id": observation_id,
     }
 
 
@@ -198,6 +203,7 @@ def _classify_github(kind: str, obs: Dict[str, Any]) -> Optional[Dict[str, Any]]
             severity=SEV_BLOCKING, reason=REASON_CI_FAILED,
             source="github", kind=kind, title=summary,
             context=repo, observed_at=observed_at,
+            observation_id=_str(obs.get("id"), 64),
         )
 
     if kind.startswith("github.deployment_status."):
@@ -215,7 +221,7 @@ def _classify_github(kind: str, obs: Dict[str, Any]) -> Optional[Dict[str, Any]]
             severity=SEV_BLOCKING, reason=REASON_DEPLOY_FAILED,
             source="github", kind=kind, title=summary,
             context=(f"{repo} · {env}" if repo and env else (repo or env)),
-            observed_at=observed_at,
+            observed_at=observed_at, observation_id=_str(obs.get("id"), 64),
         )
 
     if kind.startswith("github.pull_request."):
@@ -232,6 +238,7 @@ def _classify_github(kind: str, obs: Dict[str, Any]) -> Optional[Dict[str, Any]]
             severity=SEV_WAITING, reason=REASON_PR_AWAITING,
             source="github", kind=kind, title=summary,
             context=repo, observed_at=observed_at,
+            observation_id=_str(obs.get("id"), 64),
         )
 
     return None
@@ -254,6 +261,7 @@ def _classify_vercel(kind: str, obs: Dict[str, Any]) -> Optional[Dict[str, Any]]
             source="vercel", kind=kind, title=_str(obs.get("summary"), 240),
             context=_str(payload.get("project_name"), 160),
             observed_at=_str(obs.get("observed_at"), 64),
+            observation_id=_str(obs.get("id"), 64),
         )
     if verb in ("ready", "canceled"):
         # A later green (or abandoned) deployment on the same target supersedes
@@ -263,6 +271,7 @@ def _classify_vercel(kind: str, obs: Dict[str, Any]) -> Optional[Dict[str, Any]]
             severity=SEV_BLOCKING, reason=REASON_DEPLOY_FAILED,
             source="vercel", kind=kind, title="", context="",
             observed_at=_str(obs.get("observed_at"), 64),
+            observation_id=_str(obs.get("id"), 64),
         )
     return None
 
@@ -286,7 +295,7 @@ def _classify_calendar(kind: str, obs: Dict[str, Any],
             subject=subject, is_open=bool(start is not None and start >= now),
             severity=SEV_TIME_SENSITIVE, reason=REASON_MEETING_CANCELLED,
             source="calendar", kind=kind, title=summary, context="",
-            observed_at=observed_at,
+            observed_at=observed_at, observation_id=_str(obs.get("id"), 64),
         )
     if verb == "upcoming":
         imminent = bool(start is not None and now <= start <= now + UPCOMING_WINDOW)
@@ -294,14 +303,14 @@ def _classify_calendar(kind: str, obs: Dict[str, Any],
             subject=subject, is_open=imminent,
             severity=SEV_TIME_SENSITIVE, reason=REASON_MEETING_SOON,
             source="calendar", kind=kind, title=summary, context="",
-            observed_at=observed_at,
+            observed_at=observed_at, observation_id=_str(obs.get("id"), 64),
         )
     if verb == "updated":
         return _signal(
             subject=subject, is_open=False,
             severity=SEV_TIME_SENSITIVE, reason=REASON_MEETING_SOON,
             source="calendar", kind=kind, title="", context="",
-            observed_at=observed_at,
+            observed_at=observed_at, observation_id=_str(obs.get("id"), 64),
         )
     return None
 
@@ -432,6 +441,7 @@ def rank_attention(
             "context":     sig["context"],
             "observed_at": sig["observed_at"],
             "ref":         sig["ref"],
+            "observation_id": sig.get("observation_id", ""),
         }
         for sig in out[:bound]
     ]

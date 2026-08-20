@@ -23,6 +23,62 @@ DETERMINISTIC + CONSERVATIVE + ZERO MODEL COST
     goal when one exists, else to the highest-priority active goal — because a
     significant signal on an active project serves that project's objective.
   * No model call, no embedding — pure structured transformation.
+
+EVIDENCE-BACKED CANDIDATES (Project Intelligence)
+-------------------------------------------------
+The observation path used to promote every HIGH-importance row on its own,
+producing "Act on: Production deployment FAILED for korvix" with a hardcoded
+confidence of 0.5 and impact "medium" — the same shape whether the system knew
+one thing or ten. When `project_intelligence` has CORRELATED those rows into a
+subject, this module now consumes that instead:
+
+    "Investigate payment webhook — conflicting evidence across 3 sources"
+      evidence: the failed Vercel deployment, the merged GitHub PR,
+                the Slack discussion
+
+and the candidate's confidence is the correlation's own evidence-derived score
+rather than a constant. Every raw observation that is already evidence for a
+promoted state is SUPPRESSED, so the dedup converges on the underlying subject
+instead of emitting one candidate per event.
+
+WHAT DID NOT CHANGE — and must not
+-----------------------------------
+  * This is still not a second brain. Project Intelligence supplies FACTS
+    (what the evidence is about, and what it says); the decision to propose,
+    the ranking and the execution gate stay exactly where they were.
+  * Still nothing is created at ingestion. `record_observation` does not call
+    this, and this is still only reached when a caller explicitly asks.
+  * Correlation is NOT promotion. A state is promoted only when it describes a
+    live problem (unresolved / conflicting) AND the subject is substantiated —
+    either corroborated across sources, or grouping several observations of the
+    same recurring problem. A quiet or resolved subject produces no candidate,
+    and a lone uncorroborated signal falls through to the unchanged
+    high-importance path — noise stays noise.
+
+MEMBERSHIP DECIDES SUPPRESSION; THE SUBJECT'S STATE DECIDES PROMOTION
+---------------------------------------------------------------------
+These are two different questions and conflating them leaked stale work:
+
+    "has this row already been accounted for?"   → subject MEMBERSHIP
+    "is there something to do about it?"         → the subject's CURRENT state
+
+Once a row is a member of a real correlated subject, the legacy per-observation
+path does not run for it — whatever that subject's state turns out to be. The
+subject then speaks for all of its members: `unresolved`/`conflicting` yields
+ONE evidence-backed candidate, while `likely_resolved`/`in_progress`/`observed`
+yields none.
+
+That is what stops a deploy failure from proposing work hours after a later
+deploy to the same target went green, and what stops six failures of one target
+from proposing six investigations of one problem.
+
+Membership comes from the correlation authority's own complete index
+(`project_intelligence.project_states_with_membership`) — never from a state's
+public, CAPPED `evidence_observation_ids`, whose members past the cap would
+look unaccounted-for and be handled twice. A subject must group at least
+`MIN_SUBJECT_MEMBERS` distinct observations to claim membership at all, so a
+thin or accidental reading can never silence the row it was built from, and a
+genuinely uncorrelated signal still reaches the legacy path.
 """
 from __future__ import annotations
 
@@ -30,6 +86,11 @@ import logging
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
+
+#: Observations read when the caller does not supply them. Wider than the
+#: former 20 because correlation must SEE related rows to relate them; still a
+#: single bounded query.
+_MAX_OBSERVATIONS_READ = 60
 
 
 def _primary_goal(goals: List[dict]) -> Optional[dict]:
@@ -63,6 +124,101 @@ def _impact_from_pct(pct: Optional[float]) -> str:
     return "low"
 
 
+#: Inferred states worth proposing work about. A resolved or merely observed
+#: subject is understanding, not a to-do.
+_PROMOTABLE_STATES = ("unresolved", "conflicting")
+
+
+def _member_count(state: dict) -> int:
+    """How many stored observations this subject speaks for. Falls back to the
+    public capped id list for an INJECTED state that predates the field."""
+    try:
+        count = int(state.get("member_count") or 0)
+    except (TypeError, ValueError):
+        count = 0
+    return count or len(state.get("evidence_observation_ids") or [])
+
+
+#: Mirrors `project_intelligence.MIN_SUBJECT_MEMBERS`. Read from the authority
+#: at call time so the two cannot drift, with a local fallback so this module
+#: stays fail-soft if the projection is unavailable (every other path here
+#: degrades rather than raising, and this one must too).
+_MIN_SUBJECT_MEMBERS_FALLBACK = 2
+
+
+def _min_subject_members() -> int:
+    try:
+        from backend.services.project_intelligence import MIN_SUBJECT_MEMBERS
+        return int(MIN_SUBJECT_MEMBERS)
+    except Exception:  # pragma: no cover — defensive
+        return _MIN_SUBJECT_MEMBERS_FALLBACK
+
+
+def _is_substantiated(state: dict) -> bool:
+    """A subject may propose work when it is corroborated across sources, OR
+    when it groups several observations of one recurring problem (six failed
+    deploys of a single target are one problem, not six, and are still worth
+    raising even though only one tool reported them)."""
+    return (bool(state.get("corroborated"))
+            or _member_count(state) >= _min_subject_members())
+
+#: Correlated states → the impact level of the candidate they justify. Coarse
+#: and honest, consistent with the rest of the candidate dimensions.
+_IMPACT_BY_STATE = {"conflicting": "high", "unresolved": "high"}
+
+#: Correlated states → urgency.
+_URGENCY_BY_STATE = {"conflicting": "high", "unresolved": "high"}
+
+
+def _state_title(state: dict) -> str:
+    """A candidate title that names the SUBJECT and what is wrong with it,
+    rather than echoing whichever single event happened to arrive last."""
+    subject = str(state.get("subject") or "").strip() or "project signal"
+    if str(state.get("state")) == "conflicting":
+        return f"Investigate {subject} — conflicting evidence"[:300]
+    return f"Investigate {subject}"[:300]
+
+
+def _state_detail(state: dict) -> str:
+    """The evidence, spelled out. This is what makes the candidate reviewable:
+    a human can see exactly which stored rows produced it and decide."""
+    sources = ", ".join(str(s) for s in (state.get("sources") or []))
+    confidence = (state.get("confidence") or {}).get("level", "low")
+    lines = [
+        f"Correlated across {state.get('evidence_count') or 0} pieces of "
+        f"evidence from {len(state.get('sources') or [])} source(s)"
+        + (f" ({sources})" if sources else "")
+        + f"; confidence {confidence}.",
+    ]
+    for label, key in (("Evidence", "supporting"),
+                       ("Contradicting", "contradicting")):
+        for item in (state.get(key) or [])[:4]:
+            if not isinstance(item, dict):
+                continue
+            title = str(item.get("title") or item.get("kind") or "").strip()
+            if title:
+                lines.append(f"- {label}: [{item.get('source', '?')}] {title}")
+    return "\n".join(lines)[:2000]
+
+
+def _state_evidence_refs(state: dict) -> List[dict]:
+    """Provenance carried onto the candidate: which stored observations back
+    it. Bounded, and display-safe (internal observation ids only)."""
+    refs: List[dict] = []
+    for key in ("supporting", "contradicting", "context"):
+        for item in (state.get(key) or []):
+            if not isinstance(item, dict):
+                continue
+            ref = str(item.get("observation_id") or "")
+            if not ref:
+                continue
+            refs.append({"type": "observation", "ref": ref,
+                         "note": str(item.get("semantic_type") or "")[:240]})
+            if len(refs) >= 12:
+                return refs
+    return refs
+
+
 def synthesize_candidates(
     project_id: str,
     user_id: str,
@@ -70,12 +226,18 @@ def synthesize_candidates(
     metric_changes: Optional[List[dict]] = None,
     observations: Optional[List[dict]] = None,
     goals: Optional[List[dict]] = None,
+    intelligence: Optional[List[dict]] = None,
     max_candidates: int = 20,
 ) -> List[str]:
     """Record candidate actions for significant signals. Returns the list of
     candidate ids created/updated. Injectable inputs support deterministic
     tests; by default signals are read from their own authorities scoped to
-    (user, project)."""
+    (user, project).
+
+    `intelligence` is the correlated project-state list (see
+    `services.project_intelligence`). Left as None it is DERIVED from the same
+    observations this call already read — no extra query, no provider call, no
+    model call. Pass `[]` to synthesize from raw signals only."""
     if not (project_id and user_id):
         return []
 
@@ -95,7 +257,15 @@ def synthesize_candidates(
                     metric_changes.append(ch)
         if observations is None:
             from backend.services.orchestrator import observations_store as obs
-            observations = obs.recent_observations(str(project_id), limit=20)
+            # Owner-scoped: this synthesis writes candidates owned by
+            # `user_id`, so it must only ever read observations owned by
+            # `user_id`. The store's `user_id` filter makes that structural
+            # rather than assumed. A wider slice than the old 20 is read
+            # because correlation needs to SEE the related rows to relate
+            # them — still one bounded query, still no provider call.
+            observations = obs.list_observations(
+                str(project_id), user_id=str(user_id),
+                limit=_MAX_OBSERVATIONS_READ)
     except Exception:  # pragma: no cover — never block on a read
         goals = goals or []
         metric_changes = metric_changes or []
@@ -103,6 +273,60 @@ def synthesize_candidates(
 
     goals = goals or []
     out: List[str] = []
+
+    # ── Correlated project states → EVIDENCE-BACKED candidates ───────────
+    # Derived from the observations already in hand. Pure computation.
+    # `membership` maps an observation id → the subject that speaks for it. It
+    # is the COMPLETE index over the states below, not a state's capped public
+    # id list — see the module docstring on why that distinction is the whole
+    # fix. An injected `intelligence` (tests) falls back to the public ids.
+    membership: Dict[str, dict] = {}
+    if intelligence is None:
+        try:
+            from backend.services import project_intelligence as pi
+            intelligence, membership = pi.project_states_with_membership(
+                observations or [], limit=max_candidates)
+        except Exception:  # pragma: no cover — never block on a projection
+            intelligence, membership = [], {}
+    else:
+        for state in intelligence or []:
+            if not isinstance(state, dict) or not _is_substantiated(state):
+                continue
+            for observation_id in state.get("evidence_observation_ids") or []:
+                membership.setdefault(str(observation_id), state)
+
+    for state in (intelligence or [])[:max_candidates]:
+        if not isinstance(state, dict):
+            continue
+        if str(state.get("state")) not in _PROMOTABLE_STATES:
+            continue    # resolved / in-progress / merely observed proposes nothing
+        if not _is_substantiated(state):
+            continue    # a lone uncorroborated signal is not a finding
+        state_id = str(state.get("id") or "")
+        if not state_id:
+            continue
+        aligned = _primary_goal(goals)
+        confidence = (state.get("confidence") or {}).get("score")
+        cid = cas.record_candidate_action(
+            project_id=str(project_id), user_id=str(user_id),
+            title=_state_title(state),
+            detail=_state_detail(state),
+            goal_id=(aligned or {}).get("id"),
+            source="OBSERVATION",
+            evidence_refs=_state_evidence_refs(state),
+            recommended_capability="research",   # investigate — cheap/AUTO
+            impact=_IMPACT_BY_STATE.get(str(state.get("state")), "medium"),
+            # The correlation's OWN evidence-derived score, not a constant.
+            # Where it came from is inspectable in the state's breakdown.
+            confidence=(float(confidence) if isinstance(confidence, (int, float))
+                        else 0.5),
+            cost="low", risk="low",
+            urgency=_URGENCY_BY_STATE.get(str(state.get("state")), "medium"),
+            # Dedup converges on the SUBJECT, so re-running after three more
+            # deploy failures updates one candidate instead of adding three.
+            dedup_key=f"intel:{state_id}")
+        if cid:
+            out.append(cid)
 
     # ── Significant metric changes → investigation candidates ────────────
     for ch in (metric_changes or [])[:max_candidates]:
@@ -132,9 +356,23 @@ def synthesize_candidates(
 
     # ── HIGH-importance observations → act-on candidates ─────────────────
     for o in (observations or []):
+        if not isinstance(o, dict):
+            continue
         if str(o.get("importance")) != "high":
             continue   # normal/low importance is retained, NOT promoted
         oid = o.get("id")
+        if oid and str(oid) in membership:
+            # This row is already a member of a correlated subject, and that
+            # subject has spoken for it above — by proposing ONE candidate, or
+            # by deliberately proposing none because its current state says the
+            # problem is resolved, in flight, or merely being discussed.
+            #
+            # Falling through here is what used to emit "Act on: Production
+            # deployment FAILED" hours after a later deploy to the same target
+            # went green, and what used to emit one of those per failure
+            # alongside the correlated candidate. Understanding the project has
+            # to mean the older path stops acting as if it does not exist.
+            continue
         ext = o.get("external_id") if isinstance(o, dict) else None
         aligned = _primary_goal(goals)
         summary = str(o.get("summary") or o.get("kind") or "signal")

@@ -23,6 +23,17 @@ class ProjectBrain:
     connector_signals:  list[dict] = field(default_factory=list)   # [{source, kind, summary, observed_at, importance, external_id}]
     products:           list[dict] = field(default_factory=list)   # [{build_type, title, status, artifact_ref, build_ref, run_id, node_id, updated_at}]
     linked_chats:       list[dict] = field(default_factory=list)   # [{thread_id, title, mode, updated_at, last_message}]
+    # Correlated project state — the SYNTHESIS of the connector signals above,
+    # produced by the `project_intelligence` projection. Bounded, derived, and
+    # never persisted: these are operational readings ("the payment webhook
+    # looks fixed"), not durable knowledge. See `project_intelligence` for the
+    # operational-vs-durable boundary.
+    intelligence:       list[dict] = field(default_factory=list)   # [{id, subject, state, confidence, sources, ...}]
+    # Typed BUSINESS KNOWLEDGE from the existing Memory Plane adapter
+    # (`orchestrator.business_knowledge`) — durable, provenance-tagged,
+    # TTL-aware facts and learnings. Read-only here; the brain has never been
+    # a knowledge store and still is not one.
+    business_knowledge: list[dict] = field(default_factory=list)   # [{domain, summary, source, observed_at, ...}]
     counts:             dict       = field(default_factory=dict)   # health snapshot
 
     def to_dict(self) -> dict[str, Any]:
