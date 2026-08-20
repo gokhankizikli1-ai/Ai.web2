@@ -30,13 +30,29 @@
 # See the Dockerfile header for why 3.11 specifically (requirements.txt
 # has a hard ceiling below 3.13).
 #
+# WHY THE START COMMAND MOVED INTO THIS FILE (production hotfix)
+# --------------------------------------------------------------
+# This file used to say, deliberately, that the web service kept its
+# start command in the Railway dashboard. That stopped being safe the
+# moment the service moved to the Dockerfile builder, and production
+# crash-looped on:
+#
+#   Error: Invalid value for '--port': '$PORT' is not a valid integer.
+#
+# Nixpacks ran the dashboard's start command through a SHELL, so
+# `--port $PORT` expanded. The Dockerfile builder applies it as the
+# container command directly, with no shell, so uvicorn received the
+# literal string `$PORT` and exited immediately.
+#
+# The dashboard is the one start-command source this repository cannot
+# see, review or fix. `startCommand` below supersedes it — the same
+# mechanism that fixed the worker's stale dashboard command (see
+# `railway.worker.toml`) — and points at the same script the image's
+# CMD does, so there is exactly ONE definition of how the web service
+# starts and it lives in the repo.
+#
 # WHAT THIS FILE DOES NOT DO
 # --------------------------
-# * NO start command override — the web service keeps the start
-#   command configured on the service in the Railway dashboard.
-#   (The Dockerfile carries a matching CMD as a fallback only; note
-#   that the Dockerfile builder does NOT read the Procfile — that was
-#   a Nixpacks/Railpack feature.)
 # * NO restart policy change — keep Railway's defaults.
 # * NO dependency change — the image runs the same
 #   `pip install -r requirements.txt` the Nixpacks build did.
@@ -51,3 +67,21 @@
 # builder migration — the interpreter comes from the base image.
 builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
+
+[deploy]
+# The SOURCE OF TRUTH for how the web service starts.
+#
+# Three bare tokens: no quotes, no `$`, no shell metacharacters. That is
+# deliberate — it tokenizes to the same three arguments whether Railway
+# splits the string naively, splits it with shell quoting rules, or wraps
+# it in a shell. The PORT expansion happens inside the script, in a real
+# shell, where it cannot be lost.
+#
+# `scripts/start-web.sh` is in the image: `.dockerignore` does not exclude
+# it and the Dockerfile's `COPY . .` brings it in.
+#
+# The operator should ALSO clear Settings → Deploy → Custom Start Command
+# for the web service so the two sources agree visually; this field wins
+# either way, but a stale dashboard value is what caused the incident and
+# leaving it in place invites the next one.
+startCommand = "sh scripts/start-web.sh"

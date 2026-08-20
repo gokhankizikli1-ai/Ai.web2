@@ -73,20 +73,16 @@ RUN python -m pip install --no-cache-dir --upgrade pip \
 # carries ~9 MB of PNG screenshots plus a local node_modules).
 COPY . .
 
-# FALLBACK ONLY — Railway's service start command takes precedence over
-# this CMD, and both services set one:
-#   * web    — the service's start command in the Railway dashboard
-#   * worker — `startCommand` in railway.worker.toml
+# The WEB start path, and the same one `railway.toml` declares.
 #
-# It exists because (a) an image with no CMD cannot run without an explicit
-# command, and (b) if the web service's start command were ever cleared,
-# this boots the API rather than failing outright. It mirrors the Procfile
-# `web:` line verbatim — including PYTHONHASHSEED=0, kept in the CMD rather
-# than a global ENV so the worker's environment is unchanged. `api:app` is
-# the repo-root entrypoint (see STABLE_CHECKPOINT.md); it re-exports the app
-# from backend/api.py and degrades to a /health-only app if that import
-# fails, so a fallback boot still passes the Railway healthcheck.
+# Both point at `scripts/start-web.sh` so the service cannot boot two
+# different ways: whichever path Railway takes — the `startCommand` in
+# `railway.toml` or this CMD — it runs the identical script, and the port
+# is expanded by a real shell inside it. See that script's header for the
+# production crash loop this arrangement exists to prevent.
+#
+# The worker overrides this with `startCommand` in railway.worker.toml.
 #
 # NOTE: the Dockerfile builder does NOT read the Procfile — that was a
 # Nixpacks/Railpack feature. This CMD is what replaces it in the image.
-CMD ["sh", "-c", "PYTHONHASHSEED=0 exec python -m uvicorn api:app --host 0.0.0.0 --port ${PORT:-8080}"]
+CMD ["sh", "scripts/start-web.sh"]
