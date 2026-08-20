@@ -1,16 +1,25 @@
 import { describe, it, expect } from 'vitest';
 import {
+  areaKey,
   askSuggestions,
   attentionReasonKey,
   changeKindKey,
+  changeKindKeyOf,
   changesCountKey,
   changesTitleKey,
   connectorSummary,
+  coverageCaveatKey,
   freshnessKey,
   freshnessRelative,
+  gapKey,
+  groupingRationale,
+  hasUnderstanding,
+  implicationKey,
   knowledgeKindKey,
   newProjectChatUrl,
   normalizeKnowledgeItem,
+  normalizeProjectStateItem,
+  normalizeProjectUnderstanding,
   normalizeTask,
   normalizeWorkspace,
   openProjectChatUrl,
@@ -25,11 +34,15 @@ import {
   relativeTime,
   relativeTimeKey,
   renderableActions,
+  renderableCodes,
   seenThrough,
   severityTone,
   sourceLabel,
+  stateKey,
+  stateTone,
   taskStatusKey,
   toggledTaskStatus,
+  uncertaintyKey,
   KNOWLEDGE_KIND_ORDER,
   TASK_STATUS_ORDER,
   type ProjectTask,
@@ -708,6 +721,274 @@ describe('merge safety — localStorage is not a task authority', () => {
     for (const fn of ['listProjectTasks', 'createProjectTask', 'updateProjectTask',
                       'deleteProjectTask']) {
       expect(typeof (api as Record<string, unknown>)[fn]).toBe('function');
+    }
+  });
+});
+
+
+/* ══════════════════════════════════════════════════════════════════════════
+   PROJECT UNDERSTANDING — the reading, and what it must refuse to claim
+
+   The backend ships stable CODES for every derived concept and the page owns
+   the words. So the tests here are about two things: that a code this bundle
+   does not know is dropped rather than rendered as an identifier, and that
+   every code the backend CAN emit resolves to a real string in all three
+   shipped languages.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+const STATE_ITEM: unknown = {
+  id: 's1',
+  subject: 'payment webhook',
+  entity_type: 'topic',
+  state: 'conflicting',
+  confidence: { score: 0.8, level: 'high' },
+  sources: ['github', 'slack', 'vercel'],
+  evidence_count: 3,
+  member_count: 3,
+  corroborated: true,
+  facets: [],
+  supporting: [{ observation_id: 'o2', source: 'github', kind: 'github.pull_request.merged',
+                 semantic_type: 'change_landed', title: 'PR #712 merged',
+                 observed_at: '2026-06-03T09:00:00Z' }],
+  contradicting: [{ observation_id: 'o3', source: 'vercel',
+                    kind: 'vercel.deployment.error', semantic_type: 'deploy_failed',
+                    title: 'Production deployment FAILED', observed_at: '2026-06-03T10:00:00Z' }],
+  context: [],
+  first_seen: '2026-06-03T07:00:00Z',
+  last_seen: '2026-06-03T10:00:00Z',
+  understanding: {
+    id: 's1',
+    areas: [{ area: 'deployment', basis: 'structural' },
+            { area: 'billing', basis: 'textual' }],
+    change_kind: { kind: 'bug', basis: 'textual' },
+    environments: ['production'],
+    implications: [{ code: 'production_broken' }, { code: 'fix_not_proven_live' }],
+    uncertainty: [{ code: 'conflicting_evidence' }],
+    blockers: [{ code: 'deploy_failed', facet: 'deploy', environment: 'production',
+                 source: 'vercel', title: 'Production deployment FAILED',
+                 observation_id: 'o3', observed_at: '2026-06-03T10:00:00Z',
+                 regressed: false }],
+    last_meaningful_change: { at: '2026-06-03T10:00:00Z', code: 'deploy_failed',
+                              facet: 'deploy', environment: 'production',
+                              source: 'vercel', title: 'Production deployment FAILED',
+                              observation_id: 'o3' },
+  },
+};
+
+const UNDERSTANDING: unknown = {
+  generated_at: '2026-06-03T12:00:00Z',
+  window_days: 14,
+  state: 'conflicting',
+  coverage: { observations: 3, sources: ['github', 'slack', 'vercel'], source_count: 3,
+              subjects: 1, single_source: false, oldest_observed_at: '2026-06-03T07:00:00Z',
+              newest_observed_at: '2026-06-03T10:00:00Z', recent: true, window_days: 14 },
+  open: [{ id: 's1', subject: 'payment webhook', state: 'conflicting',
+           entity_type: 'topic', confidence: 'high', areas: ['deployment'],
+           change_kind: 'bug', sources: ['github'], last_seen: '2026-06-03T10:00:00Z',
+           last_change_at: '2026-06-03T10:00:00Z' }],
+  resolved_recently: [],
+  uncertain: [],
+  blockers: [],
+  meaningful_changes: [],
+  gaps: [{ code: 'production_unverified' }],
+  relationships: [],
+  counts: { subjects: 1, open: 1 },
+};
+
+describe('project understanding — normalization', () => {
+  it('normalizes a full subject without losing the reading', () => {
+    const item = normalizeProjectStateItem(STATE_ITEM);
+    expect(item).not.toBeNull();
+    expect(item!.state).toBe('conflicting');
+    expect(item!.understanding!.implications.map((i) => i.code))
+      .toEqual(['production_broken', 'fix_not_proven_live']);
+    expect(item!.understanding!.blockers[0].environment).toBe('production');
+    expect(item!.understanding!.last_meaningful_change!.source).toBe('vercel');
+  });
+
+  it('drops a subject whose state this bundle cannot name', () => {
+    // Rendering a story under an invented status is worse than not rendering
+    // it: the user would trust a word Korvix never said.
+    expect(normalizeProjectStateItem({ ...(STATE_ITEM as object), state: 'vibes' }))
+      .toBeNull();
+    expect(normalizeProjectStateItem({ ...(STATE_ITEM as object), id: '' })).toBeNull();
+  });
+
+  it('a subject with no understanding still renders as a subject', () => {
+    const item = normalizeProjectStateItem({ ...(STATE_ITEM as object), understanding: {} });
+    expect(item).not.toBeNull();
+    expect(item!.understanding).toBeNull();
+  });
+
+  it('an unrecognised project state degrades to the WEAKEST claim', () => {
+    // Same rule the change block follows: never print a stronger claim than
+    // the payload can prove.
+    const u = normalizeProjectUnderstanding({ ...(UNDERSTANDING as object), state: 'great' });
+    expect(u!.state).toBe('no_evidence');
+  });
+
+  it('survives a completely degraded payload without throwing', () => {
+    expect(normalizeProjectUnderstanding(null)).toBeNull();
+    expect(normalizeProjectUnderstanding({})).toBeNull();
+    expect(normalizeProjectStateItem(undefined)).toBeNull();
+    const u = normalizeProjectUnderstanding({ state: 'observed', gaps: 'nope',
+                                              open: [null, 7], coverage: 'x' });
+    expect(u!.open).toEqual([]);
+    expect(u!.gaps).toEqual([]);
+    expect(u!.coverage.observations).toBe(0);
+  });
+
+  it('folds the understanding into the workspace snapshot', () => {
+    const ws = normalizeWorkspace({
+      ...(FULL as object),
+      project_state: [STATE_ITEM, { id: 'bad' }],
+      project_understanding: UNDERSTANDING,
+    })!;
+    expect(ws.projectState).toHaveLength(1);
+    expect(ws.understanding!.state).toBe('conflicting');
+  });
+
+  it('a workspace with no understanding is a valid workspace', () => {
+    const ws = normalizeWorkspace(FULL)!;
+    expect(ws.projectState).toEqual([]);
+    expect(ws.understanding).toBeNull();
+    expect(hasUnderstanding(ws)).toBe(false);
+  });
+});
+
+describe('project understanding — what the page is allowed to say', () => {
+  it('renders nothing at all for a project with no evidence', () => {
+    const ws = normalizeWorkspace({
+      ...(FULL as object),
+      project_state: [],
+      project_understanding: { state: 'no_evidence',
+                               coverage: { observations: 0 },
+                               gaps: [{ code: 'no_evidence' }] },
+    })!;
+    expect(hasUnderstanding(ws)).toBe(false);
+  });
+
+  it('drops a code it cannot translate instead of printing an identifier', () => {
+    const rendered = renderableCodes(
+      [{ code: 'production_broken' }, { code: 'invented_by_a_newer_backend' }],
+      implicationKey);
+    expect(rendered.map((r) => r.code)).toEqual(['production_broken']);
+  });
+
+  it('names a wording-only grouping differently from a structural one', () => {
+    // The honesty surface: "we linked these because two people used the same
+    // phrase" is a materially weaker claim than "same commit".
+    const structural = groupingRationale(normalizeProjectStateItem(STATE_ITEM)!);
+    expect(structural!.wordingOnly).toBe(false);
+    const weak = normalizeProjectStateItem({
+      ...(STATE_ITEM as object),
+      understanding: { ...((STATE_ITEM as { understanding: object }).understanding),
+                       uncertainty: [{ code: 'topical_link_only' }] },
+    })!;
+    expect(groupingRationale(weak)!.wordingOnly).toBe(true);
+  });
+
+  it('shows at most one coverage caveat, strongest first', () => {
+    const stale = normalizeProjectUnderstanding({
+      ...(UNDERSTANDING as object),
+      gaps: [{ code: 'single_source_project' }, { code: 'no_recent_evidence' }],
+    })!;
+    expect(coverageCaveatKey(stale)).toBe('projectUnderstandingCaveatStale');
+    expect(coverageCaveatKey(normalizeProjectUnderstanding(UNDERSTANDING)!)).toBeNull();
+    expect(coverageCaveatKey(null)).toBeNull();
+  });
+
+  it('never renders an "unknown" change kind as a chip', () => {
+    expect(changeKindKeyOf('unknown')).toBeNull();
+    expect(changeKindKeyOf('bug')).toBe('projectChangeKindBug');
+  });
+
+  it('maps a state to a tone without inventing a severity', () => {
+    expect(stateTone('conflicting')).toBe('critical');
+    expect(stateTone('unresolved')).toBe('critical');
+    expect(stateTone('in_progress')).toBe('warning');
+    expect(stateTone('likely_resolved')).toBe('positive');
+    expect(stateTone('observed')).toBe('info');
+    expect(stateTone('anything-else')).toBe('info');
+  });
+
+  it('suggests the state questions only when there is state to discuss', () => {
+    const quiet = normalizeWorkspace(FULL)!;
+    expect(askSuggestions(quiet).map((s) => s.id)).not.toContain('state');
+    const loud = normalizeWorkspace({
+      ...(FULL as object),
+      project_state: [STATE_ITEM],
+      project_understanding: UNDERSTANDING,
+    })!;
+    const ids = askSuggestions(loud).map((s) => s.id);
+    expect(ids).toContain('state');
+    expect(ids).toContain('uncertain');
+  });
+});
+
+describe('project understanding — every code ships in every language', () => {
+  const AREAS = ['frontend', 'backend', 'deployment', 'auth', 'billing', 'database',
+                 'connector', 'product', 'infrastructure', 'content', 'unknown'];
+  const KINDS = ['feature', 'bug', 'regression', 'deployment', 'configuration',
+                 'dependency', 'security', 'operational', 'communication'];
+  const IMPLICATIONS = ['production_broken', 'recurrence', 'fix_not_proven_live',
+                        'blocked_by_ci', 'issue_open', 'preview_only_verified',
+                        'work_in_flight', 'reported_but_unconfirmed', 'verified_live'];
+  const UNCERTAINTY = ['conflicting_evidence', 'production_unverified',
+                       'deploy_outcome_unknown', 'stale_evidence', 'single_source',
+                       'topical_link_only', 'thin_evidence', 'no_decisive_evidence',
+                       'undated_evidence', 'unknown_affected_scope'];
+  const GAPS = ['no_evidence', 'no_recent_evidence', 'single_source_project',
+                'no_deployment_evidence', 'production_unverified',
+                'unknown_affected_scope'];
+  const STATES = ['unresolved', 'conflicting', 'in_progress', 'likely_resolved',
+                  'observed', 'no_evidence'];
+
+  const cases: [string, string[], (code: string) => string | null][] = [
+    ['area', AREAS, areaKey],
+    ['change kind', KINDS, changeKindKeyOf],
+    ['implication', IMPLICATIONS, implicationKey],
+    ['uncertainty', UNCERTAINTY, uncertaintyKey],
+    ['gap', GAPS, gapKey],
+    ['state', STATES, (c) => stateKey(c)],
+  ];
+
+  for (const [label, codes, resolve] of cases) {
+    it(`resolves every ${label} code in every shipped locale`, () => {
+      for (const code of codes) {
+        const key = resolve(code);
+        expect(key, `${label}:${code} has no i18n key`).toBeTruthy();
+        for (const locale of Object.keys(LOCALES) as (keyof typeof LOCALES)[]) {
+          expect(LOCALES[locale][key as string], `${locale}:${key}`).toBeTruthy();
+        }
+      }
+    });
+  }
+
+  it('every section string the state panel prints ships in every locale', () => {
+    const keys = ['projectSectionState', 'projectStateEmpty', 'projectStateWhy',
+                  'projectStateWhyHide', 'projectStateWhyTitle',
+                  'projectStateGroupedByResource', 'projectStateGroupedByWording',
+                  'projectStateChangedTitle', 'projectStateEvidenceTitle',
+                  'projectStateUncertainTitle', 'projectStateGapsTitle',
+                  'projectStateAskPrompt', 'projectStateGeneric',
+                  'projectUnderstandingCaveatStale',
+                  'projectUnderstandingCaveatSingleSource',
+                  'projectUnderstandingCaveatNoDeploy',
+                  'projectAskStateLabel', 'projectAskStatePrompt',
+                  'projectAskUncertainLabel', 'projectAskUncertainPrompt'];
+    for (const locale of Object.keys(LOCALES) as (keyof typeof LOCALES)[]) {
+      for (const key of keys) {
+        expect(LOCALES[locale][key], `${locale}:${key}`).toBeTruthy();
+      }
+    }
+  });
+
+  it('an unknown state falls back to a neutral shipped key, never a raw code', () => {
+    const key = stateKey('a_state_from_a_newer_backend');
+    expect(key).toBe('projectStateGeneric');
+    for (const locale of Object.keys(LOCALES) as (keyof typeof LOCALES)[]) {
+      expect(LOCALES[locale][key]).toBeTruthy();
     }
   });
 });

@@ -150,6 +150,10 @@ MIN_SUBJECT_MEMBERS = 2
 MAX_STATES = 8
 #: Evidence rows carried per list, per state.
 MAX_EVIDENCE = 4
+#: Per-target technical readings carried per state (see `_facet_rows`). This is
+#: the STRUCTURAL view `interpretation` reasons over — one entry per deploy
+#: target / CI check / PR — and it is bounded like everything else.
+MAX_FACETS = 8
 #: Observation ids carried per state so a consumer can cross-link an item it
 #: already holds (a Needs-Attention row) to the story it belongs to, without
 #: re-deriving the correlation. Bounded like everything else.
@@ -422,6 +426,83 @@ def _entity_label(component_keys: Sequence[str],
     return (_s(getattr(chosen, "title", ""), 120) or "project activity"), entity_type
 
 
+#: Presentation order for the facet list. NOT a severity model — `attention`
+#: still owns severity. It simply puts what is broken above what is fine, so a
+#: bounded list never truncates away the negative reading.
+_POLARITY_RANK = {
+    ev.POLARITY_NEGATIVE: 0,
+    ev.POLARITY_PENDING: 1,
+    ev.POLARITY_POSITIVE: 2,
+    ev.POLARITY_NEUTRAL: 3,
+}
+
+
+def _facet_rows(units: Sequence[ev.Event],
+                decisive_latest: Sequence[ev.Event]) -> List[Dict[str, Any]]:
+    """The STRUCTURAL reading: the latest word per technical target.
+
+    WHY THIS IS EXPORTED, AND WHY IT IS NOT A SECOND EVIDENCE LIST
+    ---------------------------------------------------------------
+    `supporting` / `contradicting` / `context` are the DISPLAY projection of
+    the same events — filtered by what the inferred state means and capped for
+    a card. They deliberately cannot answer "which environment was that deploy
+    to?", because they were built to be read, not reasoned over. Everything
+    downstream that has to distinguish a red PRODUCTION deploy from a green
+    PREVIEW one was therefore re-deriving it from prose, or not at all.
+
+    This list is the same events expressed structurally instead: one row per
+    `facet_ref`, carrying the facet, the polarity, the environment and the
+    provenance. `interpretation` reads THIS; nothing re-parses a title.
+
+    The decisive rows are exactly the ones `_infer_state` ruled on, so the
+    structural view and the state can never disagree. Rows for targets the
+    state logic had nothing decisive about (a deploy that started and never
+    reported, a bare push, a PR still open) are added only for `facet_ref`s
+    the decisive set does not already cover — they add information without
+    being able to contradict it.
+
+    Display-safe: `facet_ref` embeds provider identifiers and never leaves.
+    """
+    covered = {e.facet_ref for e in decisive_latest}
+    extra_pool = [u for u in units
+                  if u.facet in ev.TECHNICAL_FACETS
+                  and not u.is_decisive
+                  and u.facet_ref not in covered]
+    chosen = list(decisive_latest) + _latest_per_ref(extra_pool)
+
+    # A target that was GREEN and is now RED has not merely failed — it
+    # regressed, and that is a different fact about the project. Derived from
+    # the same deduplicated units, per target, so it costs one pass.
+    positives_before: Dict[str, List[Optional[datetime]]] = {}
+    for unit in units:
+        if unit.polarity == ev.POLARITY_POSITIVE:
+            positives_before.setdefault(unit.facet_ref, []).append(unit.when)
+
+    rows: List[Dict[str, Any]] = []
+    for event in chosen:
+        regressed = False
+        if event.polarity == ev.POLARITY_NEGATIVE and event.when is not None:
+            regressed = any(stamp is not None and stamp < event.when
+                            for stamp in positives_before.get(event.facet_ref, ()))
+        rows.append({
+            "facet": _s(event.facet, 24),
+            "polarity": _s(event.polarity, 16),
+            "semantic_type": _s(event.semantic_type, 40),
+            "environment": _s(event.environment, 40),
+            "source": _s(event.source, 40),
+            "title": _s(event.title, 200),
+            "observation_id": _s(event.observation_id, 64),
+            "observed_at": _s(event.observed_at, 64),
+            "regressed": regressed,
+        })
+    rows.sort(key=lambda r: (
+        _POLARITY_RANK.get(r["polarity"], 9),
+        -(parse_iso(r["observed_at"]).timestamp()
+          if parse_iso(r["observed_at"]) is not None else float("-inf")),
+        r["facet"], r["semantic_type"], r["observation_id"]))
+    return rows[:MAX_FACETS]
+
+
 def _build_state(component_keys: Sequence[str], members: Sequence[ev.Event],
                  *, now: datetime) -> Optional[Dict[str, Any]]:
     """One resolved entity → one public inferred-state row."""
@@ -527,6 +608,10 @@ def _build_state(component_keys: Sequence[str], members: Sequence[ev.Event],
         "rationale": sorted({m.semantic_type for m in decisive_latest}
                             or {m.semantic_type for m in pending}
                             or {m.semantic_type for m in units}),
+        # The STRUCTURAL per-target reading — see `_facet_rows`. This is what
+        # `interpretation` reasons over; the three evidence lists below are the
+        # display projection of the same events.
+        "facets": _facet_rows(units, decisive_latest),
         "supporting": [_evidence_row(m) for m in supporting[:MAX_EVIDENCE]],
         "contradicting": [_evidence_row(m) for m in contradicting[:MAX_EVIDENCE]],
         "context": [_evidence_row(m) for m in context[:MAX_EVIDENCE]],
@@ -641,6 +726,23 @@ def _correlate_rows(
         if len(kept) >= bound:
             break
 
+    # INTERPRETATION. Correlation says WHAT each subject is; `interpretation`
+    # says what it MEANS — affected area, change kind, implications, what is
+    # still unknown — from the structural `facets` rows just built. It is
+    # attached here, once, so that every consumer of a projection sees the
+    # same understanding instead of three surfaces re-deriving it differently
+    # (which is exactly what they were doing).
+    #
+    # Imported lazily because `interpretation` reads this module's own state
+    # and confidence vocabulary; a module-level import either way would be a
+    # cycle. Fail-soft: a projection without understanding still degrades to
+    # the pre-existing behaviour rather than failing the read.
+    try:
+        from backend.services.project_intelligence import interpretation
+        interpretation.attach(kept)
+    except Exception:      # pragma: no cover — never break a projection
+        pass
+
     return kept
 
 
@@ -710,7 +812,7 @@ __all__ = [
     "ENTITY_TOPIC", "ENTITY_PULL_REQUEST", "ENTITY_ISSUE", "ENTITY_CHANGE",
     "ENTITY_DEPLOYMENT", "ENTITY_CI", "ENTITY_MEETING",
     "MAX_OBSERVATIONS", "MAX_STATES", "MAX_EVIDENCE", "MAX_EVIDENCE_IDS",
-    "CORRELATION_WINDOW_DAYS",
+    "MAX_FACETS", "CORRELATION_WINDOW_DAYS",
     "FRESH_DAYS", "MIN_TOPIC_SOURCES", "MIN_CORROBORATED_EVIDENCE",
     "MIN_SUBJECT_MEMBERS", "MAX_SCORE",
     "correlate", "correlate_with_membership",

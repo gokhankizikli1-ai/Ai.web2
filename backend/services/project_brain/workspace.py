@@ -20,7 +20,9 @@ PROJECTION over authorities that already exist, assembled once per page load:
     attention               the deterministic ranking     (pure)
     today                   the deterministic Today block (pure)
     recent_changes          "since your last visit"       (pure)
-    project_intelligence    correlated PROJECT STATE      (pure)
+    project_intelligence    correlated + INTERPRETED
+                            project state, and the
+                            project-level synthesis       (pure)
 
 WHAT IT IS NOT
 --------------
@@ -45,6 +47,9 @@ WHAT IT IS NOT
     observations `attention` already ranks — what they add up to, not a rival
     opinion about what is urgent. It never reorders Needs Attention and never
     feeds Today's ladder; it only lets a row say which story it belongs to.
+    `project_understanding` is the project-level reading of those same
+    subjects, in the same order: no health score, no percentage, no second
+    opinion about urgency.
 
 ISOLATION
 ---------
@@ -389,15 +394,26 @@ def _change_rows(observations: List[dict], chats: List[dict],
     A connector row borrows its key from `attention`'s subject when the
     observation is one of the classified concepts — that is the same identity
     the supersession rules already use, so "deploy failed" and the later "deploy
-    recovered" collapse onto each other rather than both being reported."""
+    recovered" collapse onto each other rather than both being reported.
+
+    AUDIT FINDING, fixed here: that subject is `vercel:deploy:<vercel project
+    id>:production` — it EMBEDS an opaque provider resource id, and this key
+    travels in the payload. `attention` digests exactly these before shipping
+    them (`stable_id`) precisely because they are not something a client asked
+    to see; the change list was shipping them raw, against this module's own
+    stated invariant. Connector keys are now digested through the SAME
+    function, so the identity still dedups exactly as before and the provider
+    id stays on the server. Korvix's own ids (a thread, a deliverable, a task)
+    are unaffected: those are already in the payload by name."""
     rows: List[dict] = []
     for o in observations or []:
         signal = attention_mod.classify_observation(o, now=now)
         subject = _s(signal.get("subject"), 200) if signal else ""
         source = _s(o.get("source"), 40)
         title = _s(o.get("summary"), 240) or _s(o.get("kind"), 120)
+        identity = subject or f"{source}:{_s(o.get('kind'), 120)}:{title[:80]}"
         rows.append(changes_mod.change_row(
-            key=subject or f"{source}:{_s(o.get('kind'), 120)}:{title[:80]}",
+            key=f"connector:{attention_mod.stable_id(identity)}",
             change=changes_mod.CHANGE_CONNECTOR, source=source, title=title,
             occurred_at=o.get("observed_at")))
     for c in chats or []:
@@ -513,6 +529,25 @@ def _build_activity(observations: List[dict], chats: List[dict],
     return rows[:_MAX_ACTIVITY]
 
 
+#: Fields on a correlated state that exist for BACKEND consumers and have no
+#: renderer on the page. `facets` is the structural per-target reading
+#: `interpretation`, `synthesis` and `candidate_synthesis` reason over; the page
+#: shows what that reasoning CONCLUDED (`understanding`) plus the evidence
+#: lists, never the raw per-target rows. Shipping it anyway would roughly
+#: double the size of every subject in the payload to no one's benefit.
+_INTERNAL_STATE_FIELDS = ("facets",)
+
+
+def _page_state_rows(states: List[dict]) -> List[dict]:
+    """The subject rows as the PAGE sees them.
+
+    A shallow copy per row, deliberately: the originals are the same objects
+    the membership index points at, and `_link_attention_to_state` must keep
+    matching against those rather than against a payload projection."""
+    return [{k: v for k, v in state.items() if k not in _INTERNAL_STATE_FIELDS}
+            for state in states or [] if isinstance(state, dict)]
+
+
 def _link_attention_to_state(attention: List[dict],
                              membership: Dict[str, dict]) -> None:
     """Tell each Needs-Attention row which correlated story it belongs to.
@@ -608,11 +643,18 @@ def build(user_id: str, project_id: str, *,
     # understands the project without issuing a single extra query, calling a
     # provider, or spending a token. Pure and fail-soft like every other slice.
     project_state: List[dict] = []
+    project_understanding: Dict[str, Any] = {}
     state_membership: Dict[str, dict] = {}
     try:
         from backend.services import project_intelligence as pi
-        project_state, state_membership = pi.project_states_with_membership(
-            observations, now=when, limit=_MAX_PROJECT_STATE)
+        # ONE call for both halves, so the subject list and the project-level
+        # reading are guaranteed to describe the same rows at the same instant.
+        # Each subject arrives already INTERPRETED (affected areas, what the
+        # evidence implies, what is still unknown) — the page renders that; it
+        # derives none of it.
+        project_state, project_understanding, state_membership = (
+            pi.understand_with_membership(
+                observations, now=when, limit=_MAX_PROJECT_STATE))
     except Exception as exc:
         logger.debug("project_workspace: project intelligence unavailable: %s", exc)
     _link_attention_to_state(attention, state_membership)
@@ -651,7 +693,14 @@ def build(user_id: str, project_id: str, *,
         "today":      today,
         "goals":      goals,
         "attention":  attention,
-        "project_state": project_state,
+        "project_state": _page_state_rows(project_state),
+        # WHAT IT ALL ADDS UP TO — the project-level reading of the subjects
+        # above. Not a health score and not a second ranking: a state code
+        # from the SAME vocabulary the subjects use, honest coverage, and the
+        # bounded open / uncertain / resolved / blocked / not-known slices of
+        # the order `project_state` is already in. `{}` is never returned —
+        # an empty project gets an honest empty reading instead.
+        "project_understanding": project_understanding,
         "activity":   activity,
         "changes":    changes,
         "tasks": {
@@ -680,6 +729,7 @@ def build(user_id: str, project_id: str, *,
         "counts": {
             "attention":  len(attention),
             "project_state": len(project_state),
+            "project_state_open": len((project_understanding or {}).get("open") or []),
             "activity":   len(activity),
             "goals":      len(goals),
             "products":   len(products),

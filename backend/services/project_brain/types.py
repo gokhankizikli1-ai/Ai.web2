@@ -28,7 +28,19 @@ class ProjectBrain:
     # never persisted: these are operational readings ("the payment webhook
     # looks fixed"), not durable knowledge. See `project_intelligence` for the
     # operational-vs-durable boundary.
-    intelligence:       list[dict] = field(default_factory=list)   # [{id, subject, state, confidence, sources, ...}]
+    intelligence:       list[dict] = field(default_factory=list)   # [{id, subject, state, confidence, sources, understanding, ...}]
+    # The PROJECT-LEVEL reading of those subjects — what they add up to, what
+    # is open/uncertain/blocking, and what Korvix does NOT know. Produced by
+    # `project_intelligence.synthesize` from the SAME rows as `intelligence`,
+    # in the same instant, so the two can never disagree. Bounded, derived,
+    # never persisted; `{}` when there is nothing to read.
+    understanding:      dict       = field(default_factory=dict)
+    # The EXISTING deterministic Needs-Attention ranking
+    # (`project_brain.attention`), surfaced so a project chat can answer "what
+    # should I focus on?" from the authority that already owns that question
+    # instead of the model inventing an order. Read-only passthrough — nothing
+    # here re-ranks it.
+    attention:          list[dict] = field(default_factory=list)   # [{id, severity, reason, source, kind, title, context, observed_at}]
     # Typed BUSINESS KNOWLEDGE from the existing Memory Plane adapter
     # (`orchestrator.business_knowledge`) — durable, provenance-tagged,
     # TTL-aware facts and learnings. Read-only here; the brain has never been

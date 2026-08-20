@@ -38,6 +38,7 @@ COST: pure functions. ZERO I/O, ZERO model tokens, ZERO provider calls.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -58,6 +59,52 @@ FACET_OTHER = "other"
 #: The facets whose latest event can DECIDE a state. Discussion/mail/meeting
 #: are evidence that a subject is live, never proof that it is fixed.
 DECISIVE_FACETS = frozenset({FACET_CODE, FACET_CI, FACET_DEPLOY, FACET_ISSUE})
+
+#: The facets that describe the WORK ITSELF rather than people talking about
+#: it. `interpretation` reads the latest event per target across exactly these
+#: — including the ones that settle nothing (a queued deploy, a bare push) —
+#: because "a deploy started and we never heard how it went" is a fact about
+#: the project that the decisive-only view cannot express.
+TECHNICAL_FACETS = DECISIVE_FACETS
+
+# ── Deployment environments ──────────────────────────────────────────────────
+# A deploy target is the difference between "the fix is live" and "the fix
+# built once on a preview URL". Both connectors already carry it — Vercel as
+# `target`, GitHub as the deployment's `environment` — and BOTH were parsed
+# into a key and then thrown away, so nothing downstream could tell production
+# from preview. It is kept on the event now, normalized to one vocabulary.
+ENV_PRODUCTION = "production"
+ENV_PREVIEW = "preview"
+
+#: Provider spellings that mean the same target. Anything else is kept as the
+#: project's OWN environment name (GitHub environments are user-defined:
+#: `staging`, `qa`, `eu-west`), because renaming someone's environment to
+#: "other" would lose the only word they use for it.
+_ENV_ALIASES = {
+    "production": ENV_PRODUCTION, "prod": ENV_PRODUCTION,
+    "preview": ENV_PREVIEW, "pr": ENV_PREVIEW,
+    "development": ENV_PREVIEW, "dev": ENV_PREVIEW,
+}
+#: An environment name travels into a system prompt and onto a page. It is
+#: user-authored text, so it is reduced to this alphabet — no newlines, no
+#: markup, nothing that could restructure a prompt block around it.
+_ENV_ALLOWED = re.compile(r"[^a-z0-9 ._/-]+")
+_MAX_ENV_CHARS = 40
+
+
+def normalize_environment(value: Any) -> str:
+    """A provider's deploy target → the shared environment vocabulary, or "".
+
+    Never raises, never invents: an unrecognised name is sanitized and kept,
+    an empty one stays empty (and every consumer treats "" as "we do not know
+    which environment this was", not as production)."""
+    text = _s(value, _MAX_ENV_CHARS * 2).strip().lower()
+    if not text:
+        return ""
+    alias = _ENV_ALIASES.get(text)
+    if alias:
+        return alias
+    return _ENV_ALLOWED.sub("", text).strip()[:_MAX_ENV_CHARS]
 
 # ── Polarity ─────────────────────────────────────────────────────────────────
 POLARITY_POSITIVE = "positive"
@@ -143,6 +190,10 @@ class Event:
     observed_at: str
     when: Optional[datetime]
     facet_ref: str = ""
+    #: The deploy target this event speaks about ("production" / "preview" /
+    #: the project's own environment name), or "" when the event is not about
+    #: a deployment at all. "" NEVER means production.
+    environment: str = ""
     link_keys: List[str] = field(default_factory=list)
     group_keys: List[str] = field(default_factory=list)
     topic_keys: List[str] = field(default_factory=list)
@@ -215,11 +266,13 @@ def _semantic_for(source: str, kind: str, payload: Dict[str, Any]) -> str:
 
 
 def _github_keys(kind: str, payload: Dict[str, Any]) -> tuple:
-    """(link_keys, group_keys, facet_ref, extra_text) for a GitHub event."""
+    """(link_keys, group_keys, facet_ref, extra_text, environment) for a GitHub
+    event. `environment` is "" for everything that is not a deployment."""
     repo = payload.get("repo")
     link: List[str] = []
     group: List[str] = []
     facet_ref = ""
+    environment = ""
     text_parts: List[str] = []
 
     if kind.startswith("github.pull_request."):
@@ -252,6 +305,7 @@ def _github_keys(kind: str, payload: Dict[str, Any]) -> tuple:
             link.append(branch)
         text_parts += [payload.get("name"), payload.get("branch")]
     elif kind.startswith("github.deployment"):
+        environment = normalize_environment(payload.get("environment"))
         key = k.deploy_key("github", repo, payload.get("environment"))
         if key:
             group.append(key)
@@ -271,13 +325,17 @@ def _github_keys(kind: str, payload: Dict[str, Any]) -> tuple:
             facet_ref = sha
         text_parts.append(payload.get("message"))
 
-    return link, group, facet_ref, text_parts
+    return link, group, facet_ref, text_parts, environment
 
 
 def _vercel_keys(payload: Dict[str, Any]) -> tuple:
     git = payload.get("git") if isinstance(payload.get("git"), dict) else {}
     link: List[str] = []
     group: List[str] = []
+    # Vercel's own default: a deployment with no explicit target is a PREVIEW
+    # (mirrors `vercel.normalize._target_of`). Defaulting the other way would
+    # let an unlabelled build claim it proved production.
+    environment = normalize_environment(payload.get("target")) or ENV_PREVIEW
     key = k.deploy_key("vercel", payload.get("vercel_project_id"),
                        payload.get("target"))
     if key:
@@ -290,7 +348,7 @@ def _vercel_keys(payload: Dict[str, Any]) -> tuple:
         link.append(branch)
     text_parts = [git.get("ref"), git.get("commit_message"),
                   payload.get("error_message")]
-    return link, group, (key or ""), text_parts
+    return link, group, (key or ""), text_parts, environment
 
 
 def event_from_observation(obs: Any) -> Optional[Event]:
@@ -313,13 +371,14 @@ def event_from_observation(obs: Any) -> Optional[Event]:
     link: List[str] = []
     group: List[str] = []
     facet_ref = ""
+    environment = ""
     text_parts: List[Any] = [summary]
 
     if source == "github":
-        link, group, facet_ref, extra = _github_keys(kind, payload)
+        link, group, facet_ref, extra, environment = _github_keys(kind, payload)
         text_parts += extra
     elif source == "vercel":
-        link, group, facet_ref, extra = _vercel_keys(payload)
+        link, group, facet_ref, extra, environment = _vercel_keys(payload)
         text_parts += extra
     elif source == "slack":
         # The message body only. The channel LABEL is deliberately excluded:
@@ -357,6 +416,7 @@ def event_from_observation(obs: Any) -> Optional[Event]:
         observed_at=_s(obs.get("observed_at"), 64),
         when=parse_iso(obs.get("observed_at")),
         facet_ref=facet_ref or f"{source}:{facet}",
+        environment=environment,
         link_keys=link,
         group_keys=group[:k.MAX_LINK_KEYS],
         topic_keys=topics,
@@ -387,5 +447,7 @@ __all__ = [
     "SEM_DEPLOY_FAILED", "SEM_DEPLOY_SUCCEEDED", "SEM_DEPLOY_CANCELLED",
     "SEM_DEPLOY_STARTED", "SEM_ISSUE_OPENED", "SEM_ISSUE_CLOSED",
     "SEM_DISCUSSION", "SEM_MAIL", "SEM_MEETING", "SEM_ACTIVITY",
-    "SEMANTICS", "Event", "event_from_observation", "events_from_observations",
+    "SEMANTICS", "TECHNICAL_FACETS",
+    "ENV_PRODUCTION", "ENV_PREVIEW", "normalize_environment",
+    "Event", "event_from_observation", "events_from_observations",
 ]

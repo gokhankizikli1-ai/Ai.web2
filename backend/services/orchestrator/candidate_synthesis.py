@@ -41,11 +41,28 @@ rather than a constant. Every raw observation that is already evidence for a
 promoted state is SUPPRESSED, so the dedup converges on the underlying subject
 instead of emitting one candidate per event.
 
+RICHER HANDOFF, SAME AUTHORITY BOUNDARY
+----------------------------------------
+Project Intelligence now hands over an INTERPRETATION alongside the state:
+which part of the project the subject touches, what kind of change it is, what
+the evidence implies, what is still unknown, and which concrete rows are
+blocking. All of that is written onto the candidate's detail and provenance so
+a reviewer — and `action_prioritizer` after them — sees the reasoning instead
+of a bare list of event titles.
+
+It changes nothing about WHO DECIDES. The promotion rules below are byte-for-
+byte the ones they were: only `unresolved` / `conflicting`, only when
+substantiated. An implication ("nothing proves the fix is live") is a reading
+of evidence; the proposal, the ranking and the execution gate remain here,
+in `action_prioritizer`, and in `execution_policy` respectively. Understanding
+never becomes execution: it becomes a better-argued proposal.
+
 WHAT DID NOT CHANGE — and must not
 -----------------------------------
   * This is still not a second brain. Project Intelligence supplies FACTS
-    (what the evidence is about, and what it says); the decision to propose,
-    the ranking and the execution gate stay exactly where they were.
+    (what the evidence is about, what it says, and what it implies); the
+    decision to propose, the ranking and the execution gate stay exactly where
+    they were.
   * Still nothing is created at ingestion. `record_observation` does not call
     this, and this is still only reached when a caller explicitly asks.
   * Correlation is NOT promotion. A state is promoted only when it describes a
@@ -179,17 +196,97 @@ def _state_title(state: dict) -> str:
     return f"Investigate {subject}"[:300]
 
 
+#: Interpretation codes → the short phrase written onto a candidate's detail.
+#: Stable codes in, reviewable English out — and nothing here is an instruction:
+#: the candidate's TITLE proposes the work, and even that is only a proposal
+#: until `action_prioritizer` ranks it and the execution policy gates it.
+_IMPLICATION_TEXT = {
+    "production_broken": "the latest production deployment failed",
+    "recurrence": "this target was green before and is red again (a regression)",
+    "fix_not_proven_live": "the change landed but nothing proves it is live in production",
+    "blocked_by_ci": "the latest CI check failed",
+    "issue_open": "the tracked issue is still open",
+    "preview_only_verified": "only a non-production deployment succeeded",
+    "work_in_flight": "the work is proposed but not merged or shipped",
+    "reported_but_unconfirmed": "reported in conversation, with no technical evidence either way",
+    "verified_live": "the change landed and a production deployment succeeded",
+}
+_UNCERTAINTY_TEXT = {
+    "conflicting_evidence": "the sources disagree",
+    "production_unverified": "no production evidence either way",
+    "deploy_outcome_unknown": "a deployment started and never reported an outcome",
+    "stale_evidence": "the newest evidence is old",
+    "single_source": "only one tool reported this",
+    "topical_link_only": "linked by wording, not by a shared commit / PR / deployment",
+    "thin_evidence": "very little evidence",
+    "no_decisive_evidence": "nothing settles it either way",
+    "undated_evidence": "the evidence carries no usable timestamp",
+    "unknown_affected_scope": "the affected part of the project is unclear",
+}
+
+
+def _codes(rows, table: dict, limit: int) -> List[str]:
+    out: List[str] = []
+    for row in (rows or [])[:limit]:
+        if not isinstance(row, dict):
+            continue
+        text = table.get(str(row.get("code") or ""))
+        if text:
+            out.append(text)
+    return out
+
+
 def _state_detail(state: dict) -> str:
-    """The evidence, spelled out. This is what makes the candidate reviewable:
-    a human can see exactly which stored rows produced it and decide."""
+    """The evidence AND the reading of it, spelled out.
+
+    This is what makes the candidate reviewable: a human (and the ranking that
+    follows) can see exactly which stored rows produced it, which part of the
+    project they touch, what the evidence implies, and what is still NOT known
+    — instead of a bare list of event titles that every reader had to
+    interpret for themselves.
+
+    The understanding is READ here, never re-derived: `project_intelligence`
+    owns it, this module owns whether to propose work about it."""
     sources = ", ".join(str(s) for s in (state.get("sources") or []))
     confidence = (state.get("confidence") or {}).get("level", "low")
+    count = state.get("evidence_count") or 0
     lines = [
-        f"Correlated across {state.get('evidence_count') or 0} pieces of "
+        f"Correlated across {count} piece{'s' if count != 1 else ''} of "
         f"evidence from {len(state.get('sources') or [])} source(s)"
         + (f" ({sources})" if sources else "")
         + f"; confidence {confidence}.",
     ]
+
+    understanding = state.get("understanding")
+    if isinstance(understanding, dict):
+        areas = [str(a.get("area")) for a in (understanding.get("areas") or [])
+                 if isinstance(a, dict) and a.get("area")
+                 and a.get("area") != "unknown"]
+        kind = str((understanding.get("change_kind") or {}).get("kind") or "")
+        scope = []
+        if areas:
+            scope.append("Affects: " + ", ".join(areas[:3]))
+        if kind and kind != "unknown":
+            scope.append(f"Kind: {kind}")
+        if scope:
+            lines.append(" · ".join(scope) + ".")
+        implications = _codes(understanding.get("implications"),
+                              _IMPLICATION_TEXT, 3)
+        if implications:
+            lines.append("What this means: " + "; ".join(implications) + ".")
+        uncertainty = _codes(understanding.get("uncertainty"),
+                             _UNCERTAINTY_TEXT, 3)
+        if uncertainty:
+            lines.append("Still unknown: " + "; ".join(uncertainty) + ".")
+        for blocker in (understanding.get("blockers") or [])[:2]:
+            if not isinstance(blocker, dict):
+                continue
+            title = str(blocker.get("title") or "").strip()
+            where = str(blocker.get("environment") or "").strip()
+            if title:
+                lines.append(f"- Blocked by: [{blocker.get('source', '?')}] {title}"
+                             + (f" ({where})" if where else ""))
+
     for label, key in (("Evidence", "supporting"),
                        ("Contradicting", "contradicting")):
         for item in (state.get(key) or [])[:4]:
@@ -203,15 +300,32 @@ def _state_detail(state: dict) -> str:
 
 def _state_evidence_refs(state: dict) -> List[dict]:
     """Provenance carried onto the candidate: which stored observations back
-    it. Bounded, and display-safe (internal observation ids only)."""
+    it. Bounded, and display-safe (internal observation ids only).
+
+    The BLOCKERS come first. They are the rows that made this a finding, and
+    a reviewer opening the candidate should meet the failed production deploy
+    before the merged PR that preceded it."""
     refs: List[dict] = []
+    seen: set = set()
+    understanding = state.get("understanding")
+    if isinstance(understanding, dict):
+        for blocker in (understanding.get("blockers") or []):
+            if not isinstance(blocker, dict):
+                continue
+            ref = str(blocker.get("observation_id") or "")
+            if not ref or ref in seen:
+                continue
+            seen.add(ref)
+            refs.append({"type": "observation", "ref": ref,
+                         "note": str(blocker.get("code") or "")[:240]})
     for key in ("supporting", "contradicting", "context"):
         for item in (state.get(key) or []):
             if not isinstance(item, dict):
                 continue
             ref = str(item.get("observation_id") or "")
-            if not ref:
+            if not ref or ref in seen:
                 continue
+            seen.add(ref)
             refs.append({"type": "observation", "ref": ref,
                          "note": str(item.get("semantic_type") or "")[:240]})
             if len(refs) >= 12:

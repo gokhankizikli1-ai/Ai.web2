@@ -151,6 +151,14 @@ def _stable_id(subject: str) -> str:
 
 # ── one classified signal ────────────────────────────────────────────────────
 
+#: The digest, exported. Every payload that carries a SUBJECT-derived identity
+#: must ship this rather than the subject itself — subjects embed provider
+#: resource ids (a Vercel project id, a Google calendar event id) and those are
+#: not something a client asked to see. One implementation means the workspace's
+#: change list and this ranking cannot disagree about an identity either.
+stable_id = _stable_id
+
+
 def _signal(
     *, subject: str, is_open: bool, severity: str, reason: str,
     source: str, kind: str, title: str, context: str, observed_at: str,
@@ -453,5 +461,5 @@ __all__ = [
     "REASON_PR_AWAITING", "REASON_MEETING_SOON", "REASON_MEETING_CANCELLED",
     "REASON_BUILD_FAILED",
     "MAX_ATTENTION", "MAX_AGE_DAYS", "UPCOMING_WINDOW",
-    "classify_observation", "rank_attention", "parse_iso",
+    "classify_observation", "rank_attention", "parse_iso", "stable_id",
 ]

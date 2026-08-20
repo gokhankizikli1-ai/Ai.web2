@@ -73,16 +73,19 @@ import {
   removeProjectKnowledge, markProjectWorkspaceSeen, type AddableChat,
 } from '@/lib/projectApi';
 import {
-  askSuggestions, attentionReasonKey, changeKindKey, changesCountKey,
-  changesTitleKey, connectorSummary, freshnessKey, freshnessRelative,
-  knowledgeKindKey, newProjectChatUrl, openProjectChatUrl, openTasks,
-  productBuildType, productOpenTarget, productStatusKey,
+  areaKey, askSuggestions, attentionReasonKey, changeKindKey, changeKindKeyOf,
+  changesCountKey, changesTitleKey, connectorSummary, coverageCaveatKey,
+  freshnessKey, freshnessRelative, gapKey, groupingRationale, hasUnderstanding,
+  implicationKey, knowledgeKindKey, newProjectChatUrl, openProjectChatUrl,
+  openTasks, productBuildType, productOpenTarget, productStatusKey,
   recommendationActionKey, recommendationAskKey, recommendationReasonKey,
-  relativeTime, relativeTimeKey, renderableActions, seenThrough, severityTone,
-  sourceLabel, taskStatusKey, toggledTaskStatus,
+  relativeTime, relativeTimeKey, renderableActions, renderableCodes,
+  seenThrough, severityTone, sourceLabel, stateKey, stateTone, taskStatusKey,
+  toggledTaskStatus, uncertaintyKey,
   KNOWLEDGE_KIND_ORDER, TASK_STATUS_ORDER,
   type AttentionItem, type KnowledgeItem, type KnowledgeKind,
-  type ProjectTask, type ProjectWorkspace, type TaskStatus,
+  type ProjectStateItem, type ProjectTask, type ProjectUnderstanding,
+  type ProjectWorkspace, type TaskStatus,
   type TodayRecommendation, type WorkspaceChanges, type WorkspaceChat,
   type WorkspaceConnector, type WorkspaceProduct,
 } from '@/lib/projectWorkspace';
@@ -247,10 +250,11 @@ function AddExistingChatModal({
 /* ══════════════════════════════════════════════════════════════════════════
    Needs attention — the strongest section on the page.
    ══════════════════════════════════════════════════════════════════════════ */
-const TONE_STYLE: Record<'critical' | 'warning' | 'info', { dot: string; text: string }> = {
+const TONE_STYLE: Record<'critical' | 'warning' | 'info' | 'positive', { dot: string; text: string }> = {
   critical: { dot: '#F87171', text: '#FCA5A5' },
   warning: { dot: '#FBBF24', text: '#FCD34D' },
   info: { dot: '#60A5FA', text: '#93C5FD' },
+  positive: { dot: '#4ADE80', text: '#86EFAC' },
 };
 
 function AttentionRow({ item, t }: { item: AttentionItem; t: T }) {
@@ -279,6 +283,239 @@ function AttentionRow({ item, t }: { item: AttentionItem; t: T }) {
         </div>
       </div>
     </li>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   CURRENT STATE — "what is actually going on in this project?"
+
+   The one place the page answers the question a person actually arrives with.
+   It renders the backend's correlated + interpreted reading
+   (`project_intelligence`) and derives NOTHING of its own.
+
+   WHAT A NORMAL USER MUST NEVER SEE HERE
+   --------------------------------------
+   No agents, no DAGs, no correlation jargon, no confidence arithmetic, no
+   internal state-machine names, no raw observation flood. A subject shows what
+   happened, what it means, and — on demand — why Korvix grouped the evidence
+   and what it still does not know. The words are human ("Needs attention",
+   "Not yet known"), and every one of them is a translation of a stable backend
+   code, never English composed by the API.
+
+   THIS IS NOT A RANKING
+   ---------------------
+   Order is the backend's presentation order, unchanged. "What deserves your
+   attention" is still answered by Needs Attention directly above, and "what
+   should we do" is still the Business Brain's answer — this section never
+   proposes work, and there is deliberately no action button on a subject
+   beyond asking Korvix about it.
+   ══════════════════════════════════════════════════════════════════════════ */
+function StateChip({ state, t }: { state: string; t: T }) {
+  const tone = TONE_STYLE[stateTone(state)];
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 rounded-full border px-2 py-[3px] text-[10.5px] font-medium"
+      style={{ color: tone.text, borderColor: `${tone.dot}40`, background: `${tone.dot}14` }}
+    >
+      <span className="h-1.5 w-1.5 rounded-full" style={{ background: tone.dot }} />
+      {t(stateKey(state))}
+    </span>
+  );
+}
+
+function SubjectRow({ item, onAsk, t }: {
+  item: ProjectStateItem;
+  onAsk: (prompt: string) => void;
+  t: T;
+}) {
+  const [open, setOpen] = useState(false);
+  const timeAgo = useTimeAgo(t);
+  const understanding = item.understanding;
+
+  // What it MEANS — at most two, so the collapsed row stays one glance.
+  const implications = renderableCodes(understanding?.implications, implicationKey, 2);
+  const uncertainty = renderableCodes(understanding?.uncertainty, uncertaintyKey, 3);
+  const areas = (understanding?.areas || [])
+    .map((a) => ({ ...a, key: areaKey(a.area) }))
+    .filter((a) => a.key && a.area !== 'unknown');
+  const kindKey = changeKindKeyOf(understanding?.change_kind.kind || '');
+  const rationale = groupingRationale(item);
+  const change = understanding?.last_meaningful_change || null;
+
+  return (
+    <li className="py-3 first:pt-1 last:pb-1">
+      <div className="flex flex-wrap items-center gap-2">
+        <StateChip state={item.state} t={t} />
+        <span className="min-w-0 flex-1 text-[13.5px] font-medium leading-snug text-white/90 break-words">
+          {item.subject}
+        </span>
+      </div>
+
+      {implications.length > 0 && (
+        <ul className="mt-1.5 space-y-1">
+          {implications.map((imp) => (
+            <li key={imp.code} className="text-[12.5px] leading-snug text-white/60 break-words">
+              {t(imp.key)}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10.5px] text-white/30">
+        {areas.map((a) => (
+          <span key={a.area} className="rounded-md bg-white/[0.05] px-1.5 py-[2px] text-white/45">
+            {t(a.key as string)}
+          </span>
+        ))}
+        {kindKey && (
+          <span className="rounded-md bg-white/[0.05] px-1.5 py-[2px] text-white/45">
+            {t(kindKey)}
+          </span>
+        )}
+        {item.sources.map((src) => (
+          <span key={src} className="inline-flex items-center gap-1">
+            <SourceIcon source={src} className="h-3 w-3 shrink-0 text-white/30" />
+          </span>
+        ))}
+        {change?.at && <span>· {timeAgo(change.at)}</span>}
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="ml-auto inline-flex items-center gap-1 text-[10.5px] text-white/40 hover:text-white/70 transition-colors"
+        >
+          {t(open ? 'projectStateWhyHide' : 'projectStateWhy')}
+          <ChevronRight className={`h-3 w-3 transition-transform ${open ? 'rotate-90' : ''}`} />
+        </button>
+      </div>
+
+      {open && (
+        <div className="mt-2.5 space-y-2.5 rounded-xl border border-white/[0.05] bg-white/[0.015] p-3">
+          {/* WHY these were grouped. The honesty surface: a user who disagrees
+              with a grouping can see exactly what joined it. */}
+          {rationale && (
+            <div>
+              <div className="text-[10.5px] uppercase tracking-[0.06em] text-white/30 mb-1">
+                {t('projectStateWhyTitle')}
+              </div>
+              <div className="text-[12px] leading-relaxed text-white/55">
+                {t(rationale.wordingOnly
+                  ? 'projectStateGroupedByWording'
+                  : 'projectStateGroupedByResource', {
+                  evidence: rationale.evidenceCount,
+                  sources: rationale.sourceCount,
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* WHAT CHANGED — the last thing that actually moved this subject. */}
+          {change?.title && (
+            <div>
+              <div className="text-[10.5px] uppercase tracking-[0.06em] text-white/30 mb-1">
+                {t('projectStateChangedTitle')}
+              </div>
+              <div className="flex items-start gap-2 text-[12px] leading-snug text-white/55">
+                <SourceIcon source={change.source} className="mt-[3px] h-3 w-3 shrink-0 text-white/30" />
+                <span className="min-w-0 break-words">{change.title}</span>
+              </div>
+            </div>
+          )}
+
+          {/* WHAT IS KNOWN — the evidence, by its own titles. Bounded. */}
+          {(item.supporting.length > 0 || item.contradicting.length > 0) && (
+            <div>
+              <div className="text-[10.5px] uppercase tracking-[0.06em] text-white/30 mb-1">
+                {t('projectStateEvidenceTitle')}
+              </div>
+              <ul className="space-y-1">
+                {[...item.supporting, ...item.contradicting].slice(0, 4).map((e) => (
+                  <li key={`${e.observation_id}-${e.semantic_type}`}
+                      className="flex items-start gap-2 text-[12px] leading-snug text-white/50">
+                    <SourceIcon source={e.source} className="mt-[3px] h-3 w-3 shrink-0 text-white/30" />
+                    <span className="min-w-0 break-words">{e.title}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* WHAT IS UNCERTAIN — never omitted to make the reading look neat. */}
+          {uncertainty.length > 0 && (
+            <div>
+              <div className="text-[10.5px] uppercase tracking-[0.06em] text-white/30 mb-1">
+                {t('projectStateUncertainTitle')}
+              </div>
+              <ul className="space-y-1">
+                {uncertainty.map((u) => (
+                  <li key={u.code} className="text-[12px] leading-snug text-white/50 break-words">
+                    {t(u.key)}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={() => onAsk(t('projectStateAskPrompt', { subject: item.subject }))}
+            className={HEADER_BTN}
+          >
+            <Sparkles className="h-3.5 w-3.5" />
+            {t('projectActionAsk')}
+          </button>
+        </div>
+      )}
+    </li>
+  );
+}
+
+function CurrentStateSection({ items, understanding, onAsk, t }: {
+  items: ProjectStateItem[];
+  understanding: ProjectUnderstanding | null;
+  onAsk: (prompt: string) => void;
+  t: T;
+}) {
+  // AT MOST ONE caveat, and only a real one. A wall of hedges reads as noise
+  // and gets skipped, which defeats the point of being honest.
+  const caveat = coverageCaveatKey(understanding);
+  const gaps = renderableCodes(understanding?.gaps, gapKey, 2)
+    .filter((g) => g.code !== 'no_recent_evidence'
+      && g.code !== 'single_source_project'
+      && g.code !== 'no_deployment_evidence');
+
+  return (
+    <section className={`${PANEL} p-4 sm:p-5`}>
+      <div className={`${SECTION_TITLE} mb-2`}>
+        <CircleDot className="h-3.5 w-3.5 text-[#93C5FD]" />
+        {t('projectSectionState')}
+      </div>
+      {caveat && (
+        <div className="mb-2 text-[11.5px] leading-relaxed text-white/35">{t(caveat)}</div>
+      )}
+      {items.length === 0 ? (
+        <p className={EMPTY_TEXT}>{t('projectStateEmpty')}</p>
+      ) : (
+        <ul className="divide-y divide-white/[0.05]">
+          {items.map((item) => (
+            <SubjectRow key={item.id} item={item} onAsk={onAsk} t={t} />
+          ))}
+        </ul>
+      )}
+      {gaps.length > 0 && (
+        <div className="mt-3 border-t border-white/[0.05] pt-2.5">
+          <div className="text-[10.5px] uppercase tracking-[0.06em] text-white/30 mb-1">
+            {t('projectStateGapsTitle')}
+          </div>
+          <ul className="space-y-1">
+            {gaps.map((g) => (
+              <li key={g.code} className="text-[12px] leading-snug text-white/45 break-words">
+                {t(g.key)}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -1219,6 +1456,19 @@ function ProjectWorkspaceView({ projectId }: { projectId: string }) {
                     ))}
                   </ul>
                 </section>
+              )}
+
+              {/* ── B.5 CURRENT STATE ──────────────────────────────────────
+                  What the connected tools ADD UP TO, one level below "what is
+                  on fire". Rendered only when there is a real reading — an
+                  empty panel captioned with a state code is clutter. */}
+              {hasUnderstanding(workspace) && (
+                <CurrentStateSection
+                  items={workspace.projectState}
+                  understanding={workspace.understanding}
+                  onAsk={(prompt) => newProjectChat(prompt)}
+                  t={t}
+                />
               )}
 
               {/* ── C. TASKS (compact) ─────────────────────────────────── */}
