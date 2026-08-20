@@ -1501,6 +1501,34 @@ export const en: Record<string, string> = {
   projectGapProductionUnverified: 'At least one landed change has no production proof.',
   projectGapUnknownScope: 'For some of this, the affected part of the project is unclear.',
 
+  /* ── Focus (backend `decision_context`): why the top thing is the top thing.
+     Same rule as everything above — the API sends stable codes and this file
+     decides the words, so every language is a real translation. There is no
+     score, no tier number and no percentage here on purpose. ─────────────── */
+  projectFocusLabel: 'Why this is first',
+  projectFocusBasisDeadlineRisk: 'A dated commitment is at risk',
+  projectFocusBasisProductionBroken: 'Production is broken',
+  projectFocusBasisCustomerImpact: 'People are reporting impact',
+  projectFocusBasisBlocked: 'Something concrete is blocking it',
+  projectFocusBasisUnverified: 'Open, and nothing is proven either way',
+  projectFocusBasisTimeSensitive: 'A commitment is close',
+  projectFocusBasisRoutine: 'Worth knowing, not urgent',
+
+  projectFocusWhyDeadlineImminent: 'A dated commitment is less than 48 hours away.',
+  projectFocusWhyDeadlineApproaching: 'A dated commitment is inside the next week.',
+  projectFocusWhyCustomerCorroborated: 'Two independent people reported it — a conversation and an email.',
+  projectFocusWhyCustomerReported: 'Someone reported it outside the tooling.',
+  projectFocusWhyGoalAligned: 'It touches one of your active goals.',
+  projectFocusWhyRecurring: 'The same target has reported this repeatedly.',
+
+  projectFocusCaveatDecided: 'You recorded a decision after this evidence, so it may already be settled.',
+  projectFocusCaveatRelated: 'This shares evidence with another open item and may be one problem.',
+
+  projectFocusOwnerKorvix: 'Korvix can do this',
+  projectFocusOwnerHuman: 'Waiting on you — Korvix can look into it, but the fix has to happen in {providers}.',
+  projectFocusNextLabel: 'Then',
+  projectFocusCommitment: '{title} · {when}',
+
   projectAskStateLabel: 'What is going on right now?',
   projectAskStatePrompt: 'What is the current state of this project, and what does the evidence actually show?',
   projectAskUncertainLabel: 'What is still uncertain?',

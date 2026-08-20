@@ -1444,6 +1444,34 @@ export const tr: Record<string, string> = {
   projectGapProductionUnverified: 'Birleşen en az bir değişikliğin production kanıtı yok.',
   projectGapUnknownScope: 'Bunların bir kısmında projenin hangi bölümünün etkilendiği belirsiz.',
 
+  /* ── Odak (backend `decision_context`): en öncelikli işin neden ilk sırada
+     olduğu. Yukarıdaki her şeyle aynı kural — API kararlı kodlar gönderir,
+     kelimelere bu dosya karar verir. Burada bilerek puan, kademe numarası ya
+     da yüzde yok. ─────────────────────────────────────────────────────────── */
+  projectFocusLabel: 'Neden ilk sırada',
+  projectFocusBasisDeadlineRisk: 'Takvimdeki bir taahhüt risk altında',
+  projectFocusBasisProductionBroken: 'Canlı ortam bozuk',
+  projectFocusBasisCustomerImpact: 'İnsanlar etkilendiklerini bildiriyor',
+  projectFocusBasisBlocked: 'Somut bir engel var',
+  projectFocusBasisUnverified: 'Açık ve hiçbir şey kanıtlanmış değil',
+  projectFocusBasisTimeSensitive: 'Bir taahhüt yaklaşıyor',
+  projectFocusBasisRoutine: 'Bilinmesi iyi, acil değil',
+
+  projectFocusWhyDeadlineImminent: 'Takvimdeki bir taahhüde 48 saatten az kaldı.',
+  projectFocusWhyDeadlineApproaching: 'Takvimdeki bir taahhüt bu hafta içinde.',
+  projectFocusWhyCustomerCorroborated: 'Birbirinden bağımsız iki kişi bildirdi — bir sohbet ve bir e-posta.',
+  projectFocusWhyCustomerReported: 'Biri araçların dışında bunu bildirdi.',
+  projectFocusWhyGoalAligned: 'Aktif hedeflerinden birine dokunuyor.',
+  projectFocusWhyRecurring: 'Aynı hedef bunu tekrar tekrar bildirdi.',
+
+  projectFocusCaveatDecided: 'Bu kanıttan sonra bir karar kaydettin, konu çözülmüş olabilir.',
+  projectFocusCaveatRelated: 'Bu, açık bir başka konuyla aynı kanıtı paylaşıyor; tek bir sorun olabilir.',
+
+  projectFocusOwnerKorvix: 'Korvix bunu yapabilir',
+  projectFocusOwnerHuman: 'Sende — Korvix inceleyebilir ama düzeltmenin {providers} tarafında yapılması gerekiyor.',
+  projectFocusNextLabel: 'Sonra',
+  projectFocusCommitment: '{title} · {when}',
+
   projectAskStateLabel: 'Şu anda ne oluyor?',
   projectAskStatePrompt: 'Bu projenin mevcut durumu ne ve kanıtlar gerçekte ne gösteriyor?',
   projectAskUncertainLabel: 'Neler hâlâ belirsiz?',

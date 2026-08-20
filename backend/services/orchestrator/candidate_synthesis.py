@@ -96,11 +96,52 @@ look unaccounted-for and be handled twice. A subject must group at least
 `MIN_SUBJECT_MEMBERS` distinct observations to claim membership at all, so a
 thin or accidental reading can never silence the row it was built from, and a
 genuinely uncorrelated signal still reaches the legacy path.
+
+DIMENSIONS ARE NOW DERIVED, NOT DECLARED
+-----------------------------------------
+AUDIT FINDING, fixed here. Every promoted subject used to be written with
+`impact="high", urgency="high"` from a two-entry constant table, and stamped
+with the project's highest-priority active goal whatever it was about. Three
+consequences, all of them wrong:
+
+  * a tracked README issue and a production outage produced identical rows, so
+    `action_prioritizer` — which can only rank what it is given — had nothing
+    to tell them apart;
+  * "aligned to a goal" was true of every candidate and therefore meant
+    nothing;
+  * a launch tomorrow, already ingested by the calendar connector, took no
+    part in anything.
+
+`decision_context` now derives those dimensions from the evidence — is
+production verifiably red, do two independent humans report it, is there a
+dated commitment inside 48 hours, can Korvix actually resolve it, does a
+durable decision post-date the reading — and this module writes what it
+derived. It still decides WHETHER to propose; it no longer invents HOW MUCH
+the proposal matters.
+
+STALE PROPOSALS ARE RECONCILED, NOT LEFT BEHIND
+------------------------------------------------
+AUDIT FINDING, fixed here. Suppression only ever governed whether a NEW
+candidate was written. A candidate already recorded for a subject stayed
+`proposed` for ever: after a later production deploy went green the subject
+became `likely_resolved`, this module correctly proposed nothing further —
+and the row written yesterday was still sitting in the open list, still being
+ranked, still being recommended. "A resolved subject proposes nothing" was
+true only of the future.
+
+`_reconcile` closes that loop through the store's EXISTING lifecycle
+(`STATUS_SUPERSEDED`), and only on evidence it can actually see: a proposed
+candidate is retired when every one of its referenced observations is now
+accounted for by a subject that is no longer promotable, or by a DIFFERENT
+candidate written in this same pass. A candidate whose evidence has simply
+aged out of the bounded read is left strictly alone — silence is not proof of
+resolution, and inferring it from a capped query would be the same class of
+mistake this module exists to stop.
 """
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence, Set
 
 logger = logging.getLogger(__name__)
 
@@ -108,6 +149,20 @@ logger = logging.getLogger(__name__)
 #: former 20 because correlation must SEE related rows to relate them; still a
 #: single bounded query.
 _MAX_OBSERVATIONS_READ = 60
+#: Exported so a caller that reads the observations ITSELF (the assessment
+#: route) reads the same slice this module would have, rather than a second
+#: number that could drift from it.
+MAX_OBSERVATIONS_READ = _MAX_OBSERVATIONS_READ
+
+#: The default bound on how many correlated subjects one pass may promote —
+#: exported for the same reason, so a caller that pre-computes the projection
+#: correlates to the same depth this module would have.
+MAX_CANDIDATES = 20
+
+#: Open proposals examined by `_reconcile`. One bounded query, and the same
+#: order the Business Brain ranks (newest first), so the rows a user is
+#: actually being shown are the rows kept honest.
+_MAX_CANDIDATES_RECONCILED = 50
 
 
 def _primary_goal(goals: List[dict]) -> Optional[dict]:
@@ -179,18 +234,21 @@ def _is_substantiated(state: dict) -> bool:
     return (bool(state.get("corroborated"))
             or _member_count(state) >= _min_subject_members())
 
-#: Correlated states → the impact level of the candidate they justify. Coarse
-#: and honest, consistent with the rest of the candidate dimensions.
-_IMPACT_BY_STATE = {"conflicting": "high", "unresolved": "high"}
 
-#: Correlated states → urgency.
-_URGENCY_BY_STATE = {"conflicting": "high", "unresolved": "high"}
+def _line(value: Any, limit: int = 200) -> str:
+    """One prompt- and document-safe line of provider/user text.
+
+    The same rule `project_brain.client._clean` applies to everything a
+    connector wrote, applied here for the same reason: a candidate's detail is
+    a line-structured document, and untrusted text that can introduce a NEWLINE
+    can introduce a heading."""
+    return " ".join(str(value or "").split())[:limit]
 
 
 def _state_title(state: dict) -> str:
     """A candidate title that names the SUBJECT and what is wrong with it,
     rather than echoing whichever single event happened to arrive last."""
-    subject = str(state.get("subject") or "").strip() or "project signal"
+    subject = _line(state.get("subject"), 200) or "project signal"
     if str(state.get("state")) == "conflicting":
         return f"Investigate {subject} — conflicting evidence"[:300]
     return f"Investigate {subject}"[:300]
@@ -225,6 +283,42 @@ _UNCERTAINTY_TEXT = {
 }
 
 
+#: Decision-context codes → the short phrase written onto a candidate's
+#: detail. The implication/uncertainty codes above already cover most of the
+#: vocabulary; only the concepts `decision_context` adds need an entry here.
+#: Nothing in either table is an instruction — a candidate's TITLE proposes the
+#: work, and even that is a proposal until `action_prioritizer` ranks it and
+#: `execution_policy` gates it.
+_WHY_NOW_TEXT = {
+    "deadline_imminent": "a dated commitment is less than 48 hours away",
+    "deadline_approaching": "a dated commitment is inside a week",
+    "customer_impact_corroborated":
+        "two independent people reported it (conversation and mail)",
+    "customer_impact_reported": "a person reported it outside the tooling",
+    "goal_aligned": "it touches an active project goal",
+    "recurring_failure": "the same target has reported this repeatedly",
+}
+_WHY_NOW_TEXT.update(_IMPLICATION_TEXT)
+
+_CAVEAT_TEXT = {
+    "decision_recorded_after_evidence":
+        "a project decision was recorded after this evidence, so the reading "
+        "may already be settled",
+    "part_of_related_story":
+        "this shares evidence with another open subject and may be one problem",
+}
+_CAVEAT_TEXT.update(_UNCERTAINTY_TEXT)
+
+#: What Korvix can and cannot do, said plainly on the candidate itself.
+_RESOLUTION_TEXT = {
+    "human_external":
+        "Korvix can investigate and summarize; resolving this needs a change "
+        "in {providers}, which Korvix reads but cannot write",
+    "korvix": "Korvix can carry this out itself",
+    "unknown": "who has to act on this is not established by the evidence",
+}
+
+
 def _codes(rows, table: dict, limit: int) -> List[str]:
     out: List[str] = []
     for row in (rows or [])[:limit]:
@@ -236,7 +330,42 @@ def _codes(rows, table: dict, limit: int) -> List[str]:
     return out
 
 
-def _state_detail(state: dict) -> str:
+def _plain_codes(codes, table: dict, limit: int) -> List[str]:
+    """The same mapping for the flat code lists `decision_context` produces."""
+    out: List[str] = []
+    for code in (codes or [])[:limit]:
+        text = table.get(str(code))
+        if text:
+            out.append(text)
+    return out
+
+
+def _context_lines(context: Optional[dict]) -> List[str]:
+    """The DECISION reading, spelled out on the candidate: why it matters now,
+    what would make that wrong, and who can actually resolve it.
+
+    Read from `decision_context`, never re-derived here — this module owns
+    whether to propose work, not how much it matters."""
+    if not isinstance(context, dict) or not context:
+        return []
+    lines: List[str] = []
+    why = _plain_codes(context.get("why_now"), _WHY_NOW_TEXT, 3)
+    if why:
+        lines.append("Why now: " + "; ".join(why) + ".")
+    caveats = _plain_codes(context.get("caveats"), _CAVEAT_TEXT, 3)
+    if caveats:
+        lines.append("Treat with care: " + "; ".join(caveats) + ".")
+    actionability = context.get("actionability") or {}
+    template = _RESOLUTION_TEXT.get(str(actionability.get("resolution") or ""))
+    if template:
+        providers = ", ".join(str(p) for p in
+                              (actionability.get("external_providers") or [])[:3])
+        lines.append(template.format(providers=providers or "an external system")
+                     + ".")
+    return lines
+
+
+def _state_detail(state: dict, context: Optional[dict] = None) -> str:
     """The evidence AND the reading of it, spelled out.
 
     This is what makes the candidate reviewable: a human (and the ranking that
@@ -246,9 +375,17 @@ def _state_detail(state: dict) -> str:
     interpret for themselves.
 
     The understanding is READ here, never re-derived: `project_intelligence`
-    owns it, this module owns whether to propose work about it."""
-    sources = ", ".join(str(s) for s in (state.get("sources") or []))
-    confidence = (state.get("confidence") or {}).get("level", "low")
+    owns it, this module owns whether to propose work about it; the decision
+    reading is READ from `decision_context` for the same reason.
+
+    Every provider-authored string that lands in here goes through `_line`
+    first. A PR title or a Slack message is UNTRUSTED text and may contain
+    newlines, and this detail is a line-structured document with headings a
+    reader (and a reviewer) trusts — collapsing whitespace means such a string
+    can add words to a line but can never add a LINE, so it cannot forge
+    "Why now:" or any other heading around itself."""
+    sources = ", ".join(_line(s, 40) for s in (state.get("sources") or []))
+    confidence = _line((state.get("confidence") or {}).get("level", "low"), 16)
     count = state.get("evidence_count") or 0
     lines = [
         f"Correlated across {count} piece{'s' if count != 1 else ''} of "
@@ -256,6 +393,7 @@ def _state_detail(state: dict) -> str:
         + (f" ({sources})" if sources else "")
         + f"; confidence {confidence}.",
     ]
+    lines.extend(_context_lines(context))
 
     understanding = state.get("understanding")
     if isinstance(understanding, dict):
@@ -281,20 +419,21 @@ def _state_detail(state: dict) -> str:
         for blocker in (understanding.get("blockers") or [])[:2]:
             if not isinstance(blocker, dict):
                 continue
-            title = str(blocker.get("title") or "").strip()
-            where = str(blocker.get("environment") or "").strip()
+            title = _line(blocker.get("title"), 200)
+            where = _line(blocker.get("environment"), 40)
             if title:
-                lines.append(f"- Blocked by: [{blocker.get('source', '?')}] {title}"
-                             + (f" ({where})" if where else ""))
+                lines.append(f"- Blocked by: [{_line(blocker.get('source'), 40) or '?'}] "
+                             f"{title}" + (f" ({where})" if where else ""))
 
     for label, key in (("Evidence", "supporting"),
                        ("Contradicting", "contradicting")):
         for item in (state.get(key) or [])[:4]:
             if not isinstance(item, dict):
                 continue
-            title = str(item.get("title") or item.get("kind") or "").strip()
+            title = _line(item.get("title") or item.get("kind"), 200)
             if title:
-                lines.append(f"- {label}: [{item.get('source', '?')}] {title}")
+                lines.append(f"- {label}: [{_line(item.get('source'), 40) or '?'}] "
+                             f"{title}")
     return "\n".join(lines)[:2000]
 
 
@@ -333,6 +472,113 @@ def _state_evidence_refs(state: dict) -> List[dict]:
     return refs
 
 
+def _open_proposals(project_id: str) -> List[dict]:
+    """The project's PROPOSED candidates — read once, used twice.
+
+    Both questions this module asks about an existing proposal need the same
+    rows: "does an open proposal already speak for this observation?" (before
+    the legacy path runs) and "has this proposal's problem gone away?" (after).
+    One bounded query answers both; two would be the same query twice."""
+    from backend.services.orchestrator import candidate_actions_store as cas
+    try:
+        return cas.list_candidate_actions(str(project_id),
+                                          status=cas.STATUS_PROPOSED,
+                                          limit=_MAX_CANDIDATES_RECONCILED)
+    except Exception:      # pragma: no cover — never block the synthesis
+        return []
+
+
+def _already_proposed(rows: Sequence[dict]) -> Set[str]:
+    """Observation ids an OPEN proposal already cites as its evidence.
+
+    AUDIT FINDING, fixed here. Suppression asked exactly one question — "is
+    this row a member of a correlated subject in the CURRENT projection?" — and
+    the projection is computed from a bounded read. A busy project pushes an
+    older story's rows past that bound, the subject stops forming, its
+    surviving row looks uncorrelated, and the legacy path proposes "Act on:
+    Production deployment FAILED" beside the evidence-backed proposal that is
+    still open about the very same failure. One problem, two recommendations —
+    the failure mode this module exists to prevent, re-entering through the
+    window rather than through the state machine.
+
+    An open proposal citing a row is another true answer to the module's own
+    question, "has this row already been accounted for?". Membership answers it
+    for what is in the window; this answers it for what an earlier window
+    already accounted for, and neither needs an unbounded read to do so."""
+    out: Set[str] = set()
+    for row in rows or []:
+        for ref in (row.get("evidence_refs") or []):
+            if not isinstance(ref, dict):
+                continue
+            if str(ref.get("type") or "") != "observation":
+                continue
+            ref_id = str(ref.get("ref") or "")
+            if ref_id:
+                out.add(ref_id)
+    return out
+
+
+def _reconcile(project_id: str, *, rows: Sequence[dict],
+               membership: Dict[str, dict],
+               promoted_keys: Dict[str, str], written_keys: Set[str],
+               visible_observations: Set[str]) -> List[str]:
+    """Retire PROPOSED candidates whose problem the live evidence says is over.
+
+    THE RULE, stated once. A proposed candidate is superseded only when every
+    one of its referenced observations that this projection can actually SEE is
+    now spoken for by
+
+      * a subject whose current state is no longer promotable (resolved, in
+        flight, merely being discussed), or
+      * a DIFFERENT candidate written in this same pass — which is what
+        happens when a subject grows: a merged PR joining a deploy target
+        changes the correlation's component key set, and therefore its id, so
+        yesterday's `intel:<old id>` and today's `intel:<new id>` describe one
+        problem and only the newer one should be open.
+
+    THE GUARD, equally important. A candidate none of whose evidence is visible
+    is left strictly alone. The observation read is bounded, so "I cannot see
+    it" and "it is resolved" are different sentences, and inferring the second
+    from the first would retire live work the moment a project got busy.
+
+    `accepted` candidates are never touched: a person took that one, and no
+    projection gets to close something a human picked up. Only the store's
+    EXISTING lifecycle is used — no new status, no new column, no new table."""
+    from backend.services.orchestrator import candidate_actions_store as cas
+
+    retired: List[str] = []
+    for row in rows:
+        dedup_key = str(row.get("dedup_key") or "")
+        if dedup_key and dedup_key in written_keys:
+            continue          # just written/refreshed in this pass
+        refs = {str(r.get("ref") or "") for r in (row.get("evidence_refs") or [])
+                if isinstance(r, dict) and str(r.get("type") or "") == "observation"}
+        visible = {r for r in refs if r and r in visible_observations}
+        if not visible:
+            continue          # cannot see its evidence ⇒ cannot judge it
+        accounted = True
+        for observation_id in visible:
+            subject = membership.get(observation_id)
+            if subject is None:
+                accounted = False        # still a live, unaccounted signal
+                break
+            promoted = promoted_keys.get(str(subject.get("id") or ""))
+            if promoted is None:
+                continue                 # subject exists and proposes nothing
+            if promoted != dedup_key:
+                continue                 # a newer candidate speaks for it
+            accounted = False            # this very candidate is the live one
+            break
+        if not accounted:
+            continue
+        try:
+            if cas.set_status(str(row.get("id")), cas.STATUS_SUPERSEDED):
+                retired.append(str(row.get("id")))
+        except Exception:  # pragma: no cover — never block the synthesis
+            continue
+    return retired
+
+
 def synthesize_candidates(
     project_id: str,
     user_id: str,
@@ -340,8 +586,11 @@ def synthesize_candidates(
     metric_changes: Optional[List[dict]] = None,
     observations: Optional[List[dict]] = None,
     goals: Optional[List[dict]] = None,
+    decisions: Optional[List[dict]] = None,
     intelligence: Optional[List[dict]] = None,
-    max_candidates: int = 20,
+    membership: Optional[Dict[str, dict]] = None,
+    decision_contexts: Optional[Dict[str, dict]] = None,
+    max_candidates: int = MAX_CANDIDATES,
 ) -> List[str]:
     """Record candidate actions for significant signals. Returns the list of
     candidate ids created/updated. Injectable inputs support deterministic
@@ -351,17 +600,31 @@ def synthesize_candidates(
     `intelligence` is the correlated project-state list (see
     `services.project_intelligence`). Left as None it is DERIVED from the same
     observations this call already read — no extra query, no provider call, no
-    model call. Pass `[]` to synthesize from raw signals only."""
+    model call. Pass `[]` to synthesize from raw signals only.
+
+    `membership` and `decision_contexts` let a caller that has ALREADY computed
+    the projection (see `decision_context.build`) hand it over instead of
+    paying for a second correlation of the same rows inside one request. Left
+    as None both are derived here, so no existing caller changes."""
     if not (project_id and user_id):
         return []
 
     from backend.services.orchestrator import candidate_actions_store as cas
+    from backend.services.orchestrator import decision_context as dc
 
-    # Resolve signals + goals (fail-soft).
+    # Resolve signals + goals + decisions (fail-soft).
     try:
         if goals is None:
             from backend.services.orchestrator import goals_store
             goals = goals_store.active_goals(str(project_id), limit=10)
+        if decisions is None:
+            # The DURABLE authority on what this project has already settled.
+            # One bounded read, and the reason it is worth a query: a decision
+            # recorded after the evidence reframes the recommendation instead
+            # of letting a perishable correlation argue with a durable choice.
+            from backend.services.orchestrator import decisions_store
+            decisions = decisions_store.active_decisions(
+                str(project_id), limit=dc.MAX_DECISIONS_SCANNED)
         if metric_changes is None:
             from backend.services.orchestrator import metrics_store as ms
             metric_changes = []
@@ -382,10 +645,12 @@ def synthesize_candidates(
                 limit=_MAX_OBSERVATIONS_READ)
     except Exception:  # pragma: no cover — never block on a read
         goals = goals or []
+        decisions = decisions or []
         metric_changes = metric_changes or []
         observations = observations or []
 
     goals = goals or []
+    decisions = decisions or []
     out: List[str] = []
 
     # ── Correlated project states → EVIDENCE-BACKED candidates ───────────
@@ -394,20 +659,50 @@ def synthesize_candidates(
     # is the COMPLETE index over the states below, not a state's capped public
     # id list — see the module docstring on why that distinction is the whole
     # fix. An injected `intelligence` (tests) falls back to the public ids.
-    membership: Dict[str, dict] = {}
     if intelligence is None:
         try:
             from backend.services import project_intelligence as pi
-            intelligence, membership = pi.project_states_with_membership(
+            intelligence, derived = pi.project_states_with_membership(
                 observations or [], limit=max_candidates)
+            if membership is None:
+                membership = derived
         except Exception:  # pragma: no cover — never block on a projection
-            intelligence, membership = [], {}
-    else:
+            intelligence, membership = [], (membership or {})
+    if membership is None:
+        membership = {}
         for state in intelligence or []:
             if not isinstance(state, dict) or not _is_substantiated(state):
                 continue
             for observation_id in state.get("evidence_observation_ids") or []:
                 membership.setdefault(str(observation_id), state)
+
+    # ── The DECISION reading over those subjects ─────────────────────────
+    # Pure, and computed once: why each subject matters now, how strong its
+    # evidence is, whether a commitment is imminent, who can actually resolve
+    # it, and whether a durable decision has already settled it. This module
+    # writes what that authority derived; it no longer declares constants.
+    if decision_contexts is None:
+        try:
+            decision_contexts = dc.project_contexts(
+                intelligence or [], observations=observations or [],
+                goals=goals, decisions=decisions)
+        except Exception:  # pragma: no cover — never block on a projection
+            decision_contexts = {}
+
+    # The project's existing PROPOSALS, read once. They answer "has this row
+    # already been accounted for?" for evidence that an earlier, wider window
+    # correlated and this one cannot see — see `_already_proposed`.
+    open_proposals = _open_proposals(str(project_id))
+    accounted_elsewhere = _already_proposed(open_proposals)
+
+    #: subject id → the dedup key written for it in THIS pass, and every
+    #: dedup key written at all (metric and legacy rows included). The first
+    #: answers "does this subject still propose work?", the second answers
+    #: "did this very pass just refresh that row?" — two different questions,
+    #: and conflating them would let the reconciliation retire a candidate it
+    #: had itself just written.
+    promoted_keys: Dict[str, str] = {}
+    written_keys: Set[str] = set()
 
     for state in (intelligence or [])[:max_candidates]:
         if not isinstance(state, dict):
@@ -419,28 +714,41 @@ def synthesize_candidates(
         state_id = str(state.get("id") or "")
         if not state_id:
             continue
-        aligned = _primary_goal(goals)
-        confidence = (state.get("confidence") or {}).get("score")
+        context = (decision_contexts or {}).get(state_id) or {}
+        # DERIVED, not declared, and derived in ONE place. Production evidence,
+        # corroboration across independent humans, a dated commitment and the
+        # recurrence of a failure decide these — see `decision_context`, which
+        # also hands the SAME dimensions to the page when it orders subjects
+        # without a candidate to rank. Two derivations would be two answers.
+        #
+        # Goal alignment now needs a REASON, so an unrelated goal no longer
+        # stamps every candidate and "aligned" once again discriminates between
+        # candidates instead of being universal.
+        #
+        # `confidence` is the correlation's OWN evidence-derived score, passed
+        # in rather than taken from the context so the stored number is the
+        # authority's verbatim; where it came from stays inspectable in the
+        # state's breakdown.
+        raw_confidence = (state.get("confidence") or {}).get("score")
+        dimensions = dc.as_dimensions(
+            context,
+            confidence=(float(raw_confidence)
+                        if isinstance(raw_confidence, (int, float)) else 0.5))
+        dedup_key = dc.candidate_key(state_id)
         cid = cas.record_candidate_action(
             project_id=str(project_id), user_id=str(user_id),
             title=_state_title(state),
-            detail=_state_detail(state),
-            goal_id=(aligned or {}).get("id"),
+            detail=_state_detail(state, context),
             source="OBSERVATION",
             evidence_refs=_state_evidence_refs(state),
-            recommended_capability="research",   # investigate — cheap/AUTO
-            impact=_IMPACT_BY_STATE.get(str(state.get("state")), "medium"),
-            # The correlation's OWN evidence-derived score, not a constant.
-            # Where it came from is inspectable in the state's breakdown.
-            confidence=(float(confidence) if isinstance(confidence, (int, float))
-                        else 0.5),
-            cost="low", risk="low",
-            urgency=_URGENCY_BY_STATE.get(str(state.get("state")), "medium"),
             # Dedup converges on the SUBJECT, so re-running after three more
             # deploy failures updates one candidate instead of adding three.
-            dedup_key=f"intel:{state_id}")
+            dedup_key=dedup_key,
+            **dimensions)
         if cid:
             out.append(cid)
+            promoted_keys[state_id] = dedup_key
+            written_keys.add(dedup_key)
 
     # ── Significant metric changes → investigation candidates ────────────
     for ch in (metric_changes or [])[:max_candidates]:
@@ -467,6 +775,7 @@ def synthesize_candidates(
             dedup_key=f"metric:{key}")
         if cid:
             out.append(cid)
+            written_keys.add(f"metric:{key}")
 
     # ── HIGH-importance observations → act-on candidates ─────────────────
     for o in (observations or []):
@@ -487,13 +796,22 @@ def synthesize_candidates(
             # alongside the correlated candidate. Understanding the project has
             # to mean the older path stops acting as if it does not exist.
             continue
+        if oid and str(oid) in accounted_elsewhere:
+            # No subject speaks for this row in the CURRENT window, but an open
+            # proposal already does — it was correlated when the window still
+            # reached the rest of its story. Proposing it again would put two
+            # recommendations on one problem, which is exactly what correlating
+            # was for. See `_already_proposed`.
+            continue
         ext = o.get("external_id") if isinstance(o, dict) else None
         aligned = _primary_goal(goals)
-        summary = str(o.get("summary") or o.get("kind") or "signal")
+        summary = _line(o.get("summary") or o.get("kind") or "signal", 120)
+        dedup_key = f"obs:{ext or oid}"
         cid = cas.record_candidate_action(
             project_id=str(project_id), user_id=str(user_id),
-            title=f"Act on: {summary[:120]}",
-            detail=f"High-importance observation from {o.get('source')} ({o.get('kind')}).",
+            title=f"Act on: {summary}",
+            detail=(f"High-importance observation from {_line(o.get('source'), 40)} "
+                    f"({_line(o.get('kind'), 120)})."),
             goal_id=(aligned or {}).get("id"),
             source="OBSERVATION",
             evidence_refs=[{"type": "observation", "ref": str(oid or ext or "")}],
@@ -501,11 +819,25 @@ def synthesize_candidates(
             impact="medium",
             confidence=0.5,
             cost="low", risk="low", urgency="medium",
-            dedup_key=f"obs:{ext or oid}")
+            dedup_key=dedup_key)
         if cid:
             out.append(cid)
+            written_keys.add(dedup_key)
+
+    # ── Close the loop: what the evidence now says is over ───────────────
+    # Suppression above only governs what is WRITTEN. Without this, a proposal
+    # recorded yesterday for a subject that has since gone green stayed open,
+    # was still ranked, and was still recommended — "a resolved subject
+    # proposes nothing" was true only of the future. See `_reconcile` for the
+    # rule and, just as importantly, for the guard that stops a bounded read
+    # from being mistaken for proof of resolution.
+    visible = {str(o.get("id")) for o in (observations or [])
+               if isinstance(o, dict) and o.get("id")}
+    _reconcile(str(project_id), rows=open_proposals, membership=membership,
+               promoted_keys=promoted_keys, written_keys=written_keys,
+               visible_observations=visible)
 
     return out
 
 
-__all__ = ["synthesize_candidates"]
+__all__ = ["synthesize_candidates", "MAX_OBSERVATIONS_READ", "MAX_CANDIDATES"]

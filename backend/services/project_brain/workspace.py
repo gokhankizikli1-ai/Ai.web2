@@ -49,7 +49,12 @@ WHAT IT IS NOT
     feeds Today's ladder; it only lets a row say which story it belongs to.
     `project_understanding` is the project-level reading of those same
     subjects, in the same order: no health score, no percentage, no second
-    opinion about urgency.
+    opinion about urgency. `focus` is likewise a PROJECTION, not a rival
+    ranking: it is `decision_context` applied to those same subjects — the
+    identical function, with the identical tier ladder, that
+    `action_prioritizer` uses to order the Business Brain's candidates. The
+    page and the Brain therefore give one answer to "what matters most",
+    reached without the page writing a proposal to find out.
 
 ISOLATION
 ---------
@@ -659,6 +664,32 @@ def build(user_id: str, project_id: str, *,
         logger.debug("project_workspace: project intelligence unavailable: %s", exc)
     _link_attention_to_state(attention, state_membership)
 
+    # FOCUS — "what matters right now, and why". The DECISION reading over the
+    # subjects just correlated: which one leads, on what evidence, whether a
+    # dated commitment makes it urgent, and — the question the page could never
+    # answer — whether the ball is with Korvix or with a person.
+    #
+    # Computed from rows this function has ALREADY read: the subjects above,
+    # the goals, the observations, and the decision rows inside the knowledge
+    # projection. ZERO extra queries, zero provider calls, zero tokens, and —
+    # like every other slice here — zero writes: the page still cannot create a
+    # candidate action, and going through `candidate_synthesis` to learn what
+    # matters would have turned opening a project into a Business Brain
+    # mutation. `decision_context` is pure precisely so this surface can share
+    # the Business Brain's answer without sharing its side effects.
+    focus: Dict[str, Any] = {}
+    try:
+        from backend.services.orchestrator import decision_context as dc
+        from backend.services.projects import knowledge as knowledge_mod
+        focus = dc.project_focus(
+            project_state, observations=observations, goals=goals,
+            decisions=[row for row in knowledge
+                       if isinstance(row, dict)
+                       and row.get("kind") == knowledge_mod.KIND_DECISION],
+            now=when)
+    except Exception as exc:
+        logger.debug("project_workspace: decision context unavailable: %s", exc)
+
     activity = _build_activity(observations, chats, products, tasks, knowledge)
 
     # TODAY — pure choice over the ranking + the project's own tasks and goals.
@@ -701,6 +732,13 @@ def build(user_id: str, project_id: str, *,
         # the order `project_state` is already in. `{}` is never returned —
         # an empty project gets an honest empty reading instead.
         "project_understanding": project_understanding,
+        # WHY IT MATTERS NOW — one top priority with its evidence-backed
+        # reasons, a short ranked tail, and an explicit "waiting on you" vs
+        # "Korvix can do this". Stable codes only; the page renders them
+        # through its locale dictionaries, so no sentence ships from here.
+        # `top` is null when nothing rises above `routine` — a project with
+        # nothing pressing says so instead of promoting its calmest subject.
+        "focus":      focus,
         "activity":   activity,
         "changes":    changes,
         "tasks": {
@@ -730,6 +768,7 @@ def build(user_id: str, project_id: str, *,
             "attention":  len(attention),
             "project_state": len(project_state),
             "project_state_open": len((project_understanding or {}).get("open") or []),
+            "focus_next": len((focus or {}).get("next") or []),
             "activity":   len(activity),
             "goals":      len(goals),
             "products":   len(products),

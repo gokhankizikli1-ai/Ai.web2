@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Optional
+from typing import Any, Optional
 
 from backend.services.project_brain.types import ProjectBrain, ProjectContextBlock
 
@@ -178,6 +178,60 @@ _SEVERITY_PHRASE = {
     "blocking": "blocking",
     "time_sensitive": "time-sensitive",
     "waiting": "waiting on you",
+}
+
+#: Decision-context "why now" code → the phrase used in the PROMPT. Same rule
+#: as every table above: the backend ships no prose to the FRONTEND for these
+#: codes; a system prompt is English by nature, and a model reading
+#: "deadline_imminent" reasons worse than one reading the sentence.
+_WHY_NOW_PHRASE = {
+    "deadline_imminent":
+        "a dated commitment on this project is less than 48 hours away",
+    "deadline_approaching": "a dated commitment is inside the next week",
+    "customer_impact_corroborated":
+        "two independent people reported it — a conversation AND a mail",
+    "customer_impact_reported": "a person reported it outside the tooling",
+    "goal_aligned": "it touches an active project goal",
+    "recurring_failure": "the same target has reported this repeatedly",
+}
+_WHY_NOW_PHRASE.update({
+    k: v for k, v in {
+        "production_broken": "production is verifiably red",
+        "recurrence": "it regressed rather than simply failing",
+        "blocked_by_ci": "the latest CI check failed",
+        "issue_open": "the tracked issue is still open",
+        "fix_not_proven_live": "nothing proves the landed change is live",
+    }.items()
+})
+
+#: Decision-context caveat code → phrase. The uncertainty vocabulary is reused
+#: verbatim; only what `decision_context` adds needs an entry.
+_CAVEAT_PHRASE = dict(_UNCERTAINTY_PHRASE)
+_CAVEAT_PHRASE.update({
+    "decision_recorded_after_evidence":
+        "a project decision was recorded AFTER this evidence, so it may "
+        "already be settled",
+    "part_of_related_story":
+        "it shares evidence with another open subject and may be one problem",
+})
+
+#: Who has to act. The distinction this whole layer exists to make honest.
+_RESOLUTION_PHRASE = {
+    "human_external":
+        "Korvix can investigate and explain this; it CANNOT resolve it — that "
+        "needs a change in {providers}, which Korvix reads but cannot write",
+    "korvix": "Korvix can carry this out itself",
+    "unknown": "who has to act on this is not established by the evidence",
+}
+
+_TIER_PHRASE = {
+    "deadline_risk": "a dated commitment is at risk",
+    "production_broken": "production is broken",
+    "customer_impact": "people are reporting impact",
+    "blocked": "something concrete is blocking it",
+    "unverified": "it is open and nothing concrete is proven",
+    "time_sensitive": "a commitment is close",
+    "routine": "routine",
 }
 
 _ATTENTION_REASON_PHRASE = {
@@ -375,6 +429,90 @@ def _understanding_lines(understanding: dict) -> list:
     gaps = _phrases(understanding.get("gaps"), _GAP_PHRASE, 3)
     if gaps:
         lines.append("- NOT known: " + "; ".join(gaps))
+    return lines
+
+
+def _plain_phrases(codes: Any, table: dict, limit: int) -> list:
+    """Bounded, order-preserving mapping for the FLAT code lists
+    `decision_context` produces. An unknown code (a backend half-deployed
+    against an older table) is DROPPED rather than shown to the model as a raw
+    identifier — the rule `_phrases` already follows."""
+    out: list[str] = []
+    for code in (codes or [])[:limit]:
+        phrase = table.get(str(code))
+        if phrase:
+            out.append(phrase)
+    return out
+
+
+def _focus_lines(focus: dict) -> list:
+    """WHAT SHOULD HAPPEN NEXT, AND WHY — the deterministic answer, rendered.
+
+    AUDIT FINDING, fixed here. The prompt could describe the project ("the
+    payment webhook is conflicting") and list what needs a look ("a production
+    deployment failed"), and then stopped. Nothing told the model which of
+    those was the single most important thing, why it was more important than
+    the others, or what Korvix could actually DO about it — so a chat answering
+    "what should I focus on?" either re-derived an order from a list of
+    subjects or hedged.
+
+    Every line here is composed from `decision_context`'s stable codes through
+    the tables above. This function decides nothing: the tier, the reasons, the
+    caveats and the resolution owner are all read, and the header says so, so
+    the model uses this order instead of inventing one."""
+    if not isinstance(focus, dict) or not focus:
+        return []
+    top = focus.get("top")
+    if not isinstance(top, dict) or not top:
+        return []
+    subject = _clean(top.get("subject"), 120)
+    if not subject:
+        return []
+
+    basis = _TIER_PHRASE.get(str(top.get("priority_basis")), "")
+    lines = [
+        "What matters most right now (Korvix's deterministic decision layer — "
+        "use THIS as the top priority, do not invent a different one):",
+        f"- #1: {subject}" + (f" — {basis}" if basis else ""),
+    ]
+    # Line order IS priority order: this section has its own character cap and
+    # is trimmed line-by-line from the END, so what a reader must not miss is
+    # emitted first. "Korvix cannot resolve this" outranks the caveats, which
+    # outrank the date, which outranks the runners-up.
+    why = _plain_phrases(top.get("why_now"), _WHY_NOW_PHRASE, 3)
+    if why:
+        lines.append("    why now: " + "; ".join(why))
+
+    actionability = top.get("actionability") or {}
+    template = _RESOLUTION_PHRASE.get(str(actionability.get("resolution") or ""))
+    if template:
+        providers = ", ".join(_clean(p, 40) for p in
+                              (actionability.get("external_providers") or [])[:3])
+        lines.append("    " + template.format(
+            providers=providers or "an external system"))
+
+    caveats = _plain_phrases(top.get("caveats"), _CAVEAT_PHRASE, 2)
+    if caveats:
+        # Stated as a hedge the model must keep, not as a footnote it may drop.
+        lines.append("    be careful: " + "; ".join(caveats))
+
+    commitment = focus.get("commitment")
+    if isinstance(commitment, dict) and commitment.get("at"):
+        # The DATE and the pressure level, never a claim about what the event
+        # is for: the title is the user's own words and is quoted, not read.
+        lines.append(f"    upcoming commitment: "
+                     f"\"{_clean(commitment.get('title'), 80)}\" "
+                     f"at {_date(commitment.get('at'))} "
+                     f"({_clean(commitment.get('pressure'), 20)})")
+
+    for row in (focus.get("next") or [])[:2]:
+        if not isinstance(row, dict):
+            continue
+        name = _clean(row.get("subject"), 100)
+        if not name:
+            continue
+        tier = _TIER_PHRASE.get(str(row.get("priority_basis")), "")
+        lines.append(f"- then: {name}" + (f" — {tier}" if tier else ""))
     return lines
 
 
@@ -587,6 +725,13 @@ class ProjectBrainClient:
         #    These stores are keyed by project_id ONLY, so they are pulled behind
         #    a fail-closed ownership gate (see `_owns_project`). Everything above
         #    is already user-scoped; only this block needs the gate.
+        # The STRUCTURED rows behind the two title lists below. Kept so the
+        # decision reading further down can be computed from the authorities'
+        # own records (a goal's id and priority, a decision's timestamp)
+        # without reading either store a second time.
+        structured_goals: list = []
+        active_decisions: list = []
+
         if _owns_project(str(user_id), project_id):
             # Structured active goals — the authoritative Business Brain goals
             # (hierarchy, success criteria), distinct from memory-plane goal
@@ -594,7 +739,8 @@ class ProjectBrainClient:
             try:
                 from backend.services.orchestrator import goals_store
                 have = {g.strip().lower() for g in brain.current_goals}
-                for g in goals_store.active_goals(project_id, limit=_MAX_GOALS):
+                structured_goals = goals_store.active_goals(project_id, limit=_MAX_GOALS)
+                for g in structured_goals:
                     title = (g.get("title") or "").strip()
                     if title and title.lower() not in have and \
                             len(brain.current_goals) < _MAX_GOALS:
@@ -607,7 +753,9 @@ class ProjectBrainClient:
             try:
                 from backend.services.orchestrator import decisions_store
                 have_d = {d.strip().lower() for d in brain.recent_decisions}
-                for d in decisions_store.active_decisions(project_id, limit=_MAX_DECISIONS):
+                active_decisions = decisions_store.active_decisions(
+                    project_id, limit=_MAX_DECISIONS)
+                for d in active_decisions:
                     topic = (d.get("topic") or "").strip()
                     value = (d.get("value") or "").strip()
                     if not value:
@@ -702,6 +850,27 @@ class ProjectBrainClient:
         except Exception as e:
             logger.debug("project_brain: attention unavailable: %s", e)
 
+        # ── WHY IT MATTERS NOW — the decision reading over the SAME subjects.
+        #    AUDIT FINDING: the prompt could say what the project's state was
+        #    and what needed a look, and nothing said which single thing was
+        #    most important, why, or whether Korvix could actually do anything
+        #    about it — so "what should I focus on?" was answered by the model
+        #    re-ordering a list. `decision_context` is the one authority for
+        #    that question and `action_prioritizer` applies the identical
+        #    ladder to the Business Brain's candidates, so chat and the
+        #    Business Brain cannot give two different top priorities.
+        #
+        #    Pure over rows already in hand (the correlated subjects, the
+        #    observations, the structured goals and decisions read above):
+        #    ZERO extra queries, ZERO tokens, ZERO writes.
+        try:
+            from backend.services.orchestrator import decision_context as dc
+            brain.focus = dc.project_focus(
+                brain.intelligence, observations=observations,
+                goals=structured_goals, decisions=active_decisions)
+        except Exception as e:
+            logger.debug("project_brain: decision context unavailable: %s", e)
+
         # ── Counts: cheap health snapshot.
         brain.counts = {
             "goals":           len(brain.current_goals),
@@ -714,6 +883,7 @@ class ProjectBrainClient:
             "intelligence":    len(brain.intelligence),
             "attention":       len(brain.attention),
             "understanding_open": len(((brain.understanding or {}).get("open")) or []),
+            "focus_next":      len(((brain.focus or {}).get("next")) or []),
             "business_knowledge": len(brain.business_knowledge),
             "products":        len(brain.products),
             "linked_chats":    len(brain.linked_chats),
@@ -771,8 +941,12 @@ class ProjectBrainClient:
             section(400, ["Important context:"]
                     + [f"- {_clean(c, 200)}" for c in brain.important_context])
 
-        # The two blocks this whole layer exists to deliver, above anything
-        # that can grow with conversation volume.
+        # The blocks this whole layer exists to deliver, above anything that
+        # can grow with conversation volume. FOCUS leads them: a model that
+        # meets "what matters most, and why" before the evidence answers the
+        # question the user actually asks, and answers it with the one
+        # deterministic order rather than an order it invented from a list.
+        section(650, _focus_lines(brain.focus))
         section(700, _understanding_lines(brain.understanding))
         if brain.intelligence:
             section(1100, ["Project state — what the evidence across the connected "
