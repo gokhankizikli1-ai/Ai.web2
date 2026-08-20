@@ -413,9 +413,9 @@ def test_route_returns_the_snapshot_for_the_owner(client, env, app):
     assert body["success"] is True
     assert body["data"]["project"]["id"] == "pA"
     assert set(body["data"]) == {
-        "project", "summary", "today", "goals", "attention", "activity",
-        "changes", "tasks", "knowledge", "products", "chats", "connectors",
-        "freshness", "counts",
+        "project", "summary", "today", "goals", "attention", "project_state",
+        "activity", "changes", "tasks", "knowledge", "products", "chats",
+        "connectors", "freshness", "counts",
     }
 
 
