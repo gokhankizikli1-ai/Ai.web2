@@ -26,7 +26,7 @@
  * anywhere in this file, and there is deliberately no way to add one: the
  * component props carry codes, not numbers to display.
  */
-import React, { useState } from 'react';
+import React, { useId, useState } from 'react';
 import {
   Activity, ArrowUpRight, BookMarked, Blocks, CalendarDays, Check,
   ChevronRight, Github, Hash, ListTodo, Mail, MessageSquare, Minus,
@@ -150,7 +150,7 @@ export function OutcomeStrip({ item, t, limit = 4 }: {
         const outcomeKey = evidenceOutcomeKey(o.semantic_type);
         return (
           <span key={`${o.source}|${o.environment}|${o.polarity}`}
-            className="inline-flex items-center gap-1 text-[11.5px] text-white/55">
+            className="inline-flex flex-wrap items-center gap-1 max-w-full text-[11.5px] text-white/55">
             <SourceIcon source={o.source} className="h-3 w-3 shrink-0 text-white/35" />
             <SourceName source={o.source} t={t} />
             <PolarityMark polarity={o.polarity} />
@@ -351,19 +351,26 @@ export function EvidenceDisclosure({ item, onAsk, t, labelKey }: {
   labelKey?: string;
 }) {
   const [open, setOpen] = useState(false);
+  // Hooks run before the early return, so the id is stable for a given row
+  // whether or not this instance has anything to disclose.
+  const panelId = useId();
   if (!item) return null;
   const count = evidenceCount(item);
   if (!count && !item.grounding) return null;
   return (
     <>
       <button type="button" onClick={() => setOpen((v) => !v)}
-        aria-expanded={open} className={QUIET_BTN}>
+        aria-expanded={open} aria-controls={panelId} className={QUIET_BTN}>
         {labelKey
           ? t(labelKey)
           : t(count === 1 ? 'projectWhyEvidenceOne' : 'projectWhyEvidenceMany', { count })}
         <ChevronRight className={`h-3 w-3 transition-transform ${open ? 'rotate-90' : ''}`} />
       </button>
-      {open && <EvidencePanel item={item} onAsk={onAsk} t={t} />}
+      {open && (
+        <div id={panelId}>
+          <EvidencePanel item={item} onAsk={onAsk} t={t} />
+        </div>
+      )}
     </>
   );
 }

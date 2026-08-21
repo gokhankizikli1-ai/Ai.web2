@@ -1705,4 +1705,5 @@ export const de: Record<string, string> = {
   projectMemoryGapsTitle: 'Offene Wissenslücken',
   projectStoryDetail: 'Details',
   projectActivityLatest: 'Neueste Aktivität',
+  projectFocusOwnerHumanElsewhere: 'Wartet auf Sie — Korvix kann es untersuchen, die Behebung muss aber außerhalb von Korvix passieren.',
 };

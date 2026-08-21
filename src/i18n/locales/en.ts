@@ -1765,4 +1765,5 @@ export const en: Record<string, string> = {
   projectMemoryGapsTitle: 'Open knowledge gaps',
   projectStoryDetail: 'Details',
   projectActivityLatest: 'Latest activity',
+  projectFocusOwnerHumanElsewhere: 'Waiting on you — Korvix can look into it, but the fix has to happen outside Korvix.',
 };

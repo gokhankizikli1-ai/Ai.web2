@@ -894,7 +894,15 @@ def build(user_id: str, project_id: str, *,
     # project prompt already uses, asked about one subject's rows instead of the
     # whole project. Pure, and computed from observations already in memory: no
     # query, no provider call, no token.
-    subject_grounding = _subject_grounding(observations, state_membership)
+    #
+    # Guarded like every other slice: this function's contract is that it never
+    # raises, so a grounding failure costs the evidence breakdown on the page,
+    # not the page.
+    subject_grounding: Dict[str, dict] = {}
+    try:
+        subject_grounding = _subject_grounding(observations, state_membership)
+    except Exception as exc:      # pragma: no cover — defensive
+        logger.debug("project_workspace: subject grounding unavailable: %s", exc)
 
     # FOCUS — "what matters right now, and why". The DECISION reading over the
     # subjects just correlated: which one leads, on what evidence, whether a

@@ -12,6 +12,7 @@ import {
   hasFocus,
   hasGrounding,
   hasProjectMemory,
+  alarmIsFocusStory,
   hasVisitChanges,
   knowledgeGapKeys,
   knowledgeGroups,
@@ -435,6 +436,54 @@ describe('workspaceFocus', () => {
     expect(focus.item).toBeNull();
     expect(focus.attention!.id).toBe('a1');
     expect(hasFocus(focus)).toBe(true);
+  });
+
+  it('folds the alarm into the headline ONLY when the backend joined them', () => {
+    const alarm = (stateId: string) => ({
+      id: 'a1', severity: 'blocking', reason: 'deploy_failed', source: 'vercel',
+      kind: 'vercel.deployment.error', title: 'Production deployment failed',
+      context: '', observed_at: NOW, ref: '',
+      state_id: stateId, state: 'unresolved', state_subject: 'Release / PR #656',
+      state_evidence_count: 3,
+    });
+    const same = normalizeWorkspace(payload({
+      today: { attention: alarm('s1'), recommendation: null },
+    }))!;
+    expect(alarmIsFocusStory(workspaceFocus(same))).toBe(true);
+
+    const other = normalizeWorkspace(payload({
+      today: { attention: alarm('s2'), recommendation: null },
+    }))!;
+    expect(alarmIsFocusStory(workspaceFocus(other))).toBe(false);
+
+    // No story on either side is the WEAKER claim: the alarm keeps its own line
+    // rather than being folded into a headline that may be about something else.
+    const unlinked = normalizeWorkspace(payload({
+      today: { attention: alarm(''), recommendation: null },
+    }))!;
+    expect(alarmIsFocusStory(workspaceFocus(unlinked))).toBe(false);
+  });
+
+  it('carries the backend attention-to-story enrichment through normalization', () => {
+    const ws = normalizeWorkspace(payload({
+      attention: [{ id: 'a1', severity: 'blocking', reason: 'deploy_failed',
+                    source: 'vercel', kind: 'k', title: 'x', context: '',
+                    observed_at: NOW, ref: '', state_id: 's1',
+                    state: 'unresolved', state_subject: 'Release / PR #656',
+                    state_evidence_count: 3 }],
+    }))!;
+    expect(ws.attention[0].state_subject).toBe('Release / PR #656');
+    expect(ws.attention[0].state_evidence_count).toBe(3);
+  });
+
+  it('defaults the enrichment when an older backend omits it', () => {
+    const ws = normalizeWorkspace(payload({
+      attention: [{ id: 'a1', severity: 'blocking', reason: 'deploy_failed',
+                    source: 'vercel', kind: 'k', title: 'x', context: '',
+                    observed_at: NOW, ref: '' }],
+    }))!;
+    expect(ws.attention[0].state_id).toBe('');
+    expect(ws.attention[0].state_evidence_count).toBe(0);
   });
 
   it('finds nothing for a foreign subject id', () => {

@@ -48,6 +48,19 @@ export interface AttentionItem {
   observed_at: string;
   /** Deliverable id for a failed build, else "". */
   ref: string;
+  /* ── The correlated story this alarm belongs to, when the backend's
+     membership index spoke for it (`workspace._link_attention_to_state`).
+     ENRICHMENT ONLY: it never changes this row's order or severity — those are
+     `attention`'s alone — it only lets the page say "this alarm and that story
+     are the same thing" instead of showing both and letting the reader guess.
+     "" means the alarm stands alone, which is the honest answer.
+
+     The backend deliberately does NOT send a confidence level here; it travels
+     with `project_state`, where its full breakdown travels with it. */
+  state_id: string;
+  state: string;
+  state_subject: string;
+  state_evidence_count: number;
 }
 
 export interface ActivityItem {
@@ -667,6 +680,10 @@ function normalizeAttentionItem(value: unknown): AttentionItem | null {
     context: str(o.context),
     observed_at: str(o.observed_at),
     ref: str(o.ref),
+    state_id: str(o.state_id),
+    state: str(o.state),
+    state_subject: str(o.state_subject),
+    state_evidence_count: num(o.state_evidence_count) ?? 0,
   };
 }
 
@@ -1809,7 +1826,15 @@ export function focusCaveatKey(code: string): string | null {
 export function focusOwnerKey(item: FocusItem | null): string | null {
   if (!item) return null;
   if (item.actionability.resolution === 'human_external') {
-    return 'projectFocusOwnerHuman';
+    // DEFECT, fixed here: the sentence for `human_external` interpolates the
+    // provider list, and the backend can legitimately send that list empty (it
+    // knows a person has to act; it does not always know whose system). The
+    // page was printing "…the fix has to happen in ." — a sentence with a hole
+    // in it. There is a provider-less wording for exactly that case, and it
+    // says the same true thing without naming what we do not know.
+    return item.actionability.external_providers.length > 0
+      ? 'projectFocusOwnerHuman'
+      : 'projectFocusOwnerHumanElsewhere';
   }
   if (item.actionability.resolution === 'korvix') return 'projectFocusOwnerKorvix';
   return null;
@@ -2280,6 +2305,26 @@ export function workspaceFocus(workspace: ProjectWorkspace | null): WorkspaceFoc
 /** Does the page have a real Focus to lead with? */
 export function hasFocus(focus: WorkspaceFocus): boolean {
   return !!(focus.item || focus.attention);
+}
+
+/**
+ * Is the alarm the SAME real-world thing the focus block already leads with?
+ *
+ * The join is the backend's: `attention` rows carry the correlated subject the
+ * membership index put them in. When they match, the alarm is provenance for
+ * the headline and printing its reason again would be the same fact twice.
+ * When they do NOT match, two different things are open, and the alarm has to
+ * be named in its own words or it is silently demoted by a layout decision.
+ *
+ * With no story on either side the answer is `false` — the weaker claim — so
+ * the alarm keeps its own line rather than being folded into a headline that
+ * may be about something else entirely.
+ */
+export function alarmIsFocusStory(focus: WorkspaceFocus): boolean {
+  const storyId = focus.story?.id || '';
+  const alarmStoryId = focus.attention?.state_id || '';
+  if (!storyId || !alarmStoryId) return false;
+  return storyId === alarmStoryId;
 }
 
 /* ── Changes as STORIES ───────────────────────────────────────────────────── */

@@ -360,3 +360,58 @@ def test_an_empty_project_carries_no_stories_and_claims_nothing(env):
     assert snapshot["project_state"] == []
     assert snapshot["changes"]["count"] == 0
     assert snapshot["project_understanding"]["state"] == "no_evidence"
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Degradation — one unavailable layer degrades a section, never the page
+# ══════════════════════════════════════════════════════════════════════════
+
+def test_a_degraded_intelligence_layer_still_produces_changes(env, monkeypatch):
+    """With correlation unavailable there is no membership index, so every
+    connector row falls back to its previous `attention`-derived key. The
+    change list is the OLD behaviour, not an empty one."""
+    from backend.services import project_intelligence as pi
+
+    _merged_pr(env, when=NOW - timedelta(hours=3))
+    _deploy(env, when=NOW - timedelta(hours=2), ok=False, ext="d1")
+
+    def boom(*_a, **_k):
+        raise RuntimeError("correlation unavailable")
+
+    monkeypatch.setattr(pi, "understand_with_membership", boom)
+    snapshot = _build(env)
+    assert snapshot is not None
+    assert snapshot["project_state"] == []
+    rows = _connector_changes(snapshot)
+    assert rows, "changes vanished when intelligence degraded"
+    assert all(r["subject_id"] == "" for r in rows)
+    assert all(r["key"].startswith("connector:") for r in rows)
+
+
+def test_a_grounding_failure_costs_the_breakdown_not_the_page(env, monkeypatch):
+    """`build()` promises never to raise. A grounding failure must therefore
+    degrade the evidence breakdown and leave every other slice intact."""
+    from backend.services import project_intelligence as pi
+
+    _merged_pr(env, when=NOW - timedelta(hours=3))
+    _deploy(env, when=NOW - timedelta(hours=2), ok=False, ext="d1")
+    _deploy(env, when=NOW - timedelta(hours=1), ok=False, ext="d2")
+
+    def boom(*_a, **_k):
+        raise RuntimeError("grounding unavailable")
+
+    monkeypatch.setattr(pi, "ground_claims", boom)
+    snapshot = _build(env)
+    assert snapshot is not None
+    assert snapshot["project_state"], "the stories themselves must survive"
+    assert all(s["grounding"] == {} for s in snapshot["project_state"])
+    assert snapshot["changes"]["count"] >= 1
+
+
+def test_every_shipped_state_row_carries_a_grounding_key(env):
+    """The page never has to null-check the field: it is always present, and
+    `{}` is the honest "nothing could be grounded" value."""
+    _merged_pr(env, when=NOW - timedelta(hours=3))
+    _deploy(env, when=NOW - timedelta(hours=2), ok=True)
+    for state in _build(env)["project_state"]:
+        assert "grounding" in state

@@ -1706,4 +1706,5 @@ export const tr: Record<string, string> = {
   projectMemoryGapsTitle: 'Açık bilgi boşlukları',
   projectStoryDetail: 'Ayrıntılar',
   projectActivityLatest: 'Son hareketler',
+  projectFocusOwnerHumanElsewhere: 'Sizi bekliyor — Korvix inceleyebilir, ancak düzeltmenin Korvix dışında yapılması gerekiyor.',
 };

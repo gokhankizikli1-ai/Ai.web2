@@ -1160,6 +1160,27 @@ describe('focus — labels', () => {
     expect(focusOwnerKey(null)).toBeNull();
   });
 
+  it('never prints a sentence with a hole where the providers should be', () => {
+    // DEFECT: the `human_external` wording interpolates the provider list, and
+    // the backend can legitimately send it empty — it knows a person has to
+    // act without knowing whose system. The page rendered "…has to happen in .".
+    const base = FOCUS_PAYLOAD as unknown as Record<string, Record<string, unknown>>;
+    const focus = normalizeFocus({
+      ...base,
+      top: {
+        ...base.top,
+        actionability: { korvix: 'investigate', capability: '', autonomy: '',
+                         resolution: 'human_external', external_providers: [] },
+      },
+    })!;
+    const key = focusOwnerKey(focus.top)!;
+    expect(key).toBe('projectFocusOwnerHumanElsewhere');
+    for (const locale of Object.keys(LOCALES) as (keyof typeof LOCALES)[]) {
+      expect(LOCALES[locale][key]).toBeTruthy();
+      expect(LOCALES[locale][key]).not.toContain('{providers}');
+    }
+  });
+
   it('tone is coarser than the ladder — three buckets, not seven', () => {
     expect(focusTone('deadline_risk')).toBe('critical');
     expect(focusTone('production_broken')).toBe('critical');

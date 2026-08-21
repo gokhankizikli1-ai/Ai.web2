@@ -78,7 +78,7 @@ import { askInWorkspace, type AskErrorCode, type AskHandle } from '@/lib/inlineA
 import MarkdownMessage from '@/components/MarkdownMessage';
 import {
   askSuggestions, attentionReasonKey, changeKindKey, changeStories,
-  connectorSummary, coverageCaveatKey,
+  alarmIsFocusStory, connectorSummary, coverageCaveatKey,
   focusBasisKey, focusCaveatKey, focusOwnerKey, focusReasonKeys, focusTone,
   freshnessKey, freshnessRelative, hasFocus, hasProjectMemory,
   hasUnderstanding, hasVisitChanges, knowledgeGapKeys, knowledgeGroups,
@@ -271,6 +271,14 @@ function AttentionRow({ item, t }: { item: AttentionItem; t: T }) {
           </span>
           {item.context && <span className="truncate max-w-[220px]">· {providerText(item.context, 60)}</span>}
           {when && <span>· {when}</span>}
+          {/* WHICH STORY this alarm belongs to — the backend's own membership
+              answer, so an alarm is never an event floating with no context.
+              Enrichment only: it changes nothing about this row's rank. */}
+          {item.state_subject && (
+            <span className="min-w-0 truncate max-w-[240px] text-white/35">
+              · {providerText(item.state_subject, 80)}
+            </span>
+          )}
         </div>
       </div>
     </li>
@@ -347,6 +355,12 @@ function FocusSection({
   const actions = renderableActions(recommendation);
   const askKey = recommendationAskKey(recommendation);
   const alarm = focus.attention;
+  // What "Ask Korvix" asks about, in order of how specific it can be: the
+  // named subject, else the recommendation's own question, else the generic
+  // one about the signal. Never an empty prompt.
+  const askPrompt = item?.subject
+    ? t('projectStateAskPrompt', { subject: providerText(item.subject, 160) })
+    : askKey ? t(askKey) : t('projectTodayAskSignalPrompt');
   const tone = item
     ? TONE_STYLE[focusTone(item.priority_basis)]
     : alarm ? TONE_STYLE[severityTone(alarm.severity)] : TONE_STYLE.info;
@@ -396,8 +410,17 @@ function FocusSection({
       <FocusHeadline focus={focus} t={t} />
 
       {/* The correlated evidence, as ONE line. This is the difference between
-          "a Vercel card and a GitHub card" and "a story". */}
-      {focus.story && <OutcomeStrip item={focus.story} t={t} />}
+          "a Vercel card and a GitHub card" and "a story". The STATE travels
+          with it: this subject is promoted out of the Current-state list below,
+          so its state has to be readable here or it is simply lost. */}
+      {focus.story && (
+        <>
+          <div className="mt-2">
+            <StateChip state={focus.story.state} t={t} subtle />
+          </div>
+          <OutcomeStrip item={focus.story} t={t} />
+        </>
+      )}
 
       {reasons.length > 0 && (
         <ul className="mt-2.5 space-y-1">
@@ -412,7 +435,7 @@ function FocusSection({
       {/* WHICH commitment — only when one is actually driving the tier. The
           date is printed as the backend's own YYYY-MM-DD, so no locale-
           dependent parsing happens on the page. */}
-      {focus.commitment && item?.deadline_pressure !== 'none' && (
+      {focus.commitment && item && item.deadline_pressure !== 'none' && (
         <div className="mt-2 text-[12px] leading-snug text-white/50 break-words">
           {t('projectFocusCommitment', {
             title: providerText(focus.commitment.title, 80),
@@ -434,32 +457,38 @@ function FocusSection({
         </div>
       )}
 
-      {/* The alarm's own provenance, when the focus subject is not the alarm's
-          own words — small, because the story above is the headline. */}
+      {/* THE ALARM, and whether it is the same thing as the headline.
+          `attention` and `decision_context` answer different questions and can
+          land on different subjects. When the backend's membership index says
+          they are the same story, this is provenance and stays small. When it
+          does NOT, the alarm is a second open thing and gets named in its own
+          words — a layout decision must never quietly demote a ranked signal. */}
       {alarm && item && (
-        <div className="mt-2 flex flex-wrap items-center gap-x-2 text-[10.5px] text-white/30">
-          <span className="inline-flex items-center gap-1">
-            <SourceIcon source={alarm.source} className="h-3 w-3 shrink-0 text-white/30" />
-            <SourceName source={alarm.source} t={t} />
-          </span>
-          {alarm.context && <span className="truncate max-w-[220px]">· {providerText(alarm.context, 60)}</span>}
-          {timeAgo(alarm.observed_at) && <span>· {timeAgo(alarm.observed_at)}</span>}
-        </div>
+        alarmIsFocusStory(focus) ? (
+          <div className="mt-2 flex flex-wrap items-center gap-x-2 text-[10.5px] text-white/30">
+            <span className="inline-flex items-center gap-1">
+              <SourceIcon source={alarm.source} className="h-3 w-3 shrink-0 text-white/30" />
+              <SourceName source={alarm.source} t={t} />
+            </span>
+            {alarm.context && <span className="truncate max-w-[220px]">· {providerText(alarm.context, 60)}</span>}
+            {timeAgo(alarm.observed_at) && <span>· {timeAgo(alarm.observed_at)}</span>}
+          </div>
+        ) : (
+          <div className={`mt-3 pt-3 ${RULE}`}>
+            <div className="text-[10.5px] uppercase tracking-[0.06em] text-white/30 mb-1">
+              {t('projectTodayAttentionLabel')}
+            </div>
+            <ul className="-my-2"><AttentionRow item={alarm} t={t} /></ul>
+          </div>
+        )
       )}
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <button onClick={() => onAsk(
-          item?.subject
-            ? t('projectStateAskPrompt', { subject: item.subject })
-            : (askKey ? t(askKey) : ''))}
-          className={PRIMARY_BTN}>
+        {/* The question is always about the thing named above, so the headline
+            and the answer can never be about different subjects. */}
+        <button onClick={() => onAsk(askPrompt)} className={PRIMARY_BTN}>
           <Sparkles className="h-3.5 w-3.5" /> {t('projectActionAsk')}
         </button>
-        {recommendation && actions.includes('create_task') && (
-          <button onClick={() => run('create_task')} className={HEADER_BTN}>
-            {t('projectTodayActionCreateTask')}
-          </button>
-        )}
         {/* INSPECT — the evidence, in place. Low chrome on purpose: the count
             IS the affordance, and it is also the most useful single fact about
             how well-supported the headline is. */}
@@ -470,8 +499,11 @@ function FocusSection({
         )}
       </div>
 
-      {/* Korvix's next best action, when it is not simply the alarm restated. */}
-      {recommendation && !actions.includes('create_task') && (
+      {/* Korvix's next best action. ALWAYS rendered when the backend produced
+          one: an earlier cut hid it whenever its actions overlapped the buttons
+          above, which meant a layout rule could silently swallow the one line
+          that says what to do. */}
+      {recommendation && (
         <div className={`mt-3 pt-3 ${RULE}`}>
           <div className="text-[10.5px] uppercase tracking-[0.06em] text-white/30 mb-1">
             {t('projectTodayRecommendLabel')}
@@ -632,7 +664,7 @@ function CurrentStateSection({ items, understanding, focusSubjectId, onAsk, t }:
 
   return (
     <section>
-      <div className={`${SECTION_TITLE} mb-1.5`}>{t('projectSectionState')}</div>
+      <h2 className={`${SECTION_TITLE} mb-1.5`}>{t('projectSectionState')}</h2>
       {caveat && (
         <div className="mb-1 text-[11.5px] leading-relaxed text-white/35">{t(caveat)}</div>
       )}
@@ -678,10 +710,10 @@ function ChangesList({ workspace, changes, onAsk, t }: {
   const hidden = Math.max(0, changes.count - changes.items.length);
   return (
     <section className={`${PANEL} p-4 sm:p-5`}>
-      <div className={`${SECTION_TITLE} mb-2`}>
+      <h2 className={`${SECTION_TITLE} mb-2`}>
         <History className="h-3.5 w-3.5 text-white/40" />
         {t('projectChangesSinceTitle')}
-      </div>
+      </h2>
       {changes.items.length === 0 ? (
         <p className={EMPTY_TEXT}>{t('projectChangesEmpty')}</p>
       ) : (
@@ -1271,20 +1303,18 @@ function ProjectMemorySection({
   return (
     <section>
       <div className="flex items-center justify-between gap-2 mb-1.5">
-        <div className={SECTION_TITLE}>{t('projectMemoryHeading')}</div>
+        <h2 className={SECTION_TITLE}>{t('projectMemoryHeading')}</h2>
         <button onClick={onOpenKnowledge}
           className="shrink-0 inline-flex items-center gap-1 rounded-md px-1.5 h-6 text-[11px] text-white/45 hover:text-white hover:bg-white/[0.06] transition-all">
           <Plus className="h-3 w-3" /> {t('projectKnowledgeAdd')}
         </button>
       </div>
 
-      {workspace.summary.text ? (
+      {workspace.summary.text && (
         <p className="text-[13.5px] leading-relaxed text-white/70 break-words">
           {workspace.summary.text}
         </p>
-      ) : !anything ? (
-        <p className={EMPTY_TEXT}>{t('projectBriefEmpty')}</p>
-      ) : null}
+      )}
 
       {groups.length > 0 && (
         <div className="mt-3 space-y-3">
@@ -1298,10 +1328,19 @@ function ProjectMemorySection({
               </div>
               <ul className="space-y-1">
                 {group.items.map((item) => (
-                  <li key={item.id}
-                    className="flex items-start gap-2 text-[12.5px] leading-snug text-white/70">
+                  <li key={item.id} className="flex items-start gap-2">
                     <span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-white/25" />
-                    <span className="min-w-0 break-words">{item.text}</span>
+                    <div className="min-w-0">
+                      <div className="text-[12.5px] leading-snug text-white/70 break-words">
+                        {item.text}
+                      </div>
+                      {/* The authority's own topic heading, when it has one (a
+                          build decision does). Kept because grouping by kind
+                          replaced the per-row kind badge, not this. */}
+                      {item.label && (
+                        <div className="text-[10px] text-white/28 truncate">{item.label}</div>
+                      )}
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -1328,8 +1367,14 @@ function ProjectMemorySection({
         </div>
       )}
 
-      {anything && groups.length === 0 && !workspace.summary.text && (
-        <p className={EMPTY_TEXT}>{t('projectMemoryEmpty')}</p>
+      {/* ONE empty line, and it says the true thing. A project with a summary
+          but nothing recorded is not the same as a project Korvix knows nothing
+          about, so it does not get the same sentence — and neither of them gets
+          a large empty card. */}
+      {groups.length === 0 && (
+        <p className={`mt-2 ${EMPTY_TEXT}`}>
+          {anything ? t('projectMemoryEmpty') : t('projectBriefEmpty')}
+        </p>
       )}
 
       {total > shown && (
@@ -1382,10 +1427,10 @@ function CustomizeFeedPanel({
     <div className={`${PANEL} mt-3 p-3 sm:p-4`}>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <div className={SECTION_TITLE}>
+          <h2 className={SECTION_TITLE}>
             <SlidersHorizontal className="h-3.5 w-3.5 text-white/40" />
             {t('projectFeedCustomizeTitle')}
-          </div>
+          </h2>
           {/* The semantic boundary, stated to the person operating the control. */}
           <p className="mt-1 text-[11px] leading-relaxed text-white/35 max-w-[42rem]">
             {t('projectFeedCustomizeHint')}
@@ -2110,14 +2155,14 @@ function ProjectWorkspaceView({ projectId }: { projectId: string }) {
               {/* Tasks */}
               <section>
                 <div className="flex items-center justify-between gap-2 mb-1.5">
-                  <div className={SECTION_TITLE}>
+                  <h2 className={SECTION_TITLE}>
                     {t('projectSectionTasks')}
                     {openCount > 0 && (
                       <span className="font-normal normal-case tracking-normal text-white/30">
                         · {t('projectTaskOpenCount', { count: openCount })}
                       </span>
                     )}
-                  </div>
+                  </h2>
                   <button onClick={() => { setComposerOpen(true); setDraftTask(''); }}
                     className="shrink-0 inline-flex items-center gap-1 rounded-md px-1.5 h-6 text-[11px] text-white/45 hover:text-white hover:bg-white/[0.06] transition-all">
                     <Plus className="h-3 w-3" /> {t('projectTaskAdd')}
@@ -2159,7 +2204,7 @@ function ProjectWorkspaceView({ projectId }: { projectId: string }) {
               {/* Goals — read-only, and said so once rather than per row. */}
               {workspace.goals.length > 0 && (
                 <section>
-                  <div className={`${SECTION_TITLE} mb-1.5`}>{t('projectSectionGoals')}</div>
+                  <h2 className={`${SECTION_TITLE} mb-1.5`}>{t('projectSectionGoals')}</h2>
                   <ul className="space-y-1.5">
                     {workspace.goals.map((g, i) => (
                       <li key={g.id || `goal-${i}`}
@@ -2176,7 +2221,7 @@ function ProjectWorkspaceView({ projectId }: { projectId: string }) {
               {/* Latest activity — a PULSE, not a log. The full chronology is
                   one tab away and says so. */}
               <section>
-                <div className={`${SECTION_TITLE} mb-1.5`}>{t('projectActivityLatest')}</div>
+                <h2 className={`${SECTION_TITLE} mb-1.5`}>{t('projectActivityLatest')}</h2>
                 {workspace.activity.length === 0 ? (
                   <p className={EMPTY_TEXT}>
                     {hiddenActivity > 0
@@ -2213,7 +2258,7 @@ function ProjectWorkspaceView({ projectId }: { projectId: string }) {
               {/* Products & builds */}
               {workspace.products.length > 0 && (
                 <section>
-                  <div className={`${SECTION_TITLE} mb-1.5`}>{t('projectSectionProducts')}</div>
+                  <h2 className={`${SECTION_TITLE} mb-1.5`}>{t('projectSectionProducts')}</h2>
                   <div className="-mx-1">
                     {workspace.products.map((p, i) => (
                       <ProductRow key={p.deliverable_id || `${p.run_id}-${i}`}
@@ -2226,7 +2271,7 @@ function ProjectWorkspaceView({ projectId }: { projectId: string }) {
               {/* Chats */}
               <section>
                 <div className="flex items-center justify-between gap-2 mb-1.5">
-                  <div className={SECTION_TITLE}>{t('projectSectionChats')}</div>
+                  <h2 className={SECTION_TITLE}>{t('projectSectionChats')}</h2>
                   <button onClick={() => setPickerOpen(true)}
                     className="shrink-0 inline-flex items-center gap-1 rounded-md px-1.5 h-6 text-[11px] text-white/45 hover:text-white hover:bg-white/[0.06] transition-all">
                     <FolderInput className="h-3 w-3" /> {t('projectActionAddExisting')}
@@ -2249,7 +2294,7 @@ function ProjectWorkspaceView({ projectId }: { projectId: string }) {
                   project binding both still live in the connector authority at
                   /settings/integrations, which this links to. */}
               <section>
-                <div className={`${SECTION_TITLE} mb-1.5`}>{t('projectSectionTools')}</div>
+                <h2 className={`${SECTION_TITLE} mb-1.5`}>{t('projectSectionTools')}</h2>
                 {workspace.connectors.length === 0 ? (
                   <p className={EMPTY_TEXT}>{t('projectToolsEmpty')}</p>
                 ) : (
@@ -2275,10 +2320,10 @@ function ProjectWorkspaceView({ projectId }: { projectId: string }) {
           <div className="mt-5 max-w-[960px] space-y-4">
             <section className={`${PANEL} p-4 sm:p-5`}>
               <div className="flex items-center justify-between gap-2 mb-3">
-                <div className={SECTION_TITLE}>
+                <h2 className={SECTION_TITLE}>
                   <ListTodo className="h-3.5 w-3.5 text-[#60A5FA]" />
                   {t('projectSectionTasks')}
-                </div>
+                </h2>
                 {!composerOpen && (
                   <button onClick={() => setComposerOpen(true)} className={HEADER_BTN}>
                     <Plus className="h-3.5 w-3.5" /> {t('projectTaskAdd')}
@@ -2339,10 +2384,10 @@ function ProjectWorkspaceView({ projectId }: { projectId: string }) {
         {workspace && view === 'knowledge' && (
           <div className="mt-5 max-w-[960px] space-y-4">
             <section className={`${PANEL} p-4 sm:p-5`}>
-              <div className={`${SECTION_TITLE} mb-3`}>
+              <h2 className={`${SECTION_TITLE} mb-3`}>
                 <BookMarked className="h-3.5 w-3.5 text-[#C4B5FD]" />
                 {t('projectKnowledgeAdd')}
-              </div>
+              </h2>
               {/* Kind first, then the statement — the kind decides which
                   authority the backend routes it to, so it is never guessed
                   from the words. */}
@@ -2376,7 +2421,7 @@ function ProjectWorkspaceView({ projectId }: { projectId: string }) {
             </section>
 
             <section className={`${PANEL} p-4 sm:p-5`}>
-              <div className={`${SECTION_TITLE} mb-2`}>
+              <h2 className={`${SECTION_TITLE} mb-2`}>
                 <BookMarked className="h-3.5 w-3.5 text-white/40" />
                 {t('projectTabKnowledge')}
                 {knowledgeTotal > 0 && (
@@ -2384,7 +2429,7 @@ function ProjectWorkspaceView({ projectId }: { projectId: string }) {
                     · {t('projectKnowledgeCount', { count: knowledgeTotal })}
                   </span>
                 )}
-              </div>
+              </h2>
               {knowledge === null ? (
                 <div className="flex items-center gap-2 text-[12px] text-white/40">
                   <Loader2 className="h-3.5 w-3.5 animate-spin" /> {t('projectWorkspaceLoading')}
@@ -2419,7 +2464,7 @@ function ProjectWorkspaceView({ projectId }: { projectId: string }) {
 
             <section className={`${PANEL} p-4 sm:p-5`}>
               <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-                <div className={SECTION_TITLE}>
+                <h2 className={SECTION_TITLE}>
                   <Activity className="h-3.5 w-3.5 text-white/40" />
                   {t('projectSectionActivity')}
                   {hiddenActivity > 0 && (
@@ -2431,7 +2476,7 @@ function ProjectWorkspaceView({ projectId }: { projectId: string }) {
                       · {t('projectFeedHiddenCount', { count: hiddenActivity })}
                     </span>
                   )}
-                </div>
+                </h2>
                 <button onClick={() => (customizeOpen ? setCustomizeOpen(false) : openCustomize())}
                   aria-expanded={customizeOpen}
                   className="shrink-0 inline-flex items-center gap-1 rounded-md px-1.5 h-6 text-[11px] text-white/45 hover:text-white hover:bg-white/[0.06] transition-all">
