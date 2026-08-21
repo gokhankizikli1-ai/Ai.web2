@@ -99,7 +99,7 @@ from backend.services.project_intelligence.grounding import (
     SUPPORT_NONE, SUPPORT_INDIRECT, SUPPORT_DIRECT,
     EV_DEPLOY, EV_CODE, EV_CI, EV_COORDINATION, EV_HUMAN_REPORT,
     EV_CUSTOMER_KNOWLEDGE, EV_METRIC_KNOWLEDGE, EV_GOAL,
-    ground_claims, missing_evidence, unsupported,
+    ground_claims, missing_evidence, not_established, unsupported,
 )
 
 logger = logging.getLogger(__name__)
@@ -252,5 +252,5 @@ __all__ = [
     "SUPPORT_NONE", "SUPPORT_INDIRECT", "SUPPORT_DIRECT",
     "EV_DEPLOY", "EV_CODE", "EV_CI", "EV_COORDINATION", "EV_HUMAN_REPORT",
     "EV_CUSTOMER_KNOWLEDGE", "EV_METRIC_KNOWLEDGE", "EV_GOAL",
-    "ground_claims", "missing_evidence", "unsupported",
+    "ground_claims", "missing_evidence", "not_established", "unsupported",
 ]

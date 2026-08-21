@@ -303,8 +303,9 @@ _CLAIM_ESTABLISHED = {
     "code_change":      "a code change was proposed or landed",
     "tests":            "a check / test run reported a result",
     "coordination":     "people are meeting or writing about this project",
-    "functionality":    "a PERSON said something about whether it works — quote "
-                        "and attribute them; it is their claim, not a fact",
+    #: No `functionality` entry, and that is the design: nothing a connector can
+    #: see ESTABLISHES that software works, so the claim never reaches this
+    #: band. It appears below as adjacent evidence, to be quoted.
     "users":            "a recorded customer fact exists — cite it as recorded",
     "feedback":         "someone's feedback is on record — say who, and what",
     "goal_progress":    "goals are recorded, so progress can be discussed "
@@ -321,6 +322,18 @@ _CLAIM_INDIRECT = {
     "feedback":         "people wrote about this project — say who; do not "
                         "generalise it into \u201cuser feedback\u201d",
     "goal_progress":    "goals exist, but nothing links a change to one",
+}
+
+#: The same band, when the only reason the claim is in play is the WORDING of a
+#: message. A keyword is not a reading, so the instruction is to go and quote
+#: the message rather than to repeat the keyword's implication as a finding.
+_CLAIM_INDIRECT_TEXTUAL = {
+    "functionality":    "a message's wording touches how it behaves — QUOTE it; "
+                        "wording is a hint, not proof it works",
+    "users":            "a message mentions users or customers — QUOTE it; a "
+                        "mention is not use",
+    "feedback":         "a message reads like feedback — QUOTE it and say who; "
+                        "not \u201cuser feedback\u201d in general",
 }
 
 #: Claim code → the sentence naming the claim that must NOT be made. Written as
@@ -407,23 +420,34 @@ def _grounding_lines(grounding: dict) -> list:
         support = str(row.get("support") or "")
         sources = [_clean(x, 40) for x in (row.get("sources") or [])[:3] if x]
         where = f" ({', '.join(sources)})" if sources else ""
+        # A claim is assertable ONLY when a source recorded its own kind of
+        # evidence. Adjacent evidence adds something to quote; it never lifts
+        # the prohibition — otherwise a hostile PR title containing the word
+        # "customers" would talk the contract out of forbidding a claim about
+        # users. So a non-direct claim is emitted in BOTH lists.
+        if support != "direct":
+            phrase = _CLAIM_FORBIDDEN.get(claim)
+            if phrase:
+                forbidden.append(phrase)
         if support == "direct":
             phrase = _CLAIM_ESTABLISHED.get(claim)
             if phrase:
                 # One source is never corroboration, and it is said HERE rather
                 # than as a footnote the model can drop.
-                solo = " — ONE source only, uncorroborated" \
+                # Short on purpose: this section is capped, the route's
+                # discipline rules already carry "ONE SOURCE IS NOT
+                # CORROBORATION" in full, and the phrase repeats per claim.
+                solo = " — one tool only, uncorroborated" \
                     if row.get("single_source") else ""
                 established.append((claim in _INFERRED_CLAIMS,
                                     f"{phrase}{where}{solo}"))
         elif support == "indirect":
-            phrase = _CLAIM_INDIRECT.get(claim)
+            table = (_CLAIM_INDIRECT_TEXTUAL
+                     if str(row.get("basis") or "") == "textual"
+                     else _CLAIM_INDIRECT)
+            phrase = table.get(claim) or _CLAIM_INDIRECT.get(claim)
             if phrase:
                 adjacent.append(f"{phrase}{where}")
-        else:
-            phrase = _CLAIM_FORBIDDEN.get(claim)
-            if phrase:
-                forbidden.append(phrase)
         for code in (row.get("missing") or []):
             phrase = _EVIDENCE_PHRASE.get(str(code))
             if phrase and phrase not in missing:
@@ -442,17 +466,22 @@ def _grounding_lines(grounding: dict) -> list:
                      # goals" and "a business result occurred" — two of the four
                      # inventions actually reported from production.
                      + "; ".join(forbidden) + ".")
-    for item in adjacent[:3]:
-        lines.append(f"- ADJACENT ONLY, never report it as the claim: {item}")
+    if adjacent:
+        lines.append("- ADJACENT EVIDENCE — it does NOT lift the prohibition "
+                     "above; it is only something you may quote: "
+                     + "; ".join(adjacent[:4]) + ".")
     # Inferred-claim lines first. "A deployment was reported" restates what
-    # Recent activity and Project state already say; "a PERSON said something
-    # about whether it works — attribute them" exists nowhere else and carries
-    # the instruction, so it must not be the line the cap eats.
-    for _, item in sorted(established, key=lambda r: not r[0])[:6]:
-        lines.append(f"- ESTABLISHED: {item}")
+    # Recent activity and Project state already say; a line telling the model to
+    # QUOTE somebody exists nowhere else and carries the instruction, so it must
+    # not be the line the cap eats.
+    # …then what would settle what is missing, which is also stated nowhere
+    # else, and only then the established facts — the one part of this section
+    # that Project state and Recent activity already carry.
     if missing:
         lines.append("- Would establish what is missing: "
                      + "; ".join(missing[:4]) + ".")
+    for _, item in sorted(established, key=lambda r: not r[0])[:4]:
+        lines.append(f"- ESTABLISHED: {item}")
     return lines
 
 
@@ -1157,7 +1186,7 @@ class ProjectBrainClient:
         # has little evidence — exactly when the sections around it are short.
         # A project with rich evidence has few unestablished claims and a short
         # line here.
-        section(900, _grounding_lines(brain.grounding))
+        section(1100, _grounding_lines(brain.grounding))
         if brain.intelligence:
             section(1100, ["Project state — what the evidence across the connected "
                            "tools adds up to (correlated, not raw events):"]

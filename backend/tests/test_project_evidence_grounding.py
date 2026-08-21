@@ -137,18 +137,83 @@ def test_github_pull_requests_establish_a_code_change():
     assert _claim(g, gr.CLAIM_CODE_CHANGE)["support"] == gr.SUPPORT_DIRECT
 
 
-def test_slack_and_gmail_establish_that_a_person_said_something():
-    g = gr.ground_claims(VERCEL_ONLY + [
-        _obs("s1", "slack", "slack.message.created", "#eng: the form 500s",
-             {"text": "the waitlist form 500s for me", "channel_id": "C1"}),
-        _obs("m1", "gmail", "gmail.message.received", "Re: waitlist",
-             {"subject": "Re: waitlist", "from": "a@customer.example"}),
+def test_a_message_establishes_only_what_its_own_words_carry():
+    """REVIEW FINDING. The first cut counted a message's EXISTENCE: any Slack
+    post or mail made "someone's feedback is on record" established. A standup
+    note is not feedback, and its existence is not evidence of anything but
+    coordination."""
+    chit_chat = gr.ground_claims(VERCEL_ONLY + [
+        _obs("s1", "slack", "slack.message.created", "#eng: standup at 10",
+             {"text": "standup at 10, I am late", "channel_id": "C1"}),
     ])
-    # Someone spoke about how it behaves → attributable, so `direct`.
-    assert _claim(g, gr.CLAIM_FUNCTIONALITY)["support"] == gr.SUPPORT_DIRECT
-    assert _claim(g, gr.CLAIM_FEEDBACK)["support"] == gr.SUPPORT_DIRECT
-    # But people writing about a project is still not people USING it.
-    assert _claim(g, gr.CLAIM_USERS)["support"] == gr.SUPPORT_INDIRECT
+    assert _claim(chit_chat, gr.CLAIM_COORDINATION)["support"] == gr.SUPPORT_DIRECT
+    for code in (gr.CLAIM_FUNCTIONALITY, gr.CLAIM_USERS, gr.CLAIM_FEEDBACK):
+        assert _claim(chit_chat, code)["support"] == gr.SUPPORT_NONE, code
+
+
+def test_a_message_that_does_talk_about_customers_is_a_HINT_to_be_quoted():
+    """…and when the words ARE about a customer and a broken form, the claim
+    becomes available — as `indirect`, marked `textual`. A keyword is not a
+    reading of a message, so it never reaches `direct`."""
+    g = gr.ground_claims(VERCEL_ONLY + [
+        _obs("s1", "slack", "slack.message.created", "#support: customer report",
+             {"text": "a customer reported the waitlist form is broken",
+              "channel_id": "C1"}),
+    ])
+    for code in (gr.CLAIM_FUNCTIONALITY, gr.CLAIM_USERS, gr.CLAIM_FEEDBACK):
+        row = _claim(g, code)
+        assert row["support"] == gr.SUPPORT_INDIRECT, code
+        assert row["basis"] == gr.BASIS_TEXTUAL, code
+        assert row["support"] != gr.SUPPORT_DIRECT, code
+
+
+def test_gmail_is_read_the_same_way_as_slack():
+    quiet = gr.ground_claims([
+        _obs("m1", "gmail", "gmail.message.received", "Re: waitlist",
+             {"subject": "Re: waitlist", "from": "a@example.com"}),
+    ])
+    assert _claim(quiet, gr.CLAIM_FEEDBACK)["support"] == gr.SUPPORT_NONE
+
+    loud = gr.ground_claims([
+        _obs("m2", "gmail", "gmail.message.received",
+             "Customer complaint: waitlist form",
+             {"subject": "Customer complaint: the waitlist form is broken",
+              "from": "a@customer.example"}),
+    ])
+    assert _claim(loud, gr.CLAIM_FEEDBACK)["support"] == gr.SUPPORT_INDIRECT
+
+
+def test_an_automated_sender_is_not_a_person_and_not_coordination():
+    """A no-reply build digest is traffic, not people communicating. It used to
+    establish feedback."""
+    for payload in ({"subject": "Your weekly deployment digest",
+                     "from": "noreply@vercel.com"},
+                    {"subject": "customer report", "from": "notifications@x.io"}):
+        g = gr.ground_claims([
+            _obs("m1", "gmail", "gmail.message.received", "digest", payload),
+        ])
+        assert _claim(g, gr.CLAIM_COORDINATION)["support"] == gr.SUPPORT_NONE, payload
+        assert _claim(g, gr.CLAIM_FEEDBACK)["support"] == gr.SUPPORT_NONE, payload
+
+    bot = gr.ground_claims([
+        _obs("s1", "slack", "slack.message.created", "build failed",
+             {"text": "a customer facing error occurred", "channel_id": "C1",
+              "bot_id": "B123"}),
+    ])
+    assert _claim(bot, gr.CLAIM_COORDINATION)["support"] == gr.SUPPORT_NONE
+    assert _claim(bot, gr.CLAIM_USERS)["support"] == gr.SUPPORT_NONE
+
+
+def test_a_signal_word_never_matches_inside_another_word():
+    """The same substring trap the finance detector fell into: "user" must not
+    hit inside "abuser", and "review" must not hit inside "previewing"."""
+    g = gr.ground_claims([
+        _obs("s1", "slack", "slack.message.created", "note",
+             {"text": "the abuser table migration is previewing fine",
+              "channel_id": "C1"}),
+    ])
+    assert _claim(g, gr.CLAIM_USERS)["support"] == gr.SUPPORT_NONE
+    assert _claim(g, gr.CLAIM_FEEDBACK)["support"] == gr.SUPPORT_NONE
 
 
 def test_calendar_establishes_coordination_and_nothing_about_the_product():

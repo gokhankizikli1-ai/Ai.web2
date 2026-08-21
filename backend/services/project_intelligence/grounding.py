@@ -60,6 +60,7 @@ calls, ZERO model tokens, ZERO writes, ZERO new tables, ZERO extra queries.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, Dict, List, Optional, Sequence
 
 from backend.services.project_intelligence import events as ev
@@ -128,11 +129,81 @@ _REPORT_FACETS = frozenset({ev.FACET_DISCUSSION, ev.FACET_MAIL})
 _COORDINATION_FACETS = frozenset({ev.FACET_DISCUSSION, ev.FACET_MAIL,
                                   ev.FACET_MEETING})
 
+
+# ── What a message has to SAY to bear on users, feedback or behaviour ───────
+#
+# REVIEW FINDING, fixed here. The first cut counted a message's EXISTENCE:
+# any Slack post or any mail made "someone's feedback is on record" and "a
+# person said something about whether it works" established. A standup note
+# ("standup at 10, I'm late") and an automated Vercel digest both licensed
+# claims about customer feedback, which is the same class of error this module
+# was written to stop — just one layer up.
+#
+# A message establishes only what its own words carry. Absent a signal in the
+# text it establishes coordination and nothing else.
+#
+# The wording check is a HINT, never authority: a keyword is not a reading of a
+# message. So a textual hit tops out at `indirect` with `basis="textual"`, and
+# the consumer's phrasing for that band tells the reader to quote the message
+# rather than restate it as a finding. `direct` for these claims comes only
+# from a recorded, provenance-tagged fact — the one place a person deliberately
+# wrote down what was learned. Same rule `interpretation` already applies to
+# text-derived areas and change kinds.
+#
+# Matched as whole words (with a suffix allowance, so Turkish "kullanıcılar"
+# and English "customers" hit) — never as substrings, which is how "ons" once
+# matched inside "consequence" one module over.
+_USER_SIGNALS: tuple = (
+    "customer", "customers", "user", "users", "subscriber", "client",
+    "müşteri", "musteri", "kullanıcı", "kullanici", "abone",
+    "kunde", "kunden", "nutzer",
+)
+_FEEDBACK_SIGNALS: tuple = (
+    "feedback", "complaint", "complained", "complains", "reported", "reports",
+    "asked for", "requested", "request", "bug report", "review", "reviews",
+    "geri bildirim", "şikayet", "sikayet", "bildirdi", "talep", "istedi",
+    "rückmeldung", "ruckmeldung", "beschwerde", "gemeldet",
+)
+_BEHAVIOUR_SIGNALS: tuple = (
+    "broken", "not working", "doesn't work", "does not work", "works",
+    "working", "down", "outage", "crash", "crashed", "crashes", "error",
+    "errors", "failing", "fails", "500", "404", "timeout", "slow", "bug",
+    "çalışmıyor", "calismiyor", "bozuk", "hata", "kapalı", "kapali", "çöktü",
+    "funktioniert nicht", "fehler", "abgestürzt",
+)
+
+
+def _signal_re(phrase: str) -> "re.Pattern":
+    """Whole-word (or whole-phrase) matcher with a trailing-suffix allowance,
+    so "customer" hits "customers" and "kullanıcı" hits "kullanıcılar" without
+    "user" ever hitting inside "abuser"."""
+    return re.compile(rf"(?<!\w){re.escape(phrase)}\w*(?!\w)", re.IGNORECASE)
+
+
+_USER_RE = tuple(_signal_re(p) for p in _USER_SIGNALS)
+_FEEDBACK_RE = tuple(_signal_re(p) for p in _FEEDBACK_SIGNALS)
+_BEHAVIOUR_RE = tuple(_signal_re(p) for p in _BEHAVIOUR_SIGNALS)
+
+
+def _says(text: str, patterns: tuple) -> bool:
+    if not text:
+        return False
+    return any(rx.search(text) for rx in patterns)
+
 _MAX_SOURCES = 4
 
 
+#: How a row was established. `structural` — a provider recorded the event
+#: itself. `recorded` — a person deliberately wrote the fact down. `textual` —
+#: inferred from the WORDING of a message, and therefore a hint to be quoted,
+#: never a finding to be stated. Mirrors `interpretation`'s own basis rule.
+BASIS_STRUCTURAL = "structural"
+BASIS_RECORDED = "recorded"
+BASIS_TEXTUAL = "textual"
+
+
 def _row(claim: str, support: str, sources: Sequence[str], count: int,
-         missing: Sequence[str]) -> Dict[str, Any]:
+         missing: Sequence[str], basis: str = BASIS_STRUCTURAL) -> Dict[str, Any]:
     ordered: List[str] = []
     for s in sources:
         s = str(s or "").strip().lower()
@@ -143,6 +214,7 @@ def _row(claim: str, support: str, sources: Sequence[str], count: int,
     return {
         "claim": claim,
         "support": support,
+        "basis": basis if support != SUPPORT_NONE else "",
         "sources": ordered,
         "evidence_count": int(count),
         # One source is never corroboration — the package's standing rule,
@@ -217,8 +289,20 @@ def _ground(
     deploy = facet(ev.FACET_DEPLOY)
     code = facet(ev.FACET_CODE)
     ci = facet(ev.FACET_CI)
-    coordination = facet(*_COORDINATION_FACETS)
-    reports = facet(*_REPORT_FACETS)
+
+    # A person writing, as opposed to a build system emitting mail. Automated
+    # senders are excluded from every human claim INCLUDING coordination: a
+    # no-reply digest is traffic, not people working together.
+    human = [e for e in events
+             if e.facet in _COORDINATION_FACETS and not e.automated]
+    coordination = [e.source for e in human]
+    # …and of those, the ones whose WORDS bear on users / feedback / behaviour.
+    said_user = [e.source for e in human
+                 if e.facet in _REPORT_FACETS and _says(e.text, _USER_RE)]
+    said_feedback = [e.source for e in human
+                     if e.facet in _REPORT_FACETS and _says(e.text, _FEEDBACK_RE)]
+    said_behaviour = [e.source for e in human
+                      if e.facet in _REPORT_FACETS and _says(e.text, _BEHAVIOUR_RE)]
 
     # Durable knowledge, read as the domains its own authority tagged it with.
     customer_knowledge: List[str] = []
@@ -254,37 +338,47 @@ def _ground(
 
     # ── FUNCTIONALITY. A deployment is not a working product; that is the
     #    whole point of this module. A green CI run is evidence about the
-    #    CHECKS, so it counts as indirect and must be reported as such. Only a
-    #    person saying it makes it direct — and then it is attributed, not
-    #    stated as fact by Korvix.
-    if reports:
-        claims.append(_row(CLAIM_FUNCTIONALITY, SUPPORT_DIRECT,
-                           reports, len(reports), [EV_HUMAN_REPORT]))
+    #    CHECKS. A message whose words describe how the thing behaves is a
+    #    person's account, to be quoted. Neither is proof, so neither is ever
+    #    `direct`: nothing a connector can see establishes that software works.
+    if said_behaviour:
+        claims.append(_row(CLAIM_FUNCTIONALITY, SUPPORT_INDIRECT,
+                           said_behaviour, len(said_behaviour),
+                           [EV_HUMAN_REPORT], basis=BASIS_TEXTUAL))
     elif positive_ci:
         claims.append(_row(CLAIM_FUNCTIONALITY, SUPPORT_INDIRECT,
-                           positive_ci, len(positive_ci),
-                           [EV_HUMAN_REPORT]))
+                           positive_ci, len(positive_ci), [EV_HUMAN_REPORT]))
     else:
         claims.append(_row(CLAIM_FUNCTIONALITY, SUPPORT_NONE, [], 0,
                            [EV_CI, EV_HUMAN_REPORT]))
 
-    # ── USERS / FEEDBACK. No build system knows whether anyone used anything.
-    #    Only a person's words or a recorded customer fact can establish these.
+    # ── USERS / FEEDBACK. No build system knows whether anyone used anything,
+    #    and the EXISTENCE of a message is not somebody's feedback — that was
+    #    the review finding. A recorded customer fact is `direct` because a
+    #    person deliberately wrote it down; a message that TALKS about users or
+    #    feedback is `indirect` and textual, to be quoted rather than asserted.
     if customer_knowledge:
         claims.append(_row(CLAIM_USERS, SUPPORT_DIRECT, customer_knowledge,
-                           len(customer_knowledge), [EV_CUSTOMER_KNOWLEDGE]))
+                           len(customer_knowledge), [EV_CUSTOMER_KNOWLEDGE],
+                           basis=BASIS_RECORDED))
         claims.append(_row(CLAIM_FEEDBACK, SUPPORT_DIRECT, customer_knowledge,
-                           len(customer_knowledge), [EV_CUSTOMER_KNOWLEDGE]))
-    elif reports:
-        claims.append(_row(CLAIM_USERS, SUPPORT_INDIRECT, reports,
-                           len(reports), [EV_CUSTOMER_KNOWLEDGE]))
-        claims.append(_row(CLAIM_FEEDBACK, SUPPORT_DIRECT, reports,
-                           len(reports), [EV_HUMAN_REPORT]))
+                           len(customer_knowledge), [EV_CUSTOMER_KNOWLEDGE],
+                           basis=BASIS_RECORDED))
     else:
-        claims.append(_row(CLAIM_USERS, SUPPORT_NONE, [], 0,
-                           [EV_HUMAN_REPORT, EV_CUSTOMER_KNOWLEDGE]))
-        claims.append(_row(CLAIM_FEEDBACK, SUPPORT_NONE, [], 0,
-                           [EV_HUMAN_REPORT, EV_CUSTOMER_KNOWLEDGE]))
+        if said_user:
+            claims.append(_row(CLAIM_USERS, SUPPORT_INDIRECT, said_user,
+                               len(said_user), [EV_CUSTOMER_KNOWLEDGE],
+                               basis=BASIS_TEXTUAL))
+        else:
+            claims.append(_row(CLAIM_USERS, SUPPORT_NONE, [], 0,
+                               [EV_HUMAN_REPORT, EV_CUSTOMER_KNOWLEDGE]))
+        if said_feedback or said_user:
+            src = said_feedback or said_user
+            claims.append(_row(CLAIM_FEEDBACK, SUPPORT_INDIRECT, src, len(src),
+                               [EV_CUSTOMER_KNOWLEDGE], basis=BASIS_TEXTUAL))
+        else:
+            claims.append(_row(CLAIM_FEEDBACK, SUPPORT_NONE, [], 0,
+                               [EV_HUMAN_REPORT, EV_CUSTOMER_KNOWLEDGE]))
 
     # ── GOAL PROGRESS. Without a recorded goal there is nothing to progress
     #    against, and "the project is progressing toward its goals" is a
@@ -295,7 +389,8 @@ def _ground(
         claims.append(_row(CLAIM_GOAL_PROGRESS, SUPPORT_INDIRECT,
                            ["recorded goals"]
                            + (["recorded decisions"] if decision_count else []),
-                           goal_count + decision_count, [EV_HUMAN_REPORT]))
+                           goal_count + decision_count, [EV_HUMAN_REPORT],
+                           basis=BASIS_RECORDED))
     else:
         claims.append(_row(CLAIM_GOAL_PROGRESS, SUPPORT_NONE, [], 0, [EV_GOAL]))
 
@@ -303,7 +398,7 @@ def _ground(
     if business_knowledge:
         claims.append(_row(CLAIM_BUSINESS_OUTCOME, SUPPORT_DIRECT,
                            business_knowledge, len(business_knowledge),
-                           [EV_METRIC_KNOWLEDGE]))
+                           [EV_METRIC_KNOWLEDGE], basis=BASIS_RECORDED))
     else:
         claims.append(_row(CLAIM_BUSINESS_OUTCOME, SUPPORT_NONE, [], 0,
                            [EV_METRIC_KNOWLEDGE]))
@@ -319,6 +414,22 @@ def _ground(
         "observations": len(events),
         "single_source_project": len(all_sources) == 1,
     }
+
+
+def not_established(grounding: Dict[str, Any]) -> List[str]:
+    """Every claim that may NOT be asserted — anything short of `direct`.
+
+    REVIEW FINDING, fixed here. `indirect` used to REPLACE the prohibition with
+    a softer instruction, which made the prohibition attacker-controllable: a
+    hostile pull-request title or chat message containing the word "customers"
+    moved `users` out of the forbidden list on the strength of its own wording.
+
+    Adjacent evidence changes what there is to QUOTE. It never changes what may
+    be ASSERTED. So the line is drawn at `direct`: a claim is assertable only
+    when a source recorded that claim's own kind of evidence, and everything
+    else stays forbidden while gaining a "here is what you may quote" note."""
+    return [str(r.get("claim")) for r in (grounding or {}).get("claims") or []
+            if isinstance(r, dict) and r.get("support") != SUPPORT_DIRECT]
 
 
 def unsupported(grounding: Dict[str, Any]) -> List[str]:
@@ -347,7 +458,8 @@ __all__ = [
     "CLAIM_FUNCTIONALITY", "CLAIM_USERS", "CLAIM_FEEDBACK",
     "CLAIM_GOAL_PROGRESS", "CLAIM_BUSINESS_OUTCOME",
     "SUPPORT_NONE", "SUPPORT_INDIRECT", "SUPPORT_DIRECT",
+    "BASIS_STRUCTURAL", "BASIS_RECORDED", "BASIS_TEXTUAL",
     "EV_DEPLOY", "EV_CODE", "EV_CI", "EV_COORDINATION", "EV_HUMAN_REPORT",
     "EV_CUSTOMER_KNOWLEDGE", "EV_METRIC_KNOWLEDGE", "EV_GOAL",
-    "ground_claims", "unsupported", "missing_evidence",
+    "ground_claims", "unsupported", "not_established", "missing_evidence",
 ]

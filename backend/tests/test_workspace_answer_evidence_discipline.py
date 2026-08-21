@@ -221,7 +221,7 @@ def test_A2_the_deployment_itself_is_still_reported_as_established(
     system = fake_provider.system
     assert "ESTABLISHED: a deployment was reported" in system
     assert "(vercel)" in system
-    assert "ONE source only, uncorroborated" in system
+    assert "one tool only, uncorroborated" in system
 
 
 def test_A3_the_missing_evidence_is_named_not_left_as_a_gap(
@@ -295,33 +295,76 @@ def test_B_github_checks_lift_the_tests_prohibition(client, env, fake_provider):
     # …and a green check still does not license "it works".
     assert "evidence about the CHECKS" in system
     assert FORBIDDEN_MARKERS["users"] in system
+    assert FORBIDDEN_MARKERS["feedback"] in system
 
 
-def test_B2_a_persons_message_lifts_the_feedback_prohibition_only(
+def test_B2_a_message_lifts_a_prohibition_only_when_its_words_say_so(
         client, env, fake_provider):
+    """REVIEW FINDING, pinned. A standup note is not customer feedback. The
+    first cut lifted the feedback and functionality prohibitions on the mere
+    EXISTENCE of a Slack message."""
     _vercel_only(env)
     _record(env, source="slack", kind="slack.message.created",
-            summary="#eng: the waitlist form 500s for me",
-            payload={"text": "the waitlist form 500s for me",
-                     "channel_id": "C1", "channel_name": "eng"})
+            summary="#eng: standup at 10",
+            payload={"text": "standup at 10, I am late", "channel_id": "C1",
+                     "channel_name": "eng"})
     assert _ask(client, Q_STATE).status_code == 200
     system = fake_provider.system
-    assert FORBIDDEN_MARKERS["feedback"] not in system
-    # A person speaking is attributable, never Korvix's own finding.
-    assert "attribute them; it is their claim, not a fact" in system
-    # Still nothing about revenue or goals.
-    assert FORBIDDEN_MARKERS["business_outcome"] in system
-    assert FORBIDDEN_MARKERS["goal_progress"] in system
+    # Coordination is real — people ARE writing here.
+    assert "that anyone is discussing or working on it" not in system
+    # Everything else stays forbidden.
+    for claim in ("functionality", "users", "feedback"):
+        assert FORBIDDEN_MARKERS[claim] in system, claim
 
 
-def test_B3_gmail_counts_as_a_person_speaking(client, env, fake_provider):
+def test_B2b_a_message_that_does_report_a_customer_problem_is_quotable(
+        client, env, fake_provider):
+    """The other half: when the words ARE about a customer and a broken form,
+    the claim comes into play — as something to QUOTE, never as a finding."""
+    _vercel_only(env)
+    _record(env, source="slack", kind="slack.message.created",
+            summary="#support: customer report",
+            payload={"text": "a customer reported the waitlist form is broken",
+                     "channel_id": "C1", "channel_name": "support"})
+    assert _ask(client, Q_STATE).status_code == 200
+    system = fake_provider.system
+    # There is now something to QUOTE…
+    assert "ADJACENT EVIDENCE" in system
+    assert "QUOTE it and say who" in system
+    assert "wording is a hint, not proof it works" in system
+    # …and the claims themselves stay unassertable: a message's wording is not
+    # the claim, and letting it lift the prohibition would hand the contract to
+    # whoever wrote the message.
+    assert "it does NOT lift the prohibition above" in system
+    for claim in ("feedback", "functionality", "users", "business_outcome",
+                  "goal_progress"):
+        assert FORBIDDEN_MARKERS[claim] in system, claim
+
+
+def test_B2c_an_automated_digest_licenses_nothing(client, env, fake_provider):
+    """A no-reply build mail is traffic, not people communicating."""
     _vercel_only(env)
     _record(env, source="gmail", kind="gmail.message.received",
-            summary="Re: waitlist access",
-            payload={"subject": "Re: waitlist access",
+            summary="Your weekly deployment digest",
+            payload={"subject": "Your weekly deployment digest",
+                     "from": "noreply@vercel.com"})
+    assert _ask(client, Q_STATE).status_code == 200
+    system = fake_provider.system
+    for claim in ("functionality", "users", "feedback"):
+        assert FORBIDDEN_MARKERS[claim] in system, claim
+    assert "that anyone is discussing or working on it" in system
+
+
+def test_B3_gmail_is_read_the_same_way_as_slack(client, env, fake_provider):
+    _vercel_only(env)
+    _record(env, source="gmail", kind="gmail.message.received",
+            summary="Customer complaint: waitlist form",
+            payload={"subject": "Customer complaint: the waitlist form is broken",
                      "from": "someone@customer.example"})
     assert _ask(client, Q_STATE).status_code == 200
-    assert FORBIDDEN_MARKERS["feedback"] not in fake_provider.system
+    system = fake_provider.system
+    assert "a message reads like feedback" in system
+    assert FORBIDDEN_MARKERS["feedback"] in system   # quotable, not assertable
 
 
 def test_B4_a_calendar_event_lifts_coordination_and_nothing_else(
@@ -348,13 +391,12 @@ def test_B5_recorded_goals_make_progress_discussable_but_not_established(
 
     assert _ask(client, Q_STATE).status_code == 200
     system = fake_provider.system
-    # Not forbidden any more — the words now have a referent…
-    assert FORBIDDEN_MARKERS["goal_progress"] not in system
-    # …and not established either. It lands in the ADJACENT band, which is the
-    # only honest place for it: a goal exists, and no event says anything
-    # advanced it.
+    # The goal gives the words a referent — it is quotable by name…
     assert "goals exist, but nothing links a change to one" in system
-    assert "ADJACENT ONLY, never report it as the claim" in system
+    assert "ADJACENT EVIDENCE" in system
+    # …and "the project is progressing toward its goals" is still not something
+    # any evidence here establishes.
+    assert FORBIDDEN_MARKERS["goal_progress"] in system
 
 
 def test_B6_a_rich_project_forbids_little_and_still_carries_the_contract(
@@ -368,12 +410,19 @@ def test_B6_a_rich_project_forbids_little_and_still_carries_the_contract(
     _record(env, source="github", kind="github.check.succeeded",
             summary="CI passed", payload={"repo": "acme/site", "name": "pytest"})
     _record(env, source="slack", kind="slack.message.created",
-            summary="#eng: shipped", payload={"text": "shipped", "channel_id": "C1"})
+            summary="#support: customer says checkout is broken",
+            payload={"text": "a customer says checkout is broken",
+                     "channel_id": "C1"})
     assert _ask(client, Q_CHANGED).status_code == 200
     system = fake_provider.system
-    for lifted in ("tests", "functionality", "feedback"):
-        assert FORBIDDEN_MARKERS[lifted] not in system
-    assert FORBIDDEN_MARKERS["business_outcome"] in system
+    # Machine-recorded facts become assertable…
+    assert FORBIDDEN_MARKERS["tests"] not in system
+    assert "that any code changed" not in system
+    # …the human-read ones stay quotable-only…
+    for still_forbidden in ("functionality", "feedback", "users",
+                            "business_outcome"):
+        assert FORBIDDEN_MARKERS[still_forbidden] in system, still_forbidden
+    assert "ADJACENT EVIDENCE" in system
     assert "EVIDENCE DISCIPLINE" in system
 
 
@@ -439,7 +488,7 @@ def test_D_the_prompt_states_exactly_what_the_projection_decided(
 
     rows = env.obs.list_observations(PID, user_id=OWNER, limit=60)
     computed = gr.ground_claims(rows, goals=[], decisions=[], knowledge=[])
-    unsupported = set(gr.unsupported(computed))
+    unsupported = set(gr.not_established(computed))
 
     for claim, marker in FORBIDDEN_MARKERS.items():
         if claim in unsupported:
