@@ -286,10 +286,18 @@ export interface ChangeItem {
   key: string;
   change: string;
   source: string;
+  /** PROVIDER-AUTHORED for a connector row. Render through `providerText`. */
   title: string;
   detail: string;
   occurred_at: string;
   ref: string;
+  /** The CORRELATED subject this change belongs to, when the backend's
+   *  membership index spoke for it. "" means the row stands alone — which is
+   *  the honest answer, not a missing field. */
+  subject_id: string;
+  subject: string;
+  /** The subject's state, from the same closed vocabulary as `SubjectState`. */
+  state: string;
 }
 
 /**
@@ -391,13 +399,55 @@ export interface SubjectUnderstanding {
   last_meaningful_change: MeaningfulChange | null;
 }
 
+/** Which way one piece of evidence points. The backend's own reading, carried
+ *  on the row — the page never derives an outcome from a title or a kind. */
+export type EvidencePolarity = 'positive' | 'negative' | 'pending' | 'neutral' | '';
+
 export interface EvidenceRef {
   observation_id: string;
   source: string;
   kind: string;
   semantic_type: string;
+  /** `positive` / `negative` / `pending` / `neutral`, decided server-side. */
+  polarity: EvidencePolarity;
+  /** The deploy target this row speaks about, or "" when it is not about a
+   *  deployment at all. "" NEVER means production. */
+  environment: string;
+  /** PROVIDER-AUTHORED TEXT. Render through `ProviderText` / `providerText`,
+   *  never as markdown and never as a heading. */
   title: string;
   observed_at: string;
+}
+
+/* ── Grounding: what ONE story's evidence establishes ──────────────────────
+ *
+ * The backend's `project_intelligence.grounding` reading, computed over the
+ * observations that belong to this subject. Every value is a stable code from
+ * a closed vocabulary; there is no percentage, no score and no second
+ * confidence model. `direct` means a source recorded this claim's own kind of
+ * evidence. `indirect` means an ADJACENT fact exists and the claim itself is
+ * unproven — it is never rendered as the claim.
+ */
+export type ClaimSupport = 'none' | 'indirect' | 'direct';
+export type ClaimBasis = 'structural' | 'recorded' | 'textual' | '';
+
+export interface GroundedClaim {
+  claim: string;
+  support: ClaimSupport;
+  basis: ClaimBasis;
+  sources: string[];
+  evidence_count: number;
+  /** One tool reporting is never corroboration — the backend says so per claim. */
+  single_source: boolean;
+  /** Evidence classes that WOULD establish it. Empty once `direct`. */
+  missing: string[];
+}
+
+export interface StoryGrounding {
+  claims: GroundedClaim[];
+  sources: string[];
+  observations: number;
+  single_source: boolean;
 }
 
 /** One correlated subject: what Korvix thinks is going on, and why. */
@@ -417,6 +467,9 @@ export interface ProjectStateItem {
   first_seen: string;
   last_seen: string;
   understanding: SubjectUnderstanding | null;
+  /** What THIS story's evidence does and does not establish, or null when the
+   *  backend could not ground it. Never a score. */
+  grounding: StoryGrounding | null;
 }
 
 /** What the reading is BASED on. The page shows this whenever it is thin,
@@ -695,6 +748,9 @@ function normalizeChanges(value: unknown): WorkspaceChanges {
       detail: str(c.detail),
       occurred_at: str(c.occurred_at),
       ref: str(c.ref),
+      subject_id: str(c.subject_id),
+      subject: str(c.subject),
+      state: str(c.state),
     };
   }).filter((c) => !!c.key);
   return {
@@ -783,18 +839,63 @@ function normalizeUnderstanding(value: unknown): SubjectUnderstanding | null {
   };
 }
 
+const POLARITIES: EvidencePolarity[] = ['positive', 'negative', 'pending', 'neutral'];
+
 function normalizeEvidence(value: unknown): EvidenceRef[] {
   return arr(value).map((raw) => {
     const o = obj(raw);
+    const polarity = str(o.polarity) as EvidencePolarity;
     return {
       observation_id: str(o.observation_id),
       source: str(o.source),
       kind: str(o.kind),
       semantic_type: str(o.semantic_type),
+      // An unrecognised polarity degrades to "" — the page then shows the row
+      // with no outcome mark rather than guessing which way it points.
+      polarity: (POLARITIES.includes(polarity) ? polarity : '') as EvidencePolarity,
+      environment: str(o.environment),
       title: str(o.title),
       observed_at: str(o.observed_at),
     };
   });
+}
+
+const SUPPORTS: ClaimSupport[] = ['none', 'indirect', 'direct'];
+const CLAIM_BASES: ClaimBasis[] = ['structural', 'recorded', 'textual'];
+
+/**
+ * The grounding block, or null.
+ *
+ * A claim whose support level this bundle does not recognise degrades to
+ * `none` — the WEAKEST reading — for the same reason `changes` defaults to
+ * `recent`: if the payload cannot prove support, the page must not print it.
+ */
+export function normalizeGrounding(value: unknown): StoryGrounding | null {
+  const o = obj(value);
+  if (!Object.keys(o).length) return null;
+  const claims = arr(o.claims).map((raw) => {
+    const c = obj(raw);
+    const claim = str(c.claim);
+    if (!claim) return null;
+    const support = str(c.support) as ClaimSupport;
+    const basis = str(c.basis) as ClaimBasis;
+    return {
+      claim,
+      support: (SUPPORTS.includes(support) ? support : 'none') as ClaimSupport,
+      basis: (CLAIM_BASES.includes(basis) ? basis : '') as ClaimBasis,
+      sources: arr(c.sources).map((x) => str(x)).filter(Boolean),
+      evidence_count: num(c.evidence_count) ?? 0,
+      single_source: c.single_source === true,
+      missing: arr(c.missing).map((x) => str(x)).filter(Boolean),
+    };
+  }).filter((c): c is GroundedClaim => c !== null);
+  if (!claims.length) return null;
+  return {
+    claims,
+    sources: arr(o.sources).map((x) => str(x)).filter(Boolean),
+    observations: num(o.observations) ?? 0,
+    single_source: o.single_source === true,
+  };
 }
 
 /** A subject with no id or no state this bundle knows is DROPPED. Rendering a
@@ -821,6 +922,7 @@ export function normalizeProjectStateItem(value: unknown): ProjectStateItem | nu
     first_seen: str(o.first_seen),
     last_seen: str(o.last_seen),
     understanding: normalizeUnderstanding(o.understanding),
+    grounding: normalizeGrounding(o.grounding),
   };
 }
 
@@ -1826,4 +1928,461 @@ export function openProjectChatUrl(threadId: string): string {
 export function productOpenTarget(product: WorkspaceProduct): string | null {
   const threadId = String(product.thread_id || '').trim();
   return threadId ? openProjectChatUrl(threadId) : null;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   PROVIDER TEXT — the one door connector-authored strings come through
+   ══════════════════════════════════════════════════════════════════════════
+
+   A Slack message, a mail subject, a PR title, a commit message and a calendar
+   title are DATA. They are written by whoever can post into a connected tool,
+   which on a shared repository or a public channel is not necessarily someone
+   the reader trusts. React already escapes them as text, so HTML injection is
+   not the risk here. The risks that remain are typographic:
+
+     * a newline, so the text renders as two lines and the second one can be
+       styled by its neighbours into looking like a section heading;
+     * a bidi override (U+202E and friends), which visually REVERSES the text
+       that follows it and can make one sentence read as another — including
+       past the element's own bounds;
+     * zero-width and control characters, used to break a word up so a reader
+       (or a filter) does not see what is actually there;
+     * unbounded length, which pushes real UI off the screen.
+
+   So every provider-authored string is normalized HERE, once, and rendered as
+   a single line of plain text in a deliberately quieter style than Korvix's
+   own words. It is never passed to the markdown renderer (which is reserved
+   for Korvix's own answer), never used as a heading, and never given the
+   typography that signals product authority.
+
+   This is presentation safety, not truth: nothing here changes what the
+   evidence says, only how much a provider can borrow the product's voice.
+*/
+
+/** Characters that can move, hide or reverse text. U+200D (ZWJ) is kept on
+ *  purpose — stripping it would break ordinary emoji sequences. */
+// The control characters ARE the subject of this rule: stripping them is
+// exactly what this expression is for, so the lint rule that forbids them
+// inside a pattern is disabled here and nowhere else in the file.
+const UNSAFE_TEXT_RE =
+  // eslint-disable-next-line no-control-regex
+  /[\u0000-\u0008\u000B-\u001F\u007F-\u009F\u200B\u200C\u200E\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]/g;
+
+export const PROVIDER_TEXT_MAX = 240;
+
+/**
+ * One line of safe, bounded, plain provider text — or "" when there is nothing
+ * to show. Pure, so the rule is testable rather than trusted.
+ */
+export function providerText(raw: unknown, limit: number = PROVIDER_TEXT_MAX): string {
+  if (typeof raw !== 'string' || !raw) return '';
+  const flat = raw
+    .replace(/[\r\n\t\v\f\u0085\u2028\u2029]+/g, ' ')   // never more than one line
+    .replace(UNSAFE_TEXT_RE, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+  const bound = Math.max(1, limit);
+  return flat.length > bound ? `${flat.slice(0, bound - 1)}…` : flat;
+}
+
+/* ── Evidence: outcome, tone and the story timeline ───────────────────────── */
+
+/** i18n key for a semantic type — the backend's closed event vocabulary. An
+ *  unrecognised type renders NO outcome word rather than a raw code. */
+const SEMANTIC_KEYS: Record<string, string> = {
+  change_proposed: 'projectEvidenceChangeProposed',
+  change_landed: 'projectEvidenceChangeLanded',
+  change_abandoned: 'projectEvidenceChangeAbandoned',
+  change_pushed: 'projectEvidenceChangePushed',
+  ci_failed: 'projectEvidenceCiFailed',
+  ci_passed: 'projectEvidenceCiPassed',
+  deploy_failed: 'projectEvidenceDeployFailed',
+  deploy_succeeded: 'projectEvidenceDeploySucceeded',
+  deploy_cancelled: 'projectEvidenceDeployCancelled',
+  deploy_started: 'projectEvidenceDeployStarted',
+  issue_opened: 'projectEvidenceIssueOpened',
+  issue_closed: 'projectEvidenceIssueClosed',
+  discussion: 'projectEvidenceDiscussion',
+  mail: 'projectEvidenceMail',
+  meeting: 'projectEvidenceMeeting',
+  activity: 'projectEvidenceActivity',
+};
+
+export function evidenceOutcomeKey(semanticType: string): string | null {
+  return SEMANTIC_KEYS[semanticType] || null;
+}
+
+/** Tone for an evidence row. Presentation of the backend's OWN polarity — the
+ *  page never reads an outcome out of a title. */
+export function evidenceTone(
+  polarity: EvidencePolarity,
+): 'positive' | 'negative' | 'pending' | 'neutral' {
+  if (polarity === 'positive') return 'positive';
+  if (polarity === 'negative') return 'negative';
+  if (polarity === 'pending') return 'pending';
+  return 'neutral';
+}
+
+/**
+ * One story's evidence as a CHRONOLOGY — the thing a person actually wants
+ * when they ask "what happened here?".
+ *
+ * Supporting, contradicting and context rows are the backend's three display
+ * projections of the same events, so they are merged, deduplicated by
+ * observation id, and ordered oldest-first: a story reads forwards.
+ *
+ * DELIBERATELY NOT COLLAPSED BY SOURCE. A preview check that passed and a
+ * production deployment that failed are two facts; merging them into one
+ * "Vercel" row would be exactly the "conflicting evidence quietly averaged
+ * away" failure this surface exists to prevent.
+ */
+export function storyTimeline(
+  item: ProjectStateItem | null | undefined,
+  limit = 8,
+): EvidenceRef[] {
+  if (!item) return [];
+  const seen = new Set<string>();
+  const rows: EvidenceRef[] = [];
+  for (const row of [...item.supporting, ...item.contradicting, ...item.context]) {
+    const id = row.observation_id
+      || `${row.source}:${row.semantic_type}:${row.observed_at}`;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    rows.push(row);
+  }
+  rows.sort((a, b) => {
+    const at = Date.parse(a.observed_at || '');
+    const bt = Date.parse(b.observed_at || '');
+    // An undatable row sorts LAST rather than pretending to be the oldest.
+    if (Number.isNaN(at) && Number.isNaN(bt)) return 0;
+    if (Number.isNaN(at)) return 1;
+    if (Number.isNaN(bt)) return -1;
+    return at - bt;
+  });
+  return rows.slice(0, Math.max(1, limit));
+}
+
+/**
+ * The number the "N evidence" affordance prints.
+ *
+ * The backend's deduplicated `evidence_count`, but never smaller than the rows
+ * about to be rendered — the same rule `normalizeChanges` follows for the
+ * change count. Understating what is visibly on screen reads as a bug.
+ */
+export function evidenceCount(item: ProjectStateItem | null | undefined): number {
+  if (!item) return 0;
+  return Math.max(item.evidence_count, storyTimeline(item, 99).length);
+}
+
+/**
+ * The compact per-source outcome strip — "GitHub ✓ merged · Vercel ✕ production".
+ *
+ * One row per (source, environment, polarity) triple, newest first, so a
+ * failed production deploy and a passing preview check both survive. Purely a
+ * projection of `storyTimeline`; nothing is re-decided here.
+ */
+export interface StoryOutcome {
+  source: string;
+  semantic_type: string;
+  polarity: EvidencePolarity;
+  environment: string;
+  observed_at: string;
+}
+
+export function storyOutcomes(
+  item: ProjectStateItem | null | undefined,
+  limit = 4,
+): StoryOutcome[] {
+  const seen = new Map<string, StoryOutcome>();
+  for (const row of storyTimeline(item, 99)) {
+    if (!row.source) continue;
+    const key = `${row.source}|${row.environment}|${row.polarity}`;
+    const current = seen.get(key);
+    const at = Date.parse(row.observed_at || '') || 0;
+    if (!current || at >= (Date.parse(current.observed_at || '') || 0)) {
+      seen.set(key, {
+        source: row.source,
+        semantic_type: row.semantic_type,
+        polarity: row.polarity,
+        environment: row.environment,
+        observed_at: row.observed_at,
+      });
+    }
+  }
+  return [...seen.values()]
+    .sort((a, b) => (Date.parse(b.observed_at || '') || 0)
+      - (Date.parse(a.observed_at || '') || 0))
+    .slice(0, Math.max(1, limit));
+}
+
+/* ── Grounding: presentation of "why Korvix thinks this" ──────────────────── */
+
+/** i18n key for a claim class. Unknown codes are DROPPED — a bullet reading
+ *  `business_outcome` tells a person nothing. */
+const CLAIM_KEYS: Record<string, string> = {
+  deployment: 'projectClaimDeployment',
+  code_change: 'projectClaimCodeChange',
+  tests: 'projectClaimTests',
+  coordination: 'projectClaimCoordination',
+  functionality: 'projectClaimFunctionality',
+  users: 'projectClaimUsers',
+  feedback: 'projectClaimFeedback',
+  goal_progress: 'projectClaimGoalProgress',
+  business_outcome: 'projectClaimBusinessOutcome',
+};
+
+export function claimKey(claim: string): string | null {
+  return CLAIM_KEYS[claim] || null;
+}
+
+/** i18n key for an evidence class — what WOULD establish a claim. */
+const EVIDENCE_CLASS_KEYS: Record<string, string> = {
+  deployment_event: 'projectEvidenceNeedDeployment',
+  code_change_event: 'projectEvidenceNeedCodeChange',
+  ci_or_test_report: 'projectEvidenceNeedCheck',
+  meeting_or_message: 'projectEvidenceNeedMessage',
+  person_stating_it: 'projectEvidenceNeedPerson',
+  recorded_customer_fact: 'projectEvidenceNeedCustomerFact',
+  recorded_metric_or_business_fact: 'projectEvidenceNeedMetricFact',
+  recorded_project_goal: 'projectEvidenceNeedGoal',
+};
+
+export function evidenceClassKey(code: string): string | null {
+  return EVIDENCE_CLASS_KEYS[code] || null;
+}
+
+export interface RenderableClaim {
+  claim: string;
+  key: string;
+  support: ClaimSupport;
+  basis: ClaimBasis;
+  singleSource: boolean;
+  /** i18n keys for the evidence that would establish it. Bounded. */
+  missingKeys: string[];
+}
+
+function toRenderableClaim(row: GroundedClaim): RenderableClaim | null {
+  const key = claimKey(row.claim);
+  if (!key) return null;
+  return {
+    claim: row.claim,
+    key,
+    support: row.support,
+    basis: row.basis,
+    singleSource: row.single_source,
+    missingKeys: row.missing.map(evidenceClassKey)
+      .filter((k): k is string => !!k).slice(0, 2),
+  };
+}
+
+/**
+ * What this story's evidence ESTABLISHES — `direct` support only.
+ *
+ * The line is drawn exactly where the grounding authority draws it. `indirect`
+ * is adjacent evidence, and adjacent evidence is never reported as the claim.
+ */
+export function establishedClaims(
+  grounding: StoryGrounding | null | undefined,
+  limit = 4,
+): RenderableClaim[] {
+  return (grounding?.claims || [])
+    .filter((c) => c.support === 'direct')
+    .map(toRenderableClaim)
+    .filter((c): c is RenderableClaim => c !== null)
+    .slice(0, Math.max(1, limit));
+}
+
+/** Claims with ADJACENT evidence only. Shown as such, never as findings. */
+export function adjacentClaims(
+  grounding: StoryGrounding | null | undefined,
+  limit = 3,
+): RenderableClaim[] {
+  return (grounding?.claims || [])
+    .filter((c) => c.support === 'indirect')
+    .map(toRenderableClaim)
+    .filter((c): c is RenderableClaim => c !== null)
+    .slice(0, Math.max(1, limit));
+}
+
+/**
+ * What this evidence does NOT establish.
+ *
+ * `none` only. A claim with adjacent evidence is reported in its own band, so
+ * it is never listed twice — the two lists are disjoint, and together they
+ * cover everything short of `direct`, which is the grounding authority's own
+ * definition of "may not be asserted".
+ */
+export function notEstablishedClaims(
+  grounding: StoryGrounding | null | undefined,
+  limit = 5,
+): RenderableClaim[] {
+  return (grounding?.claims || [])
+    .filter((c) => c.support === 'none')
+    .map(toRenderableClaim)
+    .filter((c): c is RenderableClaim => c !== null)
+    .slice(0, Math.max(1, limit));
+}
+
+/** Is there anything worth opening an evidence disclosure for? */
+export function hasGrounding(item: ProjectStateItem | null | undefined): boolean {
+  if (!item) return false;
+  return storyTimeline(item, 1).length > 0
+    || establishedClaims(item.grounding, 1).length > 0;
+}
+
+/* ── The FOCUS story: a join, never a re-ranking ──────────────────────────── */
+
+/** The correlated subject with this id, or null. */
+export function findProjectState(
+  workspace: ProjectWorkspace | null | undefined,
+  subjectId: string,
+): ProjectStateItem | null {
+  if (!workspace || !subjectId) return null;
+  return workspace.projectState.find((s) => s.id === subjectId) || null;
+}
+
+/**
+ * The ONE thing the page leads with, assembled from three authorities that
+ * already agree:
+ *
+ *   `focus.top`        the Business Brain's decision reading — WHICH subject
+ *                      leads and why. Computed by the identical function that
+ *                      orders the Brain's candidates.
+ *   `projectState`     that subject's correlated evidence — the story.
+ *   `today.attention`  the top-ranked open signal — the alarm.
+ *
+ * THIS FUNCTION RANKS NOTHING. It resolves the focus subject by id and carries
+ * the alarm the backend already chose. `null` everywhere is the truthful answer
+ * for a quiet project, and the page then renders a quiet line rather than an
+ * empty card.
+ */
+export interface WorkspaceFocus {
+  item: FocusItem | null;
+  story: ProjectStateItem | null;
+  attention: AttentionItem | null;
+  commitment: FocusCommitment | null;
+}
+
+export function workspaceFocus(workspace: ProjectWorkspace | null): WorkspaceFocus {
+  const empty: WorkspaceFocus = {
+    item: null, story: null, attention: null, commitment: null,
+  };
+  if (!workspace) return empty;
+  const top = workspace.focus?.top || null;
+  return {
+    item: top,
+    story: top ? findProjectState(workspace, top.subject_id) : null,
+    attention: workspace.today.attention,
+    commitment: workspace.focus?.commitment || null,
+  };
+}
+
+/** Does the page have a real Focus to lead with? */
+export function hasFocus(focus: WorkspaceFocus): boolean {
+  return !!(focus.item || focus.attention);
+}
+
+/* ── Changes as STORIES ───────────────────────────────────────────────────── */
+
+/**
+ * The change rows, with the correlated ones resolved to their full story.
+ *
+ * The GROUPING is the backend's: a connector change already carries the subject
+ * the correlation authority put it in, and `recent_changes` already kept one
+ * row per subject. All this does is attach that subject's evidence so the row
+ * can be opened without a second request.
+ */
+export interface ChangeStory {
+  change: ChangeItem;
+  story: ProjectStateItem | null;
+}
+
+export function changeStories(
+  workspace: ProjectWorkspace | null,
+  changes: WorkspaceChanges | null | undefined,
+  limit = 6,
+): ChangeStory[] {
+  const items = changes?.items || [];
+  return items.slice(0, Math.max(1, limit)).map((change) => ({
+    change,
+    story: change.subject_id ? findProjectState(workspace, change.subject_id) : null,
+  }));
+}
+
+/**
+ * May the page print the strong "while you were away" claim?
+ *
+ * Only with a real marker AND something inside the window. Same rule
+ * `changesTitleKey` encodes, stated as one question so the headline and the
+ * list can never be rendered from two different answers.
+ */
+export function hasVisitChanges(changes: WorkspaceChanges | null | undefined): boolean {
+  return changes?.mode === 'since_last_visit' && (changes?.count ?? 0) > 0;
+}
+
+/* ── Project memory: presentation grouping over the SAME authorities ──────── */
+
+export interface KnowledgeGroup {
+  kind: KnowledgeKind;
+  labelKey: string;
+  items: KnowledgeItem[];
+  /** The authority's own total for this kind — never `items.length`, which is
+   *  a bounded slice. 0 when the backend sent no count for it. */
+  total: number;
+}
+
+/**
+ * The knowledge rows grouped by kind, in the vocabulary's binding order.
+ *
+ * PRESENTATION ONLY. Decisions still live in the decision authority and the
+ * rest in the project-memory authority; this groups what the backend already
+ * projected and creates no third store. A kind with nothing in it is omitted
+ * rather than rendered as an empty heading.
+ */
+export function knowledgeGroups(
+  knowledge: WorkspaceKnowledge | null | undefined,
+): KnowledgeGroup[] {
+  const items = knowledge?.items || [];
+  const counts = knowledge?.counts || {};
+  const out: KnowledgeGroup[] = [];
+  for (const kind of KNOWLEDGE_KIND_ORDER) {
+    const rows = items.filter((i) => i.kind === kind);
+    if (!rows.length) continue;
+    out.push({
+      kind,
+      labelKey: knowledgeKindKey(kind),
+      items: rows,
+      total: counts[kind] ?? 0,
+    });
+  }
+  return out;
+}
+
+/**
+ * The project's OPEN KNOWLEDGE GAPS, as i18n keys.
+ *
+ * The synthesis authority's own `gaps` codes — what Korvix knows it cannot
+ * see. That is memory too: "we have no production evidence" is a fact about
+ * the project worth carrying beside the facts we do have.
+ */
+export function knowledgeGapKeys(
+  understanding: ProjectUnderstanding | null | undefined,
+  limit = 3,
+): { code: string; key: string }[] {
+  return renderableCodes(understanding?.gaps, gapKey, limit);
+}
+
+/**
+ * Does the project have any real memory to show?
+ *
+ * A summary, a recorded item, or a named gap. When none of those exist the page
+ * says the honest empty thing once, in a quiet line — not a large empty card
+ * captioned "Korvix has not generated a summary yet".
+ */
+export function hasProjectMemory(workspace: ProjectWorkspace | null): boolean {
+  if (!workspace) return false;
+  return !!workspace.summary.text
+    || workspace.knowledge.items.length > 0
+    || knowledgeCount(workspace) > 0
+    || (workspace.understanding?.gaps.length || 0) > 0;
 }
