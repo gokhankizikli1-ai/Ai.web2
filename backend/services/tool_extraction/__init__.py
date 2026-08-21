@@ -35,6 +35,7 @@ from backend.services.tool_extraction.web_urls import (
 from backend.services.tool_extraction.web_search_intent import (
     WebSearchIntent,
     detect_web_search_intent,
+    is_project_self_referential,
     build_web_search_context_block,
 )
 from backend.services.tool_extraction.ranking_intent import (
@@ -47,6 +48,7 @@ __all__ = [
     "extract_github_refs", "build_github_context_block", "GitHubRef",
     "extract_web_urls", "build_web_context_block", "WebUrl",
     "WebSearchIntent", "detect_web_search_intent",
+    "is_project_self_referential",
     "build_web_search_context_block",
     "RankingIntent", "detect_ranking_intent",
     "build_rankings_context_block",

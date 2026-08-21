@@ -459,6 +459,59 @@ _NEGATIVE_PATTERNS: tuple[str, ...] = (
 )
 
 
+# ── "About the thing I am already looking at" ──────────────────────────────
+#
+# PRODUCTION BUG, fixed here (Project Workspace inline Ask).
+#
+# The suggested questions a project page offers are ABOUT THAT PROJECT — "Bu
+# projede son zamanlarda ne değişti?", "What changed in this project recently?",
+# "Bu projenin şu anda ne hakkında olduğunu özetle." Every one of them contains
+# an ordinary temporal word ("son", "recently", "güncel", "right now"), so the
+# fuzzy scorer above reached 0.45, cleared the 0.4 gate, and the chat route ran
+# a general web search — with the question itself as the query.
+#
+# That query has no external subject. "Bu projede son zamanlarda ne değişti?"
+# asked of a search engine is not a question about the user's project; it is a
+# generic Turkish sentence, and what comes back is generic Turkish content
+# (climate change, a TÜBİTAK programme). Those results were then folded into the
+# prompt as authoritative, and the model answered from them instead of from the
+# project's own Vercel/GitHub evidence.
+#
+# The rule this encodes is not "never search inside a project". It is narrower
+# and it is about the QUESTION: when the subject of the sentence is the project
+# the user is already looking at, the answer lives in that project's evidence,
+# and a web search can only contribute noise. A caller that HAS that evidence
+# uses this to skip the search entirely (see `v2_chat_stream`); a caller with no
+# project context is unaffected and behaves exactly as before.
+#
+# Deliberately conservative: only unmistakable self-reference counts. "TÜBİTAK
+# proje başvurusu nasıl yapılır" names an EXTERNAL project and must still search.
+_SELF_REFERENCE_PATTERNS: tuple[str, ...] = (
+    # English — "in this project", "for this project", "what this project is about"
+    r"\bthis project\b", r"\bthe project\b", r"\bour project\b", r"\bmy project\b",
+    r"\bthis workspace\b", r"\bthis project's\b",
+    # Turkish — "bu proje", and every suffixed form ("bu projede", "bu projenin",
+    # "bu projeye", "bu projeyle"), plus the possessive forms.
+    r"\bbu proje\w*\b", r"\bprojemiz\w*\b", r"\bprojemde\b", r"\bprojemin\b",
+    r"\bbu çalışma alanı\w*\b", r"\bbu workspace\b",
+    # German — the third shipped locale.
+    r"\bdieses projekt\w*\b", r"\bunser projekt\w*\b", r"\bdiesem projekt\w*\b",
+)
+
+
+def is_project_self_referential(user_message: str) -> bool:
+    """True when the message is asking about the project the user is already in.
+
+    Pure string work, no model call, never raises. Turkish-aware lowering, the
+    same normalisation `detect_web_search_intent` uses — otherwise a capital İ
+    would break the match on exactly the questions this exists for.
+    """
+    if not user_message or not user_message.strip():
+        return False
+    lower = user_message.strip().lower().replace("i̇", "i")
+    return any(re.search(pat, lower) for pat in _SELF_REFERENCE_PATTERNS)
+
+
 # ── Result ────────────────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
@@ -468,6 +521,22 @@ class WebSearchIntent:
     triggers:    tuple[str, ...]  # which signals fired (for logging)
     query:       str         # cleaned query to send to web_research
     reason:      str         # short human-readable explanation
+    #: WHY this verdict was reached, as a stable code — not a log string.
+    #:
+    #: A caller that has its OWN authoritative evidence for the turn (the chat
+    #: stream, when the request carries an owner-verified project) needs to tell
+    #: a deliberate external request apart from a keyword score. They are not
+    #: the same claim: "internetten araştır" / "NVDA kaç dolar" / "hava nasıl"
+    #: are things the USER asked for and current data is the only correct answer,
+    #: while a `scored` verdict is a heuristic guess from a word like "son" or
+    #: "current" that a project question happens to contain.
+    #:
+    #:   "explicit" — the user asked for a web search in so many words
+    #:   "finance"  — current price/market query; live data is mandatory
+    #:   "weather"  — current conditions query; live data is mandatory
+    #:   "scored"   — fuzzy temporal/research/domain keyword score
+    #:   "none"     — did not trigger
+    kind:        str = "scored"
 
 
 def _contains_any(text_lower: str, phrases: tuple[str, ...]) -> list[str]:
@@ -481,7 +550,7 @@ def detect_web_search_intent(user_message: str) -> WebSearchIntent:
     is strong enough. Conservative — when in doubt, don't fire.
     """
     if not user_message or not user_message.strip():
-        return WebSearchIntent(False, 0.0, (), "", "empty message")
+        return WebSearchIntent(False, 0.0, (), "", "empty message", kind="none")
     text = user_message.strip()
     # Turkish-aware lowering. Python's default `.lower()` of the
     # Turkish capital İ produces "i + COMBINING DOT ABOVE" instead of
@@ -497,7 +566,8 @@ def detect_web_search_intent(user_message: str) -> WebSearchIntent:
     for neg in _CREATIVE_NEGATIVE_PATTERNS:
         if re.search(neg, lower, flags=re.IGNORECASE):
             return WebSearchIntent(False, 0.0, (), text,
-                                   f"creative/non-research pattern: {neg}")
+                                   f"creative/non-research pattern: {neg}",
+                                   kind="none")
 
     # ── Deterministic live-data detectors run FIRST (Phase 14G) ──────────────
     # Explicit-search, finance and weather are unambiguous current-data intents
@@ -512,6 +582,7 @@ def detect_web_search_intent(user_message: str) -> WebSearchIntent:
         return WebSearchIntent(
             True, 0.95, tuple(explicit_hits[:3]),
             text, f"explicit search phrase: {explicit_hits[0]}",
+            kind="explicit",
         )
 
     # Finance / current-price queries — MANDATORY live data. Force-trigger at
@@ -534,6 +605,7 @@ def detect_web_search_intent(user_message: str) -> WebSearchIntent:
                 + (f"; ticker={ticker}" if ticker else "")
                 + (f"; corrected='{corrected_query}'" if corrected_query != text else "")
             ),
+            kind=       "finance",
         )
 
     # Weather queries — MANDATORY live data (no dedicated provider; routes
@@ -549,6 +621,7 @@ def detect_web_search_intent(user_message: str) -> WebSearchIntent:
             triggers=   tuple(["weather", *w_hits][:6]),
             query=      w_query,
             reason=     "weather/current-conditions query — mandatory live data",
+            kind=       "weather",
         )
 
     # Negative patterns short-circuit the FUZZY scoring path — "tell me a joke
@@ -557,7 +630,7 @@ def detect_web_search_intent(user_message: str) -> WebSearchIntent:
     for neg in _NEGATIVE_PATTERNS:
         if re.search(neg, lower, flags=re.IGNORECASE):
             return WebSearchIntent(False, 0.0, (), text,
-                                   f"negative pattern: {neg}")
+                                   f"negative pattern: {neg}", kind="none")
 
     # Score: temporal + research + domain signals each add weight.
     temporal = _contains_any(lower, _TEMPORAL_SIGNALS)
@@ -599,6 +672,7 @@ def detect_web_search_intent(user_message: str) -> WebSearchIntent:
             f"(temporal={len(temporal)}, research={len(research)}, "
             f"domain={len(domain)}, words={word_count})"
         ),
+        kind=       "scored" if triggered else "none",
     )
 
 
