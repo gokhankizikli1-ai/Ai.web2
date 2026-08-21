@@ -224,7 +224,7 @@ describe('the project keeps ONE inline-Ask conversation', () => {
   it('reuses the existing one instead of creating another', async () => {
     projects.listProjectChats.mockResolvedValue([
       { id: 'th-old', title: 'x', mode: 'chat', updated_at: '2026-01-01T00:00:00Z',
-        metadata: { origin: ASK_ORIGIN } },
+        metadata: { origin: ASK_ORIGIN, project_id: 'p1' } },
     ]);
     const { cb } = collect();
     askInWorkspace('p1', 'q', cb);
@@ -236,11 +236,47 @@ describe('the project keeps ONE inline-Ask conversation', () => {
   it('picks the newest when there is more than one', async () => {
     projects.listProjectChats.mockResolvedValue([
       { id: 'th-a', mode: 'chat', updated_at: '2026-01-01T00:00:00Z',
-        metadata: { origin: ASK_ORIGIN } },
+        metadata: { origin: ASK_ORIGIN, project_id: 'p1' } },
       { id: 'th-b', mode: 'chat', updated_at: '2026-05-01T00:00:00Z',
-        metadata: { origin: ASK_ORIGIN } },
+        metadata: { origin: ASK_ORIGIN, project_id: 'p1' } },
     ]);
     expect(await resolveAskThread('p1')).toBe('th-b');
+  });
+
+  it('never inherits a conversation that was created for another project', async () => {
+    // A thread created as project A's inline-Ask conversation and later MOVED
+    // to project B is, on the binding authority, one of B's threads — but its
+    // history is A's questions and A's answers. Reusing it would replay another
+    // project's conversation as this one's, and the next answer would continue
+    // it. Both facts must agree, so this one is not reused.
+    projects.listProjectChats.mockResolvedValue([
+      { id: 'th-moved', mode: 'chat', updated_at: '2026-05-01T00:00:00Z',
+        metadata: { origin: ASK_ORIGIN, project_id: 'pA' } },
+    ]);
+    expect(await resolveAskThread('pB')).toBeNull();
+  });
+
+  it('starts a fresh conversation rather than adopting the moved one', async () => {
+    projects.listProjectChats.mockResolvedValue([
+      { id: 'th-moved', mode: 'chat', updated_at: '2026-05-01T00:00:00Z',
+        metadata: { origin: ASK_ORIGIN, project_id: 'pA' } },
+    ]);
+    const { cb } = collect();
+    askInWorkspace('pB', 'q', cb);
+    await settle();
+    expect(sessions.createChatThread).toHaveBeenCalled();
+    expect(projects.bindThreadToProject).toHaveBeenCalledWith('th-new', 'pB');
+    expect(sessions.appendThreadMessage.mock.calls[0][0]).toBe('th-new');
+  });
+
+  it('never adopts a thread whose project stamp is missing', async () => {
+    // Fail closed: a thread that cannot prove which project it was created for
+    // is not this project's conversation by default.
+    projects.listProjectChats.mockResolvedValue([
+      { id: 'th-unstamped', mode: 'chat', updated_at: '2026-05-01T00:00:00Z',
+        metadata: { origin: ASK_ORIGIN } },
+    ]);
+    expect(await resolveAskThread('p1')).toBeNull();
   });
 
   it('never adopts an ordinary chat the user was already having', async () => {
@@ -253,7 +289,7 @@ describe('the project keeps ONE inline-Ask conversation', () => {
   it('never adopts a build/tool thread', async () => {
     projects.listProjectChats.mockResolvedValue([
       { id: 'th-build', mode: 'web_build', updated_at: '2026-05-01T00:00:00Z',
-        metadata: { origin: ASK_ORIGIN } },
+        metadata: { origin: ASK_ORIGIN, project_id: 'p1' } },
     ]);
     expect(await resolveAskThread('p1')).toBeNull();
   });

@@ -125,6 +125,16 @@ function newId(): string {
  * checked project↔thread route, so a thread this browser once created but no
  * longer owns (or that was deleted, or moved to another project) is simply not
  * found. Newest first, so the conversation continues where it left off.
+ *
+ * TWO facts must agree before a thread is reused, and both come from the
+ * server. The project↔thread route says the thread is filed under THIS project
+ * now; `metadata.project_id`, stamped at creation, says it was created as this
+ * project's inline-Ask conversation. A thread that was created for project A
+ * and later moved to project B satisfies only the first — and reusing it would
+ * replay A's questions and A's answers as B's history, so B's next answer
+ * continues a conversation about a different project. Requiring both is
+ * fail-closed: a thread that cannot prove it belongs here is not reused, and a
+ * fresh one is created and bound instead.
  */
 export async function resolveAskThread(projectId: string): Promise<string | null> {
   if (!serverChatEnabled() || !projectId) return null;
@@ -132,6 +142,7 @@ export async function resolveAskThread(projectId: string): Promise<string | null
     const chats = await listProjectChats(projectId);
     const owned = chats
       .filter((c) => String(c.metadata?.origin || '') === ASK_ORIGIN)
+      .filter((c) => String(c.metadata?.project_id || '') === projectId)
       .filter((c) => c.mode === null || c.mode === '' || c.mode === 'chat')
       .sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')));
     return owned.length > 0 ? owned[0].id : null;
