@@ -197,6 +197,16 @@ class Event:
     link_keys: List[str] = field(default_factory=list)
     group_keys: List[str] = field(default_factory=list)
     topic_keys: List[str] = field(default_factory=list)
+    #: The event's own words — the same text the topic keys are built from, and
+    #: for a message or a mail the only thing that says what a person actually
+    #: SAID. Kept so a consumer does not have to re-parse the payload and
+    #: re-derive per-source rules that live here. Nothing in correlation reads
+    #: it; `grounding` does.
+    text: str = ""
+    #: True when nobody wrote this: a no-reply / notification mail, a bot post.
+    #: A digest from a build system is traffic, not a person communicating, and
+    #: a claim about what people said must not rest on one.
+    automated: bool = False
 
     @property
     def is_decisive(self) -> bool:
@@ -351,6 +361,31 @@ def _vercel_keys(payload: Dict[str, Any]) -> tuple:
     return link, group, (key or ""), text_parts, environment
 
 
+#: Local parts / markers that mean a machine sent it. Matched on the sender, a
+#: structural field, never on the body — a person writing the word "noreply" in
+#: a message is still a person.
+_AUTOMATED_SENDERS: tuple = (
+    "noreply", "no-reply", "no_reply", "donotreply", "do-not-reply",
+    "notifications@", "notification@", "mailer-daemon", "automated@",
+    "bounce@", "postmaster@",
+)
+
+
+def _is_automated(source: str, payload: Dict[str, Any]) -> bool:
+    """True when this event was produced by a machine rather than a person.
+
+    Gmail: the From address. Slack: the bot markers Slack itself sets. Both are
+    provider-set structural fields; nothing here reads the message body."""
+    if source == "gmail":
+        sender = _s(payload.get("from") or payload.get("sender"), 200).lower()
+        return any(marker in sender for marker in _AUTOMATED_SENDERS)
+    if source == "slack":
+        if payload.get("bot_id") or payload.get("app_id"):
+            return True
+        return _s(payload.get("subtype"), 40).lower() == "bot_message"
+    return False
+
+
 def event_from_observation(obs: Any) -> Optional[Event]:
     """One stored observation → one `Event`, or None when the row is unusable.
 
@@ -406,6 +441,8 @@ def event_from_observation(obs: Any) -> Optional[Event]:
 
     link = link[:k.MAX_LINK_KEYS]
     return Event(
+        text=joined,
+        automated=_is_automated(source, payload),
         observation_id=_s(obs.get("id"), 64),
         source=source,
         kind=kind,

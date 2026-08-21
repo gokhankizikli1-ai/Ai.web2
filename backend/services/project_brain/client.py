@@ -92,7 +92,10 @@ _STATE_PHRASE = {
     "conflicting":     "CONFLICTING evidence",
     "in_progress":     "in progress",
     "likely_resolved": "likely resolved",
-    "observed":        "being discussed",
+    #: `observed` means "seen, with nothing decisive recorded". It read "being
+    #: discussed", which is a claim about PEOPLE — and it was rendered over two
+    #: Vercel deployments, where nobody said anything at all.
+    "observed":        "observed, with nothing decisive recorded either way",
     "no_evidence":     "nothing observed yet",
 }
 
@@ -281,6 +284,205 @@ def _phrases(codes: Any, table: dict, limit: int) -> list:
         if phrase:
             out.append(phrase)
     return out
+
+
+# ── EVIDENCE GROUNDING vocabulary ────────────────────────────────────────────
+#
+# `project_intelligence.grounding` decides; these tables only compose the
+# English a system prompt needs, exactly like every table above.
+#
+# Two phrasings per claim, and the difference between them is the whole point:
+# what the evidence ESTABLISHES is stated as a fact, and what it merely touches
+# is stated as somebody's claim or as an adjacent fact — never as the claim
+# itself.
+
+#: Claim code → what a DIRECT hit actually establishes. Note how narrow each
+#: one is: a deployment event establishes a deployment event.
+_CLAIM_ESTABLISHED = {
+    "deployment":       "a deployment was reported, with its stated outcome",
+    "code_change":      "a code change was proposed or landed",
+    "tests":            "a check / test run reported a result",
+    "coordination":     "people are meeting or writing about this project",
+    #: No `functionality` entry, and that is the design: nothing a connector can
+    #: see ESTABLISHES that software works, so the claim never reaches this
+    #: band. It appears below as adjacent evidence, to be quoted.
+    "users":            "a recorded customer fact exists — cite it as recorded",
+    "feedback":         "someone's feedback is on record — say who, and what",
+    "goal_progress":    "goals are recorded, so progress can be discussed "
+                        "against them BY NAME",
+    "business_outcome": "a recorded business / metric fact exists — cite it as "
+                        "recorded, with its date",
+}
+
+#: Claim code → the INDIRECT reading. An adjacent fact, stated as adjacent.
+_CLAIM_INDIRECT = {
+    "functionality":    "checks passed — evidence about the CHECKS, not that "
+                        "the product works for a person",
+    "users":            "people wrote about this project — that is not USE",
+    "feedback":         "people wrote about this project — say who; do not "
+                        "generalise it into \u201cuser feedback\u201d",
+    "goal_progress":    "goals exist, but nothing links a change to one",
+}
+
+#: The same band, when the only reason the claim is in play is the WORDING of a
+#: message. A keyword is not a reading, so the instruction is to go and quote
+#: the message rather than to repeat the keyword's implication as a finding.
+_CLAIM_INDIRECT_TEXTUAL = {
+    "functionality":    "a message's wording touches how it behaves — QUOTE it; "
+                        "wording is a hint, not proof it works",
+    "users":            "a message mentions users or customers — QUOTE it; a "
+                        "mention is not use",
+    "feedback":         "a message reads like feedback — QUOTE it and say who; "
+                        "not \u201cuser feedback\u201d in general",
+}
+
+#: Claim code → the sentence naming the claim that must NOT be made. Written as
+#: the assertion itself so a model matching on meaning cannot miss it.
+_CLAIM_FORBIDDEN = {
+    "deployment":       "that anything was deployed",
+    "code_change":      "that any code changed",
+    "tests":            "that anything was tested or that tests ran",
+    "coordination":     "that anyone is discussing or working on it",
+    "functionality":    "that it works, is functional, or is ready for use",
+    "users":            "that anyone is using it, or that it has users",
+    "feedback":         "that user feedback exists or is being reviewed",
+    "goal_progress":    "that it is progressing toward or meeting any goal",
+    "business_outcome": "that any revenue, growth or business result occurred",
+}
+
+#: Evidence code → the thing that WOULD establish it, named concretely enough
+#: to act on.
+_EVIDENCE_PHRASE = {
+    "deployment_event":       "a deployment from Vercel or GitHub",
+    "code_change_event":      "a GitHub pull request or commit",
+    "ci_or_test_report":      "a CI / test result from GitHub checks",
+    "meeting_or_message":     "a Slack message, mail or calendar event",
+    "person_stating_it":      "a person stating it in chat, mail or a project note",
+    "recorded_customer_fact": "a customer fact in project knowledge",
+    "recorded_metric_or_business_fact":
+                              "a metric / business fact in project knowledge",
+    "recorded_project_goal":  "a goal recorded on the project",
+}
+
+
+#: Claims that must never be read off adjacent evidence — the grounding
+#: authority's own set, imported once so this module cannot drift from it.
+try:      # pragma: no cover — import shape, not behaviour
+    from backend.services.project_intelligence.grounding import (
+        INFERRED_CLAIMS as _INFERRED_CLAIMS,
+    )
+except Exception:      # pragma: no cover — a half-deployed backend
+    _INFERRED_CLAIMS = frozenset()
+
+
+def _unsupported_claims(grounding: Any) -> list:
+    """Claim codes this project establishes nothing for. Read through the
+    grounding authority so the definition lives in one place."""
+    try:
+        from backend.services.project_intelligence import grounding as gr
+        return gr.unsupported(grounding if isinstance(grounding, dict) else {})
+    except Exception:      # pragma: no cover — never break a read
+        return []
+
+
+def _grounding_lines(grounding: dict) -> list:
+    """THE EVIDENCE BASE — what is established, and what must not be asserted.
+
+    PRODUCTION FINDING, fixed here. The block told the model everything the
+    project HAD and nothing about what it lacked, and a model handed four
+    confident facts about deployments answered "what is the state of this
+    project?" with testing, readiness, goal progress and user feedback. Not one
+    of those words appeared in any evidence; they appeared because a project
+    usually has them and nothing said this one does not.
+
+    So the absence is now stated, by name, as instructions rather than as data:
+    the claims that cannot be made, and the specific evidence that would make
+    them makeable. Composed from `grounding`'s stable codes; this function
+    decides nothing."""
+    if not isinstance(grounding, dict) or not grounding:
+        return []
+    rows = [r for r in (grounding.get("claims") or []) if isinstance(r, dict)]
+    if not rows:
+        return []
+
+    lines = [
+        "Evidence base — BINDING. What this project's evidence establishes, and "
+        "what it does not:",
+    ]
+
+    # (is_inferred, text) — the flag decides emission order below.
+    established: list[tuple] = []
+    adjacent: list[str] = []
+    forbidden: list[str] = []
+    missing: list[str] = []
+    for row in rows:
+        claim = str(row.get("claim") or "")
+        support = str(row.get("support") or "")
+        sources = [_clean(x, 40) for x in (row.get("sources") or [])[:3] if x]
+        where = f" ({', '.join(sources)})" if sources else ""
+        # A claim is assertable ONLY when a source recorded its own kind of
+        # evidence. Adjacent evidence adds something to quote; it never lifts
+        # the prohibition — otherwise a hostile PR title containing the word
+        # "customers" would talk the contract out of forbidding a claim about
+        # users. So a non-direct claim is emitted in BOTH lists.
+        if support != "direct":
+            phrase = _CLAIM_FORBIDDEN.get(claim)
+            if phrase:
+                forbidden.append(phrase)
+        if support == "direct":
+            phrase = _CLAIM_ESTABLISHED.get(claim)
+            if phrase:
+                # One source is never corroboration, and it is said HERE rather
+                # than as a footnote the model can drop.
+                # Short on purpose: this section is capped, the route's
+                # discipline rules already carry "ONE SOURCE IS NOT
+                # CORROBORATION" in full, and the phrase repeats per claim.
+                solo = " — one tool only, uncorroborated" \
+                    if row.get("single_source") else ""
+                established.append((claim in _INFERRED_CLAIMS,
+                                    f"{phrase}{where}{solo}"))
+        elif support == "indirect":
+            table = (_CLAIM_INDIRECT_TEXTUAL
+                     if str(row.get("basis") or "") == "textual"
+                     else _CLAIM_INDIRECT)
+            phrase = table.get(claim) or _CLAIM_INDIRECT.get(claim)
+            if phrase:
+                adjacent.append(f"{phrase}{where}")
+        for code in (row.get("missing") or []):
+            phrase = _EVIDENCE_PHRASE.get(str(code))
+            if phrase and phrase not in missing:
+                missing.append(phrase)
+
+    # ORDER IS TRUNCATION ORDER. This section has a character cap and is
+    # trimmed from the END, so the line whose ABSENCE caused the production
+    # failure is emitted first. The established facts are the one part that is
+    # also stated elsewhere in this block (understanding, project state, recent
+    # activity), so they are the safe thing to lose here.
+    if forbidden:
+        lines.append("- NOT ESTABLISHED by anything in this project — do NOT "
+                     "state, imply or hedge toward: "
+                     # The WHOLE closed vocabulary, never a prefix of it: the
+                     # two that a "top 6" dropped were "progressing toward its
+                     # goals" and "a business result occurred" — two of the four
+                     # inventions actually reported from production.
+                     + "; ".join(forbidden) + ".")
+    if adjacent:
+        lines.append("- ADJACENT EVIDENCE — it does NOT lift the prohibition "
+                     "above; it is only something you may quote: "
+                     + "; ".join(adjacent[:4]) + ".")
+    # Inferred-claim lines first. "A deployment was reported" restates what
+    # Recent activity and Project state already say; a line telling the model to
+    # QUOTE somebody exists nowhere else and carries the instruction, so it must
+    # not be the line the cap eats.
+    # …then what would settle what is missing, which is also stated nowhere
+    # else, and only then the established facts — the one part of this section
+    # that Project state and Recent activity already carry.
+    if missing:
+        lines.append("- Would establish what is missing: "
+                     + "; ".join(missing[:4]) + ".")
+    for _, item in sorted(established, key=lambda r: not r[0])[:4]:
+        lines.append(f"- ESTABLISHED: {item}")
+    return lines
 
 
 def _intelligence_lines(states: list) -> list:
@@ -871,6 +1073,32 @@ class ProjectBrainClient:
         except Exception as e:
             logger.debug("project_brain: decision context unavailable: %s", e)
 
+        # ── EVIDENCE GROUNDING — the claims this project's evidence does NOT
+        #    establish, named explicitly.
+        #
+        #    PRODUCTION FINDING, fixed here. Everything above describes what the
+        #    project HAS: subjects, states, implications, activity. Nothing said
+        #    what it has NO evidence for — so a Vercel-only project, whose whole
+        #    truth is "two deployments were reported", produced answers about
+        #    testing being performed, functionality being ready, goals
+        #    progressing and user feedback being evaluated. Absence was never
+        #    stated, so absence was never respected.
+        #
+        #    Computed LAST on purpose: it reads the goals, decisions and durable
+        #    knowledge gathered above alongside the same observation rows, so it
+        #    speaks for the whole project rather than for the connectors alone.
+        #    Pure projection — ZERO extra queries, ZERO tokens, ZERO writes.
+        try:
+            from backend.services import project_intelligence as pi
+            brain.grounding = pi.ground_claims(
+                observations,
+                goals=brain.current_goals,
+                decisions=brain.recent_decisions,
+                knowledge=brain.business_knowledge,
+            )
+        except Exception as e:
+            logger.debug("project_brain: grounding unavailable: %s", e)
+
         # ── Counts: cheap health snapshot.
         brain.counts = {
             "goals":           len(brain.current_goals),
@@ -885,6 +1113,7 @@ class ProjectBrainClient:
             "understanding_open": len(((brain.understanding or {}).get("open")) or []),
             "focus_next":      len(((brain.focus or {}).get("next")) or []),
             "business_knowledge": len(brain.business_knowledge),
+            "unsupported_claims": len(_unsupported_claims(brain.grounding)),
             "products":        len(brain.products),
             "linked_chats":    len(brain.linked_chats),
         }
@@ -948,6 +1177,16 @@ class ProjectBrainClient:
         # deterministic order rather than an order it invented from a list.
         section(650, _focus_lines(brain.focus))
         section(700, _understanding_lines(brain.understanding))
+        # Directly under the project-level reading, and ABOVE the per-subject
+        # detail: a model that meets "what this evidence does not establish"
+        # before it meets a list of green deployments reads the list as what it
+        # is. Below FOCUS and UNDERSTANDING because those answer the question;
+        # this one governs HOW the answer may be phrased.
+        # 900, and it self-balances: the section is long only when the project
+        # has little evidence — exactly when the sections around it are short.
+        # A project with rich evidence has few unestablished claims and a short
+        # line here.
+        section(1100, _grounding_lines(brain.grounding))
         if brain.intelligence:
             section(1100, ["Project state — what the evidence across the connected "
                            "tools adds up to (correlated, not raw events):"]

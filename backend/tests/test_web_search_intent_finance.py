@@ -64,3 +64,51 @@ def test_non_finance_still_routes_correctly():
     # A plain non-price sentence containing an English word isn't finance.
     assert detect_finance_intent("write me a poem about the ocean",
                                  "write me a poem about the ocean") is None
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Prose is not a stock question — the false-positive fix
+# ══════════════════════════════════════════════════════════════════════════
+
+def test_ordinary_prose_is_never_read_as_a_price_question():
+    """Two substring bugs made ordinary sentences look like finance queries:
+    the asset list matched INSIDE words ("consequence" and "months" both
+    contain "ons"/ounce, "coincide" contains "coin"), and the typo corrector
+    turned everyday words into tickers one edit away ("and" → AMD).
+
+    Together they routed an inline project question — "list the changes, each
+    with its source and date, and skip any consequence no source records" —
+    to a live stock lookup."""
+    sentences = (
+        "List the changes, each with its source and date, and skip any "
+        "consequence no source records.",
+        "The last few months of work have been about onboarding.",
+        "These two releases coincide with the pricing page rewrite.",
+        "Tell me what the shareholders meeting decided.",
+    )
+    for sentence in sentences:
+        lower = sentence.lower()
+        assert detect_finance_intent(sentence, lower) is None, sentence
+        intent = detect_web_search_intent(sentence)
+        assert intent.kind != "finance", (sentence, intent.triggers)
+
+
+def test_a_real_price_question_still_fires_after_the_fix():
+    """The narrowing must not cost a single true positive."""
+    for query in ("NVDA kaç dolar", "ncda kaç dolar", "bitcoin ne kadar",
+                  "gram altın kaç tl", "what is the price of ETH",
+                  "nvidia hissesi kaç dolar", "ons altın fiyatı"):
+        assert requires_live_data(query), query
+        assert detect_web_search_intent(query).kind == "finance", query
+
+
+def test_the_typo_corrector_is_confined_to_short_queries():
+    """A typo'd ticker query is short by nature. On a long sentence the
+    correction can only invent a question the user did not ask, so it does not
+    run there."""
+    short = detect_finance_intent("ncda kaç dolar", "ncda kaç dolar")
+    assert short is not None and short[1] == "NVDA"
+
+    long_sentence = ("I would like a summary of everything that happened this "
+                     "week and any consequence of the deployment we shipped")
+    assert detect_finance_intent(long_sentence, long_sentence.lower()) is None

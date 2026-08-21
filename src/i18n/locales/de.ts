@@ -1471,9 +1471,9 @@ export const de: Record<string, string> = {
   projectFocusCommitment: '{title} · {when}',
 
   projectAskStateLabel: 'Was passiert gerade?',
-  projectAskStatePrompt: 'Wie ist der aktuelle Stand dieses Projekts und was zeigen die Belege tatsächlich?',
+  projectAskStatePrompt: 'Wie ist der aktuelle Stand dieses Projekts? Nenne nur, was die Belege belegen, Quelle für Quelle, und sage danach klar, was sie NICHT belegen.',
   projectAskUncertainLabel: 'Was ist noch unklar?',
-  projectAskUncertainPrompt: 'Was ist in diesem Projekt noch unklar oder unbestätigt und welche Belege fehlen?',
+  projectAskUncertainPrompt: 'Was ist in diesem Projekt noch unbestätigt? Nenne jede offene Frage und den konkreten Beleg, der sie klären würde — eine Prüfung, ein Deployment, die Aussage einer Person, ein erfasstes Ziel.',
 
   projectBriefEmpty: 'Korvix hat noch keine Zusammenfassung für dieses Projekt. Sie entsteht aus deinen Chats, Builds und verbundenen Tools.',
   projectGoalsEmpty: 'Für dieses Projekt sind noch keine Ziele erfasst.',
@@ -1520,11 +1520,11 @@ export const de: Record<string, string> = {
   projectAskAttentionLabel: 'Was sollte ich zuerst ansehen?',
   projectAskAttentionPrompt: 'Was sollte ich mir in diesem Projekt zuerst ansehen und warum?',
   projectAskChangedLabel: 'Was hat sich zuletzt geändert?',
-  projectAskChangedPrompt: 'Was hat sich in diesem Projekt zuletzt geändert?',
+  projectAskChangedPrompt: 'Was hat sich in diesem Projekt zuletzt geändert? Liste nur die Änderungen auf, die die Belege tatsächlich festhalten, jeweils mit Quelle und Datum, und lasse Folgerungen weg, die keine Quelle festhält.',
   projectAskGoalsLabel: 'Was sind die aktuellen Ziele?',
   projectAskGoalsPrompt: 'Was sind die aktuellen Ziele für dieses Projekt?',
   projectAskAboutLabel: 'Worum geht es in diesem Projekt?',
-  projectAskAboutPrompt: 'Fasse zusammen, worum es in diesem Projekt gerade geht.',
+  projectAskAboutPrompt: 'Worum geht es in diesem Projekt? Antworte nur aus Beschreibung, Zielen und erfasstem Wissen — sind diese leer, sage das, statt ein Thema aus Deployments oder Aktivität abzuleiten.',
   projectAskHint: 'Korvix antwortet hier, in der Unterhaltung dieses Projekts.',
   // ── Inline "Korvix fragen" — die Antwort erscheint auf der Projektseite ──
   projectAskAnswerLabel: 'Korvix',

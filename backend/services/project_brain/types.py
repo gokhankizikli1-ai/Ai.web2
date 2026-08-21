@@ -54,6 +54,15 @@ class ProjectBrain:
     # TTL-aware facts and learnings. Read-only here; the brain has never been
     # a knowledge store and still is not one.
     business_knowledge: list[dict] = field(default_factory=list)   # [{domain, summary, source, observed_at, ...}]
+    # EVIDENCE GROUNDING — what this project's evidence establishes, and, more
+    # to the point, what it does NOT. Produced by
+    # `project_intelligence.ground_claims` from the SAME observations as
+    # `intelligence`/`understanding` plus the goals, decisions and durable
+    # knowledge already read above, so it costs no query and can never
+    # disagree with them. It ranks nothing and stores nothing: it exists so a
+    # reader meets "no evidence here bears on whether anyone used this" as an
+    # explicit statement rather than as silence to fill in.
+    grounding:          dict       = field(default_factory=dict)   # {claims: [...], sources, single_source_project}
     counts:             dict       = field(default_factory=dict)   # health snapshot
 
     def to_dict(self) -> dict[str, Any]:

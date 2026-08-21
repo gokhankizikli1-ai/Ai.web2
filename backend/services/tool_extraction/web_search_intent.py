@@ -234,6 +234,10 @@ _FINANCE_ASSETS: tuple[str, ...] = (
     "nasdaq", "nyse", "bist", "endeks", "temettü", "dividend", "piyasa",
 )
 
+#: Longest message (in words) on which a typo'd ticker is still "corrected".
+#: See `detect_finance_intent`.
+_MAX_FUZZY_TICKER_WORDS = 8
+
 # Well-known equity + crypto + index tickers. Matched as UPPERCASE standalone
 # tokens in the ORIGINAL text (so lowercase words like TR "sol"/"ada"/"for"
 # don't false-match). Also used as the fuzzy-correction target set.
@@ -377,7 +381,7 @@ def detect_finance_intent(text: str, lower: str) -> Optional[tuple[str, str, lis
 
     strong = _contains_any(lower, _FINANCE_STRONG)
     price  = _contains_any(lower, _FINANCE_PRICE_PHRASES)
-    asset  = _contains_any(lower, _FINANCE_ASSETS)
+    asset  = _contains_any_asset(lower)
     company = _contains_any(lower, _COMPANY_STOCK_NAMES)
 
     # Exact uppercase ticker as a standalone token in the ORIGINAL text.
@@ -391,7 +395,14 @@ def detect_finance_intent(text: str, lower: str) -> Optional[tuple[str, str, lis
     # word can't get "corrected" into a stock lookup.
     fuzzy_ticker = ""
     corrected_query = text
-    if not exact_ticker and (price or asset or strong):
+    # FALSE-POSITIVE FIX. A single-edit "correction" turns ordinary words into
+    # tickers — "and" is one edit from AMD, "for" from FOR, "ana" from ADA — so
+    # on running prose it invents a stock question nobody asked. A typo'd ticker
+    # query is SHORT by nature ("ncda kaç dolar", "how much is nvda"), so the
+    # correction is confined to short messages, where the feature was aimed and
+    # where a stray word cannot hide.
+    _short_enough = len(re.findall(r"\S+", text)) <= _MAX_FUZZY_TICKER_WORDS
+    if not exact_ticker and _short_enough and (price or asset or strong):
         for tok in re.findall(r"\b[A-Za-z]{2,5}\b", text):
             if tok.upper() in _KNOWN_TICKERS:
                 continue
@@ -541,6 +552,34 @@ class WebSearchIntent:
 
 def _contains_any(text_lower: str, phrases: tuple[str, ...]) -> list[str]:
     return [p for p in phrases if p in text_lower]
+
+
+#: Single-word finance ASSETS matched as whole words rather than as substrings.
+#:
+#: FALSE-POSITIVE FIX. `_FINANCE_ASSETS` was matched with plain `in`, so an
+#: ordinary sentence scored an asset hit on a fragment of a longer word:
+#: "consequence" and "months" both contain "ons" (ounce), "shares" is inside
+#: "shareholders", "coin" is inside "coincide". Paired with the fuzzy ticker
+#: correction below, a plain English sentence could be routed to a live stock
+#: lookup. Multi-word entries ("gram altın", "ons altın") keep substring
+#: matching — a phrase cannot collide with the inside of a word.
+_ASSET_WORD_RE: dict = {
+    a: re.compile(rf"(?<!\w){re.escape(a)}(?!\w)")
+    for a in _FINANCE_ASSETS if " " not in a
+}
+
+
+def _contains_any_asset(text_lower: str) -> list[str]:
+    """Finance assets present as WHOLE words (or as multi-word phrases)."""
+    out: list[str] = []
+    for a in _FINANCE_ASSETS:
+        rx = _ASSET_WORD_RE.get(a)
+        if rx is not None:
+            if rx.search(text_lower):
+                out.append(a)
+        elif a in text_lower:
+            out.append(a)
+    return out
 
 
 def detect_web_search_intent(user_message: str) -> WebSearchIntent:

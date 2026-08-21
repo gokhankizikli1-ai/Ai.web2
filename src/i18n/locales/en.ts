@@ -1530,9 +1530,9 @@ export const en: Record<string, string> = {
   projectFocusCommitment: '{title} · {when}',
 
   projectAskStateLabel: 'What is going on right now?',
-  projectAskStatePrompt: 'What is the current state of this project, and what does the evidence actually show?',
+  projectAskStatePrompt: 'What is the current state of this project? Give me only what the evidence establishes, source by source, and then say plainly what it does not establish.',
   projectAskUncertainLabel: 'What is still uncertain?',
-  projectAskUncertainPrompt: 'What is still uncertain or unverified in this project, and what evidence is missing?',
+  projectAskUncertainPrompt: 'What is still unverified in this project? Name each open question and the specific evidence that would settle it — a check, a deployment, a person\u2019s report, a recorded goal.',
 
   projectBriefEmpty: 'Korvix does not have a summary for this project yet. It builds one from your chats, builds and connected tools.',
   projectGoalsEmpty: 'No goals recorded for this project yet.',
@@ -1579,11 +1579,11 @@ export const en: Record<string, string> = {
   projectAskAttentionLabel: 'What should I look at first?',
   projectAskAttentionPrompt: 'What should I look at first in this project, and why?',
   projectAskChangedLabel: 'What changed recently?',
-  projectAskChangedPrompt: 'What changed in this project recently?',
+  projectAskChangedPrompt: 'What changed in this project recently? List only the changes the evidence actually records, each with its source and date, and skip any consequence no source records.',
   projectAskGoalsLabel: 'What are the current goals?',
   projectAskGoalsPrompt: 'What are the current goals for this project?',
   projectAskAboutLabel: 'What is this project about?',
-  projectAskAboutPrompt: 'Summarize what this project is about right now.',
+  projectAskAboutPrompt: 'What is this project about? Answer only from its description, goals and recorded knowledge \u2014 if those are empty, say so rather than inferring a topic from deployments or activity.',
   projectAskHint: 'Korvix answers here, in this project\u2019s conversation.',
   // ── Inline "Ask Korvix" — the answer arrives on the project page itself ──
   projectAskAnswerLabel: 'Korvix',
