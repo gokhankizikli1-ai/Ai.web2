@@ -91,6 +91,16 @@ from backend.services.project_intelligence.correlation import (
 from backend.services.project_intelligence.synthesis import (
     STATE_NO_EVIDENCE, synthesize,
 )
+from backend.services.project_intelligence.grounding import (
+    CLAIMS, INFERRED_CLAIMS,
+    CLAIM_DEPLOYMENT, CLAIM_CODE_CHANGE, CLAIM_TESTS, CLAIM_COORDINATION,
+    CLAIM_FUNCTIONALITY, CLAIM_USERS, CLAIM_FEEDBACK, CLAIM_GOAL_PROGRESS,
+    CLAIM_BUSINESS_OUTCOME,
+    SUPPORT_NONE, SUPPORT_INDIRECT, SUPPORT_DIRECT,
+    EV_DEPLOY, EV_CODE, EV_CI, EV_COORDINATION, EV_HUMAN_REPORT,
+    EV_CUSTOMER_KNOWLEDGE, EV_METRIC_KNOWLEDGE, EV_GOAL,
+    ground_claims, missing_evidence, unsupported,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -234,4 +244,13 @@ __all__ = [
     "project_states", "project_states_with_membership", "for_project",
     "understand", "understand_with_membership", "synthesize",
     "open_states", "correlate", "correlate_with_membership",
+    # GROUNDING — what the evidence does NOT establish. Same rows, no store.
+    "CLAIMS", "INFERRED_CLAIMS",
+    "CLAIM_DEPLOYMENT", "CLAIM_CODE_CHANGE", "CLAIM_TESTS", "CLAIM_COORDINATION",
+    "CLAIM_FUNCTIONALITY", "CLAIM_USERS", "CLAIM_FEEDBACK",
+    "CLAIM_GOAL_PROGRESS", "CLAIM_BUSINESS_OUTCOME",
+    "SUPPORT_NONE", "SUPPORT_INDIRECT", "SUPPORT_DIRECT",
+    "EV_DEPLOY", "EV_CODE", "EV_CI", "EV_COORDINATION", "EV_HUMAN_REPORT",
+    "EV_CUSTOMER_KNOWLEDGE", "EV_METRIC_KNOWLEDGE", "EV_GOAL",
+    "ground_claims", "missing_evidence", "unsupported",
 ]

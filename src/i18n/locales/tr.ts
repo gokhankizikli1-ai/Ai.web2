@@ -1473,9 +1473,9 @@ export const tr: Record<string, string> = {
   projectFocusCommitment: '{title} · {when}',
 
   projectAskStateLabel: 'Şu anda ne oluyor?',
-  projectAskStatePrompt: 'Bu projenin mevcut durumu ne ve kanıtlar gerçekte ne gösteriyor?',
+  projectAskStatePrompt: 'Bu projenin mevcut durumu ne? Yalnızca kanıtların ortaya koyduğunu kaynak kaynak söyle, ardından kanıtların ortaya KOYMADIĞINI açıkça belirt.',
   projectAskUncertainLabel: 'Neler hâlâ belirsiz?',
-  projectAskUncertainPrompt: 'Bu projede hâlâ belirsiz veya doğrulanmamış olan ne ve hangi kanıt eksik?',
+  projectAskUncertainPrompt: 'Bu projede hâlâ doğrulanmamış olan ne? Her açık soruyu ve onu kesinleştirecek somut kanıtı adıyla söyle — bir kontrol, bir dağıtım, bir kişinin ifadesi, kayıtlı bir hedef.',
 
   projectBriefEmpty: 'Korvix bu proje için henüz bir özet oluşturmadı. Özet; sohbetlerinizden, build’lerinizden ve bağlı araçlarınızdan oluşur.',
   projectGoalsEmpty: 'Bu proje için henüz kayıtlı hedef yok.',
@@ -1522,11 +1522,11 @@ export const tr: Record<string, string> = {
   projectAskAttentionLabel: 'Önce neye bakmalıyım?',
   projectAskAttentionPrompt: 'Bu projede önce neye bakmalıyım ve neden?',
   projectAskChangedLabel: 'Son zamanlarda ne değişti?',
-  projectAskChangedPrompt: 'Bu projede son zamanlarda ne değişti?',
+  projectAskChangedPrompt: 'Bu projede son zamanlarda ne değişti? Yalnızca kanıtların gerçekten kaydettiği değişiklikleri, kaynağı ve tarihiyle listele; hiçbir kaynağın kaydetmediği sonuçları ekleme.',
   projectAskGoalsLabel: 'Güncel hedefler neler?',
   projectAskGoalsPrompt: 'Bu projenin güncel hedefleri neler?',
   projectAskAboutLabel: 'Bu proje ne hakkında?',
-  projectAskAboutPrompt: 'Bu projenin şu anda ne hakkında olduğunu özetle.',
+  projectAskAboutPrompt: 'Bu proje ne hakkında? Yalnızca projenin açıklamasından, hedeflerinden ve kayıtlı bilgisinden yanıtla — bunlar boşsa bunu söyle, dağıtımlardan ya da etkinlikten bir konu çıkarma.',
   projectAskHint: 'Korvix burada, bu projenin sohbetinde yanıtlar.',
   // ── Satır içi "Korvix'e sor" — cevap proje sayfasında görünür ──
   projectAskAnswerLabel: 'Korvix',

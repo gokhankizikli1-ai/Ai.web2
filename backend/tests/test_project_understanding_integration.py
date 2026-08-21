@@ -526,7 +526,7 @@ def test_connector_text_can_never_open_a_new_prompt_section(env):
         assert header.startswith((
             "Project context", "Current goals", "Recent decisions",
             "Important context", "Project understanding", "Project state",
-            "What matters most right now",
+            "What matters most right now", "Evidence base",
             "Needs attention now", "Business knowledge", "Generated products",
             "Attached assets", "Active workflows", "Agent notes",
             "Project chat excerpts", "Recent connector activity")), header
