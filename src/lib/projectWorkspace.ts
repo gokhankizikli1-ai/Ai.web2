@@ -99,6 +99,112 @@ export interface WorkspaceConnector {
   last_sync_at: string;
 }
 
+/**
+ * SMART REFRESH — coordination metadata, not project state.
+ *
+ * The snapshot is always the PERSISTED one. This block says whether the backend
+ * decided any of the project's bound connectors were stale enough to refresh in
+ * the background, so the page knows whether there is any point re-reading.
+ *
+ * `recheckInMs` of 0 means "nothing is coming" and the page must not re-read.
+ * It is the backend that decides the interval and whether one exists at all —
+ * the frontend never invents a polling cadence.
+ */
+export interface WorkspaceRefresh {
+  /** Refreshes THIS read started. A provider call is now running for each. */
+  started: string[];
+  /** Already being refreshed — another tab, or this page's previous read. */
+  inFlight: string[];
+  /** Everything past its freshness TTL, acted on or not (some are backing off
+   *  after a failure, which is why this can exceed started + inFlight). */
+  stale: string[];
+  /** How long to wait before ONE re-read, or 0 for "do not re-read". */
+  recheckInMs: number;
+}
+
+/** Whether anything is actually coming, i.e. whether a re-read could show
+ *  something new. The single question the page asks this block. */
+export function refreshPending(refresh: WorkspaceRefresh | null | undefined): boolean {
+  if (!refresh) return false;
+  return refresh.recheckInMs > 0
+    && (refresh.started.length > 0 || refresh.inFlight.length > 0);
+}
+
+/* ── Feed presentation preference ─────────────────────────────────────────── */
+
+/**
+ * PRESENTATION ONLY. How prominently one user wants one source to appear in one
+ * project's activity feed.
+ *
+ * It never changes what Korvix knows, ranks or decides — Needs Attention,
+ * Today, Focus, Project State and the Business Brain are computed from the
+ * observations and have never heard of this. Hiding Vercel hides deployments
+ * from YOUR feed; a production outage is still ranked and still shown.
+ */
+export type FeedPreference = 'highlight' | 'normal' | 'hidden';
+
+export const FEED_PREFERENCES: FeedPreference[] = ['highlight', 'normal', 'hidden'];
+
+/** Explicit choices only, keyed by source. A source absent from the map is on
+ *  the default (`normal`) — the backend never round-trips defaults, so an
+ *  untouched project reads as `{}` rather than as fully configured. */
+export type FeedPreferences = Record<string, FeedPreference>;
+
+export function normalizeFeedPreference(value: unknown): FeedPreference {
+  return value === 'highlight' || value === 'hidden' ? value : 'normal';
+}
+
+export function feedPreferenceOf(
+  preferences: FeedPreferences | null | undefined,
+  source: string,
+): FeedPreference {
+  return normalizeFeedPreference(preferences?.[source]);
+}
+
+/** i18n key for a preference's label. Stable codes → translated words. */
+export function feedPreferenceKey(preference: FeedPreference): string {
+  return {
+    highlight: 'projectFeedPrefHighlight',
+    normal: 'projectFeedPrefNormal',
+    hidden: 'projectFeedPrefHidden',
+  }[preference];
+}
+
+/**
+ * The sources worth offering in the Customize panel, in a stable order.
+ *
+ * A source is offered when the project is CONNECTED to it, when it has actually
+ * appeared in the feed, or when the user already has a preference for it (so a
+ * choice can always be undone even after the source went quiet). Offering every
+ * conceivable source would ask people about tools they do not use.
+ */
+export function customizableSources(
+  workspace: ProjectWorkspace | null,
+  available: readonly string[] = [],
+): string[] {
+  if (!workspace) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  const add = (source: string) => {
+    const key = String(source || '').trim();
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    out.push(key);
+  };
+  for (const connector of workspace.connectors) add(connector.provider);
+  for (const row of workspace.activity) add(row.source);
+  for (const source of Object.keys(workspace.feedPreferences)) add(source);
+  // `available` is the backend's own source vocabulary; it decides the ORDER,
+  // so the panel matches the registry rather than the accident of what this
+  // project happened to log first.
+  if (available.length > 0) {
+    const known = new Set(available);
+    return [...available.filter((s) => seen.has(s)),
+            ...out.filter((s) => !known.has(s))];
+  }
+  return out;
+}
+
 export interface WorkspaceFreshness {
   generated_at: string;
   last_activity_at: string;
@@ -451,6 +557,10 @@ export interface ProjectWorkspace {
   products: WorkspaceProduct[];
   chats: WorkspaceChat[];
   connectors: WorkspaceConnector[];
+  /** This user's explicit presentation choices for this project. */
+  feedPreferences: FeedPreferences;
+  /** Smart-refresh coordination for this read (never project state). */
+  refresh: WorkspaceRefresh;
   freshness: WorkspaceFreshness;
   counts: Record<string, number>;
 }
@@ -871,6 +981,36 @@ export function normalizeFocus(value: unknown): ProjectFocus | null {
  * every string to "", so the page never has to null-check a field the backend
  * degraded — a missing section renders as its truthful empty state.
  */
+/** Explicit preferences only, and only ones we understand. A source we do not
+ *  recognise, or a value from a newer backend, is dropped rather than rendered
+ *  as a control nobody can operate. */
+export function normalizeFeedPreferences(value: unknown): FeedPreferences {
+  const out: FeedPreferences = {};
+  for (const [source, pref] of Object.entries(obj(value))) {
+    if (!source) continue;
+    if (pref !== 'highlight' && pref !== 'hidden') continue;
+    out[source] = pref;
+  }
+  return out;
+}
+
+/** Coordination metadata, defaulted to "nothing is happening". A backend that
+ *  does not send the block (an older deployment, or the kill switch) therefore
+ *  produces a page that simply never re-reads — the previous behaviour. */
+export function normalizeRefresh(value: unknown): WorkspaceRefresh {
+  const o = obj(value);
+  const list = (v: unknown) => arr(v).map((x) => str(x)).filter(Boolean);
+  const recheck = num(o.recheck_in_ms) ?? 0;
+  return {
+    started:  list(o.started),
+    inFlight: list(o.in_flight),
+    stale:    list(o.stale),
+    // Clamped so a malformed or hostile value can never turn one re-read into a
+    // tight loop or a wait measured in hours.
+    recheckInMs: recheck > 0 ? Math.min(Math.max(recheck, 1000), 60_000) : 0,
+  };
+}
+
 export function normalizeWorkspace(raw: unknown): ProjectWorkspace | null {
   const root = obj(raw);
   const project = obj(root.project);
@@ -954,6 +1094,8 @@ export function normalizeWorkspace(raw: unknown): ProjectWorkspace | null {
         last_sync_at: str(o.last_sync_at),
       };
     }).filter((c) => !!c.provider),
+    feedPreferences: normalizeFeedPreferences(root.feed_preferences),
+    refresh: normalizeRefresh(root.refresh),
     freshness: {
       generated_at: str(freshness.generated_at),
       last_activity_at: str(freshness.last_activity_at),

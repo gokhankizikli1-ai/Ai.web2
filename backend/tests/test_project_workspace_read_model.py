@@ -417,6 +417,12 @@ def test_route_returns_the_snapshot_for_the_owner(client, env, app):
         "project_understanding", "focus",
         "activity", "changes", "tasks", "knowledge", "products", "chats",
         "connectors", "freshness", "counts",
+        # Route-level additions to the projection. `refresh` is smart-refresh
+        # COORDINATION metadata (what the page should wait for), and
+        # `feed_preferences` is this user's presentation choice for this
+        # project — neither is project state, and neither is produced by
+        # `project_workspace.build`.
+        "refresh", "feed_preferences",
     }
 
 

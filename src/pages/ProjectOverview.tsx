@@ -63,6 +63,7 @@ import {
   MoreHorizontal, FolderMinus, CalendarDays, Triangle, Activity, Hash,
   Clock, Plug, ArrowUpRight, RefreshCw, ChevronRight, CheckCircle2, Circle,
   CirclePause, CircleDot, BookMarked, ListTodo, Trash2, History,
+  SlidersHorizontal, Star, EyeOff, RotateCcw,
 } from 'lucide-react';
 import { getProject } from '@/stores/projectStore';
 import { useLanguageStore } from '@/stores/languageStore';
@@ -70,8 +71,11 @@ import {
   listAddableChats, bindThreadToProject, removeThreadFromProject,
   getProjectWorkspace, listProjectTasks, createProjectTask, updateProjectTask,
   deleteProjectTask, listProjectKnowledge, addProjectKnowledge,
-  removeProjectKnowledge, markProjectWorkspaceSeen, type AddableChat,
+  removeProjectKnowledge, markProjectWorkspaceSeen,
+  getProjectFeedPreferences, setProjectFeedPreferences, type AddableChat,
 } from '@/lib/projectApi';
+import { askInWorkspace, type AskErrorCode, type AskHandle } from '@/lib/inlineAsk';
+import MarkdownMessage from '@/components/MarkdownMessage';
 import {
   areaKey, askSuggestions, attentionReasonKey, changeKindKey, changeKindKeyOf,
   changesCountKey, changesTitleKey, connectorSummary, coverageCaveatKey,
@@ -80,11 +84,13 @@ import {
   implicationKey, knowledgeKindKey, newProjectChatUrl, openProjectChatUrl,
   openTasks, productBuildType, productOpenTarget, productStatusKey,
   recommendationActionKey, recommendationAskKey, recommendationReasonKey,
-  relativeTime, relativeTimeKey, renderableActions, renderableCodes,
+  refreshPending, relativeTime, relativeTimeKey, renderableActions,
+  renderableCodes, customizableSources, feedPreferenceKey, feedPreferenceOf,
   seenThrough, severityTone, sourceLabel, stateKey, stateTone, taskStatusKey,
   toggledTaskStatus, uncertaintyKey,
-  KNOWLEDGE_KIND_ORDER, TASK_STATUS_ORDER,
-  type AttentionItem, type KnowledgeItem, type KnowledgeKind,
+  FEED_PREFERENCES, KNOWLEDGE_KIND_ORDER, TASK_STATUS_ORDER,
+  type AttentionItem, type FeedPreference, type FeedPreferences,
+  type KnowledgeItem, type KnowledgeKind,
   type ProjectFocus, type ProjectStateItem, type ProjectTask,
   type ProjectUnderstanding,
   type ProjectWorkspace, type TaskStatus,
@@ -100,6 +106,14 @@ const SECTION_TITLE = 'flex items-center gap-2 text-[12px] font-semibold upperca
 const HEADER_BTN = 'inline-flex items-center gap-1.5 rounded-lg px-2.5 h-8 text-[12px] text-white/65 hover:text-white hover:bg-white/[0.06] border border-white/[0.07] transition-all';
 const PRIMARY_BTN = 'inline-flex items-center gap-1.5 rounded-lg px-3 h-8 text-[12px] font-medium text-[#BFDBFE] bg-[#3B82F6]/[0.14] border border-[#3B82F6]/30 hover:bg-[#3B82F6]/[0.22] transition-all';
 const EMPTY_TEXT = 'text-[12.5px] leading-relaxed text-white/35';
+/** How many times ONE visit may re-read to pick up a background refresh. Three
+ *  is enough for a bounded provider read to land and small enough that a
+ *  connector stuck "in flight" can never become a request loop. */
+const MAX_REFRESH_RECHECKS = 3;
+/** A shared empty map, so "no preferences" is one stable reference rather than
+ *  a new object per render. */
+const EMPTY_PREFS: FeedPreferences = {};
+const SMALL_BTN = 'inline-flex items-center gap-1 rounded-md border border-white/[0.07] px-2 h-6 text-[11px] text-white/50 hover:text-white hover:bg-white/[0.06] transition-all';
 
 /** Relative time rendered through the locale dictionary (never hardcoded). */
 function useTimeAgo(t: T) {
@@ -1175,6 +1189,221 @@ function ProjectUnavailable({ t }: { t: T }) {
   );
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   INLINE "ASK KORVIX"
+
+   The compact answer surface. It renders the question the user clicked and the
+   answer streaming back — and that is ALL it is: a renderer over the state the
+   `inlineAsk` client produces.
+
+   It is deliberately not a chat application. There is no composer, no history
+   list, no message actions, no scrollback. The exchange it shows IS a real turn
+   of a real project-bound conversation (`inlineAsk` persists both halves
+   through the sessions authority), so "Open in chat" hands the user the whole
+   thing in the surface that is built for conversations.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+type AskPhase =
+  | { phase: 'streaming'; answer: string }
+  | { phase: 'done'; answer: string }
+  | { phase: 'error'; code: AskErrorCode };
+
+interface InlineAsk {
+  question: string;
+  threadId: string | null;
+  state: AskPhase;
+}
+
+function askErrorKey(code: AskErrorCode): string {
+  switch (code) {
+    case 'unavailable': return 'projectAskErrorUnavailable';
+    case 'thread':      return 'projectAskErrorThread';
+    case 'network':     return 'projectAskErrorNetwork';
+    case 'empty':       return 'projectAskErrorEmpty';
+    default:            return 'projectAskErrorStream';
+  }
+}
+
+function InlineAnswer({ ask, surfaceRef, onRetry, onStop, onDismiss, onOpenChat, t }: {
+  ask: InlineAsk;
+  surfaceRef: React.Ref<HTMLDivElement>;
+  onRetry: () => void;
+  onStop: () => void;
+  onDismiss: () => void;
+  onOpenChat: (threadId: string) => void;
+  t: T;
+}) {
+  const streaming = ask.state.phase === 'streaming';
+  const answer = ask.state.phase === 'error' ? '' : ask.state.answer;
+  return (
+    <div ref={surfaceRef}
+      className="mt-3 rounded-xl border border-white/[0.07] bg-white/[0.02] p-3 sm:p-3.5">
+      {/* The question, echoed so the answer is never floating without its ask. */}
+      <div className="flex items-start gap-2">
+        <div className="mt-[3px] h-1.5 w-1.5 shrink-0 rounded-full bg-[#60A5FA]" />
+        <p className="min-w-0 flex-1 text-[12.5px] leading-snug text-white/80 break-words">
+          {ask.question}
+        </p>
+        <button onClick={onDismiss} aria-label={t('projectAskDismiss')}
+          className="shrink-0 -mt-0.5 h-6 w-6 flex items-center justify-center rounded-md text-white/30 hover:text-white/70 hover:bg-white/[0.06] transition-all">
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      <div className="mt-2.5 pt-2.5 border-t border-white/[0.05]">
+        <div className="flex items-center gap-1.5 text-[10.5px] uppercase tracking-[0.06em] text-white/30 mb-1.5">
+          <Sparkles className="h-3 w-3 text-[#C084FC]" />
+          {t('projectAskAnswerLabel')}
+          {streaming && <Loader2 className="h-3 w-3 animate-spin text-white/30" />}
+        </div>
+
+        {ask.state.phase === 'error' ? (
+          <p className="text-[12.5px] leading-relaxed text-[#FCA5A5] break-words">
+            {t(askErrorKey(ask.state.code))}
+          </p>
+        ) : answer ? (
+          /* The SAME markdown renderer chat answers use — an inline answer must
+             not read as a lesser, plain-text version of the same reply. */
+          <div className="text-[13px] leading-relaxed text-white/75 break-words [&_p]:my-1.5 [&_ul]:my-1.5 [&_ol]:my-1.5">
+            <MarkdownMessage content={answer} />
+          </div>
+        ) : (
+          <p className={EMPTY_TEXT}>{t('projectAskThinking')}</p>
+        )}
+      </div>
+
+      <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+        {streaming && (
+          <button onClick={onStop} className={SMALL_BTN}>
+            <X className="h-3 w-3" /> {t('projectAskCancel')}
+          </button>
+        )}
+        {ask.state.phase === 'error' && (
+          <button onClick={onRetry} className={SMALL_BTN}>
+            <RotateCcw className="h-3 w-3" /> {t('projectAskRetry')}
+          </button>
+        )}
+        {ask.threadId && !streaming && (
+          <button onClick={() => onOpenChat(ask.threadId!)} className={SMALL_BTN}>
+            <MessageSquare className="h-3 w-3" /> {t('projectAskOpenInChat')}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   CUSTOMIZE VIEW
+
+   Three states per source, and a sentence saying exactly what they do and do
+   not do. The honesty line is not decoration: a control that looked like it
+   silenced alerts would be a genuinely dangerous control.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+const PREF_ICON: Record<FeedPreference, typeof Star> = {
+  highlight: Star,
+  normal: CircleDot,
+  hidden: EyeOff,
+};
+
+function CustomizeFeedPanel({
+  sources, draft, busy, error, onChange, onSave, onReset, onClose, t,
+}: {
+  sources: string[];
+  draft: FeedPreferences;
+  busy: boolean;
+  error: boolean;
+  onChange: (source: string, preference: FeedPreference) => void;
+  onSave: () => void;
+  onReset: () => void;
+  onClose: () => void;
+  t: T;
+}) {
+  return (
+    <div className={`${PANEL} mt-3 p-3 sm:p-4`}>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className={SECTION_TITLE}>
+            <SlidersHorizontal className="h-3.5 w-3.5 text-white/40" />
+            {t('projectFeedCustomizeTitle')}
+          </div>
+          {/* The semantic boundary, stated to the person operating the control. */}
+          <p className="mt-1 text-[11px] leading-relaxed text-white/35 max-w-[42rem]">
+            {t('projectFeedCustomizeHint')}
+          </p>
+        </div>
+        <button onClick={onClose} aria-label={t('projectFeedClose')}
+          className="shrink-0 h-6 w-6 flex items-center justify-center rounded-md text-white/30 hover:text-white/70 hover:bg-white/[0.06] transition-all">
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      {sources.length === 0 ? (
+        <p className={`${EMPTY_TEXT} mt-3`}>{t('projectFeedNoSources')}</p>
+      ) : (
+        <ul className="mt-3 space-y-1">
+          {sources.map((source) => {
+            const current = feedPreferenceOf(draft, source);
+            return (
+              <li key={source}
+                className="flex flex-wrap items-center gap-2 rounded-lg px-1.5 py-1.5 hover:bg-white/[0.02]">
+                <SourceIcon source={source} className="h-3.5 w-3.5 shrink-0 text-white/35" />
+                <span className="min-w-0 flex-1 basis-24 text-[12.5px] text-white/70 truncate">
+                  <SourceName source={source} t={t} />
+                </span>
+                <div role="radiogroup" aria-label={source}
+                  className="flex shrink-0 items-center gap-0.5 rounded-lg border border-white/[0.07] p-0.5">
+                  {FEED_PREFERENCES.map((pref) => {
+                    const Icon = PREF_ICON[pref];
+                    const active = current === pref;
+                    const label = t(feedPreferenceKey(pref));
+                    return (
+                      /* The label is ALWAYS rendered. Hiding it on narrow
+                         screens left three near-identical glyphs — a star, a
+                         dot and a crossed-out eye — as the only control this
+                         whole feature has, on the viewport most people use it
+                         from. The row wraps instead: two short lines beat one
+                         unreadable one. `aria-label` carries the name
+                         regardless, for screen readers and for tests. */
+                      <button key={pref} role="radio" aria-checked={active}
+                        aria-label={label} title={label}
+                        onClick={() => onChange(source, pref)}
+                        className={`inline-flex items-center gap-1 rounded-md px-2 h-7 text-[11px] transition-all ${
+                          active
+                            ? 'text-white bg-white/[0.09]'
+                            : 'text-white/40 hover:text-white/80 hover:bg-white/[0.05]'
+                        }`}>
+                        <Icon className="h-3 w-3 shrink-0" />
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {error && (
+        <p className="mt-2 text-[11.5px] text-[#FCA5A5]">{t('projectFeedSaveFailed')}</p>
+      )}
+
+      <div className="mt-3 flex flex-wrap items-center gap-1.5">
+        <button onClick={onSave} disabled={busy} className={`${PRIMARY_BTN} disabled:opacity-50`}>
+          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+          {t('projectFeedSave')}
+        </button>
+        <button onClick={onReset} disabled={busy} className={`${HEADER_BTN} disabled:opacity-50`}>
+          <RotateCcw className="h-3.5 w-3.5" /> {t('projectFeedReset')}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+
 /**
  * The page, mounted under a `key={projectId}`.
  *
@@ -1213,6 +1442,36 @@ function ProjectWorkspaceView({ projectId }: { projectId: string }) {
   const [tasks, setTasks] = useState<ProjectTask[] | null>(null);
   const [knowledge, setKnowledge] = useState<KnowledgeItem[] | null>(null);
   const [busy, setBusy] = useState(false);
+
+  /* ── Inline "Ask Korvix" ───────────────────────────────────────────────
+     ONE exchange at a time, and it lives here rather than in a child so a
+     question asked from Today, from Current State, or from the suggestion row
+     all render into the same surface instead of three competing ones.
+
+     `askThreadId` is remembered for the mount so a follow-up continues the SAME
+     project conversation. `askHandle` is the in-flight exchange, held in a ref
+     so unmount and project-switch can cancel it without a re-render, and so a
+     second click cannot start a second stream. */
+  const [ask, setAsk] = useState<InlineAsk | null>(null);
+  const askStreaming = useRef(false);
+  const askThreadId = useRef<string | null>(null);
+  const askSurface = useRef<HTMLDivElement | null>(null);
+  const askScrollPending = useRef(false);
+  const askHandle = useRef<AskHandle | null>(null);
+  const askQuestionId = useRef<string>('');
+
+  /* ── Customize view ───────────────────────────────────────────────────
+     `savedPrefs` is server truth (seeded from the snapshot, replaced by every
+     successful write); `draftPrefs` is what the open panel is editing. Keeping
+     them apart is what lets Cancel mean cancel and lets a failed save leave the
+     page showing what is actually stored. */
+  const [customizeOpen, setCustomizeOpen] = useState(false);
+  const [draftPrefs, setDraftPrefs] = useState<FeedPreferences>({});
+  const [prefBusy, setPrefBusy] = useState(false);
+  const [prefError, setPrefError] = useState(false);
+  const [prefSources, setPrefSources] = useState<string[]>([]);
+  const [savedPrefs, setSavedPrefs] = useState<FeedPreferences | null>(null);
+
   const [composerOpen, setComposerOpen] = useState(false);
   const [draftTask, setDraftTask] = useState('');
   const [draftKind, setDraftKind] = useState<KnowledgeKind>('decision');
@@ -1261,6 +1520,34 @@ function ProjectWorkspaceView({ projectId }: { projectId: string }) {
   }, [projectId, applySnapshot]);
 
   const workspace = load.state === 'ready' ? load.workspace : null;
+
+  /* ── Stale-while-revalidate ────────────────────────────────────────────
+     THIS IS NOT POLLING, and the difference is load-bearing.
+
+     The backend decides, per read, whether any of the project's bound
+     connectors were stale enough to refresh in the background. Only when it
+     says a refresh is actually RUNNING does this schedule ONE re-read, after
+     the interval the backend named. If nothing is running, `recheckInMs` is 0
+     and nothing is ever scheduled — a project whose connectors are fresh (the
+     common case) costs exactly one request per visit, as it always did.
+
+     `attempts` is a hard ceiling on top of that, so even a connector that
+     somehow stays "in flight" cannot turn one visit into an unbounded sequence
+     of reads. When the ceiling is reached the page simply stops asking; the
+     next visit reads normally. */
+  const recheckAttempts = useRef(0);
+  const refreshBlock = workspace?.refresh;
+  const generatedAt = workspace?.freshness.generated_at;
+  useEffect(() => {
+    if (!refreshPending(refreshBlock)) return;
+    if (recheckAttempts.current >= MAX_REFRESH_RECHECKS) return;
+    recheckAttempts.current += 1;
+    const timer = window.setTimeout(() => { void refresh(); },
+                                    refreshBlock!.recheckInMs);
+    return () => window.clearTimeout(timer);
+    // Keyed on the SNAPSHOT INSTANT: each successful read schedules at most one
+    // follow-up, and a re-read that returns the same state does not re-arm.
+  }, [refreshBlock, generatedAt, refresh]);
 
   const setView = useCallback((next: View) => {
     setSearchParams(next === 'overview' ? {} : { view: next }, { replace: false });
@@ -1314,6 +1601,165 @@ function ProjectWorkspaceView({ projectId }: { projectId: string }) {
   const newProjectChat = useCallback((prefill?: string) => {
     navigate(newProjectChatUrl(projectId, prefill));
   }, [navigate, projectId]);
+
+  /* ── Inline "Ask Korvix" ───────────────────────────────────────────────
+     One exchange, streamed in place through the EXISTING project chat +
+     streaming AI path (see lib/inlineAsk). This function owns nothing about
+     the conversation except which one it is: creating it, filing it under the
+     project, persisting the turns and building the model's context are all the
+     existing authorities' jobs.
+
+     Duplicate-click protection is here and only here: while an exchange is
+     streaming, another question is ignored outright. Re-sending the same
+     question because a button was double-clicked is exactly the failure this
+     surface must not have. */
+  const runAsk = useCallback((question: string, questionMessageId?: string) => {
+    const text = (question || '').trim();
+    if (!text) return;
+    // Duplicate-click protection is a REF, not the rendered state. `disabled`
+    // on the button is not enough: two clicks in the same tick both read the
+    // pre-update state, and the second would start a second stream and post a
+    // second question. A ref flips synchronously, so the second click is
+    // already too late.
+    if (askStreaming.current) return;
+    askStreaming.current = true;
+    // The answer renders in the Overview. The header's Ask button is visible on
+    // every view, so asking from Tasks or Activity has to bring the user back —
+    // otherwise the answer would stream into a section that is not on screen.
+    setView('overview');
+    setAsk({ question: text, threadId: askThreadId.current,
+             state: { phase: 'streaming', answer: '' } });
+    // …and scroll it into view, because "the user clicks and immediately sees
+    // the answer" is the whole point; a question asked from Today would
+    // otherwise answer below the fold.
+    askScrollPending.current = true;
+    const handle = askInWorkspace(projectId, text, {
+      onThread: (threadId) => {
+        askThreadId.current = threadId;
+        setAsk((prev) => (prev && prev.question === text
+          ? { ...prev, threadId } : prev));
+      },
+      onToken: (answer) => setAsk((prev) => (
+        prev && prev.state.phase === 'streaming'
+          ? { ...prev, state: { phase: 'streaming', answer } } : prev)),
+      onDone: (answer) => {
+        askStreaming.current = false;
+        setAsk((prev) => (prev ? { ...prev, state: { phase: 'done', answer } } : prev));
+      },
+      onError: (code) => {
+        askStreaming.current = false;
+        setAsk((prev) => (prev ? { ...prev, state: { phase: 'error', code } } : prev));
+      },
+    }, { threadId: askThreadId.current, questionMessageId });
+    askHandle.current = handle;
+    askQuestionId.current = handle.questionMessageId;
+  }, [projectId, setView]);
+
+  /* A retry re-sends under the SAME idempotency key, so the question is not
+     written to the conversation twice. */
+  const retryAsk = useCallback(() => {
+    if (ask) runAsk(ask.question, askQuestionId.current);
+  }, [ask, runAsk]);
+
+  /* Stop = keep what arrived. `stop()` persists the partial answer as the
+     assistant's turn, so what the page shows and what the conversation holds
+     stay the same thing. */
+  const stopAsk = useCallback(() => {
+    askStreaming.current = false;
+    askHandle.current?.stop();
+    setAsk((prev) => (prev && prev.state.phase === 'streaming'
+      ? { ...prev, state: { phase: 'done', answer: prev.state.answer } }
+      : prev));
+  }, []);
+
+  /* Dismiss = close the surface. The exchange stays in the conversation. */
+  const dismissAsk = useCallback(() => {
+    askStreaming.current = false;
+    askHandle.current?.cancel();
+    askHandle.current = null;
+    setAsk(null);
+  }, []);
+
+  /* Bring the answer on screen ONCE per question, after it has rendered.
+     Guarded by a flag rather than run on every `ask` change, so the page does
+     not yank the viewport on every streamed token while the user is reading. */
+  useEffect(() => {
+    if (!ask || !askScrollPending.current) return;
+    askScrollPending.current = false;
+    askSurface.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [ask]);
+
+  /* Unmount and project switch ABANDON the stream: the user did not choose to
+     end it here, so no fragment is written. Their question was persisted before
+     the request and remains, answerable in Chat. */
+  useEffect(() => () => { askHandle.current?.cancel(); }, []);
+
+  /* ── Customize view ───────────────────────────────────────────────────
+     PRESENTATION ONLY. Saving writes one narrow per-user, per-project table
+     that nothing in the intelligence or execution chain reads; the page then
+     re-reads the workspace so the feed it shows is the one the SERVER built
+     from the stored preference, never an optimistic local re-sort.
+
+     The panel's source list comes from the backend's own vocabulary, fetched
+     once when it is first opened, so it can never advertise a provider this
+     deployment does not have. */
+  /** What is actually stored for this user+project: the last successful write
+   *  if there has been one this mount, else whatever the snapshot carried.
+   *  Memoised so it is a stable reference — otherwise every render would give
+   *  `openCustomize` a new identity and re-render the control for nothing. */
+  const effectivePrefs = useMemo(
+    () => savedPrefs ?? workspace?.feedPreferences ?? EMPTY_PREFS,
+    [savedPrefs, workspace],
+  );
+  const openCustomize = useCallback(() => {
+    setPrefError(false);
+    setDraftPrefs(effectivePrefs);
+    setCustomizeOpen(true);
+    if (prefSources.length === 0) {
+      void (async () => {
+        const res = await getProjectFeedPreferences(projectId);
+        if (!res.ok) return;
+        setPrefSources(res.sources);
+        // Server truth wins over the snapshot copy the panel was seeded with.
+        setSavedPrefs(res.preferences);
+        setDraftPrefs(res.preferences);
+      })();
+    }
+  }, [effectivePrefs, prefSources.length, projectId]);
+
+  const changePref = useCallback((source: string, preference: FeedPreference) => {
+    setDraftPrefs((prev) => {
+      const next = { ...prev };
+      // `normal` is the DEFAULT, not a third stored state — choosing it removes
+      // the entry, exactly as the store does, so the two can never disagree
+      // about what "no preference" looks like.
+      if (preference === 'normal') delete next[source];
+      else next[source] = preference;
+      return next;
+    });
+  }, []);
+
+  const saveCustomize = useCallback(async () => {
+    setPrefBusy(true);
+    setPrefError(false);
+    const res = await setProjectFeedPreferences(projectId, draftPrefs);
+    setPrefBusy(false);
+    if (!res.ok) { setPrefError(true); return; }
+    setSavedPrefs(res.preferences);
+    setDraftPrefs(res.preferences);
+    setCustomizeOpen(false);
+    await refresh();
+  }, [draftPrefs, projectId, refresh]);
+
+  const resetCustomize = useCallback(() => {
+    setPrefError(false);
+    setDraftPrefs({});
+  }, []);
+
+  const customizeSources = useMemo(
+    () => customizableSources(workspace, prefSources),
+    [workspace, prefSources],
+  );
   // A product opens in the conversation it was generated in — the existing chat
   // surface already restores the embedded build there. This page never renders
   // or re-runs a build itself.
@@ -1414,6 +1860,9 @@ function ProjectWorkspaceView({ projectId }: { projectId: string }) {
   const openCount = workspace?.tasks.counts.open ?? 0;
   const knowledgeTotal = workspace?.knowledge.counts.total ?? 0;
   const listedTasks = tasks ?? [];
+  /** Rows a HIDDEN source contributed and the feed therefore left out. The
+   *  backend counts it; the page only reports it. */
+  const hiddenActivity = workspace?.counts.activity_hidden ?? 0;
   const listedKnowledge = knowledge ?? [];
 
   return (
@@ -1442,11 +1891,15 @@ function ProjectWorkspaceView({ projectId }: { projectId: string }) {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto">
-            {/* Ask Korvix ≠ New chat: it opens a project chat SEEDED with the
-                most relevant of the honest suggestions below (attention first,
-                then recent change, then goals, else "what is this about") —
-                whereas New chat opens an empty one. Neither sends a turn. */}
-            <button onClick={() => newProjectChat(headlineAsk)} className={PRIMARY_BTN}>
+            {/* Ask Korvix ≠ New chat: it ASKS — right here — the most relevant
+                of the honest suggestions below (attention first, then recent
+                change, then goals, else "what is this about"), and streams the
+                answer into the page. New chat still opens an empty conversation
+                in Chat. The inline answer becomes a real turn of a real
+                project-bound conversation, openable in Chat afterwards. */}
+            <button onClick={() => headlineAsk && runAsk(headlineAsk)}
+              disabled={!headlineAsk || ask?.state.phase === 'streaming'}
+              className={`${PRIMARY_BTN} disabled:opacity-50`}>
               <Sparkles className="h-3.5 w-3.5" /> {t('projectActionAsk')}
             </button>
             <button onClick={() => newProjectChat()} className={HEADER_BTN}>
@@ -1526,7 +1979,7 @@ function ProjectWorkspaceView({ projectId }: { projectId: string }) {
                 recommendation={workspace.today.recommendation}
                 focus={workspace.focus}
                 changes={arrival}
-                onAsk={(prompt) => newProjectChat(prompt)}
+                onAsk={runAsk}
                 onCreateTask={startTaskFromRecommendation}
                 onOpenTasks={() => setView('tasks')}
                 onOpenActivity={() => setView('activity')}
@@ -1558,7 +2011,7 @@ function ProjectWorkspaceView({ projectId }: { projectId: string }) {
                 <CurrentStateSection
                   items={workspace.projectState}
                   understanding={workspace.understanding}
-                  onAsk={(prompt) => newProjectChat(prompt)}
+                  onAsk={runAsk}
                   t={t}
                 />
               )}
@@ -1632,14 +2085,23 @@ function ProjectWorkspaceView({ projectId }: { projectId: string }) {
                   <div className="text-[11px] text-white/35 mb-2">{t('projectSectionAsk')}</div>
                   <div className="flex flex-wrap gap-1.5">
                     {suggestions.map((s) => (
-                      <button key={s.id} onClick={() => newProjectChat(t(s.promptKey))}
-                        className="inline-flex items-center gap-1 rounded-full border border-white/[0.08] bg-white/[0.02] px-3 h-7 text-[11.5px] text-white/60 hover:text-white hover:border-white/[0.16] hover:bg-white/[0.05] transition-all max-w-full">
+                      <button key={s.id} onClick={() => runAsk(t(s.promptKey))}
+                        disabled={ask?.state.phase === 'streaming'}
+                        className="inline-flex items-center gap-1 rounded-full border border-white/[0.08] bg-white/[0.02] px-3 h-7 text-[11.5px] text-white/60 hover:text-white hover:border-white/[0.16] hover:bg-white/[0.05] transition-all max-w-full disabled:opacity-40 disabled:hover:text-white/60">
                         <span className="truncate">{t(s.labelKey)}</span>
                         <ChevronRight className="h-3 w-3 shrink-0 opacity-50" />
                       </button>
                     ))}
                   </div>
-                  <p className="mt-2 text-[10.5px] text-white/25">{t('projectAskHint')}</p>
+                  {/* The answer renders HERE — under the questions that produced
+                      it — so the user never leaves the project to read it. */}
+                  {ask ? (
+                    <InlineAnswer ask={ask} surfaceRef={askSurface}
+                      onRetry={retryAsk} onStop={stopAsk}
+                      onDismiss={dismissAsk} onOpenChat={openChat} t={t} />
+                  ) : (
+                    <p className="mt-2 text-[10.5px] text-white/25">{t('projectAskHint')}</p>
+                  )}
                 </div>
               </section>
 
@@ -1920,15 +2382,43 @@ function ProjectWorkspaceView({ projectId }: { projectId: string }) {
             )}
 
             <section className={`${PANEL} p-4 sm:p-5`}>
-              <div className={`${SECTION_TITLE} mb-2`}>
-                <Activity className="h-3.5 w-3.5 text-white/40" />
-                {t('projectSectionActivity')}
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                <div className={SECTION_TITLE}>
+                  <Activity className="h-3.5 w-3.5 text-white/40" />
+                  {t('projectSectionActivity')}
+                  {hiddenActivity > 0 && (
+                    /* Never a silently shorter list: what a hidden source
+                       contributed is COUNTED and said out loud, because the
+                       preference excludes rows from a view and deletes
+                       nothing. */
+                    <span className="font-normal normal-case tracking-normal text-white/30">
+                      · {t('projectFeedHiddenCount', { count: hiddenActivity })}
+                    </span>
+                  )}
+                </div>
+                <button onClick={() => (customizeOpen ? setCustomizeOpen(false) : openCustomize())}
+                  aria-expanded={customizeOpen}
+                  className="shrink-0 inline-flex items-center gap-1 rounded-md px-1.5 h-6 text-[11px] text-white/45 hover:text-white hover:bg-white/[0.06] transition-all">
+                  <SlidersHorizontal className="h-3 w-3" /> {t('projectFeedCustomize')}
+                </button>
               </div>
+
+              {customizeOpen && (
+                <CustomizeFeedPanel
+                  sources={customizeSources} draft={draftPrefs} busy={prefBusy}
+                  error={prefError} onChange={changePref}
+                  onSave={() => { void saveCustomize(); }}
+                  onReset={resetCustomize}
+                  onClose={() => setCustomizeOpen(false)} t={t} />
+              )}
+
               {workspace.activity.length === 0 ? (
                 <p className={EMPTY_TEXT}>
-                  {workspace.connectors.length === 0
-                    ? t('projectActivityEmptyNoTools')
-                    : t('projectActivityEmpty')}
+                  {hiddenActivity > 0
+                    ? t('projectActivityAllHidden')
+                    : workspace.connectors.length === 0
+                      ? t('projectActivityEmptyNoTools')
+                      : t('projectActivityEmpty')}
                 </p>
               ) : (
                 <ul className="divide-y divide-white/[0.04] -my-1">

@@ -402,7 +402,10 @@ def test_a_project_with_no_connectors_renders_truthfully(env):
                               "products": 0, "chats": 0, "connectors": 0,
                               "tasks": 0, "knowledge": 0, "changes": 0,
                               "project_state": 0, "project_state_open": 0,
-                              "focus_next": 0}
+                              "focus_next": 0,
+                              # Nothing was excluded by a feed preference, and
+                              # the count says so rather than being absent.
+                              "activity_hidden": 0}
 
 
 def test_a_project_whose_connectors_are_disabled_on_the_deployment_still_renders(env,

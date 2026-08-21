@@ -56,6 +56,7 @@ from backend.core.responses import ok as envelope_ok
 from backend.services.auth.identity import User
 from backend.services.connectors import registry
 from backend.services.connectors import store as shared
+from backend.services.connectors import sync as connector_sync
 from backend.services.projects import store as projects_store
 
 logger = logging.getLogger(__name__)
@@ -579,11 +580,9 @@ def sync_all(
     under (that project, its owner). An account-level authorization never
     produces account-global observations — there is no code path here that could
     write one."""
-    spec = _require_known(provider)
+    _require_known(provider)
     _require_enabled(provider)
     auth = _owner_authorization(provider, user)
-    _, st = _provider_modules(provider)
-    sync_mod = _sync_module(provider)
 
     results: List[Dict[str, Any]] = []
     seen_projects = []
@@ -591,45 +590,21 @@ def sync_all(
         if binding.project_id in seen_projects:
             continue
         seen_projects.append(binding.project_id)
-        # Defence in depth: re-check ownership of every project we are about to
-        # read into, instead of trusting the binding's denormalized owner.
-        proj = projects_store.get_project(binding.project_id)
-        if proj is None or proj.owner_user_id != user.id:
+        # ONE definition of "is this binding syncable, and what happened?" —
+        # `connectors.sync.sync_binding` — shared with the Project Workspace's
+        # background refresh. It re-checks the project's CURRENT owner (never
+        # the binding's denormalized one), refuses a revoked authorization and a
+        # binding with no resource chosen, and calls the provider's own sync.
+        outcome = connector_sync.sync_binding(user.id, binding.project_id, provider)
+        if outcome.outcome == connector_sync.OUTCOME_NOT_OWNED:
+            # A project the caller does not own is SKIPPED silently, exactly as
+            # before: reporting it would confirm that it exists.
             continue
-        conn = st.get_connection(binding.project_id)
-        if conn is None or getattr(conn, "is_revoked", False):
-            results.append({"project_id": binding.project_id, "ok": False,
-                            "reason": "not_connected"})
-            continue
-        if spec.requires_resource_selection and getattr(conn, "is_connected", True) is False:
-            results.append({"project_id": binding.project_id, "ok": False,
-                            "reason": "needs_resource_selection"})
-            continue
-        try:
-            report = sync_mod.sync_connection(conn)
-            results.append({"project_id": binding.project_id, "ok": True,
-                            "sync": report.as_dict()})
-        except Exception as exc:
-            results.append({"project_id": binding.project_id, "ok": False,
-                            "reason": type(exc).__name__})
+        results.append(outcome.as_dict())
     return envelope_ok(
         data={"results": results, "projects": len(results)},
         user_id=user.id,
     )
-
-
-def _sync_module(provider: str):
-    if provider == registry.PROVIDER_GMAIL:
-        from backend.services.gmail import sync as mod
-    elif provider == registry.PROVIDER_CALENDAR:
-        from backend.services.google_calendar import sync as mod
-    elif provider == registry.PROVIDER_GITHUB:
-        from backend.services.github import sync as mod
-    elif provider == registry.PROVIDER_VERCEL:
-        from backend.services.vercel import sync as mod
-    else:
-        from backend.services.slack import sync as mod
-    return mod
 
 
 __all__ = ["router"]

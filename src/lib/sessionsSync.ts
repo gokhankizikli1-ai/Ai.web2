@@ -73,7 +73,7 @@ const MAX_HYDRATED_MESSAGES = 500;
 // ensure_default on every turn.
 let _workspaceIdPromise: Promise<string | null> | null = null;
 
-async function ensureWorkspaceId(): Promise<string | null> {
+export async function ensureWorkspaceId(): Promise<string | null> {
   if (!_workspaceIdPromise) {
     _workspaceIdPromise = call<{ id?: string }>('POST', '/v2/sessions/workspaces/ensure_default')
       .then((d) => (d && d.id ? d.id : null))
@@ -83,6 +83,85 @@ async function ensureWorkspaceId(): Promise<string | null> {
   // On failure, drop the cache so a later call can retry a transient outage.
   if (!id) _workspaceIdPromise = null;
   return id;
+}
+
+/**
+ * Create a server thread in the signed-in user's default chat workspace.
+ *
+ * The lazy thread creation `syncSession` has always done, extracted so a second
+ * legitimate caller — the Project Workspace's inline "Ask Korvix" — creates its
+ * conversation through the SAME sessions authority rather than inventing a
+ * parallel one. `metadata` is stored verbatim on the thread and is how a caller
+ * marks a conversation it will want to find again (see `ORIGIN_*` below).
+ *
+ * Returns the new thread id, or null when server chat is disabled/unreachable.
+ * Never throws.
+ */
+export async function createChatThread(
+  title: string,
+  metadata?: Record<string, unknown>,
+): Promise<string | null> {
+  if (!serverChatEnabled()) return null;
+  const wsId = await ensureWorkspaceId();
+  if (!wsId) return null;
+  const created = await call<ServerThread>(
+    'POST',
+    `/v2/sessions/workspaces/${encodeURIComponent(wsId)}/threads`,
+    { title: (title || 'New chat').slice(0, 200), mode: 'chat',
+      ...(metadata ? { metadata } : {}) },
+  );
+  return created?.id || null;
+}
+
+/**
+ * Append ONE turn to a server thread, idempotently.
+ *
+ * `clientMessageId` is the stable idempotency key the sessions store dedupes
+ * on, so a retried append after a dropped connection collapses to the same row
+ * instead of duplicating the turn. This is the same call `syncSession` makes,
+ * exposed for callers that produce their turns one at a time (a live stream)
+ * rather than mirroring a whole local conversation.
+ *
+ * Returns true when the server has the message. Never throws.
+ */
+export async function appendThreadMessage(
+  threadId: string,
+  message: { role: 'user' | 'assistant'; content: string; clientMessageId: string },
+): Promise<boolean> {
+  if (!serverChatEnabled() || !threadId || !message.content) return false;
+  const ok = await call(
+    'POST', `/v2/sessions/threads/${encodeURIComponent(threadId)}/messages`,
+    { role: message.role, content: message.content,
+      client_message_id: message.clientMessageId },
+  );
+  return ok !== null;
+}
+
+/**
+ * The turns already on a server thread, oldest first, bounded.
+ *
+ * The same read `syncSession` and `hydrateFromServer` do, exposed so a caller
+ * that streams one turn at a time can send the conversation's real history to
+ * the AI path — which is what makes an inline follow-up question a genuine
+ * second turn of the same conversation rather than a fresh one that has
+ * forgotten the first. [] on failure.
+ */
+export async function listThreadMessages(
+  threadId: string,
+  limit: number = MAX_HYDRATED_MESSAGES,
+): Promise<{ role: 'user' | 'assistant'; content: string }[]> {
+  if (!serverChatEnabled() || !threadId) return [];
+  const data = await call<{ messages?: ServerMessage[] }>(
+    'GET',
+    `/v2/sessions/threads/${encodeURIComponent(threadId)}/messages?limit=${limit}`,
+  );
+  return (data?.messages || [])
+    .filter((m) => MIRRORED_ROLES.has(String(m.role))
+      && typeof m.content === 'string' && m.content.length > 0)
+    .map((m) => ({
+      role: m.role === 'assistant' ? ('assistant' as const) : ('user' as const),
+      content: m.content as string,
+    }));
 }
 
 /** Reset cached state — for tests and for identity changes (logout/login). */
@@ -121,15 +200,9 @@ export async function syncSession(session: ChatSession): Promise<string | null> 
 
   let threadId = session.serverThreadId ?? null;
   if (!threadId) {
-    const wsId = await ensureWorkspaceId();
-    if (!wsId) return null;
-    const created = await call<ServerThread>(
-      'POST',
-      `/v2/sessions/workspaces/${encodeURIComponent(wsId)}/threads`,
-      { title: session.title || 'New chat', mode: session.mode || 'chat' },
-    );
-    if (!created || !created.id) return null;
-    threadId = created.id;
+    // ONE thread-creation path, shared with the Project Workspace's inline Ask.
+    threadId = await createChatThread(session.title || 'New chat');
+    if (!threadId) return null;
   }
 
   // Identity set of what the server already has. A local message matches by its

@@ -31,8 +31,18 @@ WHAT IT IS NOT
     this owns what the PAGE sees. They share the summary rule and the product
     projection rather than each answering the same question differently.
   * NOT a second observation store, and NOT a connector sync. Nothing here calls
-    Gmail / GitHub / Vercel / Slack / Calendar. Opening the Project page performs
-    ZERO provider API calls — it reads what a previous explicit sync ingested.
+    Gmail / GitHub / Vercel / Slack / Calendar. `build()` performs ZERO provider
+    API calls — it reads what a previous sync ingested, and that is still its
+    whole contract.
+
+    Since Smart Refresh, the ROUTE around it may — after this snapshot has been
+    assembled and sent — start a bounded background refresh of connectors whose
+    last successful sync is past their TTL (see `connectors.refresh`). That is
+    deliberately not this module's business: the snapshot returned is always the
+    PERSISTED one, this function never waits for a provider, and a refresh that
+    lands afterwards is picked up by the page's next read of this same
+    projection. Stale-while-revalidate, with the revalidate half owned by the
+    connector authority rather than smuggled into the read model.
   * NOT a writer. No task, run, candidate action, decision, memory,
     observation — and NOT even the last-visit marker — is created by reading
     this. "Observation ≠ execution" holds, and so does "reading is not
@@ -76,7 +86,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from backend.services.project_brain import attention as attention_mod
 from backend.services.project_brain import recent_changes as changes_mod
@@ -103,6 +113,11 @@ _MAX_KNOWLEDGE_READ = 100
 _MAX_KNOWLEDGE = 4            # rows in the Overview's compact knowledge block
 _MAX_CHANGES = changes_mod.MAX_CHANGES
 _MAX_PROJECT_STATE = 5        # correlated subjects shown in the Project State block
+# How many of the feed's bounded slots a user's HIGHLIGHTED sources may reserve.
+# Half: enough that a highlighted source cannot be crowded out by a burst from
+# another one, and not so much that highlighting a quiet source empties the feed
+# of everything else that happened.
+_HIGHLIGHT_RESERVE = _MAX_ACTIVITY // 2
 
 #: Activity rows carry these non-connector sources so the frontend can label
 #: them without inventing a provider.
@@ -376,6 +391,20 @@ def _headline_knowledge(items: List[dict]) -> List[dict]:
     return [i for i in items if i.get("kind") in headline][:_MAX_KNOWLEDGE]
 
 
+def _read_feed_preferences(user_id: str, project_id: str) -> Dict[str, str]:
+    """This user's explicit feed presentation choices for this project, or {}.
+
+    {} is both the default and the fail-soft value: a project nobody has
+    customised, and a preference store that is momentarily unreadable, both
+    render the feed exactly as it rendered before this feature existed."""
+    try:
+        from backend.services.projects import feed_prefs_store
+        return feed_prefs_store.get_preferences(str(user_id), str(project_id))
+    except Exception as exc:
+        logger.debug("project_workspace: feed preferences unavailable: %s", exc)
+        return {}
+
+
 def _read_view_marker(user_id: str, project_id: str) -> str:
     """When this user last ACKNOWLEDGED a visit to this project, or "" when they
     never have. Purely a read — see the module docstring on why the marker never
@@ -453,7 +482,9 @@ def _change_rows(observations: List[dict], chats: List[dict],
 
 def _build_activity(observations: List[dict], chats: List[dict],
                     products: List[dict], tasks: List[dict] = (),
-                    knowledge: List[dict] = ()) -> List[dict]:
+                    knowledge: List[dict] = (),
+                    preferences: Optional[Dict[str, str]] = None
+                    ) -> Tuple[List[dict], int]:
     """ONE unified "what changed around this project" stream.
 
     Presentation is normalized here; STORAGE is not — every row still lives in
@@ -475,7 +506,13 @@ def _build_activity(observations: List[dict], chats: List[dict],
     chronology that quietly drops events to look balanced is not a chronology.
     If a push burst fills the timeline, that burst genuinely is the newest
     thing that happened, and the deploy that failed this morning is still
-    sitting in Needs Attention where it belongs."""
+    sitting in Needs Attention where it belongs.
+
+    `preferences` is this user's own presentation choice for this project (see
+    `_apply_feed_preferences`). It is the ONE thing allowed to change which rows
+    survive the bound, because it is the user saying so rather than Korvix
+    guessing. Returns `(feed, hidden_count)`; the count is reported to the page
+    so an excluded source is visibly excluded, never silently missing."""
     rows: List[dict] = []
     for o in observations or []:
         rows.append({
@@ -531,7 +568,87 @@ def _build_activity(observations: List[dict], chats: List[dict],
         return (-stamp, str(row.get("source") or ""), str(row.get("id") or ""))
 
     rows.sort(key=_key)
-    return rows[:_MAX_ACTIVITY]
+    return _apply_feed_preferences(rows, preferences)
+
+
+def _apply_feed_preferences(rows: List[dict],
+                            preferences: Dict[str, str]) -> Tuple[List[dict], int]:
+    """Choose WHICH of the chronologically-ordered rows survive the feed's fixed
+    bound, using this user's presentation preference for this project.
+
+    Returns `(feed, hidden_count)`.
+
+    THE RULE, AND WHY IT IS THIS RULE
+    ---------------------------------
+    A preference decides SELECTION UNDER SCARCITY. It never decides order and it
+    never decides importance:
+
+      hidden      the user said "not on my feed" — those rows are left out.
+      highlight   up to `_HIGHLIGHT_RESERVE` of the bounded slots are RESERVED
+                  for highlighted sources, so a Gmail-first person still sees
+                  their mail on a project where forty Vercel deployments would
+                  otherwise fill every slot. Only as many slots as there are
+                  highlighted rows to fill them; the rest go to everyone else.
+      normal      competes for the remaining slots purely on recency, exactly
+                  as every row always has.
+
+    Then the surviving rows are sorted back into strict reverse-chronological
+    order. That is the load-bearing detail: the feed the user reads is still a
+    CHRONOLOGY. `_build_activity`'s docstring rejects per-source quotas because
+    a quota lets the system silently drop real events to look balanced — and
+    that objection stands. This is a different thing: the user, explicitly,
+    choosing what competes for their own bounded screen, with the count of what
+    they excluded reported back to them (`counts.activity_hidden`) so nothing is
+    dropped silently.
+
+    With no preferences — the default, and every project until somebody opens
+    Customize — `highlight` and `hidden` are both empty, the reserve is unused,
+    and this returns exactly `rows[:_MAX_ACTIVITY]`: byte-identical to the
+    behaviour before this existed.
+
+    PURE. It reads nothing, writes nothing, and cannot touch attention, focus,
+    today, project state, understanding or changes — none of which are passed
+    in, precisely so this function is incapable of reaching them."""
+    prefs = preferences or {}
+    if not prefs:
+        return rows[:_MAX_ACTIVITY], 0
+
+    from backend.services.projects import feed_prefs_store as prefs_mod
+    # ONE pass, partitioning by the row's source. Deliberately not `row in list`
+    # membership tests: rows are dicts, so that is an O(n²) field-by-field
+    # comparison over a list this function is handed up to a couple of hundred
+    # of. Three lists built in a single sweep is both faster and easier to read.
+    hidden = 0
+    highlighted: List[dict] = []
+    ordinary: List[dict] = []
+    for row in rows:
+        pref = prefs.get(str(row.get("source") or ""))
+        if pref == prefs_mod.PREF_HIDDEN:
+            hidden += 1
+        elif pref == prefs_mod.PREF_HIGHLIGHT:
+            highlighted.append(row)
+        else:
+            ordinary.append(row)
+
+    reserved = min(len(highlighted), _HIGHLIGHT_RESERVE)
+    chosen = highlighted[:reserved] + ordinary[:_MAX_ACTIVITY - reserved]
+    # Whichever side ran out gives its unused slots back to the other, so the
+    # feed is never shorter than it would have been without a preference. The
+    # two tails are disjoint by construction (a row is in exactly one list), so
+    # no membership test is needed to avoid duplicates.
+    if len(chosen) < _MAX_ACTIVITY:
+        for row in highlighted[reserved:] + ordinary[max(0, _MAX_ACTIVITY - reserved):]:
+            if len(chosen) >= _MAX_ACTIVITY:
+                break
+            chosen.append(row)
+
+    def _key(row: dict):
+        parsed = attention_mod.parse_iso(row.get("occurred_at"))
+        stamp = parsed.timestamp() if parsed is not None else float("-inf")
+        return (-stamp, str(row.get("source") or ""), str(row.get("id") or ""))
+
+    chosen.sort(key=_key)
+    return chosen, hidden
 
 
 #: Fields on a correlated state that exist for BACKEND consumers and have no
@@ -690,7 +807,17 @@ def build(user_id: str, project_id: str, *,
     except Exception as exc:
         logger.debug("project_workspace: decision context unavailable: %s", exc)
 
-    activity = _build_activity(observations, chats, products, tasks, knowledge)
+    # FEED PRESENTATION — this user's own choice about which sources compete for
+    # the bounded activity list. Read here and used for exactly ONE thing:
+    # selecting rows for `activity`. It is deliberately NOT passed to
+    # `rank_attention`, `build_today`, `project_focus`, `understand_with_
+    # membership` or `build_changes` above — those decide what MATTERS, and a
+    # display preference has no business in that answer. A hidden source's
+    # production outage is still ranked, still in Today, still in Focus.
+    feed_preferences = _read_feed_preferences(user_id, project_id)
+    activity, hidden_activity = _build_activity(
+        observations, chats, products, tasks, knowledge,
+        preferences=feed_preferences)
 
     # TODAY — pure choice over the ranking + the project's own tasks and goals.
     # Chooses, never re-ranks; creates nothing.
@@ -740,6 +867,10 @@ def build(user_id: str, project_id: str, *,
         # nothing pressing says so instead of promoting its calmest subject.
         "focus":      focus,
         "activity":   activity,
+        # This user's own presentation choice, echoed back so the Customize
+        # panel renders from server truth rather than from local state. Only
+        # sources the user has explicitly moved off the default appear.
+        "feed_preferences": feed_preferences,
         "changes":    changes,
         "tasks": {
             "items":  tasks[:_MAX_TASKS],
@@ -770,6 +901,11 @@ def build(user_id: str, project_id: str, *,
             "project_state_open": len((project_understanding or {}).get("open") or []),
             "focus_next": len((focus or {}).get("next") or []),
             "activity":   len(activity),
+            # How many rows a HIDDEN source contributed and the feed therefore
+            # left out. Reported so an excluded source is visibly excluded — the
+            # page can say "3 hidden" instead of quietly showing a shorter list,
+            # and it is the proof that nothing was deleted.
+            "activity_hidden": hidden_activity,
             "goals":      len(goals),
             "products":   len(products),
             "chats":      len(chats),
