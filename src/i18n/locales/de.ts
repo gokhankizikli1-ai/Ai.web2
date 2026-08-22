@@ -1638,4 +1638,72 @@ export const de: Record<string, string> = {
   projectSourceTask: 'Aufgabe',
   projectSourceKnowledge: 'Wissen',
 
+
+  /* ── Korrelierte Geschichten, Belege und Belegtiefe ──────────────────────
+     Jeder Text hier rendert einen STABILEN BACKEND-CODE aus
+     `project_intelligence` (Ereignissemantik, Aussageklasse, Belegklasse). Die
+     API sendet für keinen davon einen Satz, deshalb ist jede Sprache eine
+     echte Übersetzung. In diesem Block gibt es bewusst keine Punktzahl, keinen
+     Prozentwert und keine Konfidenzzahl. */
+  projectEvidenceChangeProposed: 'Änderung vorgeschlagen',
+  projectEvidenceChangeLanded: 'Zusammengeführt',
+  projectEvidenceChangeAbandoned: 'Ohne Merge geschlossen',
+  projectEvidenceChangePushed: 'Gepusht',
+  projectEvidenceCiFailed: 'Prüfungen fehlgeschlagen',
+  projectEvidenceCiPassed: 'Prüfungen bestanden',
+  projectEvidenceDeployFailed: 'Deployment fehlgeschlagen',
+  projectEvidenceDeploySucceeded: 'Deployment erfolgreich',
+  projectEvidenceDeployCancelled: 'Deployment abgebrochen',
+  projectEvidenceDeployStarted: 'Deployment gestartet',
+  projectEvidenceIssueOpened: 'Issue geöffnet',
+  projectEvidenceIssueClosed: 'Issue geschlossen',
+  projectEvidenceDiscussion: 'Besprochen',
+  projectEvidenceMail: 'E-Mail',
+  projectEvidenceMeeting: 'Termin',
+  projectEvidenceActivity: 'Aktivität',
+
+  projectClaimDeployment: 'Ein Deployment wurde mit seinem Ergebnis gemeldet',
+  projectClaimCodeChange: 'Eine Codeänderung wurde vorgeschlagen oder übernommen',
+  projectClaimTests: 'Automatische Prüfungen liefen, mit ihrem Ergebnis',
+  projectClaimCoordination: 'Menschen haben darüber gesprochen',
+  projectClaimFunctionality: 'Das Produkt funktioniert',
+  projectClaimUsers: 'Echte Menschen nutzen es',
+  projectClaimFeedback: 'Nutzer haben sich dazu geäußert',
+  projectClaimGoalProgress: 'Ein Ziel ist vorangekommen',
+  projectClaimBusinessOutcome: 'Ein geschäftliches Ergebnis ist eingetreten',
+
+  projectEvidenceNeedDeployment: 'ein Deployment-Ereignis',
+  projectEvidenceNeedCodeChange: 'eine Codeänderung',
+  projectEvidenceNeedCheck: 'ein Prüf- oder Testbericht',
+  projectEvidenceNeedMessage: 'eine Nachricht oder ein Termin',
+  projectEvidenceNeedPerson: 'jemand, der es sagt',
+  projectEvidenceNeedCustomerFact: 'ein festgehaltener Kundenfakt',
+  projectEvidenceNeedMetricFact: 'eine festgehaltene Kennzahl oder Geschäftszahl',
+  projectEvidenceNeedGoal: 'ein festgehaltenes Projektziel',
+
+  projectWhyTimeline: 'Was passiert ist',
+  projectWhyEstablished: 'Belegt',
+  projectWhyAdjacent: 'Nur angrenzende Belege',
+  projectWhyAdjacentNote: 'Etwas in der Nähe deutet darauf hin. Es belegt die Aussage nicht.',
+  projectWhyNotEstablished: 'Durch diese Belege nicht belegt',
+  projectWhyEvidenceOne: '1 Beleg',
+  projectWhyEvidenceMany: '{count} Belege',
+  projectWhySingleSource: 'nur ein Werkzeug',
+  projectWhyWouldEstablish: 'nötig wäre {items}',
+  projectWhyBasisTextual: 'aus der Formulierung gelesen, nicht aus einem festgehaltenen Fakt',
+
+  projectFocusHeading: 'Gerade jetzt',
+  projectFocusInspect: 'Ansehen',
+  projectFocusQuiet: 'In diesem Projekt drängt gerade nichts.',
+
+  projectChangesSinceHeadlineOne: 'Eine bedeutsame Sache ist passiert, während Sie weg waren',
+  projectChangesSinceHeadlineMany: '{count} bedeutsame Dinge sind passiert, während Sie weg waren',
+  projectChangesViewAll: 'Gesamte Aktivität',
+
+  projectMemoryHeading: 'Was Korvix weiß',
+  projectMemoryEmpty: 'Korvix hat zu diesem Projekt noch nichts Dauerhaftes festgehalten.',
+  projectMemoryGapsTitle: 'Offene Wissenslücken',
+  projectStoryDetail: 'Details',
+  projectActivityLatest: 'Neueste Aktivität',
+  projectFocusOwnerHumanElsewhere: 'Wartet auf Sie — Korvix kann es untersuchen, die Behebung muss aber außerhalb von Korvix passieren.',
 };

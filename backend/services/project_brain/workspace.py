@@ -113,6 +113,10 @@ _MAX_KNOWLEDGE_READ = 100
 _MAX_KNOWLEDGE = 4            # rows in the Overview's compact knowledge block
 _MAX_CHANGES = changes_mod.MAX_CHANGES
 _MAX_PROJECT_STATE = 5        # correlated subjects shown in the Project State block
+#: Observations any ONE subject's grounding is computed from. A subject cannot
+#: hold more than the whole read anyway (`_MAX_OBSERVATIONS_READ`); this makes
+#: the per-subject cost explicitly constant rather than incidentally so.
+_MAX_SUBJECT_EVIDENCE = _MAX_OBSERVATIONS_READ
 # How many of the feed's bounded slots a user's HIGHLIGHTED sources may reserve.
 # Half: enough that a highlighted source cannot be crowded out by a burst from
 # another one, and not so much that highlighting a quiet source empties the feed
@@ -419,7 +423,8 @@ def _read_view_marker(user_id: str, project_id: str) -> str:
 
 def _change_rows(observations: List[dict], chats: List[dict],
                  products: List[dict], tasks: List[dict],
-                 knowledge: List[dict], *, now: datetime) -> List[dict]:
+                 knowledge: List[dict], *, now: datetime,
+                 membership: Optional[Dict[str, dict]] = None) -> List[dict]:
     """Every candidate change, normalized and given a DEDUP KEY naming the
     real-world thing it is about. `recent_changes.build_changes` then keeps the
     newest row per key inside the window, so five deploy attempts on one target
@@ -438,13 +443,43 @@ def _change_rows(observations: List[dict], chats: List[dict],
     stated invariant. Connector keys are now digested through the SAME
     function, so the identity still dedups exactly as before and the provider
     id stays on the server. Korvix's own ids (a thread, a deliverable, a task)
-    are unaffected: those are already in the payload by name."""
+    are unaffected: those are already in the payload by name.
+
+    STORY IDENTITY — the correlation REUSE, not a second one. When the
+    correlation authority's COMPLETE member index (`membership`) speaks for an
+    observation, the row takes that SUBJECT's identity as its key and carries
+    the subject's name and state with it. Four provider events belonging to one
+    real-world subject therefore collapse into ONE change, which is what makes
+    "3 meaningful things happened while you were away" a count of STORIES
+    rather than a count of provider traffic.
+
+    Nothing is correlated here. The index is the one `project_intelligence`
+    already produced from this same observation list in this same build, so the
+    change list and the Current-state section can never be talking about
+    different subjects. When no subject speaks for a row (a singleton below
+    `MIN_SUBJECT_MEMBERS`, or a degraded intelligence slice) the row keeps its
+    previous `attention`-derived key exactly as before — the fallback is the
+    old behaviour, never a dropped change."""
     rows: List[dict] = []
+    index = membership or {}
     for o in observations or []:
-        signal = attention_mod.classify_observation(o, now=now)
-        subject = _s(signal.get("subject"), 200) if signal else ""
         source = _s(o.get("source"), 40)
         title = _s(o.get("summary"), 240) or _s(o.get("kind"), 120)
+        story = index.get(_s(o.get("id"), 64))
+        if story:
+            # The correlated subject IS the identity. Its id is already a
+            # digest over the component keys (see `correlation`), so no opaque
+            # provider resource id travels in this key either.
+            rows.append(changes_mod.change_row(
+                key=f"story:{_s(story.get('id'), 64)}",
+                change=changes_mod.CHANGE_CONNECTOR, source=source, title=title,
+                occurred_at=o.get("observed_at"),
+                subject_id=_s(story.get("id"), 64),
+                subject=_s(story.get("subject"), 200),
+                state=_s(story.get("state"), 40)))
+            continue
+        signal = attention_mod.classify_observation(o, now=now)
+        subject = _s(signal.get("subject"), 200) if signal else ""
         identity = subject or f"{source}:{_s(o.get('kind'), 120)}:{title[:80]}"
         rows.append(changes_mod.change_row(
             key=f"connector:{attention_mod.stable_id(identity)}",
@@ -651,6 +686,68 @@ def _apply_feed_preferences(rows: List[dict],
     return chosen, hidden
 
 
+def _subject_grounding(observations: List[dict],
+                       membership: Dict[str, dict]) -> Dict[str, dict]:
+    """What each correlated subject's OWN evidence establishes — and, more to
+    the point, what it does not.
+
+    THE ONE AUTHORITY, APPLIED NARROWLY. This calls
+    `project_intelligence.grounding.ground_claims` verbatim; it re-implements
+    none of it, adds no rule of its own and computes no score. The only thing
+    it decides is the ROW SET: instead of the whole project, each subject is
+    grounded on exactly the observations the correlation authority's membership
+    index says belong to it. Same function, same closed claim vocabulary, same
+    support levels — asked about one story instead of the whole project.
+
+    WHY GOALS / DECISIONS / KNOWLEDGE ARE DELIBERATELY NOT PASSED. They are
+    PROJECT-scoped records. Feeding them in here would make "the project is
+    advancing its goals" read as adjacently-supported inside a story about a
+    failed deployment, purely because the project has goals recorded somewhere.
+    A story answers for its own evidence and nothing else; the project-level
+    reading already lives in `project_understanding`.
+
+    Returns `{subject_id: grounding}`. Fail-soft per subject: a subject whose
+    grounding cannot be computed simply carries none, and the page renders the
+    story without the evidence breakdown rather than not at all."""
+    if not (observations and membership):
+        return {}
+    by_subject: Dict[str, List[dict]] = {}
+    for o in observations:
+        if not isinstance(o, dict):
+            continue
+        state = membership.get(_s(o.get("id"), 64))
+        if not state:
+            continue
+        subject_id = _s(state.get("id"), 64)
+        if not subject_id:
+            continue
+        rows = by_subject.setdefault(subject_id, [])
+        if len(rows) < _MAX_SUBJECT_EVIDENCE:
+            rows.append(o)
+
+    out: Dict[str, dict] = {}
+    try:
+        from backend.services import project_intelligence as pi
+    except Exception as exc:      # pragma: no cover — defensive
+        logger.debug("project_workspace: grounding unavailable: %s", exc)
+        return {}
+    for subject_id, rows in by_subject.items():
+        grounded = pi.ground_claims(rows)
+        claims = [c for c in (grounded.get("claims") or []) if isinstance(c, dict)]
+        if not claims:
+            continue
+        out[subject_id] = {
+            "claims":  claims,
+            "sources": list(grounded.get("sources") or []),
+            "observations": int(grounded.get("observations") or 0),
+            # One tool reporting is never corroboration — the package's standing
+            # rule, restated at story scope so the page can say it in the same
+            # breath as the claim.
+            "single_source": bool(grounded.get("single_source_project")),
+        }
+    return out
+
+
 #: Fields on a correlated state that exist for BACKEND consumers and have no
 #: renderer on the page. `facets` is the structural per-target reading
 #: `interpretation`, `synthesis` and `candidate_synthesis` reason over; the page
@@ -660,14 +757,26 @@ def _apply_feed_preferences(rows: List[dict],
 _INTERNAL_STATE_FIELDS = ("facets",)
 
 
-def _page_state_rows(states: List[dict]) -> List[dict]:
+def _page_state_rows(states: List[dict],
+                     grounding: Optional[Dict[str, dict]] = None) -> List[dict]:
     """The subject rows as the PAGE sees them.
 
     A shallow copy per row, deliberately: the originals are the same objects
     the membership index points at, and `_link_attention_to_state` must keep
-    matching against those rather than against a payload projection."""
-    return [{k: v for k, v in state.items() if k not in _INTERNAL_STATE_FIELDS}
-            for state in states or [] if isinstance(state, dict)]
+    matching against those rather than against a payload projection.
+
+    `grounding` is attached onto the COPY for the same reason — the page gets
+    "what this story's evidence establishes", and the membership index keeps
+    pointing at rows that are exactly what `correlation` returned."""
+    index = grounding or {}
+    out: List[dict] = []
+    for state in states or []:
+        if not isinstance(state, dict):
+            continue
+        row = {k: v for k, v in state.items() if k not in _INTERNAL_STATE_FIELDS}
+        row["grounding"] = index.get(_s(state.get("id"), 64)) or {}
+        out.append(row)
+    return out
 
 
 def _link_attention_to_state(attention: List[dict],
@@ -781,6 +890,20 @@ def build(user_id: str, project_id: str, *,
         logger.debug("project_workspace: project intelligence unavailable: %s", exc)
     _link_attention_to_state(attention, state_membership)
 
+    # WHY KORVIX THINKS THIS — per story, from the SAME grounding authority the
+    # project prompt already uses, asked about one subject's rows instead of the
+    # whole project. Pure, and computed from observations already in memory: no
+    # query, no provider call, no token.
+    #
+    # Guarded like every other slice: this function's contract is that it never
+    # raises, so a grounding failure costs the evidence breakdown on the page,
+    # not the page.
+    subject_grounding: Dict[str, dict] = {}
+    try:
+        subject_grounding = _subject_grounding(observations, state_membership)
+    except Exception as exc:      # pragma: no cover — defensive
+        logger.debug("project_workspace: subject grounding unavailable: %s", exc)
+
     # FOCUS — "what matters right now, and why". The DECISION reading over the
     # subjects just correlated: which one leads, on what evidence, whether a
     # dated commitment makes it urgent, and — the question the page could never
@@ -828,7 +951,8 @@ def build(user_id: str, project_id: str, *,
     # written: see the module docstring.
     last_viewed_at = _read_view_marker(user_id, project_id)
     changes = changes_mod.build_changes(
-        _change_rows(observations, chats, products, tasks, knowledge, now=when),
+        _change_rows(observations, chats, products, tasks, knowledge, now=when,
+                     membership=state_membership),
         last_viewed_at=last_viewed_at, now=when, limit=_MAX_CHANGES)
     changes["last_viewed_at"] = last_viewed_at
 
@@ -851,7 +975,7 @@ def build(user_id: str, project_id: str, *,
         "today":      today,
         "goals":      goals,
         "attention":  attention,
-        "project_state": _page_state_rows(project_state),
+        "project_state": _page_state_rows(project_state, subject_grounding),
         # WHAT IT ALL ADDS UP TO — the project-level reading of the subjects
         # above. Not a health score and not a second ranking: a state code
         # from the SAME vocabulary the subjects use, honest coverage, and the

@@ -362,12 +362,23 @@ def _infer_state(decisive: Sequence[ev.Event],
 def _evidence_row(event: ev.Event) -> Dict[str, Any]:
     """One display-safe evidence reference. Provenance is preserved exactly —
     which stored observation produced this — while the raw payload, any
-    credential and every opaque provider resource id stay behind."""
+    credential and every opaque provider resource id stay behind.
+
+    `polarity` and `environment` travel with the row because a consumer that
+    has to RENDER the evidence would otherwise re-derive them from
+    `semantic_type` and the title — which is a second, weaker copy of a reading
+    this layer already made. A deploy that failed to production and a preview
+    check that passed are different facts, and a surface that had to guess
+    which was which would eventually collapse them into one. "" for
+    `environment` never means production; it means the event is not about a
+    deployment at all."""
     return {
         "observation_id": _s(event.observation_id, 64),
         "source": _s(event.source, 40),
         "kind": _s(event.kind, 120),
         "semantic_type": _s(event.semantic_type, 40),
+        "polarity": _s(event.polarity, 20),
+        "environment": _s(event.environment, 60),
         "title": _s(event.title, 200),
         "observed_at": _s(event.observed_at, 64),
     }

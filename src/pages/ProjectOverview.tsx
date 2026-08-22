@@ -59,11 +59,11 @@ import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router';
 import {
   ArrowLeft, MessageSquare, Plus, FolderInput, Blocks, Sparkles,
-  Github, Mail, Target, Loader2, Check, X, Search, AlertTriangle,
-  MoreHorizontal, FolderMinus, CalendarDays, Triangle, Activity, Hash,
-  Clock, Plug, ArrowUpRight, RefreshCw, ChevronRight, CheckCircle2, Circle,
-  CirclePause, CircleDot, BookMarked, ListTodo, Trash2, History,
-  SlidersHorizontal, Star, EyeOff, RotateCcw,
+  Loader2, Check, X, Search, AlertTriangle,
+  MoreHorizontal, FolderMinus, Activity, Clock, Plug, RefreshCw,
+  ChevronRight, CheckCircle2, Circle, CircleDot, CirclePause, ArrowUpRight,
+  BookMarked, ListTodo,
+  Trash2, History, SlidersHorizontal, Star, EyeOff, RotateCcw,
 } from 'lucide-react';
 import { getProject } from '@/stores/projectStore';
 import { useLanguageStore } from '@/stores/languageStore';
@@ -77,35 +77,35 @@ import {
 import { askInWorkspace, type AskErrorCode, type AskHandle } from '@/lib/inlineAsk';
 import MarkdownMessage from '@/components/MarkdownMessage';
 import {
-  areaKey, askSuggestions, attentionReasonKey, changeKindKey, changeKindKeyOf,
-  changesCountKey, changesTitleKey, connectorSummary, coverageCaveatKey,
+  askSuggestions, attentionReasonKey, changeKindKey, changeStories,
+  alarmIsFocusStory, connectorSummary, coverageCaveatKey,
   focusBasisKey, focusCaveatKey, focusOwnerKey, focusReasonKeys, focusTone,
-  freshnessKey, freshnessRelative, gapKey, groupingRationale, hasUnderstanding,
-  implicationKey, knowledgeKindKey, newProjectChatUrl, openProjectChatUrl,
+  freshnessKey, freshnessRelative, hasFocus, hasProjectMemory,
+  hasUnderstanding, hasVisitChanges, knowledgeGapKeys, knowledgeGroups,
+  knowledgeKindKey, newProjectChatUrl, openProjectChatUrl,
   openTasks, productBuildType, productOpenTarget, productStatusKey,
-  recommendationActionKey, recommendationAskKey, recommendationReasonKey,
-  refreshPending, relativeTime, relativeTimeKey, renderableActions,
-  renderableCodes, customizableSources, feedPreferenceKey, feedPreferenceOf,
-  seenThrough, severityTone, sourceLabel, stateKey, stateTone, taskStatusKey,
-  toggledTaskStatus, uncertaintyKey,
+  providerText, recommendationActionKey, recommendationAskKey,
+  recommendationReasonKey, refreshPending, renderableActions,
+  customizableSources, feedPreferenceKey, feedPreferenceOf,
+  seenThrough, severityTone, taskStatusKey, toggledTaskStatus, workspaceFocus,
   FEED_PREFERENCES, KNOWLEDGE_KIND_ORDER, TASK_STATUS_ORDER,
   type AttentionItem, type FeedPreference, type FeedPreferences,
   type KnowledgeItem, type KnowledgeKind,
-  type ProjectFocus, type ProjectStateItem, type ProjectTask,
+  type FocusItem, type ProjectStateItem, type ProjectTask,
   type ProjectUnderstanding,
   type ProjectWorkspace, type TaskStatus,
   type TodayRecommendation, type WorkspaceChanges, type WorkspaceChat,
-  type WorkspaceConnector, type WorkspaceProduct,
+  type WorkspaceConnector, type WorkspaceFocus, type WorkspaceProduct,
 } from '@/lib/projectWorkspace';
+import {
+  EvidenceDisclosure, MoreLink, OutcomeStrip, ProviderText, SourceIcon,
+  SourceName, StateChip, StoryRow,
+} from '@/components/project/WorkspaceSurface';
+import {
+  EMPTY_TEXT, HEADER_BTN, PANEL, PRIMARY_BTN, RULE, SECTION_TITLE, SMALL_BTN,
+  TONE_STYLE, useTimeAgo, type T,
+} from '@/components/project/workspaceTokens';
 
-type T = (key: string, params?: Record<string, string | number>) => string;
-
-/* ── Shared surface tokens — the authenticated dark workspace language ────── */
-const PANEL = 'rounded-2xl border border-white/[0.06] bg-white/[0.02]';
-const SECTION_TITLE = 'flex items-center gap-2 text-[12px] font-semibold uppercase tracking-[0.06em] text-white/45';
-const HEADER_BTN = 'inline-flex items-center gap-1.5 rounded-lg px-2.5 h-8 text-[12px] text-white/65 hover:text-white hover:bg-white/[0.06] border border-white/[0.07] transition-all';
-const PRIMARY_BTN = 'inline-flex items-center gap-1.5 rounded-lg px-3 h-8 text-[12px] font-medium text-[#BFDBFE] bg-[#3B82F6]/[0.14] border border-[#3B82F6]/30 hover:bg-[#3B82F6]/[0.22] transition-all';
-const EMPTY_TEXT = 'text-[12.5px] leading-relaxed text-white/35';
 /** How many times ONE visit may re-read to pick up a background refresh. Three
  *  is enough for a bounded provider read to land and small enough that a
  *  connector stuck "in flight" can never become a request loop. */
@@ -113,43 +113,13 @@ const MAX_REFRESH_RECHECKS = 3;
 /** A shared empty map, so "no preferences" is one stable reference rather than
  *  a new object per render. */
 const EMPTY_PREFS: FeedPreferences = {};
-const SMALL_BTN = 'inline-flex items-center gap-1 rounded-md border border-white/[0.07] px-2 h-6 text-[11px] text-white/50 hover:text-white hover:bg-white/[0.06] transition-all';
-
-/** Relative time rendered through the locale dictionary (never hardcoded). */
-function useTimeAgo(t: T) {
-  return useCallback((iso?: string | null): string => {
-    const rel = relativeTime(iso);
-    if (!rel) return '';
-    return rel.unit === 'now'
-      ? t(relativeTimeKey(rel))
-      : t(relativeTimeKey(rel), { value: rel.value });
-  }, [t]);
-}
-
-/* Icon for an activity/attention SOURCE, keyed by the observation `source` the
- * backend registry emits (observations_store.CONNECTOR_SOURCES) plus Korvix's
- * own chat/build sources. An unknown source falls back to a neutral glyph
- * rather than being mislabelled as one of the known providers. */
-function SourceIcon({ source, className }: { source?: string | null; className?: string }) {
-  const cls = className || 'h-3.5 w-3.5 shrink-0 text-white/35';
-  switch (source) {
-    case 'gmail': return <Mail className={cls} />;
-    case 'calendar': return <CalendarDays className={cls} />;
-    case 'github': return <Github className={cls} />;
-    case 'vercel': return <Triangle className={cls} />;
-    case 'slack': return <Hash className={cls} />;
-    case 'chat': return <MessageSquare className={cls} />;
-    case 'build': return <Blocks className={cls} />;
-    case 'task': return <ListTodo className={cls} />;
-    case 'knowledge': return <BookMarked className={cls} />;
-    default: return <Activity className={cls} />;
-  }
-}
-
-function SourceName({ source, t }: { source: string; t: T }) {
-  const label = sourceLabel(source);
-  return <>{label.kind === 'provider' ? label.name : t(label.key)}</>;
-}
+/** How many of the newest events the OVERVIEW shows. The Project page is not a
+ *  log viewer: the full chronology lives one tab away, and three rows is enough
+ *  to say "the tools are alive and this is the shape of it". */
+const HOME_ACTIVITY = 3;
+/** Correlated stories the "while you were away" block renders before it starts
+ *  counting the rest. */
+const HOME_CHANGES = 4;
 
 /* ══════════════════════════════════════════════════════════════════════════
    "Add existing chat" picker — unchanged behaviour, translated copy.
@@ -264,351 +234,220 @@ function AddExistingChatModal({
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
-   Needs attention — the strongest section on the page.
-   ══════════════════════════════════════════════════════════════════════════ */
-const TONE_STYLE: Record<'critical' | 'warning' | 'info' | 'positive', { dot: string; text: string }> = {
-  critical: { dot: '#F87171', text: '#FCA5A5' },
-  warning: { dot: '#FBBF24', text: '#FCD34D' },
-  info: { dot: '#60A5FA', text: '#93C5FD' },
-  positive: { dot: '#4ADE80', text: '#86EFAC' },
-};
+   NOW — the one thing that matters, and why
 
+   THE HIGHEST INFORMATION WEIGHT ON THE PAGE, and the only block that still
+   gets panel chrome. Everything below it is headings, rows and rules, because
+   nine equally-boxed sections is how a product with real intelligence ends up
+   reading like a dashboard generator.
+
+   WHAT DECIDES WHAT GOES HERE. Nothing on this page. `focus.top` is the
+   Business Brain's decision reading — the identical function, with the
+   identical tier ladder, that orders the Brain's candidate actions — and
+   `today.attention` is `attention.py`'s top-ranked open signal. This component
+   renders whichever of those the backend produced and JOINS the focus subject
+   to its correlated story by id. It cannot promote, demote, re-rank or score:
+   it is handed one item and a story to go with it.
+
+   WHEN THERE IS NOTHING. One quiet line. A large empty card captioned
+   "everything looks great" is a claim, and it is one nothing here can support.
+   ══════════════════════════════════════════════════════════════════════════ */
 function AttentionRow({ item, t }: { item: AttentionItem; t: T }) {
   const tone = TONE_STYLE[severityTone(item.severity)];
   const timeAgo = useTimeAgo(t);
   const when = timeAgo(item.observed_at);
   return (
-    <li className="flex items-start gap-3 py-2.5">
+    <li className="flex items-start gap-3 py-2">
       <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: tone.dot }} />
       <div className="min-w-0 flex-1">
         <div className="text-[13px] font-medium leading-snug text-white/85 break-words">
           {t(attentionReasonKey(item.reason))}
         </div>
-        {item.title && (
-          <div className="mt-0.5 text-[12px] leading-snug text-white/50 break-words line-clamp-2">
-            {item.title}
-          </div>
-        )}
+        <ProviderText value={item.title} className="mt-0.5 block text-[12px] leading-snug text-white/50 break-words" />
         <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10.5px] text-white/30">
           <span className="inline-flex items-center gap-1">
             <SourceIcon source={item.source} className="h-3 w-3 shrink-0 text-white/30" />
             <SourceName source={item.source} t={t} />
           </span>
-          {item.context && <span className="truncate max-w-[220px]">· {item.context}</span>}
+          {item.context && <span className="truncate max-w-[220px]">· {providerText(item.context, 60)}</span>}
           {when && <span>· {when}</span>}
+          {/* WHICH STORY this alarm belongs to — the backend's own membership
+              answer, so an alarm is never an event floating with no context.
+              Enrichment only: it changes nothing about this row's rank. */}
+          {item.state_subject && (
+            <span className="min-w-0 truncate max-w-[240px] text-white/35">
+              · {providerText(item.state_subject, 80)}
+            </span>
+          )}
         </div>
       </div>
     </li>
   );
 }
 
-/* ══════════════════════════════════════════════════════════════════════════
-   CURRENT STATE — "what is actually going on in this project?"
-
-   The one place the page answers the question a person actually arrives with.
-   It renders the backend's correlated + interpreted reading
-   (`project_intelligence`) and derives NOTHING of its own.
-
-   WHAT A NORMAL USER MUST NEVER SEE HERE
-   --------------------------------------
-   No agents, no DAGs, no correlation jargon, no confidence arithmetic, no
-   internal state-machine names, no raw observation flood. A subject shows what
-   happened, what it means, and — on demand — why Korvix grouped the evidence
-   and what it still does not know. The words are human ("Needs attention",
-   "Not yet known"), and every one of them is a translation of a stable backend
-   code, never English composed by the API.
-
-   THIS IS NOT A RANKING
-   ---------------------
-   Order is the backend's presentation order, unchanged. "What deserves your
-   attention" is still answered by Needs Attention directly above, and "what
-   should we do" is still the Business Brain's answer — this section never
-   proposes work, and there is deliberately no action button on a subject
-   beyond asking Korvix about it.
-   ══════════════════════════════════════════════════════════════════════════ */
-function StateChip({ state, t }: { state: string; t: T }) {
-  const tone = TONE_STYLE[stateTone(state)];
+/**
+ * The Focus headline: the decision layer's reason, or — when the backend
+ * produced no focus item — the alarm itself.
+ *
+ * Both are backend codes. There is no third case where the page composes a
+ * sentence of its own.
+ */
+function FocusHeadline({ focus, t }: { focus: WorkspaceFocus; t: T }) {
+  const basisKey = focus.item ? focusBasisKey(focus.item.priority_basis) : null;
+  if (basisKey) {
+    const tone = TONE_STYLE[focusTone(focus.item!.priority_basis)];
+    return (
+      <div className="flex items-start gap-2.5">
+        <span className="mt-[9px] h-2 w-2 shrink-0 rounded-full" style={{ background: tone.dot }} />
+        <div className="min-w-0">
+          <h2 className="text-[16px] sm:text-[17px] font-semibold leading-snug break-words"
+            style={{ color: tone.text }}>
+            {t(basisKey)}
+          </h2>
+          {focus.item!.subject && (
+            <div className="mt-0.5 text-[13px] leading-snug text-white/70 break-words">
+              {providerText(focus.item!.subject, 160)}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+  if (!focus.attention) return null;
+  const tone = TONE_STYLE[severityTone(focus.attention.severity)];
   return (
-    <span
-      className="inline-flex items-center gap-1.5 rounded-full border px-2 py-[3px] text-[10.5px] font-medium"
-      style={{ color: tone.text, borderColor: `${tone.dot}40`, background: `${tone.dot}14` }}
-    >
-      <span className="h-1.5 w-1.5 rounded-full" style={{ background: tone.dot }} />
-      {t(stateKey(state))}
-    </span>
+    <div className="flex items-start gap-2.5">
+      <span className="mt-[9px] h-2 w-2 shrink-0 rounded-full" style={{ background: tone.dot }} />
+      <div className="min-w-0">
+        <h2 className="text-[16px] sm:text-[17px] font-semibold leading-snug break-words"
+          style={{ color: tone.text }}>
+          {t(attentionReasonKey(focus.attention.reason))}
+        </h2>
+        <ProviderText value={focus.attention.title}
+          className="mt-0.5 block text-[13px] leading-snug text-white/70 break-words" />
+      </div>
+    </div>
   );
 }
 
-function SubjectRow({ item, onAsk, t }: {
-  item: ProjectStateItem;
+function FocusSection({
+  focus, recommendation, attentionRest, nextItems, onAsk, onCreateTask,
+  onOpenTasks, t,
+}: {
+  focus: WorkspaceFocus;
+  recommendation: TodayRecommendation | null;
+  attentionRest: AttentionItem[];
+  nextItems: FocusItem[];
   onAsk: (prompt: string) => void;
+  onCreateTask: (prefill: string) => void;
+  onOpenTasks: () => void;
   t: T;
 }) {
-  const [open, setOpen] = useState(false);
+  const [alsoOpen, setAlsoOpen] = useState(false);
   const timeAgo = useTimeAgo(t);
-  const understanding = item.understanding;
+  const item = focus.item;
+  const reasons = focusReasonKeys(item);
+  const ownerKey = focusOwnerKey(item);
+  const caveatKey = item?.caveats.length ? focusCaveatKey(item.caveats[0]) : null;
+  const providers = item?.actionability.external_providers.join(', ') || '';
+  const next = (nextItems || [])
+    .map((row) => providerText(row.subject, 80)).filter(Boolean);
+  const actions = renderableActions(recommendation);
+  const askKey = recommendationAskKey(recommendation);
+  const alarm = focus.attention;
+  // What "Ask Korvix" asks about, in order of how specific it can be: the
+  // named subject, else the recommendation's own question, else the generic
+  // one about the signal. Never an empty prompt.
+  const askPrompt = item?.subject
+    ? t('projectStateAskPrompt', { subject: providerText(item.subject, 160) })
+    : askKey ? t(askKey) : t('projectTodayAskSignalPrompt');
+  const tone = item
+    ? TONE_STYLE[focusTone(item.priority_basis)]
+    : alarm ? TONE_STYLE[severityTone(alarm.severity)] : TONE_STYLE.info;
 
-  // What it MEANS — at most two, so the collapsed row stays one glance.
-  const implications = renderableCodes(understanding?.implications, implicationKey, 2);
-  const uncertainty = renderableCodes(understanding?.uncertainty, uncertaintyKey, 3);
-  const areas = (understanding?.areas || [])
-    .map((a) => ({ ...a, key: areaKey(a.area) }))
-    .filter((a) => a.key && a.area !== 'unknown');
-  const kindKey = changeKindKeyOf(understanding?.change_kind.kind || '');
-  const rationale = groupingRationale(item);
-  const change = understanding?.last_meaningful_change || null;
+  const run = (action: string) => {
+    if (action === 'ask_korvix') onAsk(askKey ? t(askKey) : '');
+    else if (action === 'create_task') onCreateTask(recommendation?.title || '');
+    else if (action === 'open_tasks') onOpenTasks();
+  };
 
-  return (
-    <li className="py-3 first:pt-1 last:pb-1">
-      <div className="flex flex-wrap items-center gap-2">
-        <StateChip state={item.state} t={t} />
-        <span className="min-w-0 flex-1 text-[13.5px] font-medium leading-snug text-white/90 break-words">
-          {item.subject}
-        </span>
-      </div>
-
-      {implications.length > 0 && (
-        <ul className="mt-1.5 space-y-1">
-          {implications.map((imp) => (
-            <li key={imp.code} className="text-[12.5px] leading-snug text-white/60 break-words">
-              {t(imp.key)}
-            </li>
-          ))}
-        </ul>
-      )}
-
-      <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10.5px] text-white/30">
-        {areas.map((a) => (
-          <span key={a.area} className="rounded-md bg-white/[0.05] px-1.5 py-[2px] text-white/45">
-            {t(a.key as string)}
-          </span>
-        ))}
-        {kindKey && (
-          <span className="rounded-md bg-white/[0.05] px-1.5 py-[2px] text-white/45">
-            {t(kindKey)}
-          </span>
-        )}
-        {item.sources.map((src) => (
-          <span key={src} className="inline-flex items-center gap-1">
-            <SourceIcon source={src} className="h-3 w-3 shrink-0 text-white/30" />
-          </span>
-        ))}
-        {change?.at && <span>· {timeAgo(change.at)}</span>}
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          className="ml-auto inline-flex items-center gap-1 text-[10.5px] text-white/40 hover:text-white/70 transition-colors"
-        >
-          {t(open ? 'projectStateWhyHide' : 'projectStateWhy')}
-          <ChevronRight className={`h-3 w-3 transition-transform ${open ? 'rotate-90' : ''}`} />
-        </button>
-      </div>
-
-      {open && (
-        <div className="mt-2.5 space-y-2.5 rounded-xl border border-white/[0.05] bg-white/[0.015] p-3">
-          {/* WHY these were grouped. The honesty surface: a user who disagrees
-              with a grouping can see exactly what joined it. */}
-          {rationale && (
-            <div>
-              <div className="text-[10.5px] uppercase tracking-[0.06em] text-white/30 mb-1">
-                {t('projectStateWhyTitle')}
-              </div>
-              <div className="text-[12px] leading-relaxed text-white/55">
-                {t(rationale.wordingOnly
-                  ? 'projectStateGroupedByWording'
-                  : 'projectStateGroupedByResource', {
-                  evidence: rationale.evidenceCount,
-                  sources: rationale.sourceCount,
+  if (!hasFocus(focus)) {
+    // The quiet state. One line, no container — a project with nothing pressing
+    // should LOOK like a project with nothing pressing.
+    return (
+      <section className="pb-1">
+        <p className={EMPTY_TEXT}>{t('projectFocusQuiet')}</p>
+        {recommendation && (
+          <div className="mt-3">
+            <div className="text-[13.5px] font-medium leading-snug text-white/85 break-words">
+              {t(recommendationReasonKey(recommendation.reason))}
+            </div>
+            <ProviderText value={recommendation.title}
+              className="mt-0.5 block text-[12px] leading-snug text-white/50 break-words" />
+            {actions.length > 0 && (
+              <div className="mt-2.5 flex flex-wrap gap-1.5">
+                {actions.map((action, i) => {
+                  const key = recommendationActionKey(action);
+                  if (!key) return null;
+                  return (
+                    <button key={action} onClick={() => run(action)}
+                      className={i === 0 ? PRIMARY_BTN : HEADER_BTN}>
+                      {t(key)}
+                    </button>
+                  );
                 })}
               </div>
-            </div>
-          )}
-
-          {/* WHAT CHANGED — the last thing that actually moved this subject. */}
-          {change?.title && (
-            <div>
-              <div className="text-[10.5px] uppercase tracking-[0.06em] text-white/30 mb-1">
-                {t('projectStateChangedTitle')}
-              </div>
-              <div className="flex items-start gap-2 text-[12px] leading-snug text-white/55">
-                <SourceIcon source={change.source} className="mt-[3px] h-3 w-3 shrink-0 text-white/30" />
-                <span className="min-w-0 break-words">{change.title}</span>
-              </div>
-            </div>
-          )}
-
-          {/* WHAT IS KNOWN — the evidence, by its own titles. Bounded. */}
-          {(item.supporting.length > 0 || item.contradicting.length > 0) && (
-            <div>
-              <div className="text-[10.5px] uppercase tracking-[0.06em] text-white/30 mb-1">
-                {t('projectStateEvidenceTitle')}
-              </div>
-              <ul className="space-y-1">
-                {[...item.supporting, ...item.contradicting].slice(0, 4).map((e) => (
-                  <li key={`${e.observation_id}-${e.semantic_type}`}
-                      className="flex items-start gap-2 text-[12px] leading-snug text-white/50">
-                    <SourceIcon source={e.source} className="mt-[3px] h-3 w-3 shrink-0 text-white/30" />
-                    <span className="min-w-0 break-words">{e.title}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {/* WHAT IS UNCERTAIN — never omitted to make the reading look neat. */}
-          {uncertainty.length > 0 && (
-            <div>
-              <div className="text-[10.5px] uppercase tracking-[0.06em] text-white/30 mb-1">
-                {t('projectStateUncertainTitle')}
-              </div>
-              <ul className="space-y-1">
-                {uncertainty.map((u) => (
-                  <li key={u.code} className="text-[12px] leading-snug text-white/50 break-words">
-                    {t(u.key)}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          <button
-            type="button"
-            onClick={() => onAsk(t('projectStateAskPrompt', { subject: item.subject }))}
-            className={HEADER_BTN}
-          >
-            <Sparkles className="h-3.5 w-3.5" />
-            {t('projectActionAsk')}
-          </button>
-        </div>
-      )}
-    </li>
-  );
-}
-
-function CurrentStateSection({ items, understanding, onAsk, t }: {
-  items: ProjectStateItem[];
-  understanding: ProjectUnderstanding | null;
-  onAsk: (prompt: string) => void;
-  t: T;
-}) {
-  // AT MOST ONE caveat, and only a real one. A wall of hedges reads as noise
-  // and gets skipped, which defeats the point of being honest.
-  const caveat = coverageCaveatKey(understanding);
-  const gaps = renderableCodes(understanding?.gaps, gapKey, 2)
-    .filter((g) => g.code !== 'no_recent_evidence'
-      && g.code !== 'single_source_project'
-      && g.code !== 'no_deployment_evidence');
-
-  return (
-    <section className={`${PANEL} p-4 sm:p-5`}>
-      <div className={`${SECTION_TITLE} mb-2`}>
-        <CircleDot className="h-3.5 w-3.5 text-[#93C5FD]" />
-        {t('projectSectionState')}
-      </div>
-      {caveat && (
-        <div className="mb-2 text-[11.5px] leading-relaxed text-white/35">{t(caveat)}</div>
-      )}
-      {items.length === 0 ? (
-        <p className={EMPTY_TEXT}>{t('projectStateEmpty')}</p>
-      ) : (
-        <ul className="divide-y divide-white/[0.05]">
-          {items.map((item) => (
-            <SubjectRow key={item.id} item={item} onAsk={onAsk} t={t} />
-          ))}
-        </ul>
-      )}
-      {gaps.length > 0 && (
-        <div className="mt-3 border-t border-white/[0.05] pt-2.5">
-          <div className="text-[10.5px] uppercase tracking-[0.06em] text-white/30 mb-1">
-            {t('projectStateGapsTitle')}
+            )}
           </div>
-          <ul className="space-y-1">
-            {gaps.map((g) => (
-              <li key={g.code} className="text-[12px] leading-snug text-white/45 break-words">
-                {t(g.key)}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </section>
-  );
-}
-
-/* ══════════════════════════════════════════════════════════════════════════
-   TODAY — "what should I care about right now?"
-
-   Renders exactly two facts and nothing else: the top-ranked open signal, and
-   the deterministic next best action the backend chose. There is no score, no
-   percentage and no "everything looks great" — when both are null the section
-   says so plainly. Every button here corresponds to an affordance that exists;
-   an action code this bundle does not know is dropped rather than rendered.
-   ══════════════════════════════════════════════════════════════════════════ */
-/**
- * WHY THIS IS FIRST — the decision layer's one explanation, rendered.
- *
- * A handful of bounded lines, and every one of them is a translated backend
- * CODE: what makes it the top concern, at most two reasons behind that, the
- * dated commitment when one is driving it, the caveat that would make the
- * reading wrong, and — the line this block exists for — whether the ball is
- * with Korvix or with the person reading. An alarm that implies Korvix will
- * redeploy production is worse than no alarm.
- *
- * Nothing here is a score, a tier number or a percentage, and nothing here is
- * a second ranking: the backend picked this row with the same function that
- * orders the Business Brain's candidates.
- */
-function FocusRationale({ focus, t }: { focus: ProjectFocus | null; t: T }) {
-  if (!focus?.top) return null;
-  const top = focus.top;
-  const basisKey = focusBasisKey(top.priority_basis);
-  const reasons = focusReasonKeys(top);
-  const ownerKey = focusOwnerKey(top);
-  const caveatKey = top.caveats.length ? focusCaveatKey(top.caveats[0]) : null;
-  if (!basisKey && !reasons.length && !ownerKey) return null;
-  const tone = TONE_STYLE[focusTone(top.priority_basis)];
-  const providers = top.actionability.external_providers.join(', ');
+        )}
+      </section>
+    );
+  }
 
   return (
-    <div className="mt-3 rounded-xl border border-white/[0.06] bg-white/[0.02] p-3">
-      {/* The SUBJECT is named here on purpose. The alarm above is one event;
-          this is the story it belongs to, and the two are different
-          granularities — a rationale floating over an unnamed subject would
-          read as an explanation of the alarm, which it is not. */}
-      <div className="text-[10.5px] uppercase tracking-[0.06em] text-white/30 mb-1.5 break-words">
-        {t('projectFocusLabel')}
-        {top.subject && <span className="normal-case tracking-normal text-white/40"> · {top.subject}</span>}
-      </div>
-      {basisKey && (
-        <div className="flex items-center gap-2 text-[12.5px] font-medium leading-snug break-words"
-          style={{ color: tone.text }}>
-          <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: tone.dot }} />
-          {t(basisKey)}
-        </div>
+    <section className={`${PANEL} p-4 sm:p-5`}
+      style={{ borderColor: `${tone.dot}26`, background: `${tone.dot}0A` }}>
+      <FocusHeadline focus={focus} t={t} />
+
+      {/* The correlated evidence, as ONE line. This is the difference between
+          "a Vercel card and a GitHub card" and "a story". The STATE travels
+          with it: this subject is promoted out of the Current-state list below,
+          so its state has to be readable here or it is simply lost. */}
+      {focus.story && (
+        <>
+          <div className="mt-2">
+            <StateChip state={focus.story.state} t={t} subtle />
+          </div>
+          <OutcomeStrip item={focus.story} t={t} />
+        </>
       )}
+
       {reasons.length > 0 && (
-        <ul className="mt-1.5 space-y-0.5">
+        <ul className="mt-2.5 space-y-1">
           {reasons.map((key) => (
-            <li key={key} className="text-[12px] leading-snug text-white/55 break-words">
+            <li key={key} className="text-[12.5px] leading-snug text-white/65 break-words">
               {t(key)}
             </li>
           ))}
         </ul>
       )}
-      {/* WHICH commitment. Only when one is actually driving the tier — a
-          project can have a meeting next week without that being the reason
-          anything is first. The date is printed as the backend's own
-          YYYY-MM-DD so no locale-dependent parsing happens on the page. */}
-      {focus.commitment && top.deadline_pressure !== 'none' && (
-        <div className="mt-1.5 text-[12px] leading-snug text-white/45 break-words">
+
+      {/* WHICH commitment — only when one is actually driving the tier. The
+          date is printed as the backend's own YYYY-MM-DD, so no locale-
+          dependent parsing happens on the page. */}
+      {focus.commitment && item && item.deadline_pressure !== 'none' && (
+        <div className="mt-2 text-[12px] leading-snug text-white/50 break-words">
           {t('projectFocusCommitment', {
-            title: focus.commitment.title,
+            title: providerText(focus.commitment.title, 80),
             when: focus.commitment.at.slice(0, 10),
           })}
         </div>
       )}
+
+      {/* WHO HAS TO ACT. The line this block exists for: an alarm that implies
+          Korvix will redeploy production is worse than no alarm. */}
       {ownerKey && (
-        <div className="mt-1.5 text-[12px] leading-snug text-white/70 break-words">
+        <div className="mt-2 text-[12.5px] leading-snug text-white/80 break-words">
           {t(ownerKey, { providers })}
         </div>
       )}
@@ -617,189 +456,288 @@ function FocusRationale({ focus, t }: { focus: ProjectFocus | null; t: T }) {
           {t(caveatKey)}
         </div>
       )}
-      {focus.next.length > 0 && (
-        <div className="mt-2 pt-2 border-t border-white/[0.05] text-[11.5px] text-white/40 break-words">
-          {t('projectFocusNextLabel')}:{' '}
-          {focus.next.map((row) => row.subject).filter(Boolean).join(' · ')}
-        </div>
+
+      {/* THE ALARM, and whether it is the same thing as the headline.
+          `attention` and `decision_context` answer different questions and can
+          land on different subjects. When the backend's membership index says
+          they are the same story, this is provenance and stays small. When it
+          does NOT, the alarm is a second open thing and gets named in its own
+          words — a layout decision must never quietly demote a ranked signal. */}
+      {alarm && item && (
+        alarmIsFocusStory(focus) ? (
+          <div className="mt-2 flex flex-wrap items-center gap-x-2 text-[10.5px] text-white/30">
+            <span className="inline-flex items-center gap-1">
+              <SourceIcon source={alarm.source} className="h-3 w-3 shrink-0 text-white/30" />
+              <SourceName source={alarm.source} t={t} />
+            </span>
+            {alarm.context && <span className="truncate max-w-[220px]">· {providerText(alarm.context, 60)}</span>}
+            {timeAgo(alarm.observed_at) && <span>· {timeAgo(alarm.observed_at)}</span>}
+          </div>
+        ) : (
+          <div className={`mt-3 pt-3 ${RULE}`}>
+            <div className="text-[10.5px] uppercase tracking-[0.06em] text-white/30 mb-1">
+              {t('projectTodayAttentionLabel')}
+            </div>
+            <ul className="-my-2"><AttentionRow item={alarm} t={t} /></ul>
+          </div>
+        )
       )}
-    </div>
-  );
-}
 
-function TodaySection({
-  attention, recommendation, focus, changes, onAsk, onCreateTask, onOpenTasks,
-  onOpenActivity, t,
-}: {
-  attention: AttentionItem | null;
-  recommendation: TodayRecommendation | null;
-  focus: ProjectFocus | null;
-  changes: WorkspaceChanges | null;
-  onAsk: (prompt: string) => void;
-  onCreateTask: (prefill: string) => void;
-  onOpenTasks: () => void;
-  onOpenActivity: () => void;
-  t: T;
-}) {
-  const timeAgo = useTimeAgo(t);
-  const actions = renderableActions(recommendation);
-  const askKey = recommendationAskKey(recommendation);
-  const changeCount = changes?.count ?? 0;
-
-  const run = (action: string) => {
-    if (action === 'ask_korvix') onAsk(askKey ? t(askKey) : '');
-    else if (action === 'create_task') onCreateTask(recommendation?.title || '');
-    else if (action === 'open_tasks') onOpenTasks();
-  };
-
-  return (
-    <section className={`${PANEL} p-4 sm:p-5`}
-      style={attention
-        ? { borderColor: 'rgba(248,113,113,0.16)', background: 'rgba(248,113,113,0.025)' }
-        : undefined}>
-      <div className={`${SECTION_TITLE} mb-3`}>
-        <Sparkles className="h-3.5 w-3.5 text-[#FBBF24]" />
-        {t('projectSectionToday')}
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        {/* The question is always about the thing named above, so the headline
+            and the answer can never be about different subjects. */}
+        <button onClick={() => onAsk(askPrompt)} className={PRIMARY_BTN}>
+          <Sparkles className="h-3.5 w-3.5" /> {t('projectActionAsk')}
+        </button>
+        {/* INSPECT — the evidence, in place. Low chrome on purpose: the count
+            IS the affordance, and it is also the most useful single fact about
+            how well-supported the headline is. */}
+        {focus.story && (
+          <span className="ml-auto">
+            <EvidenceDisclosure item={focus.story} onAsk={onAsk} t={t} />
+          </span>
+        )}
       </div>
 
-      {!attention && !recommendation && !focus?.top ? (
-        <p className={EMPTY_TEXT}>{t('projectTodayEmpty')}</p>
-      ) : (
-        <div className="space-y-3.5">
-          {attention && (
-            <div>
-              <div className="text-[10.5px] uppercase tracking-[0.06em] text-white/30 mb-1">
-                {t('projectTodayAttentionLabel')}
-              </div>
-              <div className="flex items-start gap-2.5">
-                <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full"
-                  style={{ background: TONE_STYLE[severityTone(attention.severity)].dot }} />
-                <div className="min-w-0 flex-1">
-                  <div className="text-[13.5px] font-medium leading-snug text-white/90 break-words">
-                    {t(attentionReasonKey(attention.reason))}
-                  </div>
-                  {attention.title && (
-                    <div className="mt-0.5 text-[12px] leading-snug text-white/55 break-words line-clamp-2">
-                      {attention.title}
-                    </div>
-                  )}
-                  <div className="mt-1 flex flex-wrap items-center gap-x-2 text-[10.5px] text-white/30">
-                    <span className="inline-flex items-center gap-1">
-                      <SourceIcon source={attention.source} className="h-3 w-3 shrink-0 text-white/30" />
-                      <SourceName source={attention.source} t={t} />
-                    </span>
-                    {attention.context && <span className="truncate max-w-[220px]">· {attention.context}</span>}
-                    {timeAgo(attention.observed_at) && <span>· {timeAgo(attention.observed_at)}</span>}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* The rationale sits under the alarm rather than beside it: the
-              alarm says WHAT, this says why it beat everything else and who
-              has to act. */}
-          <FocusRationale focus={focus} t={t} />
-
-          {recommendation && (
-            <div className={attention ? 'pt-3.5 border-t border-white/[0.05]' : undefined}>
-              <div className="text-[10.5px] uppercase tracking-[0.06em] text-white/30 mb-1">
-                {t('projectTodayRecommendLabel')}
-              </div>
-              <div className="text-[13.5px] font-medium leading-snug text-white/90 break-words">
-                {t(recommendationReasonKey(recommendation.reason))}
-              </div>
-              {recommendation.title && (
-                <div className="mt-0.5 text-[12px] leading-snug text-white/55 break-words line-clamp-2">
-                  {recommendation.title}
-                </div>
-              )}
-              {actions.length > 0 && (
-                <div className="mt-2.5 flex flex-wrap gap-1.5">
-                  {actions.map((action, i) => {
-                    const key = recommendationActionKey(action);
-                    if (!key) return null;
-                    return (
-                      <button key={action} onClick={() => run(action)}
-                        className={i === 0 ? PRIMARY_BTN : HEADER_BTN}>
-                        {t(key)}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
+      {/* Korvix's next best action. ALWAYS rendered when the backend produced
+          one: an earlier cut hid it whenever its actions overlapped the buttons
+          above, which meant a layout rule could silently swallow the one line
+          that says what to do. */}
+      {recommendation && (
+        <div className={`mt-3 pt-3 ${RULE}`}>
+          <div className="text-[10.5px] uppercase tracking-[0.06em] text-white/30 mb-1">
+            {t('projectTodayRecommendLabel')}
+          </div>
+          <div className="text-[13px] font-medium leading-snug text-white/85 break-words">
+            {t(recommendationReasonKey(recommendation.reason))}
+          </div>
+          {actions.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {actions.map((action) => {
+                const key = recommendationActionKey(action);
+                if (!key) return null;
+                return (
+                  <button key={action} onClick={() => run(action)} className={SMALL_BTN}>
+                    {t(key)}
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
       )}
 
-      {/* Shown ONLY when a real last-visit marker exists.
-          "Since your last visit" is information the Activity tab does not
-          already carry. "Recent changes" IS the Activity tab — printing it here
-          too would be a second card saying the same thing, with a deduplicated
-          count that disagrees with the timeline's row count for no reason. So
-          on a first visit this line is simply absent, which is also the truth:
-          you have not been away. */}
-      {changes?.mode === 'since_last_visit' && changeCount > 0 && (
-        <button onClick={onOpenActivity}
-          className="mt-3.5 pt-3 w-full border-t border-white/[0.05] flex items-center gap-1.5 text-[11.5px] text-white/45 hover:text-white transition-colors">
-          <History className="h-3.5 w-3.5 shrink-0" />
-          <span className="min-w-0 truncate">
-            {t(changesTitleKey(changes))} · {t(changesCountKey(changeCount), { count: changeCount })}
-          </span>
-          <ChevronRight className="h-3 w-3 shrink-0 opacity-60" />
-        </button>
+      {/* WHAT ELSE IS OPEN — a disclosure, not a second alarm panel. The
+          strongest signal is the headline above; this is the tail, and a tail
+          rendered as loudly as the head is how a page stops having a head. */}
+      {attentionRest.length > 0 && (
+        <div className={`mt-3 pt-3 ${RULE}`}>
+          <button type="button" onClick={() => setAlsoOpen((v) => !v)}
+            aria-expanded={alsoOpen}
+            className="inline-flex items-center gap-1.5 text-[11.5px] text-white/45 hover:text-white transition-colors">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+            {t('projectSectionAttentionMore')}
+            <span className="rounded-full bg-white/[0.08] px-1.5 text-[10px] text-white/55">
+              {attentionRest.length}
+            </span>
+            <ChevronRight className={`h-3 w-3 transition-transform ${alsoOpen ? 'rotate-90' : ''}`} />
+          </button>
+          {alsoOpen && (
+            <ul className="mt-1 divide-y divide-white/[0.05]">
+              {attentionRest.map((row) => (
+                <AttentionRow key={row.id} item={row} t={t} />
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {/* The rest of the ranked tail, BY NAME. The backend's order, no score
+          and no tier number — a person reading "then: the checkout webhook"
+          learns something; a person reading "tier 4" learns that a machine has
+          opinions. */}
+      {next.length > 0 && (
+        <div className={`mt-3 pt-3 ${RULE} text-[11.5px] text-white/40 break-words`}>
+          {t('projectFocusNextLabel')}: {next.join(' · ')}
+        </div>
       )}
     </section>
   );
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
-   Changes — the "since your last visit" / "recent changes" list.
+   CHANGE — "what happened while I was away"
+
+   Rendered ONLY when a real per-user marker exists and something landed after
+   it. Without a marker this section is absent, which is also the truth: you
+   have not been away. "Recent changes" is what the Activity surface already
+   is, and printing it here too would be a second block saying the same thing
+   with a deduplicated count that disagrees with the timeline's row count.
+
+   Each row is a CORRELATED STORY where the backend resolved one, so four
+   provider events about one subject are one line with one evidence disclosure
+   — never four cards a reader has to join up themselves.
+   ══════════════════════════════════════════════════════════════════════════ */
+function ChangesSection({ workspace, changes, onAsk, onOpenActivity, t }: {
+  workspace: ProjectWorkspace;
+  changes: WorkspaceChanges;
+  onAsk: (prompt: string) => void;
+  onOpenActivity: () => void;
+  t: T;
+}) {
+  const timeAgo = useTimeAgo(t);
+  const stories = changeStories(workspace, changes, HOME_CHANGES);
+  const count = changes.count;
+  const hidden = Math.max(0, count - stories.length);
+
+  return (
+    <section>
+      <h2 className="text-[14.5px] font-semibold leading-snug text-white/85 break-words">
+        {t(count === 1
+          ? 'projectChangesSinceHeadlineOne'
+          : 'projectChangesSinceHeadlineMany', { count })}
+      </h2>
+      <ul className="mt-1 divide-y divide-white/[0.05]">
+        {stories.map(({ change, story }) => (
+          story
+            ? (
+              <StoryRow key={change.key} item={story} when={change.occurred_at}
+                onAsk={onAsk} t={t} />
+            )
+            : (
+              <li key={change.key} className="flex items-start gap-2.5 py-2.5">
+                <SourceIcon source={change.source} className="mt-[3px] h-3.5 w-3.5 shrink-0 text-white/30" />
+                <div className="min-w-0 flex-1">
+                  <ProviderText value={change.title || (changeKindKey(change.change) ? t(changeKindKey(change.change)!) : change.change)}
+                    className="block text-[12.5px] leading-snug text-white/70 break-words" />
+                  <div className="text-[10.5px] text-white/28">
+                    <SourceName source={change.source} t={t} />
+                    {change.occurred_at ? ` · ${timeAgo(change.occurred_at)}` : ''}
+                  </div>
+                </div>
+              </li>
+            )
+        ))}
+      </ul>
+      <div className="mt-2 flex flex-wrap items-center gap-3">
+        <MoreLink label={t('projectChangesViewAll')} onClick={onOpenActivity} />
+        {hidden > 0 && (
+          <span className="text-[10.5px] text-white/25">
+            {t('projectChangesMore', { count: hidden })}
+          </span>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   CURRENT STATE — what the connected tools ADD UP TO
+
+   The correlated subjects, in the backend's own presentation order, each as
+   one story with its evidence one disclosure away. It is NOT a ranking: "what
+   deserves your attention" is answered above by Focus, and this section has
+   deliberately no action on a row beyond asking Korvix about it.
+   ══════════════════════════════════════════════════════════════════════════ */
+function CurrentStateSection({ items, understanding, focusSubjectId, onAsk, t }: {
+  items: ProjectStateItem[];
+  understanding: ProjectUnderstanding | null;
+  focusSubjectId: string;
+  onAsk: (prompt: string) => void;
+  t: T;
+}) {
+  // AT MOST ONE caveat, and only a real one. A wall of hedges reads as noise
+  // and gets skipped, which defeats the point of being honest.
+  const caveat = coverageCaveatKey(understanding);
+  const gaps = knowledgeGapKeys(understanding, 2)
+    .filter((g) => g.code !== 'no_recent_evidence'
+      && g.code !== 'single_source_project'
+      && g.code !== 'no_deployment_evidence');
+  // The focus story is the headline directly above. Repeating it verbatim here
+  // is the "same card twice" problem this redesign exists to remove — so it is
+  // dropped from the list, not from the page.
+  const rows = items.filter((i) => i.id !== focusSubjectId);
+  // Nothing left to say here — the focus story above already IS the state, and
+  // there is no caveat or gap to carry. Render nothing rather than a heading
+  // over an empty list.
+  if (!rows.length && !caveat && !gaps.length && items.length > 0) return null;
+
+  return (
+    <section>
+      <h2 className={`${SECTION_TITLE} mb-1.5`}>{t('projectSectionState')}</h2>
+      {caveat && (
+        <div className="mb-1 text-[11.5px] leading-relaxed text-white/35">{t(caveat)}</div>
+      )}
+      {rows.length === 0 ? (
+        items.length === 0 && <p className={EMPTY_TEXT}>{t('projectStateEmpty')}</p>
+      ) : (
+        <ul className="divide-y divide-white/[0.05] -my-1">
+          {rows.map((item) => (
+            <StoryRow key={item.id} item={item} onAsk={onAsk} t={t} />
+          ))}
+        </ul>
+      )}
+      {gaps.length > 0 && (
+        <ul className="mt-2 space-y-1">
+          {gaps.map((g) => (
+            <li key={g.code} className="text-[11.5px] leading-snug text-white/35 break-words">
+              {t(g.key)}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   The full change list — the Activity surface's own "since your last visit".
 
    The TITLE is not cosmetic: only a payload carrying a real per-user marker is
-   allowed to claim a visit, and `changesTitleKey` enforces that. `count` comes
+   allowed to claim a visit, and `hasVisitChanges` enforces that. `count` comes
    from the backend and may exceed the rendered rows, so a bound is stated
    ("+N more") rather than quietly swallowing the rest.
    ══════════════════════════════════════════════════════════════════════════ */
-function ChangesList({ changes, t }: { changes: WorkspaceChanges | null; t: T }) {
+function ChangesList({ workspace, changes, onAsk, t }: {
+  workspace: ProjectWorkspace;
+  changes: WorkspaceChanges | null;
+  onAsk: (prompt: string) => void;
+  t: T;
+}) {
   const timeAgo = useTimeAgo(t);
   if (!changes) return null;
+  const stories = changeStories(workspace, changes, changes.items.length || 1);
   const hidden = Math.max(0, changes.count - changes.items.length);
   return (
     <section className={`${PANEL} p-4 sm:p-5`}>
-      <div className={`${SECTION_TITLE} mb-2`}>
+      <h2 className={`${SECTION_TITLE} mb-2`}>
         <History className="h-3.5 w-3.5 text-white/40" />
-        {t(changesTitleKey(changes))}
-      </div>
+        {t('projectChangesSinceTitle')}
+      </h2>
       {changes.items.length === 0 ? (
-        <p className={EMPTY_TEXT}>
-          {changes.mode === 'since_last_visit'
-            ? t('projectChangesEmpty')
-            : t('projectChangesEmptyRecent')}
-        </p>
+        <p className={EMPTY_TEXT}>{t('projectChangesEmpty')}</p>
       ) : (
         <>
           <ul className="divide-y divide-white/[0.04] -my-1">
-            {changes.items.map((c) => {
-              const kindKey = changeKindKey(c.change);
-              return (
-                <li key={c.key} className="flex items-start gap-2.5 py-2">
-                  <SourceIcon source={c.source} className="mt-[3px] h-3.5 w-3.5 shrink-0 text-white/30" />
-                  <div className="min-w-0 flex-1">
-                    <div className="text-[12.5px] leading-snug text-white/70 break-words line-clamp-2">
-                      {c.title || (kindKey ? t(kindKey) : c.change)}
+            {stories.map(({ change, story }) => (
+              story
+                ? <StoryRow key={change.key} item={story} when={change.occurred_at}
+                    onAsk={onAsk} t={t} />
+                : (
+                  <li key={change.key} className="flex items-start gap-2.5 py-2">
+                    <SourceIcon source={change.source} className="mt-[3px] h-3.5 w-3.5 shrink-0 text-white/30" />
+                    <div className="min-w-0 flex-1">
+                      <ProviderText
+                        value={change.title || (changeKindKey(change.change) ? t(changeKindKey(change.change)!) : change.change)}
+                        className="block text-[12.5px] leading-snug text-white/70 break-words" />
+                      <div className="text-[10.5px] text-white/28">
+                        <SourceName source={change.source} t={t} />
+                        {change.occurred_at ? ` · ${timeAgo(change.occurred_at)}` : ''}
+                      </div>
                     </div>
-                    {/* The SOURCE, exactly as the timeline names it — "Vercel",
-                        not the generic "Connected tool". Same row, same words. */}
-                    <div className="text-[10.5px] text-white/28">
-                      <SourceName source={c.source} t={t} />
-                      {c.occurred_at ? ` · ${timeAgo(c.occurred_at)}` : ''}
-                    </div>
-                  </div>
-                </li>
-              );
-            })}
+                  </li>
+                )
+            ))}
           </ul>
           {hidden > 0 && (
             <p className="mt-2.5 text-[10.5px] text-white/25">
@@ -1102,15 +1040,25 @@ function ConnectorRow({ connector, t }: { connector: WorkspaceConnector; t: T })
   else if (summary.kind === 'revoked') detail = <span className="text-[#FCA5A5]">{t('projectToolsRevoked')}</span>;
   else if (summary.kind === 'enabled') detail = t('projectToolsEnabled');
   else {
+    // Repository full names and channel names are written by whoever owns the
+    // remote resource — provider text, normalized like any other.
     detail = (
       <>
-        {summary.named.join(', ')}
+        {summary.named.map((r) => providerText(r, 60)).filter(Boolean).join(', ')}
         {summary.extra > 0 ? ` ${t('projectToolsMore', { count: summary.extra })}` : ''}
       </>
     );
   }
+  // The row's STATUS, as one scannable dot. It is the binding status the
+  // connector authority already decided — this adds no state of its own and no
+  // second connector settings surface: acting on it still means going to
+  // /settings/integrations, which the section links to once, below the list.
+  const dot = summary.kind === 'pending' ? TONE_STYLE.warning.dot
+    : summary.kind === 'revoked' ? TONE_STYLE.critical.dot
+      : TONE_STYLE.positive.dot;
   return (
     <div className="flex items-center gap-2 rounded-lg px-2 py-1.5">
+      <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: dot }} />
       <SourceIcon source={connector.provider} />
       <div className="min-w-0 flex-1">
         <div className="truncate text-[12.5px] text-white/75">{connector.label}</div>
@@ -1307,6 +1255,161 @@ const PREF_ICON: Record<FeedPreference, typeof Star> = {
   hidden: EyeOff,
 };
 
+/* ══════════════════════════════════════════════════════════════════════════
+   MEMORY — what Korvix actually knows about this project
+
+   NOT a chat card with a summary in it. This is the project's durable memory,
+   grouped the way the knowledge vocabulary itself is graded: what was DECIDED,
+   what is REQUIRED, what is FORBIDDEN, then the facts and notes — plus, as
+   part of the same picture, what Korvix knows it cannot see.
+
+   AUTHORITY IS UNCHANGED. Decisions live in the decision authority and the
+   rest in the project-memory authority; `projects.knowledge` already projects
+   both, and `knowledgeGroups` only groups what that projection returned. There
+   is no third store, no promotion, and nothing here writes: adding an item
+   goes to the Knowledge view, which posts to the existing route and re-reads.
+
+   THE SUMMARY IS THE PROJECT'S OWN. `summary.text` comes from the Project
+   Brain's stashed summary, falling back to the project's own description —
+   which is why the weak "Korvix has not generated a summary yet" copy appears
+   only when both are genuinely absent, rather than as a default.
+
+   ASK SITS BESIDE MEMORY, NOT INSTEAD OF IT. The suggestion chips and the
+   inline answer are an interaction surface on top of what the project knows;
+   they are deliberately below the memory, not in place of it.
+   ══════════════════════════════════════════════════════════════════════════ */
+function ProjectMemorySection({
+  workspace, suggestions, ask, askSurface, onAsk, onRetry, onStop, onDismiss,
+  onOpenChat, onOpenKnowledge, t,
+}: {
+  workspace: ProjectWorkspace;
+  suggestions: { id: string; labelKey: string; promptKey: string }[];
+  ask: InlineAsk | null;
+  askSurface: React.Ref<HTMLDivElement>;
+  onAsk: (prompt: string) => void;
+  onRetry: () => void;
+  onStop: () => void;
+  onDismiss: () => void;
+  onOpenChat: (threadId: string) => void;
+  onOpenKnowledge: () => void;
+  t: T;
+}) {
+  const groups = knowledgeGroups(workspace.knowledge);
+  const gaps = knowledgeGapKeys(workspace.understanding, 3);
+  const total = workspace.knowledge.counts.total ?? 0;
+  const shown = groups.reduce((n, g) => n + g.items.length, 0);
+  const anything = hasProjectMemory(workspace);
+
+  return (
+    <section>
+      <div className="flex items-center justify-between gap-2 mb-1.5">
+        <h2 className={SECTION_TITLE}>{t('projectMemoryHeading')}</h2>
+        <button onClick={onOpenKnowledge}
+          className="shrink-0 inline-flex items-center gap-1 rounded-md px-1.5 h-6 text-[11px] text-white/45 hover:text-white hover:bg-white/[0.06] transition-all">
+          <Plus className="h-3 w-3" /> {t('projectKnowledgeAdd')}
+        </button>
+      </div>
+
+      {workspace.summary.text && (
+        <p className="text-[13.5px] leading-relaxed text-white/70 break-words">
+          {workspace.summary.text}
+        </p>
+      )}
+
+      {groups.length > 0 && (
+        <div className="mt-3 space-y-3">
+          {groups.map((group) => (
+            <div key={group.kind}>
+              <div className="text-[10.5px] uppercase tracking-[0.06em] text-white/30 mb-1">
+                {t(group.labelKey)}
+                {group.total > group.items.length && (
+                  <span className="text-white/25"> · {group.total}</span>
+                )}
+              </div>
+              <ul className="space-y-1">
+                {group.items.map((item) => (
+                  <li key={item.id} className="flex items-start gap-2">
+                    <span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-white/25" />
+                    <div className="min-w-0">
+                      <div className="text-[12.5px] leading-snug text-white/70 break-words">
+                        {item.text}
+                      </div>
+                      {/* The authority's own topic heading, when it has one (a
+                          build decision does). Kept because grouping by kind
+                          replaced the per-row kind badge, not this. */}
+                      {item.label && (
+                        <div className="text-[10px] text-white/28 truncate">{item.label}</div>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* WHAT KORVIX KNOWS IT CANNOT SEE. Part of the memory, not a footnote:
+          "no production evidence exists" is a durable fact about the project
+          and belongs beside the facts that do. */}
+      {gaps.length > 0 && (
+        <div className="mt-3">
+          <div className="text-[10.5px] uppercase tracking-[0.06em] text-white/30 mb-1">
+            {t('projectMemoryGapsTitle')}
+          </div>
+          <ul className="space-y-1">
+            {gaps.map((g) => (
+              <li key={g.code} className="text-[12px] leading-snug text-white/45 break-words">
+                {t(g.key)}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* ONE empty line, and it says the true thing. A project with a summary
+          but nothing recorded is not the same as a project Korvix knows nothing
+          about, so it does not get the same sentence — and neither of them gets
+          a large empty card. */}
+      {groups.length === 0 && (
+        <p className={`mt-2 ${EMPTY_TEXT}`}>
+          {anything ? t('projectMemoryEmpty') : t('projectBriefEmpty')}
+        </p>
+      )}
+
+      {total > shown && (
+        <div className="mt-2.5">
+          <MoreLink label={t('projectKnowledgeViewAll')} onClick={onOpenKnowledge} />
+        </div>
+      )}
+
+      {/* ── Ask Korvix — an interaction surface ON project memory ─────────
+          Every suggestion is STATIC text gated on a concept this project
+          actually has state about; no model is called to invent a question. */}
+      <div className={`mt-4 pt-3.5 ${RULE}`}>
+        <div className="text-[11px] text-white/35 mb-2">{t('projectSectionAsk')}</div>
+        <div className="flex flex-wrap gap-1.5">
+          {suggestions.map((s) => (
+            <button key={s.id} onClick={() => onAsk(t(s.promptKey))}
+              disabled={ask?.state.phase === 'streaming'}
+              className="inline-flex items-center gap-1 rounded-full border border-white/[0.08] bg-white/[0.02] px-3 h-7 text-[11.5px] text-white/60 hover:text-white hover:border-white/[0.16] hover:bg-white/[0.05] transition-all max-w-full disabled:opacity-40 disabled:hover:text-white/60">
+              <span className="truncate">{t(s.labelKey)}</span>
+              <ChevronRight className="h-3 w-3 shrink-0 opacity-50" />
+            </button>
+          ))}
+        </div>
+        {ask ? (
+          <InlineAnswer ask={ask} surfaceRef={askSurface}
+            onRetry={onRetry} onStop={onStop}
+            onDismiss={onDismiss} onOpenChat={onOpenChat} t={t} />
+        ) : (
+          <p className="mt-2 text-[10.5px] text-white/25">{t('projectAskHint')}</p>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function CustomizeFeedPanel({
   sources, draft, busy, error, onChange, onSave, onReset, onClose, t,
 }: {
@@ -1324,10 +1427,10 @@ function CustomizeFeedPanel({
     <div className={`${PANEL} mt-3 p-3 sm:p-4`}>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <div className={SECTION_TITLE}>
+          <h2 className={SECTION_TITLE}>
             <SlidersHorizontal className="h-3.5 w-3.5 text-white/40" />
             {t('projectFeedCustomizeTitle')}
-          </div>
+          </h2>
           {/* The semantic boundary, stated to the person operating the control. */}
           <p className="mt-1 text-[11px] leading-relaxed text-white/35 max-w-[42rem]">
             {t('projectFeedCustomizeHint')}
@@ -1856,6 +1959,12 @@ function ProjectWorkspaceView({ projectId }: { projectId: string }) {
   // The server says this project is not available to this account.
   if (load.state === 'missing') return <ProjectUnavailable t={t} />;
 
+  /* The page's ONE leading item, joined from three authorities that already
+     agree (see `workspaceFocus`). Nothing here ranks: it resolves the backend's
+     focus subject to its correlated story and carries the alarm the backend
+     already chose. */
+  const focusNow = workspaceFocus(workspace);
+
   const overviewTasks = workspace ? openTasks(workspace.tasks.items) : [];
   const openCount = workspace?.tasks.counts.open ?? 0;
   const knowledgeTotal = workspace?.knowledge.counts.total ?? 0;
@@ -1877,9 +1986,20 @@ function ProjectWorkspaceView({ projectId }: { projectId: string }) {
             <ArrowLeft className="h-4 w-4" />
           </button>
           <div className="min-w-0 flex-1">
-            <h1 className="text-[20px] sm:text-[22px] font-semibold leading-tight break-words">
-              {name || ' '}
-            </h1>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <h1 className="text-[20px] sm:text-[22px] font-semibold leading-tight break-words">
+                {name || ' '}
+              </h1>
+              {/* THE PROJECT'S ACTUAL STATE, in the SAME closed vocabulary the
+                  correlated subjects use — `project_intelligence.synthesis`
+                  decides it, this renders it. Deliberately not a health
+                  score, not a percentage and not a second word list: an empty
+                  project reads "Nothing observed yet", which is true, rather
+                  than "Stable", which would be a claim. */}
+              {workspace?.understanding && (
+                <StateChip state={workspace.understanding.state} t={t} />
+              )}
+            </div>
             <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-white/40">
               {description && <span className="min-w-0 truncate max-w-full sm:max-w-[520px]">{description}</span>}
               {description && freshness && <span className="text-white/20">·</span>}
@@ -1964,70 +2084,85 @@ function ProjectWorkspaceView({ projectId }: { projectId: string }) {
         )}
 
         {/* ══════════════════════════════════════════════════════════════════
-            OVERVIEW
+            OVERVIEW — NOW → CHANGE → MEMORY → DETAIL
+
+            One primary column carrying the reading, and a quiet rail carrying
+            the things a project OWNS. The hierarchy is typography and space,
+            not chrome: exactly one block on this page has a border, and it is
+            the one that answers "what matters right now".
+
+            DOM order IS the mobile priority order — focus, what changed,
+            current state, memory, then the rail's contents.
             ══════════════════════════════════════════════════════════════════ */}
         {workspace && view === 'overview' && (
-          /* DOM order IS the mobile priority order: today → changes → tasks →
-             brief + ask → goals → activity → knowledge → products → chats →
-             tools. On desktop the last four move into the right rail. */
-          <div className="mt-5 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px] gap-4 lg:gap-6 items-start">
-            <div className="min-w-0 space-y-4">
+          <div className="mt-6 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-6 lg:gap-10 items-start">
+            <div className="min-w-0 space-y-7">
 
-              {/* ── A. TODAY ───────────────────────────────────────────── */}
-              <TodaySection
-                attention={workspace.today.attention}
+              {/* ── NOW ────────────────────────────────────────────────── */}
+              <FocusSection
+                focus={focusNow}
                 recommendation={workspace.today.recommendation}
-                focus={workspace.focus}
-                changes={arrival}
+                attentionRest={workspace.attention.slice(1)}
+                nextItems={workspace.focus?.next || []}
                 onAsk={runAsk}
                 onCreateTask={startTaskFromRecommendation}
                 onOpenTasks={() => setView('tasks')}
-                onOpenActivity={() => setView('activity')}
                 t={t}
               />
 
-              {/* ── B. NEEDS ATTENTION (the full ranked list) ───────────── */}
-              {workspace.attention.length > 1 && (
-                <section className={`${PANEL} p-4 sm:p-5`}>
-                  <div className={`${SECTION_TITLE} mb-2`}>
-                    <AlertTriangle className="h-3.5 w-3.5 text-[#F87171]" />
-                    {/* The strongest signal is already the headline of Today —
-                        this block is what ELSE is open, and says so. */}
-                    {t('projectSectionAttentionMore')}
-                  </div>
-                  <ul className="divide-y divide-white/[0.05] -my-0.5">
-                    {workspace.attention.slice(1).map((item) => (
-                      <AttentionRow key={item.id} item={item} t={t} />
-                    ))}
-                  </ul>
-                </section>
+              {/* ── CHANGE. Only with a real marker AND something inside the
+                     window: on a first visit you have not been away, and
+                     "recent changes" IS the Activity surface. ───────────── */}
+              {hasVisitChanges(arrival) && (
+                <ChangesSection workspace={workspace} changes={arrival!}
+                  onAsk={runAsk} onOpenActivity={() => setView('activity')} t={t} />
               )}
 
-              {/* ── B.5 CURRENT STATE ──────────────────────────────────────
-                  What the connected tools ADD UP TO, one level below "what is
-                  on fire". Rendered only when there is a real reading — an
-                  empty panel captioned with a state code is clutter. */}
+              {/* ── CURRENT STATE ──────────────────────────────────────── */}
               {hasUnderstanding(workspace) && (
                 <CurrentStateSection
                   items={workspace.projectState}
                   understanding={workspace.understanding}
+                  focusSubjectId={focusNow.story?.id || ''}
                   onAsk={runAsk}
                   t={t}
                 />
               )}
 
-              {/* ── C. TASKS (compact) ─────────────────────────────────── */}
-              <section className={`${PANEL} p-4 sm:p-5`}>
-                <div className="flex items-center justify-between gap-2 mb-2">
-                  <div className={SECTION_TITLE}>
-                    <ListTodo className="h-3.5 w-3.5 text-[#60A5FA]" />
+              {/* ── MEMORY ─────────────────────────────────────────────── */}
+              <ProjectMemorySection
+                workspace={workspace}
+                suggestions={suggestions}
+                ask={ask}
+                askSurface={askSurface}
+                onAsk={runAsk}
+                onRetry={retryAsk}
+                onStop={stopAsk}
+                onDismiss={dismissAsk}
+                onOpenChat={openChat}
+                onOpenKnowledge={() => setView('knowledge')}
+                t={t}
+              />
+            </div>
+
+            {/* ── DETAIL. What the project OWNS: its tasks, its goals, the
+                   newest few events, its builds, its chats, its tools. Quiet
+                   rows under quiet headings — this rail is reference, not the
+                   reading. Sticky on desktop; below `lg` it simply follows the
+                   column in DOM (and therefore priority) order. ─────────── */}
+            <aside className="min-w-0 space-y-7 lg:sticky lg:top-6 lg:max-h-[calc(100dvh-3rem)] lg:overflow-y-auto scrollbar-thin lg:pl-6 lg:border-l lg:border-white/[0.05]">
+
+              {/* Tasks */}
+              <section>
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <h2 className={SECTION_TITLE}>
                     {t('projectSectionTasks')}
                     {openCount > 0 && (
                       <span className="font-normal normal-case tracking-normal text-white/30">
                         · {t('projectTaskOpenCount', { count: openCount })}
                       </span>
                     )}
-                  </div>
+                  </h2>
                   <button onClick={() => { setComposerOpen(true); setDraftTask(''); }}
                     className="shrink-0 inline-flex items-center gap-1 rounded-md px-1.5 h-6 text-[11px] text-white/45 hover:text-white hover:bg-white/[0.06] transition-all">
                     <Plus className="h-3 w-3" /> {t('projectTaskAdd')}
@@ -2058,138 +2193,85 @@ function ProjectWorkspaceView({ projectId }: { projectId: string }) {
                       ))}
                     </div>
                     {(workspace.counts.tasks ?? 0) > overviewTasks.length && (
-                      <button onClick={() => setView('tasks')}
-                        className="mt-2 inline-flex items-center gap-1 text-[11.5px] text-white/45 hover:text-white transition-colors">
-                        {t('projectTasksViewAll')} <ChevronRight className="h-3 w-3" />
-                      </button>
+                      <div className="mt-1.5">
+                        <MoreLink label={t('projectTasksViewAll')} onClick={() => setView('tasks')} />
+                      </div>
                     )}
                   </>
                 )}
               </section>
 
-              {/* ── D. WHAT KORVIX KNOWS + ASK ─────────────────────────── */}
-              <section className={`${PANEL} p-4 sm:p-5`}>
-                <div className={`${SECTION_TITLE} mb-2`}>
-                  <Sparkles className="h-3.5 w-3.5 text-[#C084FC]" />
-                  {t('projectSectionBrief')}
-                </div>
-                {workspace.summary.text ? (
-                  <p className="text-[13px] leading-relaxed text-white/65 break-words">
-                    {workspace.summary.text}
+              {/* Goals — read-only, and said so once rather than per row. */}
+              {workspace.goals.length > 0 && (
+                <section>
+                  <h2 className={`${SECTION_TITLE} mb-1.5`}>{t('projectSectionGoals')}</h2>
+                  <ul className="space-y-1.5">
+                    {workspace.goals.map((g, i) => (
+                      <li key={g.id || `goal-${i}`}
+                        className="flex items-start gap-2 text-[12.5px] text-white/70">
+                        <span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-white/25" />
+                        <span className="min-w-0 break-words">{g.title}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="mt-2 text-[10.5px] text-white/25">{t('projectGoalsReadOnlyNote')}</p>
+                </section>
+              )}
+
+              {/* Latest activity — a PULSE, not a log. The full chronology is
+                  one tab away and says so. */}
+              <section>
+                <h2 className={`${SECTION_TITLE} mb-1.5`}>{t('projectActivityLatest')}</h2>
+                {workspace.activity.length === 0 ? (
+                  <p className={EMPTY_TEXT}>
+                    {hiddenActivity > 0
+                      ? t('projectActivityAllHidden')
+                      : workspace.connectors.length === 0
+                        ? t('projectActivityEmptyNoTools')
+                        : t('projectActivityEmpty')}
                   </p>
                 ) : (
-                  <p className={EMPTY_TEXT}>{t('projectBriefEmpty')}</p>
-                )}
-
-                <div className="mt-4 pt-3.5 border-t border-white/[0.05]">
-                  <div className="text-[11px] text-white/35 mb-2">{t('projectSectionAsk')}</div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {suggestions.map((s) => (
-                      <button key={s.id} onClick={() => runAsk(t(s.promptKey))}
-                        disabled={ask?.state.phase === 'streaming'}
-                        className="inline-flex items-center gap-1 rounded-full border border-white/[0.08] bg-white/[0.02] px-3 h-7 text-[11.5px] text-white/60 hover:text-white hover:border-white/[0.16] hover:bg-white/[0.05] transition-all max-w-full disabled:opacity-40 disabled:hover:text-white/60">
-                        <span className="truncate">{t(s.labelKey)}</span>
-                        <ChevronRight className="h-3 w-3 shrink-0 opacity-50" />
-                      </button>
-                    ))}
-                  </div>
-                  {/* The answer renders HERE — under the questions that produced
-                      it — so the user never leaves the project to read it. */}
-                  {ask ? (
-                    <InlineAnswer ask={ask} surfaceRef={askSurface}
-                      onRetry={retryAsk} onStop={stopAsk}
-                      onDismiss={dismissAsk} onOpenChat={openChat} t={t} />
-                  ) : (
-                    <p className="mt-2 text-[10.5px] text-white/25">{t('projectAskHint')}</p>
-                  )}
-                </div>
-              </section>
-
-              {/* ── E. CURRENT GOALS ───────────────────────────────────── */}
-              <section className={`${PANEL} p-4 sm:p-5`}>
-                <div className={`${SECTION_TITLE} mb-2`}>
-                  <Target className="h-3.5 w-3.5 text-[#60A5FA]" />
-                  {t('projectSectionGoals')}
-                </div>
-                {workspace.goals.length === 0 ? (
-                  <p className={EMPTY_TEXT}>{t('projectGoalsEmpty')}</p>
-                ) : (
                   <>
-                    <ul className="space-y-1.5">
-                      {workspace.goals.map((g, i) => (
-                        <li key={g.id || `goal-${i}`} className="flex items-start gap-2 text-[12.5px] text-white/70">
-                          <span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-white/25" />
-                          <span className="min-w-0 break-words">{g.title}</span>
+                    <ul className="space-y-2">
+                      {workspace.activity.slice(0, HOME_ACTIVITY).map((a, i) => (
+                        <li key={`${a.source}-${a.id}-${i}`} className="flex items-start gap-2">
+                          <SourceIcon source={a.source} className="mt-[3px] h-3 w-3 shrink-0 text-white/30" />
+                          <div className="min-w-0 flex-1">
+                            <ProviderText value={a.title || a.kind}
+                              className="block text-[12px] leading-snug text-white/60 break-words" />
+                            <div className="text-[10.5px] text-white/25">
+                              <SourceName source={a.source} t={t} />
+                              {a.occurred_at ? ` · ${timeAgo(a.occurred_at)}` : ''}
+                            </div>
+                          </div>
                         </li>
                       ))}
                     </ul>
-                    <p className="mt-2.5 text-[10.5px] text-white/25">{t('projectGoalsReadOnlyNote')}</p>
-                  </>
-                )}
-              </section>
-            </div>
-
-            {/* ── Right rail. Sticky on desktop so a long left column never
-                   leaves a dead column beside it; a plain stacked block below
-                   `lg` (where DOM order is the mobile priority order). ─────── */}
-            <aside className="min-w-0 space-y-4 lg:sticky lg:top-6 lg:max-h-[calc(100dvh-3rem)] lg:overflow-y-auto scrollbar-thin">
-
-              {/* ── F. KEY KNOWLEDGE ───────────────────────────────────── */}
-              <section className={`${PANEL} p-4`}>
-                <div className="flex items-center justify-between gap-2 mb-2">
-                  <div className={SECTION_TITLE}>
-                    <BookMarked className="h-3.5 w-3.5 text-[#C4B5FD]" />
-                    {t('projectSectionKnowledge')}
-                  </div>
-                  <button onClick={() => setView('knowledge')}
-                    className="shrink-0 inline-flex items-center gap-1 rounded-md px-1.5 h-6 text-[11px] text-white/45 hover:text-white hover:bg-white/[0.06] transition-all">
-                    <Plus className="h-3 w-3" /> {t('projectKnowledgeAdd')}
-                  </button>
-                </div>
-                {workspace.knowledge.items.length === 0 ? (
-                  <p className={EMPTY_TEXT}>{t('projectKnowledgeEmpty')}</p>
-                ) : (
-                  <>
-                    <div className="-mx-1">
-                      {workspace.knowledge.items.map((item) => (
-                        <KnowledgeRow key={item.id} item={item} onRemove={null} t={t} />
-                      ))}
+                    <div className="mt-2">
+                      <MoreLink label={t('projectChangesViewAll')}
+                        onClick={() => setView('activity')} />
                     </div>
-                    {knowledgeTotal > workspace.knowledge.items.length && (
-                      <button onClick={() => setView('knowledge')}
-                        className="mt-2 inline-flex items-center gap-1 text-[11.5px] text-white/45 hover:text-white transition-colors">
-                        {t('projectKnowledgeViewAll')} <ChevronRight className="h-3 w-3" />
-                      </button>
-                    )}
                   </>
                 )}
               </section>
 
-              {/* ── G. PRODUCTS & BUILDS ───────────────────────────────── */}
-              <section className={`${PANEL} p-4`}>
-                <div className={`${SECTION_TITLE} mb-2`}>
-                  <Blocks className="h-3.5 w-3.5 text-[#34D399]" />
-                  {t('projectSectionProducts')}
-                </div>
-                {workspace.products.length === 0 ? (
-                  <p className={EMPTY_TEXT}>{t('projectProductsEmpty')}</p>
-                ) : (
+              {/* Products & builds */}
+              {workspace.products.length > 0 && (
+                <section>
+                  <h2 className={`${SECTION_TITLE} mb-1.5`}>{t('projectSectionProducts')}</h2>
                   <div className="-mx-1">
                     {workspace.products.map((p, i) => (
                       <ProductRow key={p.deliverable_id || `${p.run_id}-${i}`}
                         product={p} onOpen={openProduct} t={t} />
                     ))}
                   </div>
-                )}
-              </section>
+                </section>
+              )}
 
-              {/* ── H. CHATS ───────────────────────────────────────────── */}
-              <section className={`${PANEL} p-4`}>
-                <div className="flex items-center justify-between gap-2 mb-2">
-                  <div className={SECTION_TITLE}>
-                    <MessageSquare className="h-3.5 w-3.5 text-[#60A5FA]" />
-                    {t('projectSectionChats')}
-                  </div>
+              {/* Chats */}
+              <section>
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <h2 className={SECTION_TITLE}>{t('projectSectionChats')}</h2>
                   <button onClick={() => setPickerOpen(true)}
                     className="shrink-0 inline-flex items-center gap-1 rounded-md px-1.5 h-6 text-[11px] text-white/45 hover:text-white hover:bg-white/[0.06] transition-all">
                     <FolderInput className="h-3 w-3" /> {t('projectActionAddExisting')}
@@ -2207,12 +2289,12 @@ function ProjectWorkspaceView({ projectId }: { projectId: string }) {
                 )}
               </section>
 
-              {/* ── I. CONNECTED TOOLS ─────────────────────────────────── */}
-              <section className={`${PANEL} p-4`}>
-                <div className={`${SECTION_TITLE} mb-2`}>
-                  <Plug className="h-3.5 w-3.5 text-white/40" />
-                  {t('projectSectionTools')}
-                </div>
+              {/* Connected tools — one dense status row per provider. Not a
+                  connector manager: the account-level authorization and the
+                  project binding both still live in the connector authority at
+                  /settings/integrations, which this links to. */}
+              <section>
+                <h2 className={`${SECTION_TITLE} mb-1.5`}>{t('projectSectionTools')}</h2>
                 {workspace.connectors.length === 0 ? (
                   <p className={EMPTY_TEXT}>{t('projectToolsEmpty')}</p>
                 ) : (
@@ -2222,12 +2304,10 @@ function ProjectWorkspaceView({ projectId }: { projectId: string }) {
                     ))}
                   </div>
                 )}
-                {/* The CTA sits under the list, not beside the heading — a long
-                    label there wrapped the section title onto two lines. */}
-                <button onClick={() => navigate('/settings/integrations')}
-                  className="mt-2.5 pt-2.5 w-full border-t border-white/[0.05] inline-flex items-center gap-1 text-[11.5px] text-white/45 hover:text-white transition-colors">
-                  {t('projectActionManageTools')} <ArrowUpRight className="h-3 w-3" />
-                </button>
+                <div className="mt-2">
+                  <MoreLink label={t('projectActionManageTools')} external
+                    onClick={() => navigate('/settings/integrations')} />
+                </div>
               </section>
             </aside>
           </div>
@@ -2240,10 +2320,10 @@ function ProjectWorkspaceView({ projectId }: { projectId: string }) {
           <div className="mt-5 max-w-[960px] space-y-4">
             <section className={`${PANEL} p-4 sm:p-5`}>
               <div className="flex items-center justify-between gap-2 mb-3">
-                <div className={SECTION_TITLE}>
+                <h2 className={SECTION_TITLE}>
                   <ListTodo className="h-3.5 w-3.5 text-[#60A5FA]" />
                   {t('projectSectionTasks')}
-                </div>
+                </h2>
                 {!composerOpen && (
                   <button onClick={() => setComposerOpen(true)} className={HEADER_BTN}>
                     <Plus className="h-3.5 w-3.5" /> {t('projectTaskAdd')}
@@ -2304,10 +2384,10 @@ function ProjectWorkspaceView({ projectId }: { projectId: string }) {
         {workspace && view === 'knowledge' && (
           <div className="mt-5 max-w-[960px] space-y-4">
             <section className={`${PANEL} p-4 sm:p-5`}>
-              <div className={`${SECTION_TITLE} mb-3`}>
+              <h2 className={`${SECTION_TITLE} mb-3`}>
                 <BookMarked className="h-3.5 w-3.5 text-[#C4B5FD]" />
                 {t('projectKnowledgeAdd')}
-              </div>
+              </h2>
               {/* Kind first, then the statement — the kind decides which
                   authority the backend routes it to, so it is never guessed
                   from the words. */}
@@ -2341,7 +2421,7 @@ function ProjectWorkspaceView({ projectId }: { projectId: string }) {
             </section>
 
             <section className={`${PANEL} p-4 sm:p-5`}>
-              <div className={`${SECTION_TITLE} mb-2`}>
+              <h2 className={`${SECTION_TITLE} mb-2`}>
                 <BookMarked className="h-3.5 w-3.5 text-white/40" />
                 {t('projectTabKnowledge')}
                 {knowledgeTotal > 0 && (
@@ -2349,7 +2429,7 @@ function ProjectWorkspaceView({ projectId }: { projectId: string }) {
                     · {t('projectKnowledgeCount', { count: knowledgeTotal })}
                   </span>
                 )}
-              </div>
+              </h2>
               {knowledge === null ? (
                 <div className="flex items-center gap-2 text-[12px] text-white/40">
                   <Loader2 className="h-3.5 w-3.5 animate-spin" /> {t('projectWorkspaceLoading')}
@@ -2377,13 +2457,14 @@ function ProjectWorkspaceView({ projectId }: { projectId: string }) {
             {/* Only when a real marker makes it a DIFFERENT list from the
                 timeline below. Without one, "recent changes" and "recent
                 activity" are the same answer twice. */}
-            {arrival?.mode === 'since_last_visit' && (
-              <ChangesList changes={arrival} t={t} />
+            {hasVisitChanges(arrival) && (
+              <ChangesList workspace={workspace} changes={arrival}
+                onAsk={runAsk} t={t} />
             )}
 
             <section className={`${PANEL} p-4 sm:p-5`}>
               <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-                <div className={SECTION_TITLE}>
+                <h2 className={SECTION_TITLE}>
                   <Activity className="h-3.5 w-3.5 text-white/40" />
                   {t('projectSectionActivity')}
                   {hiddenActivity > 0 && (
@@ -2395,7 +2476,7 @@ function ProjectWorkspaceView({ projectId }: { projectId: string }) {
                       · {t('projectFeedHiddenCount', { count: hiddenActivity })}
                     </span>
                   )}
-                </div>
+                </h2>
                 <button onClick={() => (customizeOpen ? setCustomizeOpen(false) : openCustomize())}
                   aria-expanded={customizeOpen}
                   className="shrink-0 inline-flex items-center gap-1 rounded-md px-1.5 h-6 text-[11px] text-white/45 hover:text-white hover:bg-white/[0.06] transition-all">
@@ -2426,9 +2507,8 @@ function ProjectWorkspaceView({ projectId }: { projectId: string }) {
                     <li key={`${a.source}-${a.id}-${i}`} className="flex items-start gap-2.5 py-2">
                       <SourceIcon source={a.source} className="mt-[3px] h-3.5 w-3.5 shrink-0 text-white/30" />
                       <div className="min-w-0 flex-1">
-                        <div className="text-[12.5px] leading-snug text-white/70 break-words line-clamp-2">
-                          {a.title || a.kind}
-                        </div>
+                        <ProviderText value={a.title || a.kind}
+                          className="block text-[12.5px] leading-snug text-white/70 break-words" />
                         <div className="text-[10.5px] text-white/28">
                           <SourceName source={a.source} t={t} />
                           {a.occurred_at ? ` · ${timeAgo(a.occurred_at)}` : ''}

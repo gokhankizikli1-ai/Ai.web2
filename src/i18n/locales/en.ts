@@ -1698,4 +1698,72 @@ export const en: Record<string, string> = {
   projectSourceTask: 'Task',
   projectSourceKnowledge: 'Knowledge',
 
+
+  /* ── Correlated stories, evidence and grounding ──────────────────────────
+     Every string here renders a STABLE BACKEND CODE from
+     `project_intelligence` (event semantics, claim classes, evidence classes).
+     The API never sends a sentence for any of them, so each language is a real
+     translation rather than English leaking through a payload. There is no
+     score, no percentage and no confidence number in this block on purpose. */
+  projectEvidenceChangeProposed: 'Change proposed',
+  projectEvidenceChangeLanded: 'Merged',
+  projectEvidenceChangeAbandoned: 'Closed without merging',
+  projectEvidenceChangePushed: 'Pushed',
+  projectEvidenceCiFailed: 'Checks failed',
+  projectEvidenceCiPassed: 'Checks passed',
+  projectEvidenceDeployFailed: 'Deployment failed',
+  projectEvidenceDeploySucceeded: 'Deployment succeeded',
+  projectEvidenceDeployCancelled: 'Deployment cancelled',
+  projectEvidenceDeployStarted: 'Deployment started',
+  projectEvidenceIssueOpened: 'Issue opened',
+  projectEvidenceIssueClosed: 'Issue closed',
+  projectEvidenceDiscussion: 'Discussed',
+  projectEvidenceMail: 'Email',
+  projectEvidenceMeeting: 'Meeting',
+  projectEvidenceActivity: 'Activity',
+
+  projectClaimDeployment: 'A deployment was reported, with its outcome',
+  projectClaimCodeChange: 'A code change was proposed or landed',
+  projectClaimTests: 'Automated checks ran, with their outcome',
+  projectClaimCoordination: 'People discussed this',
+  projectClaimFunctionality: 'The product works',
+  projectClaimUsers: 'Real people are using it',
+  projectClaimFeedback: 'Users said something about it',
+  projectClaimGoalProgress: 'A goal moved forward',
+  projectClaimBusinessOutcome: 'A business result followed',
+
+  projectEvidenceNeedDeployment: 'a deployment event',
+  projectEvidenceNeedCodeChange: 'a code change',
+  projectEvidenceNeedCheck: 'a check or test report',
+  projectEvidenceNeedMessage: 'a message or a meeting',
+  projectEvidenceNeedPerson: 'someone stating it',
+  projectEvidenceNeedCustomerFact: 'a recorded customer fact',
+  projectEvidenceNeedMetricFact: 'a recorded metric or business fact',
+  projectEvidenceNeedGoal: 'a recorded project goal',
+
+  projectWhyTimeline: 'What happened',
+  projectWhyEstablished: 'Established',
+  projectWhyAdjacent: 'Adjacent evidence only',
+  projectWhyAdjacentNote: 'Something nearby points this way. It does not establish the claim.',
+  projectWhyNotEstablished: 'Not established by this evidence',
+  projectWhyEvidenceOne: '1 evidence',
+  projectWhyEvidenceMany: '{count} evidence',
+  projectWhySingleSource: 'one tool only',
+  projectWhyWouldEstablish: 'would need {items}',
+  projectWhyBasisTextual: 'read from wording, not a recorded fact',
+
+  projectFocusHeading: 'Right now',
+  projectFocusInspect: 'Inspect',
+  projectFocusQuiet: 'Nothing is pressing in this project right now.',
+
+  projectChangesSinceHeadlineOne: 'One meaningful thing happened while you were away',
+  projectChangesSinceHeadlineMany: '{count} meaningful things happened while you were away',
+  projectChangesViewAll: 'Full activity',
+
+  projectMemoryHeading: 'What Korvix knows',
+  projectMemoryEmpty: 'Korvix has not recorded anything durable about this project yet.',
+  projectMemoryGapsTitle: 'Open knowledge gaps',
+  projectStoryDetail: 'Details',
+  projectActivityLatest: 'Latest activity',
+  projectFocusOwnerHumanElsewhere: 'Waiting on you — Korvix can look into it, but the fix has to happen outside Korvix.',
 };

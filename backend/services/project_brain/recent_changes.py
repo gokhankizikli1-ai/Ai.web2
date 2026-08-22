@@ -28,13 +28,26 @@ that cannot prove it happened after the marker cannot honestly be called new,
 so it is dropped rather than padding the count. Being silently short is better
 than being confidently wrong.
 
-DEDUPLICATION
--------------
+DEDUPLICATION — AND WHY THE COUNT IS A COUNT OF STORIES
+-------------------------------------------------------
 Every row carries a `key` naming the real-world THING it is about — a CI
 target, a Vercel target, a PR, a chat, a build, a task, a knowledge item. Only
 the newest row per key survives, so five deploy attempts on one target read as
 one change instead of five, and a task moved todo → doing → done during one
 absence is one line, not three.
+
+The caller chooses that key, and for a CONNECTOR row it now borrows the
+identity `project_intelligence` already resolved: when the correlation
+authority's membership index says a stored observation belongs to a correlated
+subject, every row in that subject shares one key. So a merge on GitHub, the
+Vercel deployment it triggered and the Slack thread about it collapse into ONE
+change — the same story the Current-state section shows — instead of three
+provider events that a reader has to re-correlate in their head.
+
+That is deliberately NOT a second correlation engine. This module still
+correlates nothing; it deduplicates on a key it is handed. The identity comes
+from the one authority that owns it, so "3 things happened while you were away"
+and "3 subjects" can never disagree.
 
 BOUNDS
 ------
@@ -78,9 +91,22 @@ def _s(value: Any, limit: int = 240) -> str:
 
 
 def change_row(*, key: str, change: str, source: str, title: str,
-               occurred_at: Any, detail: str = "", ref: str = "") -> Dict[str, Any]:
+               occurred_at: Any, detail: str = "", ref: str = "",
+               subject_id: str = "", subject: str = "",
+               state: str = "") -> Dict[str, Any]:
     """One normalized change. `key` is the dedup identity — the thing the change
-    is ABOUT, not the event id."""
+    is ABOUT, not the event id.
+
+    `subject_id` / `subject` / `state` name the CORRELATED STORY this change
+    belongs to, when the caller could resolve one through the existing
+    `project_intelligence` membership index. They are carried, never derived
+    here: this module does no correlation of its own and must not start. They
+    exist so the page can say "Release / PR #656" over a group of provider
+    events instead of listing four disconnected rows, and so the count it
+    prints is a count of STORIES rather than of raw provider traffic.
+
+    An empty `subject_id` is the honest default: no correlated subject spoke
+    for this row, so the row stands alone exactly as it always did."""
     return {
         "key":         _s(key, 200),
         "change":      _s(change, 40),
@@ -89,6 +115,9 @@ def change_row(*, key: str, change: str, source: str, title: str,
         "detail":      _s(detail, 120),
         "occurred_at": _s(occurred_at, 64),
         "ref":         _s(ref, 200),
+        "subject_id":  _s(subject_id, 64),
+        "subject":     _s(subject, 200),
+        "state":       _s(state, 40),
     }
 
 

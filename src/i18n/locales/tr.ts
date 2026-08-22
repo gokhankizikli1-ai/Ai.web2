@@ -1640,4 +1640,71 @@ export const tr: Record<string, string> = {
   projectSourceTask: 'Görev',
   projectSourceKnowledge: 'Bilgi',
 
+
+  /* ── İlişkilendirilmiş hikâyeler, kanıt ve dayanak ───────────────────────
+     Buradaki her metin `project_intelligence` katmanının SABİT KODLARINI
+     karşılar (olay anlamı, iddia sınıfı, kanıt sınıfı). API hiçbiri için cümle
+     göndermez; dolayısıyla her dil gerçek bir çeviridir. Bu blokta bilinçli
+     olarak puan, yüzde veya güven sayısı yoktur. */
+  projectEvidenceChangeProposed: 'Değişiklik önerildi',
+  projectEvidenceChangeLanded: 'Birleştirildi',
+  projectEvidenceChangeAbandoned: 'Birleştirilmeden kapatıldı',
+  projectEvidenceChangePushed: 'Gönderildi',
+  projectEvidenceCiFailed: 'Kontroller başarısız',
+  projectEvidenceCiPassed: 'Kontroller geçti',
+  projectEvidenceDeployFailed: 'Dağıtım başarısız',
+  projectEvidenceDeploySucceeded: 'Dağıtım başarılı',
+  projectEvidenceDeployCancelled: 'Dağıtım iptal edildi',
+  projectEvidenceDeployStarted: 'Dağıtım başladı',
+  projectEvidenceIssueOpened: 'Kayıt açıldı',
+  projectEvidenceIssueClosed: 'Kayıt kapatıldı',
+  projectEvidenceDiscussion: 'Konuşuldu',
+  projectEvidenceMail: 'E-posta',
+  projectEvidenceMeeting: 'Toplantı',
+  projectEvidenceActivity: 'Hareket',
+
+  projectClaimDeployment: 'Bir dağıtım, sonucuyla birlikte raporlandı',
+  projectClaimCodeChange: 'Bir kod değişikliği önerildi veya birleştirildi',
+  projectClaimTests: 'Otomatik kontroller çalıştı, sonucuyla birlikte',
+  projectClaimCoordination: 'İnsanlar bunu konuştu',
+  projectClaimFunctionality: 'Ürün çalışıyor',
+  projectClaimUsers: 'Gerçek kişiler kullanıyor',
+  projectClaimFeedback: 'Kullanıcılar bu konuda bir şey söyledi',
+  projectClaimGoalProgress: 'Bir hedef ilerledi',
+  projectClaimBusinessOutcome: 'Bir iş sonucu doğdu',
+
+  projectEvidenceNeedDeployment: 'bir dağıtım olayı',
+  projectEvidenceNeedCodeChange: 'bir kod değişikliği',
+  projectEvidenceNeedCheck: 'bir kontrol veya test raporu',
+  projectEvidenceNeedMessage: 'bir mesaj veya toplantı',
+  projectEvidenceNeedPerson: 'bunu söyleyen biri',
+  projectEvidenceNeedCustomerFact: 'kayda geçmiş bir müşteri bilgisi',
+  projectEvidenceNeedMetricFact: 'kayda geçmiş bir metrik veya iş bilgisi',
+  projectEvidenceNeedGoal: 'kayda geçmiş bir proje hedefi',
+
+  projectWhyTimeline: 'Ne oldu',
+  projectWhyEstablished: 'Kanıtlanan',
+  projectWhyAdjacent: 'Yalnızca dolaylı kanıt',
+  projectWhyAdjacentNote: 'Yakındaki bir şey bu yönü işaret ediyor. İddiayı kanıtlamıyor.',
+  projectWhyNotEstablished: 'Bu kanıtla kanıtlanmayan',
+  projectWhyEvidenceOne: '1 kanıt',
+  projectWhyEvidenceMany: '{count} kanıt',
+  projectWhySingleSource: 'yalnızca tek araç',
+  projectWhyWouldEstablish: '{items} gerekir',
+  projectWhyBasisTextual: 'kayıtlı bir bilgiden değil, ifadeden okundu',
+
+  projectFocusHeading: 'Şu anda',
+  projectFocusInspect: 'İncele',
+  projectFocusQuiet: 'Bu projede şu anda acil bir şey yok.',
+
+  projectChangesSinceHeadlineOne: 'Siz yokken anlamlı bir şey oldu',
+  projectChangesSinceHeadlineMany: 'Siz yokken {count} anlamlı şey oldu',
+  projectChangesViewAll: 'Tüm hareketler',
+
+  projectMemoryHeading: 'Korvix ne biliyor',
+  projectMemoryEmpty: 'Korvix bu proje hakkında henüz kalıcı bir şey kaydetmedi.',
+  projectMemoryGapsTitle: 'Açık bilgi boşlukları',
+  projectStoryDetail: 'Ayrıntılar',
+  projectActivityLatest: 'Son hareketler',
+  projectFocusOwnerHumanElsewhere: 'Sizi bekliyor — Korvix inceleyebilir, ancak düzeltmenin Korvix dışında yapılması gerekiyor.',
 };
